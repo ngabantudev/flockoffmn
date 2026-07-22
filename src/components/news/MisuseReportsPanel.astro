@@ -14,7 +14,7 @@
 
 <div
   id="misuse-reports-panel"
-  class="hidden fixed md:absolute top-3 left-4 right-4 max-w-sm mx-auto md:mx-0 md:inset-x-auto md:top-0 md:bottom-0 md:right-0 md:left-auto z-50 md:z-30 pointer-events-auto font-sans bg-neutral-900/90 md:bg-neutral-900 backdrop-blur-xl md:backdrop-blur-md border border-white/10 md:border-l md:border-t-0 md:border-r-0 md:border-b-0 rounded-2xl md:rounded-none shadow-2xl shadow-black/60 md:w-96 flex flex-col overflow-hidden md:overflow-visible transition-transform duration-300 ease-out translate-x-0"
+  class="hidden fixed md:absolute top-56 left-4 right-4 max-w-sm mx-auto md:mx-0 md:inset-x-auto md:top-0 md:bottom-0 md:right-0 md:left-auto z-50 md:z-30 pointer-events-auto font-sans bg-neutral-900/90 md:bg-neutral-900 backdrop-blur-xl md:backdrop-blur-md border border-white/10 md:border-l md:border-t-0 md:border-r-0 md:border-b-0 rounded-2xl md:rounded-none shadow-2xl shadow-black/60 md:w-96 flex flex-col overflow-hidden md:overflow-visible transition-transform duration-300 ease-out translate-x-0"
 >
   <!-- Desktop Header -->
   <div
@@ -138,17 +138,31 @@
     });
   }
 
+  // "city" precision is a real match; "state"/"unknown" are guaranteed
+  // fallbacks (every article gets a dot — see geocodeArticle.ts) labeled as
+  // approximate rather than presented as a precise location.
   function locationLine(item: MisuseReportItem): string {
-    if (!item.location) return "";
-    const place = `${item.location.city}, ${item.location.state}`;
-    const label = item.location.department ? item.location.department : place;
+    const { precision, department, city, state } = item.location;
+    const label =
+      precision === "city"
+        ? department ?? (city && state ? `${city}, ${state}` : null)
+        : precision === "state"
+          ? state ? `~ ${state} (approximate)` : null
+          : "Location unknown (approximate)";
+    if (!label) return "";
     return `<span class="text-[10px] text-emerald-400/90 font-medium block mt-1">${escapeHtml(label)}</span>`;
+  }
+
+  function sourcesSuffix(item: MisuseReportItem): string {
+    const count = item.relatedSources?.length ?? 0;
+    if (count === 0) return "";
+    return ` <span class="text-neutral-500">+${count} more source${count === 1 ? "" : "s"}</span>`;
   }
 
   function desktopItemHTML(item: MisuseReportItem): string {
     return `
       <article class="border-b border-white/5 pb-3.5 last:border-0 last:pb-0 group">
-        <span class="text-[9px] font-bold text-neutral-500 tracking-wider uppercase block mb-1">${escapeHtml(item.source)}</span>
+        <span class="text-[9px] font-bold text-neutral-500 tracking-wider uppercase block mb-1">${escapeHtml(item.source)}${sourcesSuffix(item)}</span>
         <h3 class="text-xs font-medium text-neutral-200 hover:text-emerald-300 leading-snug">
           <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>
         </h3>
@@ -160,7 +174,7 @@
   function mobileItemHTML(item: MisuseReportItem): string {
     return `
       <article class="w-full shrink-0 snap-center p-3 flex flex-col justify-center">
-        <span class="text-[9px] font-bold text-emerald-400 tracking-wider uppercase block mb-0.5">Misuse Report</span>
+        <span class="text-[9px] font-bold text-emerald-400 tracking-wider uppercase block mb-0.5">Misuse Report${sourcesSuffix(item)}</span>
         <h3 class="text-xs font-medium text-neutral-200 leading-snug line-clamp-2">
           <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>
         </h3>

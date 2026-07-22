@@ -16,19 +16,29 @@
 //      yields a human-readable department name for the popup.
 //   4. Loose scan for any gazetteer city name appearing as a capitalized
 //      word/phrase in the text, picking the longest phrase that matches
-//      (falling back to population as a same-length tie-breaker) —
-//      lowest confidence, used only if the above find nothing.
-// Callers should treat a null result as "no dot," not an error — most
-// articles that don't match still belong in the news list.
+//      (falling back to population as a same-length tie-breaker).
+//   5. A bare state name with no city at all — resolves to that state's
+//      capital.
+//   6. No location signal whatsoever — resolves to a fixed US-wide fallback
+//      point.
+// locateArticle() never returns null: every article gets *some* dot, tagged
+// with a `precision` ("city" | "state" | "unknown") so callers can render
+// lower-confidence tiers as visually approximate instead of a precise pin.
 
 import { US_CITIES, type UsCityEntry } from "~/data/usCities";
 
 export interface ArticleLocation {
-  city: string;
-  state: string;
+  city: string | null;
+  state: string | null;
   lat: number;
   lon: number;
   department: string | null;
+  // How confidently lat/lon were resolved: "city" matched a specific place,
+  // "state" only found a bare state name (lat/lon point at its capital),
+  // "unknown" found no location signal at all (lat/lon are a US-wide
+  // fallback). Callers should render "state"/"unknown" dots as visually
+  // approximate rather than treating them as a precise pin.
+  precision: "city" | "state" | "unknown";
 }
 
 export const STATE_CODES = new Set([
@@ -187,16 +197,15 @@ function tryLooseScan(text: string): UsCityEntry | null {
       const bucket = cityIndex.get(phrase.toLowerCase());
       if (!bucket) continue;
       const candidate = bucket[0];
-      // Without an explicit state/department/acronym context, only trust
-      // the ~1,000 well-known cities that have a real population figure.
       // The ~29,000 small towns added for state-hinted lookups (Greer, SC)
       // have population 0 here precisely because there's no ranking data
-      // for them — left unguarded, ordinary capitalized words in headlines
-      // ("Secretary", "Virginia", "Institute", "Carolina"...) start
-      // colliding with some obscure same-named small town somewhere in the
-      // US and producing a confidently wrong dot, which is worse than no
-      // dot at all.
-      if (candidate.population === 0) continue;
+      // for them. A lone common word ("Secretary", "Virginia", "Institute"...)
+      // colliding with an obscure same-named town is the real risk, and only
+      // shows up at n=1 — a 2-3 word phrase is specific enough that letting
+      // it match one of these small towns is safe, and catches small-town
+      // mentions that never pair with a state name in the text. So the
+      // population-0 guard only applies to single-word matches.
+      if (candidate.population === 0 && n === 1) continue;
       if (!best || candidate.population > best.population) best = candidate;
     }
     if (best) return best;
@@ -204,19 +213,81 @@ function tryLooseScan(text: string): UsCityEntry | null {
   return null;
 }
 
-export function locateArticle(text: string): ArticleLocation | null {
+// State capital for each state — used to place a "state" tier dot when the
+// text names a state but no city. Resolved through the same gazetteer/
+// pickEntry as every other pass, so no separate coordinate table is needed.
+const STATE_CAPITALS: Record<string, string> = {
+  AL: "Montgomery", AK: "Juneau", AZ: "Phoenix", AR: "Little Rock", CA: "Sacramento",
+  CO: "Denver", CT: "Hartford", DE: "Dover", DC: "Washington", FL: "Tallahassee",
+  GA: "Atlanta", HI: "Honolulu", ID: "Boise", IL: "Springfield", IN: "Indianapolis",
+  IA: "Des Moines", KS: "Topeka", KY: "Frankfort", LA: "Baton Rouge", ME: "Augusta",
+  MD: "Annapolis", MA: "Boston", MI: "Lansing", MN: "Saint Paul", MS: "Jackson",
+  MO: "Jefferson City", MT: "Helena", NE: "Lincoln", NV: "Carson City", NH: "Concord",
+  NJ: "Trenton", NM: "Santa Fe", NY: "Albany", NC: "Raleigh", ND: "Bismarck",
+  OH: "Columbus", OK: "Oklahoma City", OR: "Salem", PA: "Harrisburg", RI: "Providence",
+  SC: "Columbia", SD: "Pierre", TN: "Nashville", TX: "Austin", UT: "Salt Lake City",
+  VT: "Montpelier", VA: "Richmond", WA: "Olympia", WV: "Charleston", WI: "Madison",
+  WY: "Cheyenne",
+};
+
+// Bare full state name anywhere in the text, no city required — deliberately
+// doesn't scan bare 2-letter codes (too ambiguous: "IN", "OR", "ME" collide
+// with common words), unlike CITY_STATE_CODE_RE above which only trusts a
+// 2-letter code when it directly follows a city-shaped phrase.
+const STATE_NAME_ONLY_RE = new RegExp(String.raw`\b(${STATE_NAME_PATTERN})\b`, "g");
+
+function tryStateOnly(text: string): UsCityEntry | null {
+  for (const match of text.matchAll(STATE_NAME_ONLY_RE)) {
+    const code = STATE_NAME_TO_CODE[match[1].replace(/\s+/g, " ")];
+    const capital = code ? STATE_CAPITALS[code] : undefined;
+    if (!capital) continue;
+    const entry = pickEntry(capital.toLowerCase(), code);
+    if (entry) return entry;
+  }
+  return null;
+}
+
+// Geographic center of the contiguous US — last-resort pin for an article
+// with no location signal at all, so it still lands on the map instead of
+// vanishing (callers render this precision tier as visually approximate).
+const US_FALLBACK_CENTER = { lat: 39.8283, lon: -98.5795 };
+
+export function locateArticle(text: string): ArticleLocation {
   const cityStateEntry = tryCityState(text);
   const acronymMatch = tryAcronym(text);
   const departmentMatch = tryDepartment(text);
+  const cityEntry =
+    cityStateEntry ?? acronymMatch?.entry ?? departmentMatch?.entry ?? tryLooseScan(text);
 
-  const entry = cityStateEntry ?? acronymMatch?.entry ?? departmentMatch?.entry ?? tryLooseScan(text);
-  if (!entry) return null;
+  if (cityEntry) {
+    return {
+      city: cityEntry.city,
+      state: cityEntry.state,
+      lat: cityEntry.lat,
+      lon: cityEntry.lon,
+      department: departmentMatch?.department ?? acronymMatch?.department ?? null,
+      precision: "city",
+    };
+  }
+
+  const stateEntry = tryStateOnly(text);
+  if (stateEntry) {
+    return {
+      city: null,
+      state: stateEntry.state,
+      lat: stateEntry.lat,
+      lon: stateEntry.lon,
+      department: null,
+      precision: "state",
+    };
+  }
 
   return {
-    city: entry.city,
-    state: entry.state,
-    lat: entry.lat,
-    lon: entry.lon,
-    department: departmentMatch?.department ?? acronymMatch?.department ?? null,
+    city: null,
+    state: null,
+    lat: US_FALLBACK_CENTER.lat,
+    lon: US_FALLBACK_CENTER.lon,
+    department: null,
+    precision: "unknown",
   };
 }
