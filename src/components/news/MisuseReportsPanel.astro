@@ -1,0 +1,355 @@
+---
+// src/components/news/MisuseReportsPanel.astro
+//
+// Nationwide news-list sidebar for the "Misuse Reports" layer checkbox,
+// adapted from mn-data-center-watch's src/components/news/NewsFeedParent.astro.
+// Unlike that component, this one has no server-fetched initial payload —
+// the misuse-report RSS query is nationwide and comparatively heavy, so
+// it's only fetched client-side, lazily, the first time the checkbox is
+// turned on (see the `misusereportstoggle` listener below). MapParent
+// listens for this panel's `misusereportsupdate` event to build the map's
+// dot layer from the same data, so the two stay in sync without either one
+// owning the other.
+---
+
+<div
+  id="misuse-reports-panel"
+  class="hidden fixed md:absolute top-3 left-4 right-4 max-w-sm mx-auto md:mx-0 md:inset-x-auto md:top-0 md:bottom-0 md:right-0 md:left-auto z-50 md:z-30 pointer-events-auto font-sans bg-neutral-900/90 md:bg-neutral-900 backdrop-blur-xl md:backdrop-blur-md border border-white/10 md:border-l md:border-t-0 md:border-r-0 md:border-b-0 rounded-2xl md:rounded-none shadow-2xl shadow-black/60 md:w-96 flex flex-col overflow-hidden md:overflow-visible transition-transform duration-300 ease-out translate-x-0"
+>
+  <!-- Desktop Header -->
+  <div
+    id="mr-header-row"
+    class="hidden md:flex items-center gap-2.5 px-4 py-3.5 border-b border-white/10 shrink-0"
+  >
+    <div class="min-w-0 flex-1">
+      <h4 class="text-[10px] font-bold text-neutral-100 mt-1 uppercase tracking-wider leading-none">
+        Flock Misuse Reports (US)
+      </h4>
+    </div>
+  </div>
+
+  <!-- Date Range Selector -->
+  <div
+    id="mr-range-group"
+    role="group"
+    aria-label="Report date range"
+    class="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/10 shrink-0"
+  >
+    {
+      [
+        { label: "24H", days: 1 },
+        { label: "7D", days: 7 },
+        { label: "30D", days: 30 },
+        { label: "1Y", days: 365 },
+      ].map((opt) => (
+        <button
+          type="button"
+          class="mr-range-btn text-[9px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full border transition-colors text-neutral-500 border-white/10 hover:text-neutral-200"
+          data-days={opt.days}
+          aria-pressed={opt.days === 7 ? "true" : "false"}
+        >
+          {opt.label}
+        </button>
+      ))
+    }
+    <span id="mr-range-status" class="text-[9px] text-neutral-600 ml-auto uppercase tracking-wider" />
+  </div>
+
+  <!-- Mobile Notification (Carousel) -->
+  <div id="mr-mobile-wrap" class="md:hidden relative w-full flex flex-col">
+    <div id="mr-carousel" class="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar w-full">
+      <p class="text-neutral-500 text-xs w-full text-center p-4">Loading…</p>
+    </div>
+  </div>
+
+  <!-- Desktop List Content -->
+  <div id="mr-content-area" class="hidden md:block overflow-y-auto p-4 space-y-4 hide-scrollbar flex-1">
+    <p class="text-neutral-500 text-xs font-medium px-1">Loading…</p>
+  </div>
+
+  <!-- Mobile Close Action -->
+  <div class="block md:hidden border-t border-white/5 shrink-0">
+    <button
+      id="mr-mobile-close"
+      type="button"
+      class="w-full py-1.5 text-center text-[9px] font-bold uppercase tracking-wider text-neutral-500 hover:text-neutral-200 transition-colors"
+    >
+      Dismiss
+    </button>
+  </div>
+
+  <!-- Desktop pull-tab toggle -->
+  <button
+    id="mr-toggle"
+    type="button"
+    aria-expanded="true"
+    aria-controls="misuse-reports-panel"
+    aria-label="Toggle misuse reports panel"
+    class="hidden md:flex absolute z-40 items-center justify-center bg-neutral-900 border border-white/10 border-r-0 text-neutral-400 hover:text-neutral-100 hover:bg-[#17171d] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-emerald-400/50
+           top-1/2 left-0 -translate-x-full -translate-y-1/2 w-8 h-12 rounded-l-xl"
+  >
+    <svg id="mr-toggle-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" class="transition-transform duration-300 ease-out" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+    </svg>
+  </button>
+</div>
+
+<script>
+  import type { MisuseReportItem } from "~/lib/misuseReports";
+
+  const STORAGE_KEY = "misuseReportsCollapsed";
+  const DESKTOP_MEDIA_QUERY = "(min-width: 768px)";
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  let panelVisible = false;
+  let hasFetchedOnce = false;
+  let isCollapsed = false;
+  let cleanups: (() => void)[] = [];
+  let currentDays = 7;
+
+  // Same rationale as NewsFeedParent's articleCache: a narrower window's
+  // live query isn't a subset of a wider window's, and vice versa, so every
+  // range still fetches for itself — this pool just avoids losing articles
+  // already seen under a different range when switching back.
+  let articleCache = new Map<string, MisuseReportItem>();
+
+  function mergeItems(items: MisuseReportItem[]): void {
+    for (const item of items) articleCache.set(item.url, item);
+  }
+
+  function itemsWithinWindow(days: number): MisuseReportItem[] {
+    const cutoff = Date.now() - days * DAY_MS;
+    return Array.from(articleCache.values())
+      .filter((item) => new Date(item.published).getTime() >= cutoff)
+      .sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime());
+  }
+
+  function escapeHtml(value: string): string {
+    const div = document.createElement("div");
+    div.textContent = value;
+    return div.innerHTML;
+  }
+
+  function formatDate(published: string): string {
+    return new Date(published).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  function locationLine(item: MisuseReportItem): string {
+    if (!item.location) return "";
+    const place = `${item.location.city}, ${item.location.state}`;
+    const label = item.location.department ? item.location.department : place;
+    return `<span class="text-[10px] text-emerald-400/90 font-medium block mt-1">${escapeHtml(label)}</span>`;
+  }
+
+  function desktopItemHTML(item: MisuseReportItem): string {
+    return `
+      <article class="border-b border-white/5 pb-3.5 last:border-0 last:pb-0 group">
+        <span class="text-[9px] font-bold text-neutral-500 tracking-wider uppercase block mb-1">${escapeHtml(item.source)}</span>
+        <h3 class="text-xs font-medium text-neutral-200 hover:text-emerald-300 leading-snug">
+          <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>
+        </h3>
+        ${locationLine(item)}
+        <span class="text-[10px] text-neutral-500 block mt-1.5 font-medium">${formatDate(item.published)}</span>
+      </article>`;
+  }
+
+  function mobileItemHTML(item: MisuseReportItem): string {
+    return `
+      <article class="w-full shrink-0 snap-center p-3 flex flex-col justify-center">
+        <span class="text-[9px] font-bold text-emerald-400 tracking-wider uppercase block mb-0.5">Misuse Report</span>
+        <h3 class="text-xs font-medium text-neutral-200 leading-snug line-clamp-2">
+          <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a>
+        </h3>
+        ${locationLine(item)}
+      </article>`;
+  }
+
+  function renderItems(items: MisuseReportItem[], errorMessage: string | null): void {
+    const desktopArea = document.getElementById("mr-content-area");
+    const mobileWrap = document.getElementById("mr-mobile-wrap");
+    if (!desktopArea || !mobileWrap) return;
+
+    if (errorMessage) {
+      desktopArea.innerHTML = `<div class="p-3 bg-red-950/30 text-red-400 rounded-lg text-xs border border-red-900/50"><strong>Error:</strong> ${escapeHtml(errorMessage)}</div>`;
+      mobileWrap.innerHTML = `<div class="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar w-full"><div class="p-4 text-red-400 text-xs w-full text-center">${escapeHtml(errorMessage)}</div></div>`;
+      return;
+    }
+
+    if (items.length === 0) {
+      desktopArea.innerHTML = `<p class="text-neutral-500 text-xs font-medium px-1">No reports found for this range.</p>`;
+      mobileWrap.innerHTML = `<div class="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar w-full"><p class="text-neutral-500 text-xs w-full text-center p-4">No reports found.</p></div>`;
+      return;
+    }
+
+    desktopArea.innerHTML = items.map(desktopItemHTML).join("");
+    mobileWrap.innerHTML = `
+      <div id="mr-carousel" class="flex overflow-x-auto snap-x snap-mandatory hide-scrollbar w-full">
+        ${items.map(mobileItemHTML).join("")}
+      </div>`;
+  }
+
+  function updateRangeButtons(root: HTMLElement): void {
+    const buttons = root.querySelectorAll<HTMLButtonElement>(".mr-range-btn");
+    buttons.forEach((btn) => {
+      const isActive = Number(btn.dataset.days) === currentDays;
+      btn.setAttribute("aria-pressed", String(isActive));
+      btn.classList.toggle("text-emerald-300", isActive);
+      btn.classList.toggle("border-emerald-400/30", isActive);
+      btn.classList.toggle("bg-emerald-400/10", isActive);
+      btn.classList.toggle("text-neutral-500", !isActive);
+      btn.classList.toggle("border-white/10", !isActive);
+    });
+  }
+
+  function broadcastUpdate(): void {
+    document.dispatchEvent(
+      new CustomEvent("misusereportsupdate", {
+        detail: { items: Array.from(articleCache.values()) },
+      }),
+    );
+  }
+
+  async function loadRange(root: HTMLElement, days: number): Promise<void> {
+    currentDays = days;
+    updateRangeButtons(root);
+
+    const status = document.getElementById("mr-range-status");
+    if (status) status.textContent = "Loading…";
+    const buttons = root.querySelectorAll<HTMLButtonElement>(".mr-range-btn");
+    buttons.forEach((btn) => (btn.disabled = true));
+
+    try {
+      const res = await fetch(`/api/misuse-reports?days=${days}`);
+      if (!res.ok) throw new Error("Request failed");
+      const data = (await res.json()) as { newsItems: MisuseReportItem[]; errorMessage: string | null };
+      if (data.errorMessage) {
+        renderItems(itemsWithinWindow(days), articleCache.size > 0 ? null : data.errorMessage);
+      } else {
+        mergeItems(data.newsItems ?? []);
+        renderItems(itemsWithinWindow(days), null);
+        broadcastUpdate();
+      }
+    } catch {
+      renderItems(itemsWithinWindow(days), articleCache.size > 0 ? null : "Couldn't load reports for that range.");
+    } finally {
+      buttons.forEach((btn) => (btn.disabled = false));
+      if (status) status.textContent = "";
+    }
+  }
+
+  function updatePanelVisibility(): void {
+    const root = document.getElementById("misuse-reports-panel");
+    const toggleBtn = document.getElementById("mr-toggle") as HTMLButtonElement | null;
+    if (!root) return;
+
+    if (!panelVisible) {
+      root.classList.add("hidden");
+      return;
+    }
+    root.classList.remove("hidden");
+
+    const isDesktop = window.matchMedia(DESKTOP_MEDIA_QUERY).matches;
+    if (!isDesktop) {
+      root.classList.remove("translate-x-full");
+      root.classList.add("translate-x-0");
+      toggleBtn?.classList.add("hidden");
+      return;
+    }
+    toggleBtn?.classList.remove("hidden");
+    if (isCollapsed) {
+      root.classList.add("translate-x-full");
+      root.classList.remove("translate-x-0");
+    } else {
+      root.classList.remove("translate-x-full");
+      root.classList.add("translate-x-0");
+    }
+  }
+
+  function setCollapsed(next: boolean): void {
+    isCollapsed = next;
+    try {
+      localStorage.setItem(STORAGE_KEY, String(isCollapsed));
+    } catch {}
+    updatePanelVisibility();
+  }
+
+  function initPanel(): void {
+    const root = document.getElementById("misuse-reports-panel");
+    if (!root) return;
+
+    while (cleanups.length > 0) cleanups.pop()?.();
+
+    panelVisible = false;
+    hasFetchedOnce = false;
+    articleCache = new Map();
+    currentDays = 7;
+
+    try {
+      isCollapsed = localStorage.getItem(STORAGE_KEY) === "true";
+    } catch {
+      isCollapsed = false;
+    }
+
+    const rangeButtons = root.querySelectorAll<HTMLButtonElement>(".mr-range-btn");
+    rangeButtons.forEach((btn) => {
+      const onClick = () => {
+        const days = Number(btn.dataset.days);
+        if (!Number.isNaN(days) && days !== currentDays) loadRange(root, days);
+      };
+      btn.addEventListener("click", onClick);
+      cleanups.push(() => btn.removeEventListener("click", onClick));
+    });
+    updateRangeButtons(root);
+
+    const toggleBtn = document.getElementById("mr-toggle") as HTMLButtonElement | null;
+    const onToggleClick = () => setCollapsed(!isCollapsed);
+    toggleBtn?.addEventListener("click", onToggleClick);
+    cleanups.push(() => toggleBtn?.removeEventListener("click", onToggleClick));
+
+    const closeBtn = document.getElementById("mr-mobile-close") as HTMLButtonElement | null;
+    const onCloseClick = () => setCollapsed(true);
+    closeBtn?.addEventListener("click", onCloseClick);
+    cleanups.push(() => closeBtn?.removeEventListener("click", onCloseClick));
+
+    const desktopMql = window.matchMedia(DESKTOP_MEDIA_QUERY);
+    const onMediaChange = () => updatePanelVisibility();
+    desktopMql.addEventListener("change", onMediaChange);
+    cleanups.push(() => desktopMql.removeEventListener("change", onMediaChange));
+
+    const onMisuseToggle = (event: Event) => {
+      const detail = (event as CustomEvent<{ visible: boolean }>).detail;
+      if (!detail) return;
+      panelVisible = detail.visible;
+      updatePanelVisibility();
+      if (panelVisible && !hasFetchedOnce) {
+        hasFetchedOnce = true;
+        loadRange(root, currentDays);
+      }
+    };
+    document.addEventListener("misusereportstoggle", onMisuseToggle);
+    cleanups.push(() => document.removeEventListener("misusereportstoggle", onMisuseToggle));
+
+    updatePanelVisibility();
+  }
+
+  document.addEventListener("astro:page-load", initPanel);
+  if (document.readyState !== "loading") {
+    initPanel();
+  } else {
+    document.addEventListener("DOMContentLoaded", initPanel);
+  }
+</script>
+
+<style>
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+</style>
