@@ -253,19 +253,34 @@ import MisuseReportsPanel from "~/components/news/MisuseReportsPanel.astro";
     return div.innerHTML;
   }
 
+  // "city" is a real, specific match; "state"/"unknown" are guaranteed
+  // fallbacks so every article still gets a dot (see geocodeArticle.ts) —
+  // labeled here as approximate rather than presented as a precise pin.
+  function locationLabel(precision: string, department: string | null, city: string | null, state: string | null): string | null {
+    if (precision === "city") return department ?? (city && state ? `${city}, ${state}` : null);
+    if (precision === "state") return state ? `~ ${state} (approximate)` : null;
+    return "Location unknown (approximate)";
+  }
+
   function buildMisuseReportPopupHtml(props: Record<string, any>): string {
     const title = String(props.title ?? "Misuse report");
     const source = String(props.source ?? "News");
     const department = props.department ? String(props.department) : null;
     const city = props.city ? String(props.city) : null;
     const state = props.state ? String(props.state) : null;
+    const precision = String(props.precision ?? "city");
     const url = String(props.url ?? "#");
     const published = props.published ? new Date(String(props.published)) : null;
     const dateText =
       published && !Number.isNaN(published.getTime())
         ? published.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
         : null;
-    const placeLabel = department ?? (city && state ? `${city}, ${state}` : null);
+    const placeLabel = locationLabel(precision, department, city, state);
+
+    let relatedSources: { title: string; url: string; source: string }[] = [];
+    try {
+      relatedSources = props.relatedSources ? JSON.parse(String(props.relatedSources)) : [];
+    } catch {}
 
     return `
       <div style="font: 13px/1.4 system-ui, sans-serif; max-width: 260px;">
@@ -279,6 +294,21 @@ import MisuseReportsPanel from "~/components/news/MisuseReportsPanel.astro";
         <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; font-weight: 600; font-size: 11px; text-decoration: none;">
           Open article &rarr;
         </a>
+        ${
+          relatedSources.length > 0
+            ? `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;">
+                <div style="color: #6b7280; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px;">
+                  Covered by ${relatedSources.length} other outlet${relatedSources.length === 1 ? "" : "s"}
+                </div>
+                ${relatedSources
+                  .map(
+                    (s) =>
+                      `<a href="${escapeHtml(s.url)}" target="_blank" rel="noopener noreferrer" style="display: block; color: #2563eb; font-size: 11px; text-decoration: none; margin-bottom: 2px;">${escapeHtml(s.source)}</a>`,
+                  )
+                  .join("")}
+              </div>`
+            : ""
+        }
       </div>
     `;
   }
@@ -286,24 +316,24 @@ import MisuseReportsPanel from "~/components/news/MisuseReportsPanel.astro";
   function buildMisuseGeoJson(items: MisuseReportItem[]): FeatureCollection {
     return {
       type: "FeatureCollection",
-      features: items
-        .filter((item) => item.location)
-        .map((item) => ({
-          type: "Feature",
-          geometry: {
-            type: "Point",
-            coordinates: [item.location!.lon, item.location!.lat],
-          },
-          properties: {
-            title: item.title,
-            url: item.url,
-            source: item.source,
-            published: item.published,
-            department: item.location!.department,
-            city: item.location!.city,
-            state: item.location!.state,
-          },
-        })),
+      features: items.map((item) => ({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: [item.location.lon, item.location.lat],
+        },
+        properties: {
+          title: item.title,
+          url: item.url,
+          source: item.source,
+          published: item.published,
+          department: item.location.department,
+          city: item.location.city,
+          state: item.location.state,
+          precision: item.location.precision,
+          relatedSources: item.relatedSources ? JSON.stringify(item.relatedSources) : null,
+        },
+      })),
     };
   }
 
@@ -632,7 +662,10 @@ import MisuseReportsPanel from "~/components/news/MisuseReportsPanel.astro";
           "circle-radius": 7,
           "circle-stroke-width": 2,
           "circle-stroke-color": "#ffffff",
-          "circle-opacity": 0.9,
+          // "city" is a real match; "state"/"unknown" are guaranteed
+          // fallbacks (see geocodeArticle.ts) — dimmed so they read as
+          // approximate rather than a precise pin.
+          "circle-opacity": ["match", ["get", "precision"], "city", 0.9, 0.35],
         },
       });
       interactiveLayers.push({ domId: MISUSE_LAYER_ID, configId: "misuse-reports", kind: "misuse" });

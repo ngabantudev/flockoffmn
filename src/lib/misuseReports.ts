@@ -24,7 +24,11 @@ export interface MisuseReportItem {
   url: string;
   published: string;
   source: string;
-  location: ArticleLocation | null;
+  location: ArticleLocation;
+  // Other outlets' coverage of the same incident, once clustered (see
+  // src/lib/dedupeMisuseReports.ts) — present only when this item is the
+  // canonical dot for a multi-source cluster.
+  relatedSources?: { title: string; url: string; source: string; published: string }[];
 }
 
 // --- Tune these lists to control precision without touching fetch/parse ---
@@ -58,6 +62,11 @@ const COMPANY_ACTOR_TERMS = [
   "flock worker", "flock safety worker", "flock executive", "flock safety executive",
   "company employee", "corporate worker", "corporate employee", "sales rep", "salesperson",
 ];
+// A city council/county board deciding to adopt, renew, or cut off a Flock
+// contract is itself an accountability story even when no individual
+// officer or employee is named (e.g. "Columbus City Council" debating an
+// ICE-sharing policy).
+const CIVIC_ACTOR_TERMS = ["city council", "county board", "city commission"];
 
 // Must match at least one *alongside* an actor mention above — covers
 // confirmed-misuse stories (lawsuit, audit, illegal...), the broader
@@ -77,7 +86,16 @@ const MISUSE_TERMS = [
   "stalk", "stalking", "ex-girlfriend", "ex-boyfriend", "ex-wife", "ex-husband",
   "domestic violence", "romantic partner", "abortion", "reproductive",
   "spying on", "spy on", "children", "kids", "minor", "minors",
+  "immigration enforcement", "immigration raid", "deportation",
+  "customs and border protection", "immigrant",
 ];
+// "ICE"/"DHS"/"CBP" as bare lowercase substrings would match "ice cream",
+// "this deadline" (contains "dhs"? no — but still, short acronyms are
+// exactly the false-positive-prone case COP_TEST_RE already exists for),
+// so these are matched case-sensitively against the *original* text
+// instead of the lowercased haystack — real reporting always renders the
+// agency in caps, unlike incidental lowercase words.
+const FEDERAL_IMMIGRATION_AGENCY_RE = /\b(ICE|DHS|CBP)\b/;
 
 const PD_ACRONYM_TEST_RE = new RegExp(String.raw`\b(${KNOWN_PD_ACRONYMS.join("|")})\b`, "i");
 
@@ -109,8 +127,8 @@ async function runMisuseReportsQuery(
 ): Promise<{ newsItems: MisuseReportItem[]; errorMessage: string | null }> {
   const rawQuery =
     `("Flock Safety" OR "Flock camera" OR "license plate reader" OR "license plate camera" OR ALPR OR "mass surveillance") ` +
-    `(police OR sheriff OR officer OR deputy OR detective OR trooper OR cop OR cops OR "police department" OR LAPD OR NYPD OR CPD OR employee OR employees OR staff OR "sales rep") ` +
-    `(misuse OR abuse OR unauthorized OR violation OR lawsuit OR scandal OR audit OR overreach OR "without a warrant" OR illegal OR privacy OR "civil liberties" OR surveillance OR oversight OR contract OR stalk OR stalking OR "ex-girlfriend" OR "ex-boyfriend" OR "domestic violence" OR abortion OR reproductive OR "spying on" OR children OR kids) ` +
+    `(police OR sheriff OR officer OR deputy OR detective OR trooper OR cop OR cops OR "police department" OR LAPD OR NYPD OR CPD OR employee OR employees OR staff OR "sales rep" OR "city council" OR "county board") ` +
+    `(misuse OR abuse OR unauthorized OR violation OR lawsuit OR scandal OR audit OR overreach OR "without a warrant" OR illegal OR privacy OR "civil liberties" OR surveillance OR oversight OR contract OR stalk OR stalking OR "ex-girlfriend" OR "ex-boyfriend" OR "domestic violence" OR abortion OR reproductive OR "spying on" OR children OR kids OR ICE OR DHS OR CBP OR immigration OR deportation) ` +
     dateQuery;
   const query = encodeURIComponent(rawQuery);
   const googleNewsUrl = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
@@ -169,8 +187,11 @@ async function runMisuseReportsQuery(
           LAW_ENFORCEMENT_TERMS.some((t) => item.haystack.includes(t)) ||
           PD_ACRONYM_TEST_RE.test(item.combinedText) ||
           COP_TEST_RE.test(item.combinedText) ||
-          COMPANY_ACTOR_TERMS.some((t) => item.haystack.includes(t));
-        const hasMisuse = MISUSE_TERMS.some((t) => item.haystack.includes(t));
+          COMPANY_ACTOR_TERMS.some((t) => item.haystack.includes(t)) ||
+          CIVIC_ACTOR_TERMS.some((t) => item.haystack.includes(t));
+        const hasMisuse =
+          MISUSE_TERMS.some((t) => item.haystack.includes(t)) ||
+          FEDERAL_IMMIGRATION_AGENCY_RE.test(item.combinedText);
         return hasCamera && hasActor && hasMisuse;
       })
       .sort((a, b) => new Date(b.published).getTime() - new Date(a.published).getTime())
