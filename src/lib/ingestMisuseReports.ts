@@ -4,10 +4,12 @@
 // whatever window Google's feed currently exposes. Called from the
 // scheduled() handler in src/worker.ts, and reuses fetchMisuseReports
 // (src/lib/misuseReports.ts) as-is for the actual fetch/filter/geocode work
-// — this module only adds the "figure out how far back to look, then write
-// rows" part.
+// — this module adds "figure out how far back to look, write rows, then
+// cluster any new rows against cross-outlet duplicates" (the last part is
+// src/lib/dedupeMisuseReports.ts).
 
 import { fetchMisuseReports, fetchMisuseReportsSince } from "~/lib/misuseReports";
+import { clusterNewReports } from "~/lib/dedupeMisuseReports";
 
 // Flock Safety was founded in 2017 — a from-empty run queries all the way
 // back to then (the widest possible backfill Google's feed could ever
@@ -26,7 +28,7 @@ function toIsoDate(rfc822: string): string {
 
 export async function ingestMisuseReports(
   db: D1Database,
-): Promise<{ fetched: number; inserted: number; errorMessage: string | null }> {
+): Promise<{ fetched: number; inserted: number; clustered: number; errorMessage: string | null }> {
   const countRow = await db.prepare("SELECT COUNT(*) as count FROM misuse_reports").first<{ count: number }>();
   const isFirstRun = !countRow || countRow.count === 0;
 
@@ -34,12 +36,14 @@ export async function ingestMisuseReports(
     ? await fetchMisuseReportsSince(FLOCK_FOUNDING_DATE)
     : await fetchMisuseReports(ROLLING_WINDOW_DAYS);
   if (errorMessage || newsItems.length === 0) {
-    return { fetched: 0, inserted: 0, errorMessage };
+    return { fetched: 0, inserted: 0, clustered: 0, errorMessage };
   }
 
+  // cluster_id is intentionally left NULL here — clusterNewReports below
+  // assigns it (comparing against the whole table, not just this batch).
   const insertStmt = db.prepare(
-    `INSERT OR IGNORE INTO misuse_reports (url, title, source, published_at, city, state, lat, lon, department)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO misuse_reports (url, title, source, published_at, city, state, lat, lon, department, location_precision)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const batch = newsItems.map((item) =>
@@ -48,16 +52,19 @@ export async function ingestMisuseReports(
       item.title,
       item.source,
       toIsoDate(item.published),
-      item.location?.city ?? null,
-      item.location?.state ?? null,
-      item.location?.lat ?? null,
-      item.location?.lon ?? null,
-      item.location?.department ?? null,
+      item.location.city,
+      item.location.state,
+      item.location.lat,
+      item.location.lon,
+      item.location.department,
+      item.location.precision,
     ),
   );
 
   const results = await db.batch(batch);
   const inserted = results.reduce((sum, r) => sum + (r.meta?.changes ?? 0), 0);
 
-  return { fetched: newsItems.length, inserted, errorMessage: null };
+  const { clustered } = await clusterNewReports(db);
+
+  return { fetched: newsItems.length, inserted, clustered, errorMessage: null };
 }
