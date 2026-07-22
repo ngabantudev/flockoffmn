@@ -1,0 +1,865 @@
+---
+// src/components/map/MapParent.astro
+import MisuseReportsPanel from "~/components/news/MisuseReportsPanel.astro";
+---
+
+<section
+  id="map-workspace"
+  class="relative w-full h-dvh overflow-hidden bg-[#f4f4f5]"
+>
+  <div class="relative w-full h-full">
+    <div id="map" class="absolute inset-0 w-full h-full bg-[#f4f4f5]"></div>
+
+    <div
+      id="camera-count-bar"
+      class="absolute top-0 left-0 right-0 z-40 flex items-center justify-center h-10 bg-white/90 backdrop-blur-sm border-b border-neutral-200 shadow-sm font-sans text-sm font-semibold text-neutral-800"
+    >
+      <span id="camera-count-text">Loading camera count&hellip;</span>
+    </div>
+
+    <div id="map-controls" class="absolute left-3 top-14 z-20 flex flex-col gap-2 font-sans">
+      <div
+        role="group"
+        aria-label="Map layers"
+        class="rounded-lg bg-white/90 backdrop-blur-sm border border-neutral-200 shadow-lg divide-y divide-neutral-100 text-sm text-neutral-700"
+      >
+        <label class="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
+          <input id="cameras-toggle" type="checkbox" checked class="cursor-pointer" />
+          Camera Locations
+        </label>
+        <label class="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
+          <input id="wards-toggle" type="checkbox" checked class="cursor-pointer" />
+          City wards
+        </label>
+        <label class="flex items-center gap-2 px-3 py-2 cursor-pointer select-none">
+          <input id="misuse-toggle" type="checkbox" class="cursor-pointer" />
+          Misuse Reports
+        </label>
+      </div>
+    </div>
+
+    <MisuseReportsPanel />
+  </div>
+</section>
+
+<script>
+  import maplibregl from "maplibre-gl";
+  import * as pmtiles from "pmtiles";
+  import "maplibre-gl/dist/maplibre-gl.css";
+  import { getDefaultMapStyleUrl } from "~/data/mapStyles";
+  import { PMTILES_LAYERS, getPmtilesBaseUrl } from "~/data/mapLayers";
+  import type { PmtilesLayerConfig } from "~/data/mapLayers";
+  import type { MisuseReportItem } from "~/lib/misuseReports";
+  import type { FeatureCollection } from "geojson";
+
+  // Register PMTiles protocol globally
+  try {
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+  } catch (e) {}
+
+  const MINNESOTA_CENTER: [number, number] = [-93.265, 44.9778];
+  const MOBILE_ZOOM = 6.8;
+  const DESKTOP_ZOOM = 6;
+  const DEFAULT_ZOOM = window.innerWidth < 768 ? MOBILE_ZOOM : DESKTOP_ZOOM;
+
+  // Misuse Reports is the only nationwide layer — turning it on flies out to
+  // a US-wide view (Minnesota's camera/ward data is still visible within
+  // that, just smaller); turning it off (with nothing else needing the wide
+  // view) flies back to the Minnesota default.
+  const US_CENTER: [number, number] = [-98.5, 39.8];
+  const US_ZOOM = window.innerWidth < 768 ? 3.1 : 3.6;
+
+  const CLUSTER_CLICK_ZOOM_STEP = 3;
+  // Matches the `id` in src/data/mapLayers.ts for the wards config.
+  const WARDS_LAYER_ID = "city-wards";
+  // Matches the `id` in src/data/mapLayers.ts for the flock-cameras config.
+  const CAMERA_LAYER_ID = "flock-cameras";
+  const MISUSE_SOURCE_ID = "misuse-reports-source";
+  const MISUSE_LAYER_ID = "misuse-reports-layer";
+
+  let mapInstance: maplibregl.Map | null = null;
+  let mapCleanups: (() => void)[] = [];
+  // These three persist across re-inits (e.g. astro:page-load) so toggles
+  // don't silently reset if the map gets recreated. Fully independent —
+  // there's no exclusive "mode" anymore, any combination can be on at once.
+  let wardsVisible = true;
+  let camerasVisible = true;
+  let misuseVisible = false;
+
+  // Populated from MisuseReportsPanel's "misusereportsupdate" event, which
+  // fires independently of this checkbox (the panel owns fetching, the map
+  // just renders whatever it has) — so turning Misuse Reports on always
+  // shows the latest data even if the fetch happened while it was off.
+  let misuseGeoJson: FeatureCollection = { type: "FeatureCollection", features: [] };
+
+  interface PMTilesMetadata {
+    vector_layers?: Array<{
+      id: string;
+      fields?: Record<string, string>;
+      [key: string]: any;
+    }>;
+    [key: string]: any;
+  }
+
+  // Common attribute names for a human-readable label, in priority order.
+  // Matched case-insensitively since ward/camera exports won't agree on
+  // naming (WARD_NAME vs Ward vs Name, etc).
+  const LABEL_FIELD_CANDIDATES = [
+    "name",
+    "ward_name",
+    "ward",
+    "location",
+    "address",
+    "label",
+    "city_name",
+  ];
+
+  function pickLabelField(fields?: Record<string, string>): string | null {
+    if (!fields) return null;
+    const keys = Object.keys(fields);
+    const exactMatch = keys.find((k) =>
+      LABEL_FIELD_CANDIDATES.includes(k.toLowerCase()),
+    );
+    if (exactMatch) return exactMatch;
+    return keys.find((k) => fields[k]?.toLowerCase() === "string") ?? null;
+  }
+
+  // Registered as layers are added, so hover/click handlers can map a
+  // MapLibre layer id back to (a) which PMTILES_LAYERS config it belongs to
+  // and (b) what kind of feature it renders, without parsing id strings.
+  type InteractiveKind = "area" | "cluster" | "point" | "misuse";
+  interface InteractiveLayer {
+    domId: string;
+    configId: string;
+    kind: InteractiveKind;
+  }
+
+  function pickCameraAddress(props: Record<string, any>): string | null {
+    const street = props["addr:street"];
+    if (!street) return null;
+    const houseNumber = props["addr:housenumber"];
+    return houseNumber ? `${houseNumber} ${street}` : String(street);
+  }
+
+  const COMPASS_POINTS = [
+    "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+    "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",
+  ];
+
+  function formatDirection(raw: unknown): string | null {
+    const deg = Number(raw);
+    if (!Number.isFinite(deg)) return null;
+    const normalized = ((deg % 360) + 360) % 360;
+    const point = COMPASS_POINTS[Math.round(normalized / 22.5) % 16];
+    return `${Math.round(normalized)}° (${point})`;
+  }
+
+  // Renders a translucent wedge as a data URI icon MapLibre can rotate
+  // per-feature via icon-rotate — this is the same trick behind DeFlock's
+  // camera-facing indicator, just driven by whichever direction tag the OSM
+  // node actually has (camera:direction is the more specific tag, but the
+  // plain direction tag is far more commonly set by contributors).
+  function createFovIconImageData(): ImageData {
+    const width = 64;
+    const height = 90;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d")!;
+
+    const apex = { x: width / 2, y: height - 4 };
+    const length = height - 14;
+    const halfAngle = (32 * Math.PI) / 180; // ~64° total field of view
+    const leftX = apex.x - length * Math.sin(halfAngle);
+    const leftY = apex.y - length * Math.cos(halfAngle);
+    const rightX = apex.x + length * Math.sin(halfAngle);
+    const rightY = apex.y - length * Math.cos(halfAngle);
+
+    ctx.beginPath();
+    ctx.moveTo(apex.x, apex.y);
+    ctx.lineTo(leftX, leftY);
+    ctx.quadraticCurveTo(apex.x, apex.y - length * 1.15, rightX, rightY);
+    ctx.closePath();
+
+    const gradient = ctx.createLinearGradient(apex.x, apex.y, apex.x, apex.y - length);
+    gradient.addColorStop(0, "rgba(220, 38, 38, 0.5)");
+    gradient.addColorStop(1, "rgba(220, 38, 38, 0.04)");
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    return ctx.getImageData(0, 0, width, height);
+  }
+
+  // OSM's check_date convention is a plain YYYY-MM-DD string set by whoever
+  // last confirmed the camera is still there — not every node has one, and
+  // it's community-maintained so can be stale, but it's the closest thing
+  // to a "last verified" signal in the source data.
+  function formatCheckDate(raw: unknown): string | null {
+    if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      return typeof raw === "string" && raw ? raw : null;
+    }
+    const date = new Date(`${raw}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) return raw;
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  }
+
+  function buildCameraPopupHtml(
+    props: Record<string, any>,
+    coordinates: [number, number],
+  ): string {
+    const address = pickCameraAddress(props);
+    const operator = props["operator"];
+    const manufacturer = props["manufacturer"];
+    const checkDate = formatCheckDate(props["check_date"]);
+    const direction = formatDirection(props["camera:direction"] ?? props["direction"]);
+    const [lng, lat] = coordinates;
+
+    const rows = [
+      manufacturer ? `Manufacturer: ${manufacturer}` : null,
+      direction ? `Facing: ${direction}` : null,
+      address,
+      operator ? `Operator: ${operator}` : null,
+    ].filter(Boolean);
+
+    return `
+      <div style="font: 13px/1.4 system-ui, sans-serif; max-width: 240px;">
+        <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px;">
+          Flock Safety camera
+        </div>
+        <p style="margin: 0 0 6px 0; color: #374151;">
+          An automated license plate reader (ALPR). It photographs the
+          plate, time, and location of every vehicle that passes — logged
+          whether or not you're suspected of anything, and searchable by
+          law enforcement.
+        </p>
+        ${rows.map((row) => `<div style="color: #6b7280;">${row}</div>`).join("")}
+        <div style="color: #9ca3af; font-family: ui-monospace, monospace; font-size: 11px; margin-top: 4px;">
+          ${lat.toFixed(5)}, ${lng.toFixed(5)}
+        </div>
+        ${checkDate ? `<div style="color: #6b7280;">Verified: ${checkDate}</div>` : `<div style="color: #9ca3af; font-style: italic;">Verification date unknown</div>`}
+      </div>
+    `;
+  }
+
+  function escapeHtml(value: string): string {
+    const div = document.createElement("div");
+    div.textContent = value;
+    return div.innerHTML;
+  }
+
+  function buildMisuseReportPopupHtml(props: Record<string, any>): string {
+    const title = String(props.title ?? "Misuse report");
+    const source = String(props.source ?? "News");
+    const department = props.department ? String(props.department) : null;
+    const city = props.city ? String(props.city) : null;
+    const state = props.state ? String(props.state) : null;
+    const url = String(props.url ?? "#");
+    const published = props.published ? new Date(String(props.published)) : null;
+    const dateText =
+      published && !Number.isNaN(published.getTime())
+        ? published.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        : null;
+    const placeLabel = department ?? (city && state ? `${city}, ${state}` : null);
+
+    return `
+      <div style="font: 13px/1.4 system-ui, sans-serif; max-width: 260px;">
+        ${placeLabel ? `<div style="color: #dc2626; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px;">${escapeHtml(placeLabel)}</div>` : ""}
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #111827;">
+          ${escapeHtml(title)}
+        </div>
+        <div style="color: #6b7280; font-size: 11px; margin-bottom: 8px;">
+          ${escapeHtml(source)}${dateText ? ` · ${dateText}` : ""}
+        </div>
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; font-weight: 600; font-size: 11px; text-decoration: none;">
+          Open article &rarr;
+        </a>
+      </div>
+    `;
+  }
+
+  function buildMisuseGeoJson(items: MisuseReportItem[]): FeatureCollection {
+    return {
+      type: "FeatureCollection",
+      features: items
+        .filter((item) => item.location)
+        .map((item) => ({
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: [item.location!.lon, item.location!.lat],
+          },
+          properties: {
+            title: item.title,
+            url: item.url,
+            source: item.source,
+            published: item.published,
+            department: item.location!.department,
+            city: item.location!.city,
+            state: item.location!.state,
+          },
+        })),
+    };
+  }
+
+  function initMap(): void {
+    const mapElement = document.getElementById("map");
+    if (!mapElement) return;
+
+    if (mapInstance) {
+      try {
+        mapInstance.remove();
+      } catch (e) {}
+      mapInstance = null;
+    }
+    while (mapCleanups.length > 0) {
+      mapCleanups.pop()?.();
+    }
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style: getDefaultMapStyleUrl(),
+      center: MINNESOTA_CENTER,
+      zoom: DEFAULT_ZOOM,
+      scrollZoom: true,
+      attributionControl: false,
+      cooperativeGestures: window.innerWidth < 768,
+    });
+    mapInstance = map;
+
+    map.addControl(
+      new maplibregl.NavigationControl({ showCompass: false }),
+      "bottom-right",
+    );
+
+    map.on("error", (e) => {
+      console.error("[MapLibre ERROR]", e.error?.message ?? e, e);
+    });
+
+    const baseUrl = getPmtilesBaseUrl();
+    const discoveredSourceLayers: Record<string, string> = {};
+    const discoveredLabelFields: Record<string, string | null> = {};
+    const interactiveLayers: InteractiveLayer[] = [];
+    // Populated as layers are added, kept separate so Camera Locations and
+    // City wards can be shown/hidden completely independently of each
+    // other (previously wards were nested inside "camera mode").
+    const wardsDomIds: string[] = [];
+    const cameraDomIds: string[] = [];
+
+    const addAreaLayer = (layer: PmtilesLayerConfig, sourceId: string, sourceLayerName: string) => {
+      const domId = `${layer.id}-layer`;
+      const isWards = layer.id === WARDS_LAYER_ID;
+      const initialVisibility = isWards ? (wardsVisible ? "visible" : "none") : undefined;
+
+      if (!map.getLayer(domId)) {
+        map.addLayer({
+          id: domId,
+          type: layer.type,
+          source: sourceId,
+          "source-layer": sourceLayerName,
+          paint: layer.paint as any,
+          layout: initialVisibility ? { visibility: initialVisibility } : undefined,
+        });
+        interactiveLayers.push({ domId, configId: layer.id, kind: "area" });
+        wardsDomIds.push(domId);
+      }
+
+      // Crisper, width-controllable border on top of the fill's own
+      // fill-outline-color (which MapLibre always renders at 1px).
+      if (layer.outlinePaint) {
+        const outlineDomId = `${layer.id}-outline-layer`;
+        if (!map.getLayer(outlineDomId)) {
+          map.addLayer({
+            id: outlineDomId,
+            type: "line",
+            source: sourceId,
+            "source-layer": sourceLayerName,
+            paint: layer.outlinePaint as any,
+            layout: initialVisibility ? { visibility: initialVisibility } : undefined,
+          });
+          wardsDomIds.push(outlineDomId);
+        }
+      }
+
+      // Always-on label (e.g. "Ward 7"), separate from the hover-only
+      // tooltip in getAreaLabel below.
+      if (layer.labelField) {
+        const labelDomId = `${layer.id}-label-layer`;
+        if (!map.getLayer(labelDomId)) {
+          map.addLayer({
+            id: labelDomId,
+            type: "symbol",
+            source: sourceId,
+            "source-layer": sourceLayerName,
+            layout: {
+              "text-field": layer.labelPrefix
+                ? ["concat", layer.labelPrefix, ["to-string", ["get", layer.labelField]]]
+                : ["to-string", ["get", layer.labelField]],
+              "text-font": ["Open Sans Bold"],
+              "text-size": 12,
+              "text-allow-overlap": false,
+              ...(initialVisibility ? { visibility: initialVisibility } : {}),
+            } as any,
+            paint: (layer.labelPaint ?? { "text-color": "#1f2937" }) as any,
+          });
+          wardsDomIds.push(labelDomId);
+        }
+      }
+    };
+
+    const addClusteredCircleLayers = (
+      layer: PmtilesLayerConfig,
+      sourceId: string,
+      sourceLayerName: string,
+    ) => {
+      const clusterDomId = `${layer.id}-clusters-layer`;
+      const clusterLabelDomId = `${layer.id}-cluster-count-layer`;
+      const pointDomId = `${layer.id}-points-layer`;
+
+      if (!map.getLayer(clusterDomId)) {
+        map.addLayer({
+          id: clusterDomId,
+          type: "circle",
+          source: sourceId,
+          "source-layer": sourceLayerName,
+          filter: ["==", ["get", "clustered"], true],
+          paint: (layer.clusterPaint ?? {}) as any,
+        });
+        interactiveLayers.push({ domId: clusterDomId, configId: layer.id, kind: "cluster" });
+        cameraDomIds.push(clusterDomId);
+      }
+
+      if (!map.getLayer(clusterLabelDomId)) {
+        map.addLayer({
+          id: clusterLabelDomId,
+          type: "symbol",
+          source: sourceId,
+          "source-layer": sourceLayerName,
+          filter: ["==", ["get", "clustered"], true],
+          layout: {
+            "text-field": ["get", "point_count_abbreviated"],
+            "text-font": ["Open Sans Bold"],
+            "text-size": 12,
+            "text-allow-overlap": true,
+          },
+          paint: (layer.clusterTextPaint ?? {}) as any,
+        });
+        cameraDomIds.push(clusterLabelDomId);
+      }
+
+      // Added before the dot layer below (and MapLibre stacks new layers on
+      // top of existing ones), so the cone renders behind/under the dot
+      // rather than covering it.
+      const fovDomId = `${layer.id}-fov-layer`;
+      if (!map.getLayer(fovDomId) && map.hasImage("camera-fov")) {
+        map.addLayer({
+          id: fovDomId,
+          type: "symbol",
+          source: sourceId,
+          "source-layer": sourceLayerName,
+          // Individual dots are already visible from z8 (cluster-maxzoom in
+          // build-pmtiles.sh), but the facing cone is only useful once
+          // you're zoomed in enough to actually see nearby streets — below
+          // that it's just visual noise on top of the dot.
+          minzoom: 12,
+          filter: [
+            "all",
+            ["!=", ["get", "clustered"], true],
+            ["any", ["has", "camera:direction"], ["has", "direction"]],
+          ],
+          layout: {
+            "icon-image": "camera-fov",
+            "icon-size": 0.9,
+            "icon-rotate": [
+              "to-number",
+              ["coalesce", ["get", "camera:direction"], ["get", "direction"]],
+            ],
+            "icon-rotation-alignment": "map",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "icon-anchor": "bottom",
+          },
+        });
+        cameraDomIds.push(fovDomId);
+      }
+
+      if (!map.getLayer(pointDomId)) {
+        map.addLayer({
+          id: pointDomId,
+          type: "circle",
+          source: sourceId,
+          "source-layer": sourceLayerName,
+          filter: ["!=", ["get", "clustered"], true],
+          paint: layer.paint as any,
+        });
+        interactiveLayers.push({ domId: pointDomId, configId: layer.id, kind: "point" });
+        cameraDomIds.push(pointDomId);
+      }
+    };
+
+    const syncPmtilesLayers = async () => {
+      if (!baseUrl) return; // no bucket configured yet — skip silently
+
+      for (const layer of PMTILES_LAYERS) {
+        if (!discoveredSourceLayers[layer.id]) {
+          const fileUrl = `${baseUrl}/${layer.fileName}`;
+          try {
+            const p = new pmtiles.PMTiles(fileUrl);
+            const meta = (await p.getMetadata()) as PMTilesMetadata;
+
+            if (meta && meta.vector_layers && meta.vector_layers.length > 0) {
+              const vectorLayerMeta = meta.vector_layers[0];
+              discoveredSourceLayers[layer.id] = vectorLayerMeta.id;
+              discoveredLabelFields[layer.id] = pickLabelField(
+                vectorLayerMeta.fields,
+              );
+            } else {
+              discoveredSourceLayers[layer.id] = layer.fallbackLayerName;
+              discoveredLabelFields[layer.id] = null;
+            }
+          } catch (err) {
+            console.error(`[PMTiles ERROR] Metadata failed for ${layer.id}`, err);
+            discoveredSourceLayers[layer.id] = layer.fallbackLayerName;
+            discoveredLabelFields[layer.id] = null;
+          }
+        }
+      }
+
+      if (!map.isStyleLoaded()) {
+        await new Promise<void>((resolve) => map.once("idle", () => resolve()));
+      }
+
+      for (const layer of PMTILES_LAYERS) {
+        const sourceId = `${layer.id}-source`;
+        const sourceLayerName = discoveredSourceLayers[layer.id];
+        if (!sourceLayerName) continue;
+
+        const fileUrl = `${baseUrl}/${layer.fileName}`;
+        const protocolUrl = `pmtiles://${fileUrl}`;
+
+        if (!map.getSource(sourceId)) {
+          map.addSource(sourceId, {
+            type: "vector",
+            url: protocolUrl,
+          });
+        }
+        if (!map.getSource(sourceId)) continue;
+
+        try {
+          if (layer.cluster && layer.type === "circle") {
+            addClusteredCircleLayers(layer, sourceId, sourceLayerName);
+          } else {
+            addAreaLayer(layer, sourceId, sourceLayerName);
+          }
+        } catch (err) {
+          console.error(`[PMTiles ERROR] Failed to add layer(s) for ${layer.id}:`, err);
+        }
+      }
+
+      // A toggle may have changed while these layers were still loading
+      // (async metadata fetch above) — apply whatever state is current now
+      // that they actually exist, rather than always defaulting to visible.
+      setWardsVisible(wardsVisible);
+      setCamerasVisible(camerasVisible);
+      updateCameraCount();
+    };
+
+    const setWardsVisible = (visible: boolean) => {
+      for (const domId of wardsDomIds) {
+        if (!map.getLayer(domId)) continue;
+        map.setLayoutProperty(domId, "visibility", visible ? "visible" : "none");
+      }
+    };
+
+    const setCamerasVisible = (visible: boolean) => {
+      for (const domId of cameraDomIds) {
+        if (!map.getLayer(domId)) continue;
+        map.setLayoutProperty(domId, "visibility", visible ? "visible" : "none");
+      }
+    };
+
+    const cameraCountBar = document.getElementById("camera-count-bar");
+    const cameraCountText = document.getElementById("camera-count-text");
+
+    // "On screen" = whatever queryRenderedFeatures finds with no bounding
+    // box (the current viewport), summing cluster point_count for bubbled
+    // cameras and counting unclustered dots individually. Dedupes on
+    // osm_id (stable per camera) since vector-tile features straddling a
+    // tile boundary can otherwise be returned twice.
+    const updateCameraCount = () => {
+      if (!cameraCountText || !camerasVisible) return;
+      const clusterDomId = `${CAMERA_LAYER_ID}-clusters-layer`;
+      const pointDomId = `${CAMERA_LAYER_ID}-points-layer`;
+      const layers = [clusterDomId, pointDomId].filter((id) => map.getLayer(id));
+      if (layers.length === 0) {
+        cameraCountText.textContent = "Camera data unavailable";
+        return;
+      }
+
+      const features = map.queryRenderedFeatures(undefined, { layers });
+      const seen = new Set<string>();
+      let total = 0;
+      for (const feature of features) {
+        const props = feature.properties || {};
+        const key = String(
+          props.osm_id ??
+            feature.id ??
+            `${feature.geometry.type}:${JSON.stringify((feature.geometry as any).coordinates)}`,
+        );
+        if (seen.has(key)) continue;
+        seen.add(key);
+        total += props.clustered ? Number(props.point_count ?? 0) : 1;
+      }
+
+      cameraCountText.textContent = `${total.toLocaleString()} Flock camera${total === 1 ? "" : "s"} in view`;
+    };
+
+    const addMisuseLayer = () => {
+      if (map.getSource(MISUSE_SOURCE_ID)) return;
+      map.addSource(MISUSE_SOURCE_ID, { type: "geojson", data: misuseGeoJson });
+      map.addLayer({
+        id: MISUSE_LAYER_ID,
+        type: "circle",
+        source: MISUSE_SOURCE_ID,
+        layout: { visibility: misuseVisible ? "visible" : "none" },
+        paint: {
+          "circle-color": "#dc2626",
+          "circle-radius": 7,
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.9,
+        },
+      });
+      interactiveLayers.push({ domId: MISUSE_LAYER_ID, configId: "misuse-reports", kind: "misuse" });
+    };
+
+    const syncMisuseSource = () => {
+      const source = map.getSource(MISUSE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+      if (source) {
+        source.setData(misuseGeoJson);
+      } else if (map.isStyleLoaded()) {
+        addMisuseLayer();
+      }
+    };
+
+    // Only Misuse Reports needs a different map view (it's nationwide,
+    // everything else here is Minnesota-only) — flies out when it's turned
+    // on, back to the Minnesota default when it's turned off.
+    const updateMapView = () => {
+      if (misuseVisible) {
+        map.flyTo({ center: US_CENTER, zoom: US_ZOOM, essential: true });
+      } else {
+        map.flyTo({ center: MINNESOTA_CENTER, zoom: DEFAULT_ZOOM, essential: true });
+      }
+    };
+
+    const camerasCheckbox = document.getElementById("cameras-toggle") as HTMLInputElement | null;
+    if (camerasCheckbox) {
+      camerasCheckbox.checked = camerasVisible;
+      const handleCamerasToggle = () => {
+        camerasVisible = camerasCheckbox.checked;
+        setCamerasVisible(camerasVisible);
+        cameraCountBar?.classList.toggle("hidden", !camerasVisible);
+        updateCameraCount();
+      };
+      camerasCheckbox.addEventListener("change", handleCamerasToggle);
+      mapCleanups.push(() => camerasCheckbox.removeEventListener("change", handleCamerasToggle));
+    }
+
+    const wardsCheckbox = document.getElementById("wards-toggle") as HTMLInputElement | null;
+    if (wardsCheckbox) {
+      wardsCheckbox.checked = wardsVisible;
+      const handleWardsToggle = () => {
+        wardsVisible = wardsCheckbox.checked;
+        setWardsVisible(wardsVisible);
+      };
+      wardsCheckbox.addEventListener("change", handleWardsToggle);
+      mapCleanups.push(() => wardsCheckbox.removeEventListener("change", handleWardsToggle));
+    }
+
+    const misuseCheckbox = document.getElementById("misuse-toggle") as HTMLInputElement | null;
+    if (misuseCheckbox) {
+      misuseCheckbox.checked = misuseVisible;
+      const handleMisuseToggle = () => {
+        misuseVisible = misuseCheckbox.checked;
+        if (map.getLayer(MISUSE_LAYER_ID)) {
+          map.setLayoutProperty(MISUSE_LAYER_ID, "visibility", misuseVisible ? "visible" : "none");
+        }
+        document.dispatchEvent(
+          new CustomEvent("misusereportstoggle", { detail: { visible: misuseVisible } }),
+        );
+        updateMapView();
+      };
+      misuseCheckbox.addEventListener("change", handleMisuseToggle);
+      mapCleanups.push(() => misuseCheckbox.removeEventListener("change", handleMisuseToggle));
+    }
+
+    const handleMisuseUpdate = (event: Event) => {
+      const detail = (event as CustomEvent<{ items: MisuseReportItem[] }>).detail;
+      if (!detail) return;
+      misuseGeoJson = buildMisuseGeoJson(detail.items);
+      syncMisuseSource();
+    };
+    document.addEventListener("misusereportsupdate", handleMisuseUpdate);
+    mapCleanups.push(() => document.removeEventListener("misusereportsupdate", handleMisuseUpdate));
+
+    const getAreaLabel = (
+      configLayerId: string,
+      feature: maplibregl.MapGeoJSONFeature,
+    ): string => {
+      const field = discoveredLabelFields[configLayerId];
+      const props = feature.properties || {};
+      if (field && props[field]) return String(props[field]);
+      const fallback = Object.entries(props).find(
+        ([, v]) => typeof v === "string" && v.trim().length > 0,
+      );
+      return fallback ? String(fallback[1]) : "Unnamed";
+    };
+
+    map.on("load", () => {
+      setTimeout(() => map.resize(), 100);
+      if (!map.hasImage("camera-fov")) {
+        map.addImage("camera-fov", createFovIconImageData());
+      }
+      addMisuseLayer();
+      syncPmtilesLayers();
+    });
+
+    map.on("moveend", updateCameraCount);
+    map.on("zoomend", updateCameraCount);
+
+    let hoverPopup: maplibregl.Popup | null = null;
+    let clickPopup: maplibregl.Popup | null = null;
+
+    // Layers stay registered in interactiveLayers even while their checkbox
+    // is off (map.getLayer still finds a hidden layer), so this is filtered
+    // out explicitly rather than relying on a hidden layer happening to
+    // return no features from queryRenderedFeatures.
+    const isKindVisible = (kind: InteractiveKind): boolean => {
+      if (kind === "misuse") return misuseVisible;
+      if (kind === "area") return wardsVisible;
+      return camerasVisible; // "cluster" | "point"
+    };
+
+    const getQueryableDomIds = (): string[] =>
+      interactiveLayers
+        .filter((l) => isKindVisible(l.kind))
+        .map((l) => l.domId)
+        .filter((id) => map.getLayer(id));
+
+    map.on("mousemove", (e) => {
+      const domIds = getQueryableDomIds();
+      if (domIds.length === 0) return;
+
+      const features = map.queryRenderedFeatures(e.point, { layers: domIds });
+
+      if (features.length === 0) {
+        if (hoverPopup) {
+          hoverPopup.remove();
+          hoverPopup = null;
+        }
+        map.getCanvas().style.cursor = "";
+        return;
+      }
+
+      map.getCanvas().style.cursor = "pointer";
+
+      const feature = features[0];
+      const entry = interactiveLayers.find((l) => l.domId === feature.layer.id);
+      if (!entry) return;
+
+      // Touch devices don't have a reliable hover state — those users get
+      // the same content via tap (the click handler below) instead.
+      if (window.innerWidth < 768) return;
+
+      let html: string;
+      if (entry.kind === "cluster") {
+        const count = feature.properties?.point_count ?? "?";
+        html = `<strong>${count} camera${count === 1 ? "" : "s"}</strong>`;
+      } else if (entry.kind === "point") {
+        html = buildCameraPopupHtml(
+          feature.properties || {},
+          feature.geometry.type === "Point"
+            ? (feature.geometry.coordinates as [number, number])
+            : [e.lngLat.lng, e.lngLat.lat],
+        );
+      } else if (entry.kind === "misuse") {
+        html = buildMisuseReportPopupHtml(feature.properties || {});
+      } else {
+        html = `<strong>${getAreaLabel(entry.configId, feature)}</strong>`;
+      }
+
+      if (!hoverPopup) {
+        hoverPopup = new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          maxWidth: "280px",
+        });
+      }
+      hoverPopup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+    });
+
+    map.on("click", (e) => {
+      const domIds = getQueryableDomIds();
+      if (domIds.length === 0) return;
+
+      const features = map.queryRenderedFeatures(e.point, { layers: domIds });
+      if (features.length === 0) return;
+
+      const feature = features[0];
+      const entry = interactiveLayers.find((l) => l.domId === feature.layer.id);
+      if (!entry) return;
+
+      if (entry.kind === "cluster") {
+        // Pre-baked tippecanoe clusters don't expose Supercluster's
+        // expansion-zoom API (that's geojson-source-only) — a fixed zoom
+        // step in on the click point is the standard fallback and matches
+        // how most vector-tile cluster UIs behave.
+        map.easeTo({
+          center: e.lngLat,
+          zoom: Math.min(map.getZoom() + CLUSTER_CLICK_ZOOM_STEP, 18),
+        });
+        return;
+      }
+
+      // Wards are hover-only (a name label isn't worth pinning open); only
+      // cameras and misuse-report dots get a click-triggered popup, mainly
+      // as the touch-device fallback since they don't get the hover popup
+      // above. The misuse popup's own "Open article" link is what actually
+      // opens the article in a new tab — this just pins the popup open.
+      if (entry.kind !== "point" && entry.kind !== "misuse") return;
+
+      if (clickPopup) clickPopup.remove();
+      const html =
+        entry.kind === "misuse"
+          ? buildMisuseReportPopupHtml(feature.properties || {})
+          : buildCameraPopupHtml(
+              feature.properties || {},
+              feature.geometry.type === "Point"
+                ? (feature.geometry.coordinates as [number, number])
+                : [e.lngLat.lng, e.lngLat.lat],
+            );
+      clickPopup = new maplibregl.Popup({ closeButton: true, maxWidth: "280px" })
+        .setLngLat(e.lngLat)
+        .setHTML(html)
+        .addTo(map);
+    });
+
+  }
+
+  document.addEventListener("astro:page-load", () => {
+    initMap();
+  });
+  if (document.readyState !== "loading") {
+    initMap();
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      initMap();
+    });
+  }
+</script>
