@@ -154,8 +154,8 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Calificaciones federales de riesgo hipotecario de los años 30 que desviaron el crédito de barrios negros e inmigrantes.',
     },
     whatThisMeans: {
-      en: 'In the 1930s the federal Home Owners’ Loan Corporation graded neighbourhoods A through D for mortgage risk, and the grade turned explicitly on the race, ethnicity and immigration status of the residents. Areas graded D were outlined in red — "redlined" — and starved of lending for decades. These lines are the historical substrate beneath much of the present-day geography of wealth, housing and policing. This layer shows a policy applied to an area, drawn from digitised historical maps.',
-      es: 'En los años 30, la Home Owners’ Loan Corporation federal calificó los barrios de A a D según el riesgo hipotecario, y la calificación dependía explícitamente de la raza, etnia y estatus migratorio de los residentes. Las áreas con calificación D se delinearon en rojo — "redlined" — y quedaron privadas de crédito durante décadas. Estas líneas son el sustrato histórico de buena parte de la geografía actual de la riqueza, la vivienda y la vigilancia policial. Esta capa muestra una política aplicada a un área, tomada de mapas históricos digitalizados.',
+      en: 'In the 1930s the federal Home Owners’ Loan Corporation graded neighbourhoods A through D for mortgage risk, and the grade turned explicitly on the race, ethnicity and immigration status of the residents. Areas graded D were outlined in red — "redlined" — and starved of lending for decades. These lines are the historical substrate beneath much of the present-day geography of wealth, housing and policing. Where the appraiser’s survey sheet survives, this layer also shows what they wrote to justify the grade — in their own words, unedited. This layer shows a policy applied to an area, drawn from digitised historical maps.',
+      es: 'En los años 30, la Home Owners’ Loan Corporation federal calificó los barrios de A a D según el riesgo hipotecario, y la calificación dependía explícitamente de la raza, etnia y estatus migratorio de los residentes. Las áreas con calificación D se delinearon en rojo — "redlined" — y quedaron privadas de crédito durante décadas. Estas líneas son el sustrato histórico de buena parte de la geografía actual de la riqueza, la vivienda y la vigilancia policial. Cuando se conserva la hoja de encuesta del tasador, esta capa también muestra lo que escribió para justificar la calificación, en sus propias palabras y sin editar. Esta capa muestra una política aplicada a un área, tomada de mapas históricos digitalizados.',
     },
     limitations: [
       {
@@ -169,6 +169,18 @@ export const LAYERS: LayerDefinition[] = [
       {
         en: 'Racial covenants — a separate and often more granular record — are mapped by Mapping Prejudice and are linked rather than duplicated here.',
         es: 'Los convenios raciales — un registro distinto y a menudo más granular — son mapeados por Mapping Prejudice y se enlazan en lugar de duplicarse aquí.',
+      },
+      {
+        en: 'The survey text quotes 1930s appraisers word for word, including racist language and slurs. It is reproduced unaltered because paraphrasing it conceals how explicit the racial criteria were.',
+        es: 'El texto de la encuesta cita textualmente a tasadores de los años 30, incluido lenguaje racista e insultos. Se reproduce sin alterar porque parafrasearlo oculta cuán explícitos eran los criterios raciales.',
+      },
+      {
+        en: 'Not every graded area has a surviving survey sheet, and the Minnesota sheets use a narrative form with no boxes for the share of Black or foreign-born residents. Where a sheet is missing the record is silent, which is not the same as an area having nothing written about it.',
+        es: 'No toda área calificada conserva su hoja de encuesta, y las hojas de Minnesota usan un formulario narrativo sin casillas para la proporción de residentes negros o nacidos en el extranjero. Cuando falta una hoja, el registro calla, lo cual no significa que no se escribiera nada sobre esa área.',
+      },
+      {
+        en: '"Groups named" is derived by keyword-matching the appraisers\' own vocabulary against their prose. It records that a word was written about an area — not who actually lived there, and not how many. Any percentage is the appraiser\'s estimate, not a census.',
+        es: '«Grupos nombrados» se deriva buscando el vocabulario de los propios tasadores en su prosa. Registra que se escribió una palabra sobre un área, no quién vivía allí realmente ni cuántas personas. Cualquier porcentaje es la estimación del tasador, no un censo.',
       },
     ],
     geometry: 'polygon',
@@ -190,10 +202,46 @@ export const LAYERS: LayerDefinition[] = [
     filters: [
       { key: 'grade', kind: 'enum', label: { en: 'HOLC grade', es: 'Calificación HOLC' } },
       { key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } },
+      {
+        key: 'groupsNamed',
+        kind: 'enum',
+        label: { en: 'Groups named in the survey', es: 'Grupos nombrados en la encuesta' },
+      },
     ],
     detailFields: [
       { key: 'grade', label: { en: 'HOLC grade', es: 'Calificación HOLC' } },
       { key: 'gradeMeaning', label: { en: 'Grade meaning', es: 'Significado' } },
+      {
+        key: 'groupsNamed',
+        label: { en: 'Groups named in the survey', es: 'Grupos nombrados en la encuesta' },
+      },
+      {
+        key: 'blackResidentsPercent',
+        label: {
+          en: 'Black residents, as recorded on the form',
+          es: 'Residentes negros, según el formulario',
+        },
+      },
+      {
+        key: 'foreignBornNationality',
+        label: { en: 'Nationalities recorded', es: 'Nacionalidades registradas' },
+      },
+      {
+        key: 'foreignBornPercent',
+        label: {
+          en: 'Foreign-born residents, as recorded',
+          es: 'Residentes nacidos en el extranjero, según el formulario',
+        },
+      },
+      {
+        key: 'infiltrationOf',
+        label: { en: '“Infiltration of” — HOLC’s own term', es: '«Infiltración de» — término de HOLC' },
+      },
+      {
+        key: 'surveyText',
+        label: { en: 'What the appraiser wrote', es: 'Lo que escribió el tasador' },
+      },
+      { key: 'surveyForm', label: { en: 'Survey form', es: 'Formulario de la encuesta' } },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'holcId', label: { en: 'HOLC area ID', es: 'ID del área HOLC' } },
     ],
