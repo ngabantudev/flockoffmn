@@ -12,34 +12,16 @@ import type { StyleSpecification } from 'maplibre-gl';
  * PUBLIC_TILE_ATTRIBUTION) to point at your own raster tiles or a provider
  * before this sees real traffic — see docs/DEPLOYMENT.md.
  */
+// `||` rather than `??` on purpose: an unset variable arrives as undefined,
+// but one declared-and-empty (as in wrangler.jsonc, or a .env copied from
+// .env.example) arrives as "". `??` would keep that empty string and hand
+// MapLibre a blank tile URL, producing a map with no basemap and no error.
+const TILE_URL =
+  import.meta.env.PUBLIC_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-const DEFAULT_TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const DEFAULT_TILE_ATTRIBUTION =
+const TILE_ATTRIBUTION =
+  import.meta.env.PUBLIC_TILE_ATTRIBUTION ||
   '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-/**
- * Read a build-time override, falling back when it is missing *or blank*.
- *
- * `??` is wrong here. A hosting dashboard that lists an environment variable
- * without a value — which is exactly what Cloudflare Pages hands a build for a
- * declared-but-empty variable — yields `''`, not `undefined`, so `??` keeps the
- * empty string. An empty tile URL resolves against the page, so every tile
- * request fetches the site's own HTML, fails to decode as an image, and the
- * basemap silently never draws: a blank map with no failed request to point at.
- * An empty attribution string quietly drops the credit the OSM tile licence
- * requires. Blank is never a meaningful value for either, so treat it as unset.
- */
-function envOrDefault(value: string | undefined, fallback: string): string {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : fallback;
-}
-
-const TILE_URL = envOrDefault(import.meta.env.PUBLIC_TILE_URL, DEFAULT_TILE_URL);
-
-const TILE_ATTRIBUTION = envOrDefault(
-  import.meta.env.PUBLIC_TILE_ATTRIBUTION,
-  DEFAULT_TILE_ATTRIBUTION,
-);
 
 /** Minnesota, with enough padding to show neighbouring context. */
 export const MN_BOUNDS: [[number, number], [number, number]] = [
@@ -52,8 +34,13 @@ export const MN_CENTER: [number, number] = [-94.2, 46.3];
 export function baseStyle(): StyleSpecification {
   return {
     version: 8,
-    // Required by MapLibre for text rendering; served from our own origin.
-    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    // Glyphs are served from our own origin. MapLibre's demo glyph server is
+    // the usual default, but pointing at it would make every visitor's browser
+    // announce itself to a third party just to render cluster labels — exactly
+    // the "no third-party fonts" rule this project states on /about. The only
+    // text on the map is cluster counts, so the first Unicode range is enough;
+    // see public/fonts/ (Noto Sans, SIL Open Font License).
+    glyphs: '/fonts/{fontstack}/{range}.pbf',
     sources: {
       osm: {
         type: 'raster',
