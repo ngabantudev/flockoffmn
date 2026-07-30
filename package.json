@@ -20,7 +20,8 @@
     "data:detention": "node scripts/ingest/detention.mjs",
     "data:datacenters": "node scripts/ingest/data-centers.mjs",
     "data:redlining": "node scripts/ingest/redlining.mjs",
-    "data:exports": "node scripts/ingest/exports.mjs"
+    "pages:dev": "wrangler pages dev dist",
+    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=get-flocked"
   },
   "dependencies": {
     "astro": "^7.1.2",
@@ -32,6 +33,7 @@
     "@types/geojson": "^7946.0.16",
     "@types/node": "^26.1.2",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wrangler": "^4.116.0"
   }
 }
