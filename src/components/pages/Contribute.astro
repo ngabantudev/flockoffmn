@@ -1,0 +1,148 @@
+---
+import type { Locale } from '~/layers/types';
+import { useTranslations } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const REPO = 'https://github.com/NgabantuDev/get-flocked';
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">{t('navContribute')}</h1>
+  <p class="prose-civic mt-3">
+    This map is only as good as the records behind it, and the camera layer in particular is built
+    entirely by volunteers. Here is how to improve it.
+  </p>
+
+  <div class="mt-6 rounded-lg border border-warn/30 bg-warn/5 p-4">
+    <h2 class="text-sm font-semibold text-warn">One rule, before anything else</h2>
+    <p class="mt-1.5 text-sm leading-relaxed text-ink-200">
+      Contributions are about <strong class="text-ink-100">devices, buildings, agencies and
+      policies</strong> — never people. Do not submit photographs of people, licence plates, or
+      anything identifying a private individual, an officer, or an agent. Do not submit anything
+      you obtained by trespassing. A contribution that describes a person will be rejected.
+    </p>
+  </div>
+
+  <section class="mt-8">
+    <h2 class="text-xl font-semibold text-ink-100">Mapping a camera</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        The ALPR layer is pulled from OpenStreetMap using the tagging convention DeFlock
+        established. That means a camera you add to OpenStreetMap improves this map, DeFlock, and
+        every other project built on the same data — rather than being locked into one site's
+        private database. It is the single highest-leverage contribution you can make.
+      </p>
+
+      <h3>What to record</h3>
+      <ul>
+        <li>The pole or mount location, as precisely as you can place it.</li>
+        <li>Which way the camera faces, if you can tell — this is the <code>direction</code> tag, in degrees.</li>
+        <li>Any visible operator or agency name on the housing.</li>
+        <li>The manufacturer, if it is marked. Many are not.</li>
+      </ul>
+
+      <h3>How to add it</h3>
+      <ol class="prose-civic list-decimal space-y-1.5 pl-5">
+        <li>
+          Create a free account at
+          <a href="https://www.openstreetmap.org/user/new" target="_blank" rel="noopener noreferrer">
+            openstreetmap.org</a
+          >.
+        </li>
+        <li>
+          Read
+          <a href="https://deflock.me/how-to-map" target="_blank" rel="noopener noreferrer">
+            DeFlock's mapping guide
+          </a>, which walks through the exact tags.
+        </li>
+        <li>
+          Add a node at the camera's position with at minimum:
+          <code>man_made=surveillance</code>, <code>surveillance:type=ALPR</code>, and
+          <code>surveillance=public</code>.
+        </li>
+        <li>
+          Add <code>manufacturer=Flock Safety</code> only if it is actually marked as such. Guessing
+          the vendor makes the data worse.
+        </li>
+      </ol>
+
+      <p>
+        Our ingest re-queries OpenStreetMap on each refresh, so your addition appears here without
+        anyone needing to approve it.
+      </p>
+
+      <h3>Staying safe while doing it</h3>
+      <ul>
+        <li>Everything worth mapping is visible from a public sidewalk or road. Stay on public ground.</li>
+        <li>You are recording infrastructure, not conducting surveillance. Do not photograph people.</li>
+        <li>There is no need to interact with anyone about it. Note the pole, move on, map it later.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="mt-8">
+    <h2 class="text-xl font-semibold text-ink-100">Adding a community campaign</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        The data-centre layer records facilities, but not whether anyone is organising about them —
+        which is often the thing an organizer most needs to find. That field is community-maintained
+        in
+        <a href={`${REPO}/blob/main/data/community/data-center-campaigns.json`} target="_blank" rel="noopener noreferrer">
+          <code>data/community/data-center-campaigns.json</code></a
+        >.
+      </p>
+      <p>
+        Open a pull request adding an entry with the facility name and city, the campaign or
+        petition URL, the group's name, and a public source for the claim. Entries describe
+        organisations and campaigns, never individual organisers.
+      </p>
+    </div>
+  </section>
+
+  <section class="mt-8">
+    <h2 class="text-xl font-semibold text-ink-100">Correcting a record</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        Most corrections belong upstream, and will flow here automatically on the next refresh:
+      </p>
+      <ul>
+        <li><strong>Cameras</strong> — edit the node in OpenStreetMap.</li>
+        <li>
+          <strong>287(g) agreements and detention facilities</strong> — these mirror ICE's published
+          lists exactly. If ICE's list is wrong, we reproduce the error faithfully; tell us and we
+          will note it in the layer's known gaps.
+        </li>
+        <li><strong>Redlining zones</strong> — georeferencing is Mapping Inequality's work; report issues to them.</li>
+      </ul>
+      <p>
+        For anything else — a geocoding mistake, a bad county match, a misleading label — open an
+        issue on <a href={`${REPO}/issues`} target="_blank" rel="noopener noreferrer">the repository</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="mt-8">
+    <h2 class="text-xl font-semibold text-ink-100">Contributing code</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        The stack is Astro, TypeScript and Tailwind, with a dependency-free Node ingest pipeline.
+        Adding a layer means writing one script that emits the shared schema and adding one entry to
+        the layer registry — the map, legend, filters, detail panels, sources page and downloads are
+        all generated from that.
+      </p>
+      <p>
+        Two contributions we would particularly welcome: extending the ingest nationally (the
+        geocoding already keys on Census identifiers, so it mostly needs a national county
+        reference), and completing the Spanish translation.
+      </p>
+      <p>
+        <a href={REPO} target="_blank" rel="noopener noreferrer">Repository and issue tracker →</a>
+      </p>
+    </div>
+  </section>
+</div>
