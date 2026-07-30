@@ -1,0 +1,95 @@
+/**
+ * Spanish UI and key guidance (spec §8).
+ *
+ * Keys missing here fall back to English per-key at render time, so a
+ * half-finished translation degrades into a readable mixed page rather than
+ * showing a raw key to a reader who needs the information.
+ */
+export const es: Record<string, string> = {
+  siteName: 'get-flocked',
+  tagline: 'Hacer visibles los sistemas de vigilancia, control migratorio y política de vivienda en Minnesota.',
+
+  navMap: 'Mapa',
+  navNearMe: 'Cerca de mí',
+  navSources: 'Fuentes y metodología',
+  navExplainer: 'Cómo se conecta',
+  navAct: 'Actuar',
+  navData: 'Datos abiertos',
+  navContribute: 'Contribuir',
+  navAbout: 'Qué es esto',
+  skipToContent: 'Saltar al contenido principal',
+  skipToMap: 'Saltar al mapa',
+
+  layers: 'Capas',
+  legend: 'Leyenda',
+  filters: 'Filtros',
+  toggleLayer: 'Mostrar u ocultar capa',
+  showLayer: 'Mostrar',
+  hideLayer: 'Ocultar',
+  clearFilters: 'Borrar filtros',
+  featuresShown: 'mostrados',
+  ofTotal: 'de',
+  loading: 'Cargando datos del mapa…',
+  mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
+  zoomIn: 'Acercar',
+  zoomOut: 'Alejar',
+  resetView: 'Volver a Minnesota',
+  closePanel: 'Cerrar panel',
+  noResults: 'Ningún registro coincide con los filtros actuales.',
+
+  searchPlaceholder: 'Busque una ciudad, condado o agencia',
+  searchLabel: 'Buscar lugares, condados y agencias',
+  nearMeTitle: 'Qué hay alrededor de este lugar',
+  nearMeIntro:
+    'Elija un lugar en Minnesota para ver todas las capas a su alrededor en una sola vista. Nada de lo que escriba se envía ni se guarda en ningún lugar.',
+  useMyLocation: 'Usar mi ubicación',
+  locating: 'Localizando…',
+  locationDenied: 'Se denegó el permiso de ubicación. Puede buscar un lugar en su lugar.',
+  locationUnavailable: 'Su dispositivo no pudo proporcionar una ubicación. Puede buscar un lugar en su lugar.',
+  chooseAPlace: 'Elija un lugar',
+  nearestCameras: 'Cámaras ALPR más cercanas',
+  camerasWithin: 'cámaras dentro de',
+  sheriffAgreement: 'Su alguacil del condado e ICE',
+  nearestFacility: 'Centro con contrato de ICE más cercano',
+  nearestDataCenter: 'Centro de datos más cercano',
+  neighbourhoodHistory: 'Historia de la política de vivienda en esta zona',
+  noAgreement: 'No hay ningún acuerdo 287(g) en la lista actual de ICE para agencias de este condado.',
+  hasAgreement: 'acuerdo(s) en la lista actual de ICE en este condado:',
+  notInRedlinedArea:
+    'Este punto no está dentro de un área calificada por HOLC. Solo ocho ciudades de Minnesota fueron evaluadas, por lo que esto no prueba que la zona estuviera libre de discriminación en vivienda.',
+  inRedlinedArea: 'Este punto se encuentra dentro de un área calificada por HOLC:',
+  milesAway: 'millas de distancia',
+  inCounty: 'en',
+  crossLayerNote:
+    'No son cinco mapas separados. Las cámaras alimentan búsquedas, las búsquedas alimentan la aplicación de la ley, la aplicación alimenta la detención, y todo ello se asienta sobre un terreno moldeado por décadas de política de vivienda.',
+  readHowThisConnects: 'Lea cómo se conecta',
+
+  whatThisMeans: 'Qué significa esto',
+  source: 'Fuente',
+  sourceDate: 'Fecha de la fuente',
+  lastUpdated: 'Última actualización',
+  license: 'Licencia',
+  confidence: 'Confianza',
+  limitations: 'Limitaciones',
+  county: 'Condado',
+  viewRecord: 'Ver el registro original',
+  downloadLayer: 'Descargar esta capa',
+
+  confidenceConfirmed: 'Confirmado: documentado en un registro público oficial.',
+  confidenceReported: 'Reportado: proviene de permisos o registros secundarios que pueden estar desactualizados.',
+  confidenceProbabilistic: 'Probabilístico: de origen comunitario; puede haberse movido o retirado.',
+
+  limitsTitle: 'Qué es esto y qué no es',
+  limitsNotLive:
+    'No es un rastreador en vivo. Muestra dónde se ha registrado infraestructura, nunca dónde está una persona.',
+  limitsNotPeople:
+    'Nunca sobre personas. Cada registro describe una institución, un edificio, un contrato o una política.',
+  limitsNotLegal: 'No es asesoría legal. Las herramientas de acción son informativas.',
+  limitsIncomplete:
+    'Incompleto por naturaleza. Cada capa está fechada, es parcial o aproximada, y cada una lo explica.',
+  dismiss: 'Descartar',
+
+  openSource: 'Código abierto',
+  noTrackers: 'Sin rastreadores, sin analíticas, sin cuentas.',
+  attribution: 'Atribución',
+};

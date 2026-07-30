@@ -1,0 +1,12 @@
+---
+import Base from '~/layouts/Base.astro';
+import Contribute from '~/components/pages/Contribute.astro';
+import { useTranslations } from '~/lib/i18n';
+
+const locale = 'en' as const;
+const t = useTranslations(locale);
+---
+
+<Base title={t('navContribute')}>
+  <Contribute locale={locale} />
+</Base>

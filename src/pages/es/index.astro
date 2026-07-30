@@ -1,9 +1,9 @@
 ---
 import Base from '~/layouts/Base.astro';
 import MapView from '~/components/map/MapView.astro';
-import { localeFromUrl, useTranslations } from '~/lib/i18n';
+import { useTranslations } from '~/lib/i18n';
 
-const locale = localeFromUrl(Astro.url);
+const locale = 'es' as const;
 const t = useTranslations(locale);
 ---
 

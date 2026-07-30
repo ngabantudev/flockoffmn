@@ -1,0 +1,89 @@
+---
+import type { Locale } from '~/layers/types';
+import { useTranslations, localePath, stripLocale, LOCALES, LOCALE_NAMES } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const here = stripLocale(Astro.url.pathname);
+
+const links = [
+  { href: '/', label: t('navMap') },
+  { href: '/near-me', label: t('navNearMe') },
+  { href: '/explainer', label: t('navExplainer') },
+  { href: '/act', label: t('navAct') },
+  { href: '/data', label: t('navData') },
+  { href: '/sources', label: t('navSources') },
+  { href: '/about', label: t('navAbout') },
+];
+
+const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWith(href));
+---
+
+<header class="relative z-30 border-b border-ink-800 bg-ink-900">
+  <div class="mx-auto flex max-w-[1600px] flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5">
+    <a
+      href={localePath(locale, '/')}
+      class="flex shrink-0 items-center gap-2 font-semibold tracking-tight text-ink-100"
+    >
+      <svg viewBox="0 0 24 24" class="h-5 w-5 text-accent" aria-hidden="true" fill="none">
+        <circle cx="12" cy="12" r="3.25" stroke="currentColor" stroke-width="1.75" />
+        <path
+          d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+        />
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.25" opacity=".45" />
+      </svg>
+      <span>{t('siteName')}</span>
+    </a>
+
+    <nav aria-label="Primary" class="order-3 w-full sm:order-none sm:w-auto sm:flex-1">
+      <ul class="scroll-slim flex items-center gap-0.5 overflow-x-auto text-sm">
+        {
+          links.map((link) => (
+            <li class="shrink-0">
+              <a
+                href={localePath(locale, link.href)}
+                aria-current={isActive(link.href) ? 'page' : undefined}
+                class:list={[
+                  'block rounded px-2.5 py-1.5 transition-colors',
+                  isActive(link.href)
+                    ? 'bg-ink-800 text-ink-100'
+                    : 'text-ink-300 hover:bg-ink-850 hover:text-ink-100',
+                ]}
+              >
+                {link.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+
+    <div class="ml-auto flex shrink-0 items-center gap-1 text-sm">
+      {
+        LOCALES.map((code) => (
+          <a
+            href={localePath(code, here)}
+            hreflang={code}
+            lang={code}
+            aria-current={code === locale ? 'true' : undefined}
+            class:list={[
+              'rounded px-2 py-1 transition-colors',
+              code === locale
+                ? 'bg-ink-800 text-ink-100'
+                : 'text-ink-400 hover:bg-ink-850 hover:text-ink-100',
+            ]}
+          >
+            {LOCALE_NAMES[code]}
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</header>

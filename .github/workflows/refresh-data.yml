@@ -1,0 +1,100 @@
+name: Refresh data layers
+
+# Re-pulls every layer from its upstream public source and opens a pull request
+# when anything changed. Deliberately a PR rather than a direct commit: these
+# datasets are the substance of the project, and a silent overwrite is how a
+# bad upstream day becomes a wrong map nobody noticed.
+
+on:
+  schedule:
+    # 07:00 UTC on Mondays — outside US business hours, when the federal and
+    # volunteer-run sources this depends on are least loaded.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Ingest scope'
+        required: false
+        default: 'state'
+        type: choice
+        options: [state, national]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Rebuild all layers
+        id: ingest
+        env:
+          SCOPE: ${{ inputs.scope == 'national' && 'national' || '' }}
+        # Keep going if a single layer's upstream is down; the step below
+        # reports which ones failed and the existing file stays in place.
+        continue-on-error: true
+        run: npm run data
+
+      - name: Verify the site still builds with the new data
+        run: npm run build
+
+      - name: Summarise changes
+        id: diff
+        run: |
+          if git diff --quiet -- public/data; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No layer changed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Layer record counts"
+              echo
+              echo "| Layer | Records |"
+              echo "| --- | ---: |"
+              for f in public/data/*.geojson; do
+                name=$(basename "$f" .geojson)
+                count=$(node -e "process.stdout.write(String(JSON.parse(require('fs').readFileSync('$f','utf8')).features.length))")
+                echo "| $name | $count |"
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: data/scheduled-refresh
+          title: 'Refresh data layers'
+          commit-message: 'Refresh data layers from upstream sources'
+          body: |
+            Automated re-pull of every layer from its upstream public source.
+
+            Review before merging:
+            - Do the record counts move for a plausible reason? A layer
+              dropping to near zero usually means the upstream file moved or
+              changed shape, not that the records disappeared.
+            - Did any source date change? That is the signal the publisher
+              actually issued a new file.
+            - Check the ingest log for unmatched counties or geocoding
+              failures.
+
+            Layer counts are in the workflow run summary.
+          labels: data
+          delete-branch: true
+
+      - name: Report failed layers
+        if: steps.ingest.outcome == 'failure'
+        run: |
+          echo "::warning::One or more layers failed to refresh; their previous files were kept."

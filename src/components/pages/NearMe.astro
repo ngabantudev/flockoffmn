@@ -1,0 +1,394 @@
+---
+import type { Locale } from '~/layers/types';
+import { LAYERS } from '~/layers/registry';
+import { useTranslations, pick, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const layerMeta = LAYERS.map((l) => ({
+  id: l.id,
+  label: pick(l.label, locale),
+  color: l.color,
+  dataPath: l.dataPath,
+}));
+
+const strings = {
+  locating: t('locating'),
+  locationDenied: t('locationDenied'),
+  locationUnavailable: t('locationUnavailable'),
+  noResults: t('noResults'),
+  nearestCameras: t('nearestCameras'),
+  sheriffAgreement: t('sheriffAgreement'),
+  nearestFacility: t('nearestFacility'),
+  nearestDataCenter: t('nearestDataCenter'),
+  neighbourhoodHistory: t('neighbourhoodHistory'),
+  noAgreement: t('noAgreement'),
+  hasAgreement: t('hasAgreement'),
+  notInRedlinedArea: t('notInRedlinedArea'),
+  inRedlinedArea: t('inRedlinedArea'),
+  milesAway: t('milesAway'),
+  county: t('county'),
+  loading: t('loading'),
+};
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">{t('nearMeTitle')}</h1>
+  <p class="mt-2 max-w-2xl text-sm leading-relaxed text-ink-300">{t('nearMeIntro')}</p>
+
+  <!--
+    Privacy note is not fine print: it is the reason this page works the way it
+    does. The place list is shipped with the site, so a lookup involves no
+    request to any geocoder and nothing to log.
+  -->
+  <p class="mt-3 flex max-w-2xl items-start gap-2 rounded-md border border-ink-800 bg-ink-900 p-3 text-xs leading-relaxed text-ink-300">
+    <svg viewBox="0 0 20 20" class="mt-0.5 h-4 w-4 shrink-0 text-accent" fill="currentColor" aria-hidden="true">
+      <path
+        fill-rule="evenodd"
+        d="M10 1.5 3.5 4.2v5c0 4 2.8 7.7 6.5 9.3 3.7-1.6 6.5-5.3 6.5-9.3v-5L10 1.5Zm2.9 6.6-3.4 4.2a.8.8 0 0 1-1.2 0L6.6 10.4a.8.8 0 1 1 1.2-1l1.1 1.4 2.8-3.5a.8.8 0 1 1 1.2 1Z"
+        clip-rule="evenodd"></path>
+    </svg>
+    <span>
+      This lookup runs entirely in your browser. The list of Minnesota places is downloaded with
+      the page, so nothing you type is sent to a geocoder, to us, or to anyone else — there is no
+      server here to log it.
+    </span>
+  </p>
+
+  <div class="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]">
+    <div>
+      <label for="place-search" class="mb-1.5 block text-sm font-medium text-ink-200">
+        {t('chooseAPlace')}
+      </label>
+      <div class="relative">
+        <input
+          id="place-search"
+          type="search"
+          autocomplete="off"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="place-results"
+          placeholder={t('searchPlaceholder')}
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2.5 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+        />
+        <ul
+          id="place-results"
+          role="listbox"
+          class="absolute z-20 mt-1 hidden max-h-64 w-full overflow-y-auto rounded-md border border-ink-700 bg-ink-850 shadow-xl"
+        >
+        </ul>
+      </div>
+    </div>
+
+    <div class="flex items-end">
+      <button
+        id="use-location"
+        type="button"
+        class="w-full rounded-md border border-ink-700 bg-ink-850 px-4 py-2.5 text-sm font-medium text-ink-100 hover:border-accent hover:text-accent sm:w-auto"
+      >
+        {t('useMyLocation')}
+      </button>
+    </div>
+  </div>
+
+  <p id="near-status" role="status" aria-live="polite" class="mt-3 text-sm text-warn"></p>
+
+  <section id="near-results" hidden class="mt-8">
+    <h2 id="near-heading" class="text-lg font-semibold text-ink-100"></h2>
+    <p id="near-sub" class="mt-0.5 text-sm text-ink-400"></p>
+
+    <div id="near-cards" class="mt-5 grid gap-3 sm:grid-cols-2"></div>
+
+    <div class="mt-6 rounded-lg border border-accent/30 bg-accent/5 p-4">
+      <p class="text-sm leading-relaxed text-ink-200">{t('crossLayerNote')}</p>
+      <a
+        href={localePath(locale, '/explainer')}
+        class="mt-2 inline-block text-sm font-medium text-accent underline underline-offset-2"
+      >
+        {t('readHowThisConnects')} →
+      </a>
+    </div>
+  </section>
+</div>
+
+<script is:inline type="application/json" id="near-layers" set:html={JSON.stringify(layerMeta)} />
+<script is:inline type="application/json" id="near-strings" set:html={JSON.stringify(strings)} />
+
+<script>
+  import { haversineMeters, metersToMiles, findContaining, representativePoint } from '~/lib/geo.mjs';
+
+  const layerMeta = JSON.parse(document.getElementById('near-layers')!.textContent!) as {
+    id: string;
+    label: string;
+    color: string;
+    dataPath: string;
+  }[];
+  const S = JSON.parse(document.getElementById('near-strings')!.textContent!) as Record<string, string>;
+
+  const searchInput = document.getElementById('place-search') as HTMLInputElement;
+  const resultsList = document.getElementById('place-results')!;
+  const statusEl = document.getElementById('near-status')!;
+  const section = document.getElementById('near-results')!;
+  const heading = document.getElementById('near-heading')!;
+  const sub = document.getElementById('near-sub')!;
+  const cards = document.getElementById('near-cards')!;
+
+  type Place = { name: string; lat: number; lng: number };
+  type Feature = { geometry: GeoJSON.Geometry; properties: Record<string, any> };
+
+  let places: Place[] = [];
+  let counties: { features: any[] } | null = null;
+  const layerData = new Map<string, Feature[]>();
+
+  /** Everything the page needs, fetched once, in parallel. */
+  async function loadAll() {
+    const [placeDoc, countyDoc, ...layerDocs] = await Promise.all([
+      fetch('/data/reference/mn-places.json').then((r) => r.json()),
+      fetch('/data/reference/mn-counties.geojson').then((r) => r.json()),
+      ...layerMeta.map((l) =>
+        fetch(l.dataPath)
+          .then((r) => (r.ok ? r.json() : { features: [] }))
+          .catch(() => ({ features: [] })),
+      ),
+    ]);
+    places = placeDoc.places ?? [];
+    counties = countyDoc;
+    layerMeta.forEach((l, i) => layerData.set(l.id, layerDocs[i].features ?? []));
+  }
+
+  const ready = loadAll();
+
+  function el(tag: string, cls?: string, text?: string) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  const miles = (m: number) => metersToMiles(m);
+  const fmtMiles = (m: number) => {
+    const mi = miles(m);
+    return mi < 0.1 ? '< 0.1' : mi.toFixed(mi < 10 ? 1 : 0);
+  };
+
+  /* --------------------------- Place search --------------------------- */
+
+  function renderPlaceResults(query: string) {
+    const q = query.trim().toLowerCase();
+    resultsList.textContent = '';
+    if (q.length < 2) {
+      resultsList.classList.add('hidden');
+      searchInput.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const hits = places
+      .filter((p) => p.name.toLowerCase().includes(q))
+      // Prefer names that start with the query.
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return as - bs || a.name.localeCompare(b.name);
+      })
+      .slice(0, 25);
+
+    if (!hits.length) {
+      resultsList.append(el('li', 'px-3 py-2 text-xs text-ink-400', S.noResults));
+    } else {
+      for (const place of hits) {
+        const li = el('li');
+        li.setAttribute('role', 'option');
+        const button = el('button', 'w-full px-3 py-2 text-left text-sm text-ink-200 hover:bg-ink-800 hover:text-ink-100', place.name);
+        button.setAttribute('type', 'button');
+        button.addEventListener('click', () => {
+          searchInput.value = place.name;
+          resultsList.classList.add('hidden');
+          void analyse([place.lng, place.lat], place.name);
+        });
+        li.append(button);
+        resultsList.append(li);
+      }
+    }
+    resultsList.classList.remove('hidden');
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  let timer: number;
+  searchInput.addEventListener('input', () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => renderPlaceResults(searchInput.value), 120);
+  });
+  searchInput.addEventListener('blur', () =>
+    window.setTimeout(() => resultsList.classList.add('hidden'), 180),
+  );
+
+  /* ---------------------------- Geolocation --------------------------- */
+
+  document.getElementById('use-location')?.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      statusEl.textContent = S.locationUnavailable;
+      return;
+    }
+    statusEl.textContent = S.locating;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        statusEl.textContent = '';
+        // Coordinates are used in memory and never stored or transmitted.
+        void analyse([pos.coords.longitude, pos.coords.latitude], 'your location');
+      },
+      (err) => {
+        statusEl.textContent =
+          err.code === err.PERMISSION_DENIED ? S.locationDenied : S.locationUnavailable;
+      },
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+    );
+  });
+
+  /* ------------------------- Cross-layer summary ------------------------ */
+
+  function card(title: string, color: string) {
+    const wrap = el('div', 'rounded-lg border border-ink-800 bg-ink-900 p-4');
+    const head = el('div', 'mb-2 flex items-center gap-2');
+    const dot = el('span', 'h-2 w-2 shrink-0 rounded-full');
+    dot.setAttribute('style', `background:${color}`);
+    head.append(dot, el('h3', 'text-sm font-semibold text-ink-100', title));
+    wrap.append(head);
+    return wrap;
+  }
+
+  function nearest(point: [number, number], features: Feature[]) {
+    let best: { feature: Feature; distance: number } | null = null;
+    for (const f of features) {
+      const c = f.geometry.type === 'Point'
+        ? (f.geometry.coordinates as [number, number])
+        : (representativePoint(f.geometry) as [number, number]);
+      const d = haversineMeters(point, c);
+      if (!best || d < best.distance) best = { feature: f, distance: d };
+    }
+    return best;
+  }
+
+  async function analyse(point: [number, number], label: string) {
+    statusEl.textContent = S.loading;
+    await ready;
+    statusEl.textContent = '';
+
+    const county = counties ? findContaining(point, counties.features) : null;
+    const countyName = county?.properties?.name ?? null;
+
+    heading.textContent = label === 'your location' ? 'Around your location' : `Around ${label}`;
+    sub.textContent = countyName ? `${countyName}, Minnesota` : 'Minnesota';
+    cards.textContent = '';
+
+    /* --- ALPR cameras --- */
+    const cameras = layerData.get('alpr') ?? [];
+    const withDistance = cameras
+      .filter((f) => f.geometry.type === 'Point')
+      .map((f) => ({
+        f,
+        d: haversineMeters(point, (f.geometry as GeoJSON.Point).coordinates as [number, number]),
+      }))
+      .sort((a, b) => a.d - b.d);
+    const within1 = withDistance.filter((c) => miles(c.d) <= 1).length;
+    const within3 = withDistance.filter((c) => miles(c.d) <= 3).length;
+
+    const camCard = card(S.nearestCameras, '#38bdf8');
+    if (!withDistance.length) {
+      camCard.append(el('p', 'text-sm text-ink-300', 'No mapped cameras in this dataset.'));
+    } else {
+      const big = el('p', 'text-2xl font-semibold text-ink-100', String(within1));
+      camCard.append(big, el('p', 'text-xs text-ink-400', 'mapped within 1 mile'));
+      camCard.append(
+        el('p', 'mt-2 text-sm text-ink-300', `${within3} within 3 miles. Nearest is ${fmtMiles(withDistance[0].d)} ${S.milesAway}.`),
+      );
+      camCard.append(
+        el(
+          'p',
+          'mt-2 text-xs leading-relaxed text-warn',
+          'Crowd-sourced and incomplete — the absence of a camera here is not evidence that none exists.',
+        ),
+      );
+    }
+    cards.append(camCard);
+
+    /* --- 287(g) agreements in this county --- */
+    const agreements = (layerData.get('agency_287g') ?? []).filter(
+      (f) => countyName && f.properties.county === countyName,
+    );
+    const agCard = card(S.sheriffAgreement, '#f97316');
+    if (!agreements.length) {
+      agCard.append(el('p', 'text-sm leading-relaxed text-ink-300', S.noAgreement));
+    } else {
+      agCard.append(
+        el('p', 'text-sm text-ink-200', `${agreements.length} ${S.hasAgreement}`),
+      );
+      const ul = el('ul', 'mt-2 space-y-1.5');
+      for (const a of agreements) {
+        const li = el('li', 'text-sm');
+        li.append(el('span', 'block text-ink-100', a.properties.name));
+        li.append(
+          el('span', 'block text-xs text-ink-400', `${a.properties.attributes.supportType} · signed ${a.properties.attributes.signed ?? '—'}`),
+        );
+        ul.append(li);
+      }
+      agCard.append(ul);
+    }
+    cards.append(agCard);
+
+    /* --- Nearest ICE-contract facility --- */
+    const facility = nearest(point, layerData.get('detention_facility') ?? []);
+    const facCard = card(S.nearestFacility, '#f43f5e');
+    if (!facility) {
+      facCard.append(el('p', 'text-sm text-ink-300', 'No facility in this dataset.'));
+    } else {
+      facCard.append(
+        el('p', 'text-sm text-ink-100', facility.feature.properties.name),
+        el('p', 'mt-0.5 text-xs text-ink-400', `${fmtMiles(facility.distance)} ${S.milesAway} · ${facility.feature.properties.attributes.contractType}`),
+        el('p', 'mt-2 text-xs leading-relaxed text-ink-400', 'This describes a building and a contract. It holds no information about any person.'),
+      );
+    }
+    cards.append(facCard);
+
+    /* --- Nearest data centre --- */
+    const dc = nearest(point, layerData.get('data_center') ?? []);
+    const dcCard = card(S.nearestDataCenter, '#34d399');
+    if (!dc) {
+      dcCard.append(el('p', 'text-sm text-ink-300', 'No data centre in this dataset.'));
+    } else {
+      dcCard.append(
+        el('p', 'text-sm text-ink-100', dc.feature.properties.name),
+        el('p', 'mt-0.5 text-xs text-ink-400', `${fmtMiles(dc.distance)} ${S.milesAway}${dc.feature.properties.attributes.city ? ` · ${dc.feature.properties.attributes.city}` : ''}`),
+      );
+      if (dc.feature.properties.attributes.campaignUrl) {
+        const a = el('a', 'mt-2 inline-block text-xs text-accent underline underline-offset-2', 'Local campaign →');
+        a.setAttribute('href', dc.feature.properties.attributes.campaignUrl);
+        a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener noreferrer');
+        dcCard.append(a);
+      }
+    }
+    cards.append(dcCard);
+
+    /* --- Redlining --- */
+    const zones = layerData.get('redlining') ?? [];
+    const zone = findContaining(point, zones as any[]);
+    const redCard = card(S.neighbourhoodHistory, '#c084fc');
+    if (!zone) {
+      redCard.append(el('p', 'text-sm leading-relaxed text-ink-300', S.notInRedlinedArea));
+    } else {
+      redCard.append(
+        el('p', 'text-sm text-ink-200', S.inRedlinedArea),
+        el('p', 'mt-1 text-sm font-medium text-ink-100', zone.properties.name),
+        el('p', 'mt-1.5 text-xs leading-relaxed text-ink-300', zone.properties.attributes.gradeMeaning),
+      );
+    }
+    redCard.className += ' sm:col-span-2';
+    cards.append(redCard);
+
+    section.hidden = false;
+    section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+</script>

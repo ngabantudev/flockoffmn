@@ -1,0 +1,554 @@
+---
+import type { Locale } from '~/layers/types';
+import { LAYERS } from '~/layers/registry';
+import { loadAllLayers, distinctValues } from '~/layers/data';
+import { useTranslations, pick, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const loaded = await loadAllLayers();
+
+// Serialise only what the browser needs. Filter values are computed at build
+// time from the real data, so the controls can never offer a value that no
+// record has.
+const clientLayers = loaded.map(({ definition: d, collection }) => ({
+  id: d.id,
+  slug: d.slug,
+  label: pick(d.label, locale),
+  summary: pick(d.summary, locale),
+  whatThisMeans: pick(d.whatThisMeans, locale),
+  limitations: d.limitations.map((l) => pick(l, locale)),
+  color: d.color,
+  geometry: d.geometry,
+  cluster: d.cluster,
+  dataPath: d.dataPath,
+  csvPath: d.csvPath,
+  filters: d.filters
+    .filter((f) => f.kind === 'enum')
+    .map((f) => ({
+      key: f.key,
+      label: pick(f.label, locale),
+      kind: f.kind,
+      values: distinctValues(collection, f.key),
+    }))
+    .filter((f) => f.values.length > 1),
+  detailFields: d.detailFields.map((f) => ({
+    key: f.key,
+    label: pick(f.label, locale),
+    format: f.format,
+  })),
+  source: collection?.metadata.source ?? d.provenance.source,
+  sourceUrl: collection?.metadata.sourceUrl ?? d.provenance.sourceUrl,
+  license: collection?.metadata.license ?? d.provenance.license,
+  featureCount: collection?.metadata.featureCount ?? 0,
+}));
+
+const strings = {
+  loading: t('loading'),
+  noResults: t('noResults'),
+  whatThisMeans: t('whatThisMeans'),
+  limitations: t('limitations'),
+  source: t('source'),
+  license: t('license'),
+  confidence: t('confidence'),
+  county: t('county'),
+  viewRecord: t('viewRecord'),
+  closePanel: t('closePanel'),
+  confidenceConfirmed: t('confidenceConfirmed'),
+  confidenceReported: t('confidenceReported'),
+  confidenceProbabilistic: t('confidenceProbabilistic'),
+  ofTotal: t('ofTotal'),
+};
+---
+
+<div class="relative flex h-full min-h-0 flex-col lg:flex-row">
+  {/* ---------------------------- Controls ---------------------------- */}
+  <aside
+    id="controls"
+    aria-label={t('layers')}
+    class="scroll-slim z-20 flex max-h-[45dvh] shrink-0 flex-col overflow-y-auto border-b border-ink-800 bg-ink-900 lg:max-h-none lg:w-[21rem] lg:border-r lg:border-b-0"
+  >
+    <div class="border-b border-ink-800 p-3">
+      <label for="map-search" class="sr-only">{t('searchLabel')}</label>
+      <input
+        id="map-search"
+        type="search"
+        autocomplete="off"
+        placeholder={t('searchPlaceholder')}
+        class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+      />
+      <ul
+        id="search-results"
+        class="mt-1.5 hidden max-h-56 overflow-y-auto rounded-md border border-ink-700 bg-ink-850 text-sm"
+        role="listbox"
+      >
+      </ul>
+    </div>
+
+    <div class="p-3">
+      <div class="mb-2 flex items-baseline justify-between">
+        <h2 class="text-xs font-semibold tracking-wider text-ink-400 uppercase">{t('layers')}</h2>
+        <button
+          id="clear-filters"
+          type="button"
+          class="text-xs text-ink-400 underline underline-offset-2 hover:text-ink-100"
+        >
+          {t('clearFilters')}
+        </button>
+      </div>
+
+      <ul class="space-y-2">
+        {
+          clientLayers.map((layer) => (
+            <li class="rounded-lg border border-ink-800 bg-ink-850">
+              <div class="flex items-start gap-2.5 p-2.5">
+                <input
+                  type="checkbox"
+                  id={`layer-${layer.id}`}
+                  data-layer-toggle={layer.id}
+                  class="mt-0.5 h-4 w-4 shrink-0 accent-current"
+                  style={`color:${layer.color}`}
+                />
+                <div class="min-w-0 flex-1">
+                  <label
+                    for={`layer-${layer.id}`}
+                    class="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink-100"
+                  >
+                    <span
+                      class="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={`background:${layer.color}`}
+                      aria-hidden="true"
+                    />
+                    <span class="min-w-0">{layer.label}</span>
+                  </label>
+                  <p class="mt-1 text-xs leading-snug text-ink-400">{layer.summary}</p>
+                  <p class="mt-1 font-mono text-[11px] text-ink-400">
+                    <span data-count={layer.id}>0</span>
+                    <span> {strings.ofTotal} </span>
+                    <span>{layer.featureCount}</span>
+                  </p>
+                </div>
+              </div>
+
+              {layer.filters.length > 0 && (
+                <details class="border-t border-ink-800">
+                  <summary class="cursor-pointer px-2.5 py-1.5 text-xs text-ink-400 hover:text-ink-100">
+                    {t('filters')}
+                  </summary>
+                  <div class="space-y-2.5 px-2.5 pb-2.5">
+                    {layer.filters.map((filter) => (
+                      <fieldset>
+                        <legend class="mb-1 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
+                          {filter.label}
+                        </legend>
+                        <div class="space-y-1">
+                          {filter.values.map((value) => (
+                            <label class="flex cursor-pointer items-start gap-2 text-xs text-ink-200">
+                              <input
+                                type="checkbox"
+                                data-filter-layer={layer.id}
+                                data-filter-key={filter.key}
+                                value={value}
+                                class="mt-0.5 h-3.5 w-3.5 shrink-0"
+                              />
+                              <span class="min-w-0">{value}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+
+    {/* Accessible equivalent of the canvas: every drawn record, as a list. */}
+    <div class="border-t border-ink-800 p-3">
+      <h2 class="mb-2 text-xs font-semibold tracking-wider text-ink-400 uppercase">
+        {t('legend')}
+      </h2>
+      <ul id="record-list" class="scroll-slim max-h-72 space-y-0.5 overflow-y-auto text-sm">
+        <li class="text-xs text-ink-400" data-empty>{t('noResults')}</li>
+      </ul>
+    </div>
+  </aside>
+
+  {/* ------------------------------ Map ------------------------------ */}
+  <div class="relative min-h-0 flex-1">
+    <div id="map" class="absolute inset-0" role="application" aria-label={t('mapLabel')}></div>
+
+    <div
+      id="map-status"
+      role="status"
+      aria-live="polite"
+      class="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-ink-900/90 px-3 py-1 text-xs text-ink-200 opacity-0 transition-opacity"
+    >
+    </div>
+
+    <button
+      id="reset-view"
+      type="button"
+      class="absolute right-2 bottom-8 rounded-md border border-ink-700 bg-ink-900/90 px-2.5 py-1.5 text-xs text-ink-200 hover:text-ink-100"
+    >
+      {t('resetView')}
+    </button>
+  </div>
+
+  {/* --------------------------- Detail panel --------------------------- */}
+  <aside
+    id="detail-panel"
+    aria-label={t('whatThisMeans')}
+    hidden
+    class="scroll-slim z-20 max-h-[55dvh] shrink-0 overflow-y-auto border-t border-ink-800 bg-ink-900 lg:max-h-none lg:w-[24rem] lg:border-t-0 lg:border-l"
+  >
+  </aside>
+</div>
+
+<script is:inline type="application/json" id="layer-config" set:html={JSON.stringify(clientLayers)} />
+<script is:inline type="application/json" id="ui-strings" set:html={JSON.stringify(strings)} />
+
+<script>
+  import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
+  import { compassLabel } from '~/lib/geo.mjs';
+
+  const layers = JSON.parse(document.getElementById('layer-config')!.textContent!) as (ClientLayer & {
+    featureCount: number;
+  })[];
+  const S = JSON.parse(document.getElementById('ui-strings')!.textContent!) as Record<string, string>;
+
+  const mapEl = document.getElementById('map')!;
+  const detailEl = document.getElementById('detail-panel')!;
+  const statusEl = document.getElementById('map-status')!;
+  const recordList = document.getElementById('record-list')!;
+
+  // Keyed by plain string: lookups come from DOM datasets and event payloads,
+  // which are untyped by definition.
+  const layerById = new Map<string, (typeof layers)[number]>(layers.map((l) => [l.id, l]));
+
+  function status(message: string, holdMs = 1800) {
+    statusEl.textContent = message;
+    statusEl.style.opacity = '1';
+    if (holdMs) window.setTimeout(() => (statusEl.style.opacity = '0'), holdMs);
+  }
+
+  const controller = new MapController(mapEl, layers, {
+    onSelect: (feature, layer) => renderDetail(feature, layer),
+    onCounts: (counts) => {
+      for (const [id, { shown }] of Object.entries(counts)) {
+        const el = document.querySelector(`[data-count="${id}"]`);
+        if (el) el.textContent = String(shown);
+      }
+      renderRecordList();
+    },
+    onLayerReady: (id) => status(`${layerById.get(id)?.label ?? id} ✓`),
+    onError: (id, message) =>
+      status(`${layerById.get(id)?.label ?? id}: ${message}`, 6000),
+  });
+
+  /* ----------------------------- Detail panel ---------------------------- */
+
+  const CONFIDENCE_TEXT: Record<string, string> = {
+    confirmed: S.confidenceConfirmed,
+    reported: S.confidenceReported,
+    probabilistic: S.confidenceProbabilistic,
+  };
+
+  function el(tag: string, className?: string, text?: string) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function formatValue(value: unknown, format?: string): string | null {
+    if (value === null || value === undefined || value === '') return null;
+    if (format === 'date') {
+      const d = new Date(String(value));
+      return Number.isNaN(d.getTime())
+        ? String(value)
+        : d.toLocaleDateString(document.documentElement.lang, {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          });
+    }
+    if (format === 'degrees') {
+      const compass = compassLabel(value);
+      return compass ? `${value}° (${compass})` : `${value}°`;
+    }
+    return String(value);
+  }
+
+  function renderDetail(feature: LoadedFeature | null, layer: ClientLayer) {
+    detailEl.textContent = '';
+    if (!feature) {
+      detailEl.hidden = true;
+      return;
+    }
+    const p = feature.properties;
+    const attrs = p.attributes as Record<string, unknown>;
+
+    const header = el('div', 'flex items-start justify-between gap-2 border-b border-ink-800 p-3');
+    const titleWrap = el('div', 'min-w-0');
+    const badge = el('div', 'mb-1 flex items-center gap-1.5');
+    const dot = el('span', 'h-2 w-2 rounded-full shrink-0');
+    dot.setAttribute('style', `background:${layer.color}`);
+    badge.append(dot, el('span', 'text-[11px] uppercase tracking-wider text-ink-400', layer.label));
+    titleWrap.append(badge, el('h2', 'text-base font-semibold leading-snug text-ink-100', p.name));
+    if (p.county) {
+      titleWrap.append(el('p', 'mt-0.5 text-xs text-ink-400', `${p.county}, ${p.state}`));
+    }
+
+    const close = el('button', 'shrink-0 rounded p-1 text-ink-400 hover:text-ink-100', '✕');
+    close.setAttribute('type', 'button');
+    close.setAttribute('aria-label', S.closePanel);
+    close.addEventListener('click', () => {
+      detailEl.hidden = true;
+      (document.getElementById('map-search') as HTMLElement)?.focus();
+    });
+    header.append(titleWrap, close);
+
+    const body = el('div', 'space-y-4 p-3');
+
+    // Layer-specific fields.
+    const rows = layer.detailFields
+      .map((f) => ({ label: f.label, value: formatValue(attrs[f.key], f.format), format: f.format }))
+      .filter((r) => r.value !== null);
+
+    if (rows.length) {
+      const dl = el('dl', 'space-y-2');
+      for (const row of rows) {
+        const wrap = el('div');
+        wrap.append(el('dt', 'text-[11px] uppercase tracking-wider text-ink-400', row.label));
+        if (row.format === 'link') {
+          const dd = el('dd', 'text-sm');
+          const a = el('a', 'text-accent underline underline-offset-2 break-words', S.viewRecord);
+          a.setAttribute('href', row.value!);
+          a.setAttribute('target', '_blank');
+          a.setAttribute('rel', 'noopener noreferrer');
+          dd.append(a);
+          wrap.append(dd);
+        } else {
+          wrap.append(el('dd', 'text-sm text-ink-100 break-words', row.value!));
+        }
+        dl.append(wrap);
+      }
+      body.append(dl);
+    }
+
+    // Plain-language explanation (spec F5).
+    const means = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
+    means.append(
+      el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.whatThisMeans),
+      el('p', 'text-xs leading-relaxed text-ink-200', layer.whatThisMeans),
+    );
+    body.append(means);
+
+    // Confidence and limitations (spec F8).
+    const conf = el('div');
+    conf.append(
+      el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.confidence),
+      el('p', 'text-xs leading-relaxed text-warn', CONFIDENCE_TEXT[p.confidence] ?? p.confidence),
+    );
+    body.append(conf);
+
+    if (layer.limitations.length) {
+      const lim = el('div');
+      lim.append(el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.limitations));
+      const ul = el('ul', 'list-disc space-y-1 pl-4 text-xs leading-relaxed text-ink-300');
+      for (const item of layer.limitations) ul.append(el('li', undefined, item));
+      lim.append(ul);
+      body.append(lim);
+    }
+
+    // Provenance travels with every record (spec F5, F7).
+    const prov = el('div', 'border-t border-ink-800 pt-3 text-xs text-ink-400');
+    const srcLine = el('p', 'break-words');
+    srcLine.append(document.createTextNode(`${S.source}: `));
+    const srcLink = el('a', 'text-ink-200 underline underline-offset-2', layer.source);
+    srcLink.setAttribute('href', layer.sourceUrl);
+    srcLink.setAttribute('target', '_blank');
+    srcLink.setAttribute('rel', 'noopener noreferrer');
+    srcLine.append(srcLink);
+    prov.append(srcLine, el('p', 'mt-1', `${S.license}: ${layer.license}`));
+    if (p.sourceDate) prov.append(el('p', 'mt-1', `${S.source}: ${p.sourceDate}`));
+    body.append(prov);
+
+    detailEl.append(header, body);
+    detailEl.hidden = false;
+    detailEl.scrollTop = 0;
+  }
+
+  /* ---------------------------- Record list ----------------------------- */
+
+  function renderRecordList() {
+    const visible = layers.filter((l) => controller.isVisible(l.id));
+    recordList.textContent = '';
+
+    const entries: { layer: ClientLayer; feature: LoadedFeature }[] = [];
+    for (const layer of visible) {
+      for (const feature of controller.filteredFeatures(layer.id)) entries.push({ layer, feature });
+    }
+
+    if (!entries.length) {
+      recordList.append(el('li', 'text-xs text-ink-400', S.noResults));
+      return;
+    }
+
+    // Cap the rendered list; the map still shows everything. Announced below
+    // so the number is never silently truncated.
+    const CAP = 300;
+    for (const { layer, feature } of entries.slice(0, CAP)) {
+      const li = el('li');
+      const button = el(
+        'button',
+        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-ink-200 hover:bg-ink-850 hover:text-ink-100',
+      );
+      button.setAttribute('type', 'button');
+      const dot = el('span', 'h-1.5 w-1.5 shrink-0 rounded-full');
+      dot.setAttribute('style', `background:${layer.color}`);
+      const label = el('span', 'min-w-0 truncate', feature.properties.name);
+      button.append(dot, label);
+      button.addEventListener('click', () =>
+        controller.focusFeature(layer.id, feature.properties.id),
+      );
+      li.append(button);
+      recordList.append(li);
+    }
+    if (entries.length > CAP) {
+      recordList.append(
+        el('li', 'px-1.5 pt-1 text-[11px] text-ink-400', `+ ${entries.length - CAP} more on the map`),
+      );
+    }
+  }
+
+  /* ------------------------------ Controls ------------------------------ */
+
+  document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const layer = layerById.get(input.dataset.layerToggle!);
+      if (layer) controller.setLayerVisible(layer, input.checked);
+    });
+  });
+
+  document.querySelectorAll<HTMLInputElement>('[data-filter-key]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const layerId = input.dataset.filterLayer!;
+      const key = input.dataset.filterKey!;
+      const checked = document.querySelectorAll<HTMLInputElement>(
+        `[data-filter-layer="${layerId}"][data-filter-key="${key}"]:checked`,
+      );
+      controller.setFilter(layerId, key, new Set([...checked].map((c) => c.value)));
+    });
+  });
+
+  document.getElementById('clear-filters')?.addEventListener('click', () => {
+    document
+      .querySelectorAll<HTMLInputElement>('[data-filter-key]:checked')
+      .forEach((c) => (c.checked = false));
+    controller.clearFilters();
+  });
+
+  document.getElementById('reset-view')?.addEventListener('click', () => controller.resetView());
+
+  /* ------------------------------- Search ------------------------------- */
+
+  const searchInput = document.getElementById('map-search') as HTMLInputElement;
+  const searchResults = document.getElementById('search-results')!;
+
+  function runSearch(query: string) {
+    const q = query.trim().toLowerCase();
+    searchResults.textContent = '';
+    if (q.length < 2) {
+      searchResults.classList.add('hidden');
+      return;
+    }
+
+    const hits: { layer: ClientLayer; feature: LoadedFeature }[] = [];
+    for (const layer of layers) {
+      for (const feature of controller.getFeatures(layer.id)) {
+        const p = feature.properties;
+        const haystack = `${p.name} ${p.county ?? ''} ${Object.values(p.attributes ?? {}).join(' ')}`;
+        if (haystack.toLowerCase().includes(q)) hits.push({ layer, feature });
+        if (hits.length >= 40) break;
+      }
+    }
+
+    if (!hits.length) {
+      searchResults.append(el('li', 'px-2.5 py-2 text-xs text-ink-400', S.noResults));
+      searchResults.classList.remove('hidden');
+      return;
+    }
+
+    for (const { layer, feature } of hits) {
+      const li = el('li');
+      li.setAttribute('role', 'option');
+      const button = el(
+        'button',
+        'flex w-full items-start gap-2 px-2.5 py-1.5 text-left hover:bg-ink-800',
+      );
+      button.setAttribute('type', 'button');
+      const dot = el('span', 'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full');
+      dot.setAttribute('style', `background:${layer.color}`);
+      const text = el('span', 'min-w-0');
+      text.append(
+        el('span', 'block truncate text-xs text-ink-100', feature.properties.name),
+        el('span', 'block truncate text-[11px] text-ink-400', feature.properties.county ?? layer.label),
+      );
+      button.append(dot, text);
+      button.addEventListener('click', () => {
+        controller.focusFeature(layer.id, feature.properties.id);
+        searchResults.classList.add('hidden');
+      });
+      li.append(button);
+      searchResults.append(li);
+    }
+    searchResults.classList.remove('hidden');
+  }
+
+  let searchTimer: number;
+  searchInput.addEventListener('input', () => {
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => runSearch(searchInput.value), 140);
+  });
+  searchInput.addEventListener('blur', () => {
+    // Delay so a click on a result still registers.
+    window.setTimeout(() => searchResults.classList.add('hidden'), 180);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !detailEl.hidden) {
+      detailEl.hidden = true;
+    }
+  });
+
+  /* ------------------------------ Start-up ------------------------------ */
+
+  // Default on: the two layers that carry the roadmap's core claim, so the
+  // first paint already shows enforcement over surveillance rather than an
+  // empty basemap.
+  const DEFAULT_ON = ['agency_287g', 'alpr'];
+  status(S.loading, 0);
+  controller.map.once('load', () => {
+    for (const id of DEFAULT_ON) {
+      const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${id}"]`);
+      const layer = layerById.get(id);
+      if (input && layer) {
+        input.checked = true;
+        controller.setLayerVisible(layer, true);
+      }
+    }
+    status('', 400);
+  });
+
+  // Expose for the near-me page, which reuses this controller instance.
+  (window as unknown as Record<string, unknown>).__getFlocked = { controller, layers };
+</script>

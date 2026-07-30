@@ -1,0 +1,371 @@
+---
+import type { Locale } from '~/layers/types';
+import { loadAllLayers } from '~/layers/data';
+import { useTranslations, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const loaded = await loadAllLayers();
+
+// Agencies that have actually signed something, plus every county, so the
+// generator can address a real body rather than a blank.
+const agencyLayer = loaded.find((l) => l.definition.id === 'agency_287g')?.collection;
+const agencies = [
+  ...new Set((agencyLayer?.features ?? []).map((f) => f.properties.name)),
+].sort();
+
+const counties = [
+  ...new Set(
+    loaded
+      .flatMap((l) => l.collection?.features ?? [])
+      .map((f) => f.properties.county)
+      .filter((c): c is string => Boolean(c)),
+  ),
+].sort();
+
+const facilities = (
+  loaded.find((l) => l.definition.id === 'detention_facility')?.collection?.features ?? []
+).map((f) => f.properties.name);
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">{t('navAct')}</h1>
+  <p class="prose-civic mt-3">
+    Everything on this map came from a record somebody requested or published. These tools help you
+    request the next one. They are informational, not legal advice.
+  </p>
+
+  <!-- ------------------------- Records request ------------------------- -->
+  <section class="mt-8 rounded-lg border border-ink-800 bg-ink-900 p-5">
+    <h2 class="text-lg font-semibold text-ink-100">Public records request generator</h2>
+    <p class="mt-1.5 text-sm leading-relaxed text-ink-300">
+      Minnesota's public records law is the
+      <a
+        href="https://www.revisor.mn.gov/statutes/cite/13"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-accent underline underline-offset-2">Government Data Practices Act, Minn. Stat. ch. 13</a
+      >. Under it, government data is public unless a statute says otherwise, and you do not have to
+      explain why you want it. Pick a request below, fill in the blanks, and send it.
+    </p>
+
+    <div class="mt-5 grid gap-4 sm:grid-cols-2">
+      <div>
+        <label for="req-type" class="mb-1.5 block text-sm font-medium text-ink-200">
+          What are you requesting?
+        </label>
+        <select
+          id="req-type"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 focus:border-accent focus:outline-none"
+        >
+          <option value="alpr">ALPR data retention and sharing audit</option>
+          <option value="287g">287(g) agreement records and activity</option>
+          <option value="detention">ICE detention contract and billing records</option>
+          <option value="datacenter">Data centre permits, utilities and tax abatements</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="req-agency" class="mb-1.5 block text-sm font-medium text-ink-200">
+          Which body?
+        </label>
+        <input
+          id="req-agency"
+          list="agency-list"
+          placeholder="e.g. Hennepin County Sheriff's Office"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+        />
+        <datalist id="agency-list">
+          {agencies.map((a) => <option value={a} />)}
+          {counties.map((c) => <option value={`${c} Sheriff's Office`} />)}
+          {facilities.map((f) => <option value={f} />)}
+        </datalist>
+      </div>
+
+      <div>
+        <label for="req-name" class="mb-1.5 block text-sm font-medium text-ink-200">
+          Your name
+        </label>
+        <input
+          id="req-name"
+          placeholder="Optional — you may request anonymously"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+        />
+      </div>
+
+      <div>
+        <label for="req-contact" class="mb-1.5 block text-sm font-medium text-ink-200">
+          Reply address
+        </label>
+        <input
+          id="req-contact"
+          placeholder="Email or postal address"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+        />
+      </div>
+    </div>
+
+    <p class="mt-3 text-xs leading-relaxed text-ink-400">
+      Nothing you type here leaves your browser. The letter is assembled on your device; this site
+      has no server to receive it.
+    </p>
+
+    <div class="mt-4 flex flex-wrap gap-2">
+      <button
+        id="copy-letter"
+        type="button"
+        class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink-950 hover:brightness-110"
+      >
+        Copy letter
+      </button>
+      <button
+        id="download-letter"
+        type="button"
+        class="rounded-md border border-ink-700 px-4 py-2 text-sm font-medium text-ink-100 hover:border-accent"
+      >
+        Download as .txt
+      </button>
+      <span id="copy-status" role="status" aria-live="polite" class="self-center text-sm text-accent"
+      ></span>
+    </div>
+
+    <label for="letter" class="mt-4 mb-1.5 block text-sm font-medium text-ink-200">
+      Your request
+    </label>
+    <textarea
+      id="letter"
+      rows="18"
+      class="scroll-slim w-full rounded-md border border-ink-700 bg-ink-950 p-3 font-mono text-xs leading-relaxed text-ink-100 focus:border-accent focus:outline-none"
+    ></textarea>
+  </section>
+
+  <!-- --------------------------- Who to contact --------------------------- -->
+  <section class="mt-8">
+    <h2 class="text-lg font-semibold text-ink-100">Finding the right official</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        Most of what is on this map is decided locally — by a county board that approves a jail
+        contract, a city council that grants a data-centre abatement, or a sheriff who signs an
+        agreement. These are the offices that can undo those decisions.
+      </p>
+      <ul>
+        <li>
+          <a href="https://www.sos.mn.gov/elections-voting/whos-my-legislator/" target="_blank" rel="noopener noreferrer">
+            Who represents me — Minnesota Secretary of State
+          </a> — your state legislators and districts.
+        </li>
+        <li>
+          <a href="https://www.lmc.org/resources/directory-of-minnesota-city-officials/" target="_blank" rel="noopener noreferrer">
+            Directory of Minnesota city officials
+          </a> — League of Minnesota Cities.
+        </li>
+        <li>
+          <a href="https://www.mncounties.org/counties/" target="_blank" rel="noopener noreferrer">
+            Minnesota county directory
+          </a> — county boards and sheriffs, who hold most of the authority on this map.
+        </li>
+        <li>
+          <a href="https://www.ipad.state.mn.us/" target="_blank" rel="noopener noreferrer">
+            Information Policy Analysis Division (IPAD)
+          </a> — the state office that issues advisory opinions when an agency refuses a data
+          request. Free, and their opinions carry weight.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ----------------------------- Escalation ----------------------------- -->
+  <section class="mt-8">
+    <h2 class="text-lg font-semibold text-ink-100">If your request is refused or ignored</h2>
+    <div class="prose-civic mt-2">
+      <ul>
+        <li>
+          <strong class="text-ink-100">Ask for the statute.</strong> An agency withholding data has
+          to identify the specific provision that classifies it as not public. "It's law
+          enforcement data" is not a citation.
+        </li>
+        <li>
+          <strong class="text-ink-100">Ask for a fee estimate in writing</strong> before any work
+          begins. Inspection of public data is free under Minnesota law; you only pay for copies.
+        </li>
+        <li>
+          <strong class="text-ink-100">Request an IPAD advisory opinion.</strong> It costs nothing
+          and often resolves a refusal without litigation.
+        </li>
+        <li>
+          <strong class="text-ink-100">Narrow, then re-ask.</strong> A request refused as unduly
+          burdensome will frequently succeed when scoped to one system, one quarter, or one
+          contract.
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="mt-8">
+    <h2 class="text-lg font-semibold text-ink-100">Contribute to the map</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        Found a camera that is not here, or a community campaign we have missed? The camera layer
+        is built on OpenStreetMap, so adding one there improves this map and every other project
+        built on the same data. See <a href={localePath(locale, '/contribute')}>how to contribute</a>.
+      </p>
+    </div>
+  </section>
+
+  <p class="mt-10 rounded-lg border border-ink-800 p-4 text-sm leading-relaxed text-ink-400">
+    These templates are informational and are not legal advice. They describe a general process
+    under Minnesota law and may not fit your situation. If you are facing enforcement action, talk
+    to a lawyer.
+  </p>
+</div>
+
+<script>
+  const typeEl = document.getElementById('req-type') as HTMLSelectElement;
+  const agencyEl = document.getElementById('req-agency') as HTMLInputElement;
+  const nameEl = document.getElementById('req-name') as HTMLInputElement;
+  const contactEl = document.getElementById('req-contact') as HTMLInputElement;
+  const letterEl = document.getElementById('letter') as HTMLTextAreaElement;
+  const statusEl = document.getElementById('copy-status')!;
+
+  const CITE = 'Minnesota Government Data Practices Act, Minn. Stat. ch. 13';
+
+  const BODIES: Record<string, { title: string; items: string[]; note?: string }> = {
+    alpr: {
+      title: 'automated licence plate reader (ALPR) data practices',
+      items: [
+        'The current retention schedule for ALPR data, including how long plate reads not linked to an active investigation are retained.',
+        'Any policy, general order, or standard operating procedure governing use of ALPR systems, including authorised query reasons.',
+        'The total number of ALPR queries run by your agency in the most recent complete twelve-month period.',
+        'A list of agencies and third parties with which your agency shares ALPR data, and any agreements governing that sharing.',
+        'Any audit logs or audit reports of ALPR queries, including query reason codes, for the most recent complete twelve-month period.',
+        'Contracts, purchase orders, and invoices for ALPR hardware, software, or services, including any agreement with Flock Safety or a comparable vendor.',
+        'Records of any query run by, or on behalf of, a federal immigration authority against your agency’s ALPR data.',
+      ],
+      note: 'Minnesota has a specific ALPR statute at Minn. Stat. § 13.824, which sets retention limits and requires a biennial audit. If your agency operates ALPR systems, please also provide the most recent audit conducted under that section.',
+    },
+    '287g': {
+      title: 'agreements with U.S. Immigration and Customs Enforcement under section 287(g)',
+      items: [
+        'The complete executed memorandum of agreement with ICE, including all appendices and any addenda or amendments.',
+        'Records showing the number of officers designated under the agreement and their training completion dates.',
+        'Any policy or directive governing how officers exercise delegated immigration authority.',
+        'Aggregate counts of actions taken under the agreement in the most recent complete twelve-month period. Please provide counts only — I am not requesting records about any individual.',
+        'All communications between your agency and ICE regarding the negotiation, renewal, modification, or termination of the agreement.',
+        'Any cost, reimbursement, or budget records associated with participation in the programme.',
+      ],
+      note: 'To be explicit: this request seeks records about the agreement and its administration. It does not seek any record identifying a person encountered, detained, or arrested.',
+    },
+    detention: {
+      title: 'agreements to detain individuals on behalf of U.S. Immigration and Customs Enforcement',
+      items: [
+        'The current intergovernmental service agreement or contract with ICE, including all amendments and the per-diem rate schedule.',
+        'Aggregate monthly billing records or invoices submitted to ICE for the most recent complete twelve-month period, showing totals only.',
+        'The facility’s average daily population held under ICE contract, by month, for the most recent complete twelve-month period.',
+        'Any inspection reports, corrective action plans, or compliance findings relating to ICE-contracted detention at the facility.',
+        'Any policy governing detainee access to legal counsel, telephones, and visitation.',
+        'Minutes or records of any public body vote authorising or renewing the agreement.',
+      ],
+      note: 'This request seeks facility-level and contract-level records only. It does not seek any record identifying, describing, or relating to any individual held at the facility.',
+    },
+    datacenter: {
+      title: 'permitting, utility, and public-subsidy records for data centre development',
+      items: [
+        'All land use, zoning, conditional use, and building permit applications and approvals for data centre projects in the past five years.',
+        'Any development agreement, tax abatement, tax increment financing, or sales tax exemption granted to a data centre operator.',
+        'Projected and actual electricity demand for each facility, and any interconnection or capacity agreement with the utility.',
+        'Projected and actual water consumption for cooling, and any water supply agreement.',
+        'Any noise study, environmental assessment, or traffic study submitted in support of an application.',
+        'Records of public comment received regarding a data centre project, and minutes of any hearing at which one was considered.',
+      ],
+    },
+  };
+
+  function buildLetter(): string {
+    const key = typeEl.value;
+    const body = BODIES[key];
+    const agency = agencyEl.value.trim() || '[agency name]';
+    const requester = nameEl.value.trim();
+    const contact = contactEl.value.trim() || '[your email or postal address]';
+    const today = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const lines = [
+      today,
+      '',
+      `Responsible Authority / Data Practices Compliance Official`,
+      agency,
+      '',
+      `Re: Data practices request — ${body.title}`,
+      '',
+      'To the Responsible Authority:',
+      '',
+      `Under the ${CITE}, I request access to and copies of the following government data held by ${agency}:`,
+      '',
+      ...body.items.map((item, i) => `${i + 1}. ${item}`),
+      '',
+    ];
+
+    if (body.note) lines.push(body.note, '');
+
+    lines.push(
+      'Please provide these data in electronic form where they already exist in that form, as this is generally the least costly method for both of us.',
+      '',
+      'If you determine that any portion of these data is not public, please identify the specific statutory provision that classifies it as such, and release the remaining portions rather than withholding a record in full.',
+      '',
+      'If you anticipate that responding will involve a charge for copies, please provide a written estimate before beginning work. I understand that inspection of public government data is provided at no charge.',
+      '',
+      'Minnesota law requires that you respond to this request in an appropriate and prompt manner. If you need clarification or wish to discuss narrowing the scope, please contact me and I will work with you.',
+      '',
+      'Thank you for your time.',
+      '',
+      'Sincerely,',
+      requester || '[your name]',
+      contact,
+    );
+
+    return lines.join('\n');
+  }
+
+  function refresh() {
+    letterEl.value = buildLetter();
+  }
+
+  [typeEl, agencyEl, nameEl, contactEl].forEach((input) =>
+    input.addEventListener('input', refresh),
+  );
+  typeEl.addEventListener('change', refresh);
+
+  function flash(message: string) {
+    statusEl.textContent = message;
+    window.setTimeout(() => (statusEl.textContent = ''), 2500);
+  }
+
+  document.getElementById('copy-letter')?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(letterEl.value);
+      flash('Copied.');
+    } catch {
+      letterEl.select();
+      flash('Press Ctrl/Cmd+C to copy.');
+    }
+  });
+
+  document.getElementById('download-letter')?.addEventListener('click', () => {
+    const blob = new Blob([letterEl.value], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `records-request-${typeEl.value}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  refresh();
+</script>
