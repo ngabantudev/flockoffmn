@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+
+  // Cloudflare Pages project config.
+  //
+  // `pages_build_output_dir` is what marks this as a Pages project rather than
+  // a Worker — there is deliberately no `main` entrypoint, because the site is
+  // pure static output with no server-side code. If a `main` key ever appears
+  // here, something has gone wrong: v1 has no backend by design (see
+  // docs/DEPLOYMENT.md).
+  //
+  // Deployment is via Pages' Git integration, so Cloudflare runs the build
+  // itself. That is chosen over a deploy workflow specifically because it
+  // builds a preview URL for every pull request — for a project asking for
+  // community contributions, a reviewer clicking a working link beats asking a
+  // first-time contributor to set up Node locally.
+  //
+  // Build settings to set in the dashboard (or accept from framework detection):
+  //   Build command:        npm run build
+  //   Build output dir:     dist
+  //   Node version:         22  (see "engines" in package.json)
+
+  "name": "get-flocked",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-07-30",
+
+  // No bindings. No KV, no D1, no R2, no queues, no secrets.
+  //
+  // This is not an oversight — it is the security posture. The site has no
+  // server-side state and no store that could hold anything about a visitor,
+  // which is what lets us say honestly that address lookups are never logged.
+  // Adding a binding here means adding a place where user data could
+  // accumulate; do not do it without revisiting the privacy claims on /about.
+
+  "vars": {
+    // Base map tiles. The default in code points at OpenStreetMap's standard
+    // tile servers, which is fine for development but NOT for production —
+    // they are volunteer-funded and their usage policy asks apps not to lean
+    // on them at scale. Set a real value before announcing the site.
+    //
+    // NOTE: if you change the tile host, update the CSP in public/_headers to
+    // match, or the map will silently fail to load tiles.
+    "PUBLIC_TILE_URL": "",
+    "PUBLIC_TILE_ATTRIBUTION": ""
+  }
+}

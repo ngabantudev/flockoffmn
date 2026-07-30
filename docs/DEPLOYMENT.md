@@ -4,6 +4,67 @@ The site builds to static files. `npm run build` produces `dist/`, which can be
 served by anything — object storage, a CDN, a static host, or a plain web
 server. There is no runtime, no database, and no server-side state.
 
+Nothing here is Cloudflare-specific. Pages is what this project uses, but the
+output is plain files and the project should stay portable — that is the point
+of the static architecture, not a side effect of it.
+
+## Cloudflare Pages
+
+`wrangler.jsonc` configures the Pages project. It has `pages_build_output_dir`
+and deliberately **no `main` entrypoint**: this is a static site, not a Worker.
+
+### Set it up once (Git integration — recommended)
+
+1. Cloudflare dashboard → **Workers & Pages** → **Create** → **Pages** →
+   **Connect to Git**, and pick this repository.
+2. Build settings:
+   - Framework preset: **Astro**
+   - Build command: `npm run build`
+   - Build output directory: `dist`
+3. Environment variables → set `NODE_VERSION` to `22`. The ingest scripts and
+   the build both expect it (see `engines` in `package.json`).
+4. Set `PUBLIC_TILE_URL` and `PUBLIC_TILE_ATTRIBUTION` for production — see
+   below.
+
+Git integration is worth choosing over a deploy workflow for one specific
+reason: **Pages builds a preview URL for every pull request.** For a project
+that asks for community contributions, that means someone submitting a data
+correction or a translation gets a working link a reviewer can click, instead
+of being asked to install Node first.
+
+### Manual deploys
+
+Useful for a mirror, or if you would rather not connect the repo:
+
+```bash
+npm run pages:deploy          # builds, then wrangler pages deploy dist
+npm run pages:dev             # serve dist/ locally through the Pages runtime
+```
+
+`npm run pages:dev` is the only way to test `_headers` locally — `astro dev`
+and `astro preview` ignore that file.
+
+### Headers
+
+`public/_headers` ships the CSP and security headers, and Astro copies it into
+`dist/` at build time. Two things to know:
+
+- **`script-src 'self'`** is the directive that matters, and it is strict. No
+  inline scripts, no CDNs, no third-party JS.
+- **`img-src` and `connect-src` allow any HTTPS origin**, on purpose, so that
+  swapping the tile provider does not silently break the map. Images and tile
+  fetches cannot execute; the executable surface stays locked down. If you want
+  to tighten these to your specific tile host, do it — just remember to update
+  the file whenever `PUBLIC_TILE_URL` changes.
+
+### No bindings, and keep it that way
+
+The Pages project has no KV, D1, R2, or queues. That is the privacy posture,
+not an omission: with no server-side store, there is nowhere for a visitor's
+address lookup to be recorded, which is what makes the claim on `/about`
+truthful. Adding a binding means adding somewhere data could accumulate — if
+you ever need one, revisit those claims first.
+
 ## Base map tiles
 
 **Do not point production traffic at OpenStreetMap's standard tile servers.**

@@ -199,6 +199,23 @@ Prejudice**](https://mappingprejudice.umn.edu/) (Univ. of Minnesota) ·
 [**FracTracker Alliance**](https://www.fractracker.org/) · [**EFF Atlas of
 Surveillance**](https://atlasofsurveillance.org/) · the **U.S. Census Bureau**
 
+## Deploying / mirroring
+
+The build is plain static files, so it runs anywhere — and **mirrors are
+welcome**. Grassroots ALPR mapping has drawn legal threats before; the
+practical answer is being easy to copy.
+
+```bash
+npm install && npm run data && npm run build   # dist/ is the whole site
+```
+
+This project deploys to **Cloudflare Pages** (`wrangler.jsonc`), which builds a
+preview URL for every pull request — so a contributor's fix can be reviewed by
+clicking a link. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for setup, and
+note the one thing you must change before real traffic: **point
+`PUBLIC_TILE_URL` at your own tiles** rather than OpenStreetMap's volunteer
+servers.
+
 ## Licence
 
 Code **MIT**. Data we compile **CC BY 4.0**. Upstream layers keep their own
