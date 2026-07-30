@@ -61,6 +61,8 @@ export class MapController {
   private filters = new Map<string, FilterState>();
   private loading = new Set<string>();
   private popup: maplibregl.Popup | null = null;
+  /** Set once the map's `load` event has fired. See ready(). */
+  private hasLoaded = false;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -88,13 +90,24 @@ export class MapController {
     this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
 
     this.map.on('load', () => {
+      this.hasLoaded = true;
       this.map.fitBounds(MN_BOUNDS, { padding: 24, animate: false });
     });
   }
 
-  /** Wait for the style to be ready before touching sources. */
+  /**
+   * Resolve once the map is ready to accept sources and layers.
+   *
+   * This tracks the one-shot `load` event with a flag rather than asking
+   * `isStyleLoaded()`. That method reports false whenever *any* source is
+   * still loading — including a source we ourselves just added — so a second
+   * layer arriving moments after the first would see false, wait on
+   * `once('load')` for an event that had already fired, and hang forever.
+   * The larger the layer, the more reliably it lost that race, which is why
+   * the camera layer was the one that never appeared.
+   */
   private ready(): Promise<void> {
-    if (this.map.isStyleLoaded()) return Promise.resolve();
+    if (this.hasLoaded) return Promise.resolve();
     return new Promise((resolve) => this.map.once('load', () => resolve()));
   }
 
