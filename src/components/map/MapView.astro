@@ -1,8 +1,7 @@
 ---
 import type { Locale } from '~/layers/types';
-import { LAYERS } from '~/layers/registry';
 import { loadAllLayers, distinctValues } from '~/layers/data';
-import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { useTranslations, pick } from '~/lib/i18n';
 
 interface Props {
   locale: Locale;
