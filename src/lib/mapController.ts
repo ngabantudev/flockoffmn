@@ -1,6 +1,7 @@
-import maplibregl, { type Map as MLMap, type GeoJSONSource, type MapGeoJSONFeature } from 'maplibre-gl';
-import type { Feature, FeatureCollection, Geometry, Point, Polygon } from 'geojson';
+import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
+import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
+import { representativePoint } from './geo.mjs';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -325,7 +326,7 @@ export class MapController {
     const feature = this.data.get(layerId)?.find((f) => f.properties.id === featureId);
     const layer = this.layers.find((l) => l.id === layerId);
     if (!feature || !layer) return;
-    const point = centroidOf(feature.geometry);
+    const point = representativePoint(feature.geometry) as [number, number];
     this.map.easeTo({
       center: point,
       zoom: Math.max(this.map.getZoom(), feature.geometry.type === 'Point' ? 13 : 11),
@@ -360,22 +361,3 @@ export class MapController {
     this.map.remove();
   }
 }
-
-/** Representative point for any geometry, used for focusing and distances. */
-export function centroidOf(geometry: Geometry): [number, number] {
-  if (geometry.type === 'Point') return geometry.coordinates as [number, number];
-  let minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
-  const visit = (c: unknown): void => {
-    if (Array.isArray(c) && typeof c[0] === 'number') {
-      const [lng, lat] = c as number[];
-      minLng = Math.min(minLng, lng); maxLng = Math.max(maxLng, lng);
-      minLat = Math.min(minLat, lat); maxLat = Math.max(maxLat, lat);
-      return;
-    }
-    if (Array.isArray(c)) c.forEach(visit);
-  };
-  visit((geometry as Polygon).coordinates);
-  return [(minLng + maxLng) / 2, (minLat + maxLat) / 2];
-}
-
-export type { MapGeoJSONFeature };
