@@ -1,0 +1,49 @@
+# Cloudflare Pages headers.
+#
+# Astro copies public/ into dist/, and Pages reads _headers from the build
+# output root. Rules are matched top to bottom; later matches merge.
+#
+# This site loads no third-party scripts, sets no cookies, and has no backend,
+# so a strict policy costs nothing here.
+
+/*
+  # Nothing on this site is framed, and nothing should frame it.
+  X-Frame-Options: DENY
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; worker-src 'self' blob:; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+  #
+  # On the CSP above:
+  #   script-src 'self'      — the directive that actually matters. No inline
+  #                            scripts, no CDNs, no third-party JS. If you ever
+  #                            need to relax this, don't.
+  #   style-src 'unsafe-inline' — Astro inlines critical CSS at build time.
+  #   img-src / connect-src https: — deliberately permissive so that changing
+  #                            the map tile provider does not silently break
+  #                            the map. Images and tile fetches cannot execute;
+  #                            the executable surface stays locked down.
+  #   worker-src blob:       — MapLibre spawns its renderer in a blob worker.
+  #   form-action 'none'     — there are no forms that submit anywhere. The
+  #                            records-request generator builds text locally
+  #                            and never posts it.
+
+  X-Content-Type-Options: nosniff
+
+  # Do not leak which record someone was reading when they follow a source link.
+  Referrer-Policy: no-referrer
+
+  # geolocation=(self) is required by the "near me" button. Everything else is
+  # denied because nothing here needs it — and a surveillance-transparency site
+  # asking for your camera would be its own kind of joke.
+  Permissions-Policy: geolocation=(self), camera=(), microphone=(), payment=(), usb=(), magnetometer=(), gyroscope=(), interest-cohort=()
+
+  Cross-Origin-Opener-Policy: same-origin
+
+# Content-hashed build assets never change under the same name.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Published open datasets. These are the largest assets and the ones people
+# hotlink and script against, so they are cacheable and explicitly CORS-open —
+# reuse is the point (see LICENSE-DATA.md for the terms that still apply).
+/data/*
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+  Access-Control-Allow-Origin: *
