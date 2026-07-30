@@ -1,0 +1,222 @@
+---
+import type { Locale } from '~/layers/types';
+import { loadAllLayers, mergedProvenance } from '~/layers/data';
+import { useTranslations, pick, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+// Read from the generated files, not the registry: counts and dates shown here
+// are whatever the last ingest actually produced.
+const loaded = await loadAllLayers();
+
+const fmtDate = (iso: string | null | undefined) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' });
+};
+
+const CADENCE: Record<string, string> = {
+  frequent: 'Frequent — the upstream data changes constantly.',
+  periodic: 'Periodic — re-pulled from the source on a schedule.',
+  rare: 'Rare — a historical dataset that does not meaningfully change.',
+};
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">
+    {t('navSources')}
+  </h1>
+  <p class="prose-civic mt-3">
+    Every layer on this map comes from a public record someone else published. This page states
+    where each one came from, when it was last pulled, what licence governs it, and — most
+    importantly — what it does not tell you. If a number here looks confident, read the gaps
+    underneath it.
+  </p>
+
+  <div class="mt-6 overflow-x-auto rounded-lg border border-ink-800">
+    <table class="w-full min-w-[36rem] text-left text-sm">
+      <caption class="sr-only">Summary of every data layer</caption>
+      <thead class="bg-ink-900 text-xs tracking-wider text-ink-400 uppercase">
+        <tr>
+          <th scope="col" class="px-3 py-2 font-semibold">Layer</th>
+          <th scope="col" class="px-3 py-2 font-semibold">Records</th>
+          <th scope="col" class="px-3 py-2 font-semibold">Source date</th>
+          <th scope="col" class="px-3 py-2 font-semibold">Last pulled</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ink-800">
+        {
+          loaded.map(({ definition, collection }) => {
+            const p = mergedProvenance({ definition, collection, missing: !collection });
+            return (
+              <tr>
+                <th scope="row" class="px-3 py-2 font-normal">
+                  <a href={`#${definition.slug}`} class="flex items-center gap-2 text-ink-100 hover:text-accent">
+                    <span class="h-2 w-2 shrink-0 rounded-full" style={`background:${definition.color}`} aria-hidden="true" />
+                    {pick(definition.label, locale)}
+                  </a>
+                </th>
+                <td class="px-3 py-2 font-mono text-ink-200">{p.featureCount.toLocaleString(locale)}</td>
+                <td class="px-3 py-2 text-ink-300">{p.sourceDate ?? '—'}</td>
+                <td class="px-3 py-2 text-ink-300">{fmtDate(p.lastUpdated)}</td>
+              </tr>
+            );
+          })
+        }
+      </tbody>
+    </table>
+  </div>
+
+  {
+    loaded.map(({ definition, collection, missing }) => {
+      const p = mergedProvenance({ definition, collection, missing });
+      return (
+        <section id={definition.slug} class="mt-10 scroll-mt-4 border-t border-ink-800 pt-8">
+          <div class="flex items-center gap-2.5">
+            <span class="h-3 w-3 shrink-0 rounded-full" style={`background:${definition.color}`} aria-hidden="true" />
+            <h2 class="text-xl font-semibold text-ink-100">{pick(definition.label, locale)}</h2>
+          </div>
+
+          {missing ? (
+            <p class="mt-3 rounded-md border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
+              This layer has not been generated yet. Run <code class="font-mono">npm run data</code> to
+              build it from the upstream source.
+            </p>
+          ) : (
+            <p class="mt-2 font-mono text-xs text-ink-400">
+              {p.featureCount.toLocaleString(locale)} records
+            </p>
+          )}
+
+          <div class="prose-civic mt-3">
+            <p>{pick(definition.whatThisMeans, locale)}</p>
+          </div>
+
+          <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt class="text-[11px] tracking-wider text-ink-400 uppercase">{t('source')}</dt>
+              <dd class="mt-0.5">
+                <a
+                  href={p.sourceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-accent underline underline-offset-2"
+                >
+                  {p.source}
+                </a>
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[11px] tracking-wider text-ink-400 uppercase">{t('license')}</dt>
+              <dd class="mt-0.5 text-ink-200">
+                {p.licenseUrl ? (
+                  <a href={p.licenseUrl} target="_blank" rel="noopener noreferrer" class="underline underline-offset-2">
+                    {p.license}
+                  </a>
+                ) : (
+                  p.license
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt class="text-[11px] tracking-wider text-ink-400 uppercase">Refresh cadence</dt>
+              <dd class="mt-0.5 text-ink-200">{CADENCE[p.refresh] ?? p.refresh}</dd>
+            </div>
+            <div>
+              <dt class="text-[11px] tracking-wider text-ink-400 uppercase">{t('attribution')}</dt>
+              <dd class="mt-0.5 text-ink-300">{p.attribution}</dd>
+            </div>
+          </dl>
+
+          {p.knownGaps.length > 0 && (
+            <div class="mt-4 rounded-lg border border-warn/30 bg-warn/5 p-3.5">
+              <h3 class="text-[11px] font-semibold tracking-wider text-warn uppercase">
+                Known gaps and caveats
+              </h3>
+              <ul class="mt-2 list-disc space-y-1.5 pl-4 text-sm leading-relaxed text-ink-200">
+                {p.knownGaps.map((gap: string) => (
+                  <li>{gap}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <p class="mt-4 flex flex-wrap gap-3 text-sm">
+            <a href={definition.dataPath} download class="text-accent underline underline-offset-2">
+              GeoJSON
+            </a>
+            {definition.csvPath && (
+              <a href={definition.csvPath} download class="text-accent underline underline-offset-2">
+                CSV
+              </a>
+            )}
+            <a href={localePath(locale, '/data')} class="text-ink-400 underline underline-offset-2">
+              Schema and bulk download
+            </a>
+          </p>
+        </section>
+      );
+    })
+  }
+
+  <section class="mt-12 border-t border-ink-800 pt-8">
+    <h2 class="text-xl font-semibold text-ink-100">Methodology</h2>
+    <div class="prose-civic mt-3">
+      <h3>Geocoding</h3>
+      <p>
+        Two of these sources publish records with no coordinates at all. ICE lists 287(g)
+        agreements by agency and county, and its detention roster gives only a city and state. We
+        resolve those to positions using US Census reference geography: county interior points from
+        the 2023 Gazetteer, and boundaries from Census TIGERweb. An interior point is guaranteed to
+        fall inside its county, which matters in Minnesota where a bounding-box centre can land in
+        open water.
+      </p>
+      <p>
+        This means a 287(g) dot marks a <em>jurisdiction, not a building</em>. Where several
+        agencies share a county, their dots are spread on a small deterministic circle so each
+        stays selectable — a display device, flagged on every affected record, never a claim about
+        where an agency sits.
+      </p>
+
+      <h3>County assignment</h3>
+      <p>
+        Every record, including ones that arrive with real coordinates, is tested against county
+        boundaries with a ray-casting point-in-polygon check. That is what lets the "near me" view
+        answer a question that spans layers — your county's sheriff agreements, the cameras around
+        you, and the housing-policy history of the ground you are standing on — from one lookup.
+      </p>
+
+      <h3>Location lookup and privacy</h3>
+      <p>
+        The place search ships as a static file of Minnesota places drawn from the Census
+        Gazetteer, and the entire lookup runs in your browser. Sending a typed address to a
+        geocoding service would hand a third party exactly the information this project promises
+        not to collect, so we do not do it. The trade is precision: results are town-level, not
+        street-level. Browser geolocation, if you choose it, is read into memory and never stored
+        or transmitted.
+      </p>
+
+      <h3>What we refuse to ingest</h3>
+      <p>
+        No layer here describes a person. Not detainees, not officers, not agents, not residents.
+        Where an upstream source mixes individual records into a systemic dataset, we take the
+        systemic part and drop the rest. This is a boundary in the ingest code, not a preference —
+        see <a href={localePath(locale, '/about')}>what this is and is not</a>.
+      </p>
+
+      <h3>Reproducing this data</h3>
+      <p>
+        Every dataset here is rebuilt by a script in <code>scripts/ingest/</code> that reads only
+        public sources and needs no API key. Running <code>npm run data</code> reproduces all of it
+        from scratch. If a number on this site is wrong, the script that produced it is readable
+        and the upstream source is linked above.
+      </p>
+    </div>
+  </section>
+</div>

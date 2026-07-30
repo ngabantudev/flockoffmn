@@ -1,0 +1,34 @@
+{
+  "$comment": [
+    "Community-maintained overlay for the data-centre layer (L4).",
+    "",
+    "FracTracker's dataset records the facility. It does not record whether a",
+    "community has organised in response — and that is precisely the field an",
+    "organizer needs (spec §6 L4, F10). Rather than invent it, we keep it here",
+    "as a reviewable file that anyone can add to by pull request.",
+    "",
+    "Match on `facilityId` (the slug printed by `npm run data:datacenters`) or,",
+    "more robustly, on `name` + `city`. Every entry must cite a public source.",
+    "Entries describe organisations and campaigns — never individual people.",
+    "",
+    "Example:",
+    "{",
+    "  \"name\": \"Example Data Center\",",
+    "  \"city\": \"Farmington\",",
+    "  \"resistanceStatus\": \"active-opposition\",",
+    "  \"campaignUrl\": \"https://example.org/campaign\",",
+    "  \"petitionUrl\": \"https://example.org/petition\",",
+    "  \"groupName\": \"Neighbours for a Liveable Farmington\",",
+    "  \"notes\": \"City council hearing scheduled; moratorium requested.\",",
+    "  \"sourceUrl\": \"https://example-news.org/article\"",
+    "}"
+  ],
+  "resistanceStatusValues": [
+    "active-opposition",
+    "moratorium-sought",
+    "approved-over-objection",
+    "withdrawn",
+    "no-known-organising"
+  ],
+  "campaigns": []
+}

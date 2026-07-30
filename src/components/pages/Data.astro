@@ -1,0 +1,207 @@
+---
+import type { Locale } from '~/layers/types';
+import { loadAllLayers, mergedProvenance } from '~/layers/data';
+import { useTranslations, pick, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const loaded = await loadAllLayers();
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">{t('navData')}</h1>
+  <p class="prose-civic mt-3">
+    Every layer is downloadable, documented, and reusable. No account, no rate limit, no API key.
+    Each file carries its own provenance inside it, so a download stays attributable after it is
+    detached from this site.
+  </p>
+
+  <div class="mt-8 space-y-3">
+    {
+      loaded.map(({ definition, collection, missing }) => {
+        const p = mergedProvenance({ definition, collection, missing });
+        return (
+          <div class="rounded-lg border border-ink-800 bg-ink-900 p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h2 class="flex items-center gap-2 text-base font-semibold text-ink-100">
+                  <span
+                    class="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={`background:${definition.color}`}
+                    aria-hidden="true"
+                  />
+                  {pick(definition.label, locale)}
+                </h2>
+                <p class="mt-1 text-sm text-ink-400">{pick(definition.summary, locale)}</p>
+                <p class="mt-1.5 font-mono text-xs text-ink-400">
+                  {p.featureCount.toLocaleString(locale)} records · {definition.geometry} ·{' '}
+                  {p.license}
+                </p>
+              </div>
+              <div class="flex shrink-0 gap-2">
+                <a
+                  href={definition.dataPath}
+                  download
+                  class="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-accent hover:text-accent"
+                >
+                  GeoJSON
+                </a>
+                {definition.csvPath && (
+                  <a
+                    href={definition.csvPath}
+                    download
+                    class="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-accent hover:text-accent"
+                  >
+                    CSV
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })
+    }
+
+    <div class="rounded-lg border border-ink-800 bg-ink-900 p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="text-base font-semibold text-ink-100">Reference geography</h2>
+          <p class="mt-1 text-sm text-ink-400">
+            Minnesota county boundaries and interior points, plus the offline place index used by
+            the location lookup. US Census Bureau, public domain.
+          </p>
+        </div>
+        <div class="flex shrink-0 gap-2">
+          <a
+            href="/data/reference/mn-counties.geojson"
+            download
+            class="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-accent hover:text-accent"
+          >
+            Counties
+          </a>
+          <a
+            href="/data/reference/mn-places.json"
+            download
+            class="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-accent hover:text-accent"
+          >
+            Places
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------ Licensing ----------------------------- -->
+  <section class="mt-10">
+    <h2 class="text-xl font-semibold text-ink-100">Licensing — read this before redistributing</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        The code in this project is MIT. Data we compile ourselves — the normalised schema, the
+        geocoding, the cross-layer joins — is CC BY 4.0.
+      </p>
+      <p>
+        <strong class="text-ink-100">Upstream layers keep their own terms, and we cannot relax
+        them.</strong> Repackaging this site's files does not relicense the underlying data:
+      </p>
+      <ul>
+        <li>
+          <strong>ALPR cameras</strong> — ODbL 1.0, from OpenStreetMap. Share-alike: derived
+          databases must stay open under the same terms, and attribution to OpenStreetMap
+          contributors is required.
+        </li>
+        <li>
+          <strong>Redlining</strong> — CC BY-NC-SA 4.0, from Mapping Inequality. Non-commercial and
+          share-alike. This one is <em>not</em> CC BY 4.0 and cannot be used commercially.
+        </li>
+        <li>
+          <strong>Data centres</strong> — FracTracker Alliance terms; attribution required,
+          non-commercial.
+        </li>
+        <li>
+          <strong>287(g), detention facilities, Census geography</strong> — US federal government
+          works, public domain.
+        </li>
+      </ul>
+      <p>
+        In short: the federal layers are free for any use, the camera layer is share-alike, and the
+        redlining and data-centre layers are non-commercial. When combining them, the most
+        restrictive term governs the combination.
+      </p>
+    </div>
+  </section>
+
+  <!-- ------------------------------- Schema ------------------------------- -->
+  <section class="mt-10">
+    <h2 class="text-xl font-semibold text-ink-100">Schema</h2>
+    <p class="prose-civic mt-2">
+      Every layer file is a GeoJSON <code>FeatureCollection</code> with a non-standard
+      <code>metadata</code> object carrying provenance, and features whose
+      <code>properties</code> follow one shared shape regardless of layer. Layer-specific fields
+      live under <code>attributes</code>.
+    </p>
+
+    <pre class="scroll-slim mt-3 overflow-x-auto rounded-lg border border-ink-800 bg-ink-950 p-4 font-mono text-xs leading-relaxed text-ink-200"><code>{`{
+  "type": "FeatureCollection",
+  "metadata": {
+    "layer": "agency_287g",
+    "featureCount": 10,
+    "source": "ICE — Participating agencies (287(g))",
+    "sourceUrl": "https://www.ice.gov/identify-and-arrest/287g",
+    "license": "Public domain (US federal government work)",
+    "attribution": "U.S. Immigration and Customs Enforcement",
+    "sourceDate": "2026-07-20",
+    "lastUpdated": "2026-07-30T00:00:00.000Z",
+    "refresh": "periodic",
+    "knownGaps": ["..."]
+  },
+  "features": [{
+    "type": "Feature",
+    "geometry": { "type": "Point", "coordinates": [lng, lat] },
+    "properties": {
+      "id":          "stable slug, safe to join on",
+      "layer":       "alpr | agency_287g | detention_facility | data_center | redlining",
+      "name":        "institution, facility, or zone — never a person",
+      "county":      "county name, or null",
+      "countyFips":  "Census GEOID — join key across layers",
+      "state":       "USPS code",
+      "confidence":  "confirmed | reported | probabilistic",
+      "sourceDate":  "ISO date the record is effective, or null",
+      "attributes":  { "layer-specific fields" }
+    }
+  }]
+}`}</code></pre>
+
+    <div class="prose-civic mt-4">
+      <p>
+        <code>countyFips</code> is the join key. It is a Census GEOID present on every record we
+        could place, which is what makes it possible to ask a question across layers — for example,
+        which counties have both a 287(g) agreement and an ICE-contracted jail.
+      </p>
+      <p>
+        <code>confidence</code> is not decoration. <code>probabilistic</code> on the camera layer
+        means a record may be stale or wrong; treat it accordingly in any analysis.
+      </p>
+    </div>
+  </section>
+
+  <!-- ------------------------------ Rebuilding ---------------------------- -->
+  <section class="mt-10">
+    <h2 class="text-xl font-semibold text-ink-100">Rebuild it yourself</h2>
+    <p class="prose-civic mt-2">
+      Every dataset here is produced by a script that reads only public sources and requires no API
+      key or credential. Clone the repository and run:
+    </p>
+    <pre class="mt-3 overflow-x-auto rounded-lg border border-ink-800 bg-ink-950 p-4 font-mono text-xs text-ink-200"><code>npm install
+npm run data        # rebuild every layer from upstream
+npm run data:287g   # or just one</code></pre>
+    <p class="prose-civic mt-3">
+      Set <code>SCOPE=national</code> on the 287(g), detention, or data-centre scripts to ingest the
+      whole country rather than Minnesota. You will need a national county reference first — see
+      <a href={localePath(locale, '/sources')}>methodology</a>.
+    </p>
+  </section>
+</div>

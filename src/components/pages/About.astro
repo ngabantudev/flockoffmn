@@ -1,0 +1,126 @@
+---
+import type { Locale } from '~/layers/types';
+import { useTranslations, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const isIt = [
+  {
+    is: 'A map of public infrastructure, institutions, contracts and policy.',
+    isNot: 'A map of people. No layer here names, describes, or tracks any individual.',
+  },
+  {
+    is: 'A historical and periodic record of where things have been observed.',
+    isNot: 'A live tracker. Nothing here updates in real time, and nothing shows where anyone is.',
+  },
+  {
+    is: 'Sourced from public records, with every source cited and every gap stated.',
+    isNot: 'Complete. Every layer is partial, dated, or approximate — each one says how.',
+  },
+  {
+    is: 'Informational tools for making records requests and contacting officials.',
+    isNot: 'Legal advice. If you need legal help, talk to a lawyer.',
+  },
+];
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">{t('limitsTitle')}</h1>
+
+  <p class="prose-civic mt-3">
+    This project exists because the systems described here are public record and effectively
+    invisible anyway — scattered across agency spreadsheets, permit filings, and university
+    archives. Putting them on one map changes what a resident can see about their own street. That
+    is worth doing carefully, so here is exactly what this is.
+  </p>
+
+  <div class="mt-8 overflow-hidden rounded-lg border border-ink-800">
+    <table class="w-full text-left text-sm">
+      <thead class="bg-ink-900 text-xs tracking-wider text-ink-400 uppercase">
+        <tr>
+          <th scope="col" class="w-1/2 px-4 py-2.5 font-semibold">What this is</th>
+          <th scope="col" class="w-1/2 px-4 py-2.5 font-semibold">What it is not</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ink-800">
+        {
+          isIt.map((row) => (
+            <tr class="align-top">
+              <td class="px-4 py-3 leading-relaxed text-ink-200">{row.is}</td>
+              <td class="px-4 py-3 leading-relaxed text-ink-300">{row.isNot}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <div class="prose-civic mt-10">
+    <h2>Transparency for systems, privacy for people</h2>
+    <p>
+      The whole project turns on one line: we point at power and infrastructure, never at people.
+      Cameras, agencies, facilities, contracts, buildings, and policy are fair subjects for public
+      scrutiny — they are funded publicly, they exercise public authority, and their records are
+      public. Individuals are not.
+    </p>
+    <p>
+      This is a hard product boundary, not a preference. There is no field in our data schema that
+      could hold a personal name, a case number, or an identifier for a private individual, and
+      there will not be one. Where an upstream dataset mixes individual records into systemic data,
+      the ingest takes the systemic part and drops the rest. Detainee-level data is permanently out
+      of scope — it will never enter this repository, this map, or any export from it.
+    </p>
+
+    <h2>We do not surveil our own users</h2>
+    <p>
+      There are no accounts, no trackers, no third-party analytics, no advertising technology, and
+      no cookies on this site. There is no server-side application at all: the whole thing is
+      static files. When you use the "near me" lookup, the place list is downloaded to your browser
+      and the search runs there — nothing you type is sent anywhere, because there is nothing to
+      send it to and nowhere to log it. If you use browser geolocation, the coordinates are read
+      into memory and discarded.
+    </p>
+    <p>
+      It would be incoherent to map surveillance infrastructure while quietly running surveillance
+      infrastructure. So we don't.
+    </p>
+
+    <h2>About the camera layer specifically</h2>
+    <p>
+      The ALPR layer deserves its own warning. It is crowd-sourced from OpenStreetMap contributors,
+      which means it is <strong>incomplete</strong>, <strong>historical</strong>, and
+      <strong>probabilistic</strong>. A camera may have been removed, moved, or re-aimed since
+      someone mapped it. A street with no dot may still be covered.
+    </p>
+    <p>
+      Read it as evidence that a surveillance network exists and roughly where it has been
+      observed — never as a guide to where you are or are not being recorded.
+    </p>
+
+    <h2>Errors and takedowns</h2>
+    <p>
+      If a record here is wrong, we want to fix it. Every layer links to its upstream source, so
+      corrections usually belong upstream — at OpenStreetMap for cameras, or with the publishing
+      agency for the rest — and will flow here on the next refresh. For anything else, open an
+      issue on the repository.
+    </p>
+    <p>
+      Grassroots mapping of ALPR networks has drawn legal threats before; DeFlock received a
+      cease-and-desist and refused it with EFF backing on First Amendment grounds. Our posture is
+      to keep provenance clean, use only public data, publish the ingest code, and stay easy to
+      mirror.
+    </p>
+
+    <h2>Licensing</h2>
+    <p>
+      The code is MIT. Data we compile ourselves is CC BY 4.0. Upstream layers keep their own
+      terms, which are not ours to relax — the camera layer is ODbL, redlining is CC BY-NC-SA 4.0,
+      and the federal records are public domain. The <a href={localePath(locale, '/data')}>open data
+      page</a> lists which is which before you download anything.
+    </p>
+  </div>
+</div>

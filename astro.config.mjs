@@ -1,20 +1,20 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
-
 import tailwindcss from '@tailwindcss/vite';
 
-import cloudflare from '@astrojs/cloudflare';
-
-// https://astro.build/config
+// Static output on purpose. Per the product spec the v1 site has no backend,
+// no database, and no user records — which also makes it cheap to mirror and
+// hard to take down if the project draws legal pressure (see docs/DEPLOYMENT.md).
 export default defineConfig({
-  output: 'server',
-  adapter: cloudflare(),
+  site: 'https://example.org',
+  output: 'static',
+  trailingSlash: 'never',
+  i18n: {
+    defaultLocale: 'en',
+    locales: ['en', 'es'],
+    routing: { prefixDefaultLocale: false },
+  },
   vite: {
     plugins: [tailwindcss()],
-    optimizeDeps: {
-      // This prevents the "file does not exist" error by forcing Vite
-      // to pre-bundle the compiler runtime correctly
-      include: ['astro/compiler-runtime']
-    }
-  }
+  },
 });

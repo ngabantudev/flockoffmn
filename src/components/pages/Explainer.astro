@@ -1,0 +1,240 @@
+---
+import type { Locale } from '~/layers/types';
+import { loadAllLayers, mergedProvenance } from '~/layers/data';
+import { useTranslations, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+// Pull live counts so the narrative cites what the site actually ships.
+const loaded = await loadAllLayers();
+const count = (id: string) =>
+  mergedProvenance(loaded.find((l) => l.definition.id === id)!).featureCount;
+
+const meta = (id: string) => mergedProvenance(loaded.find((l) => l.definition.id === id)!) as any;
+
+const cameras = count('alpr');
+const agreements = count('agency_287g');
+const facilities = count('detention_facility');
+const dataCentres = count('data_center');
+const redlineAreas = count('redlining');
+const nationalAgreements = meta('agency_287g').nationalAgreementCount ?? null;
+
+/**
+ * Where the layers actually converge.
+ *
+ * This is the claim the whole project rests on, so it is computed from the
+ * shipped data at build time rather than asserted in prose — if a future
+ * refresh changes which counties overlap, this section changes with it.
+ */
+const featuresOf = (id: string) =>
+  loaded.find((l) => l.definition.id === id)?.collection?.features ?? [];
+
+const countiesWith = (id: string) =>
+  new Set(featuresOf(id).map((f) => f.properties.county).filter((c): c is string => Boolean(c)));
+
+const agreementCounties = countiesWith('agency_287g');
+const detentionCounties = countiesWith('detention_facility');
+
+const cameraCountByCounty = featuresOf('alpr').reduce<Record<string, number>>((acc, f) => {
+  const c = f.properties.county;
+  if (c) acc[c] = (acc[c] ?? 0) + 1;
+  return acc;
+}, {});
+
+const convergence = [...agreementCounties]
+  .filter((c) => detentionCounties.has(c))
+  .map((county) => ({
+    county,
+    cameras: cameraCountByCounty[county] ?? 0,
+    models: [
+      ...new Set(
+        featuresOf('agency_287g')
+          .filter((f) => f.properties.county === county)
+          .map((f) => String(f.properties.attributes.supportType)),
+      ),
+    ],
+    facilities: featuresOf('detention_facility')
+      .filter((f) => f.properties.county === county)
+      .map((f) => f.properties.name),
+  }))
+  .sort((a, b) => b.cameras - a.cameras);
+
+const stages = [
+  {
+    n: '01',
+    title: 'Surveillance',
+    color: '#38bdf8',
+    body: `A licence plate reader photographs every vehicle that passes, converts the plate to text, and stores it with a timestamp and a location. One camera is a record. ${cameras.toLocaleString(locale)} of them mapped across Minnesota is a network — enough to reconstruct where a vehicle has been over weeks, not just whether it passed one corner.`,
+  },
+  {
+    n: '02',
+    title: 'Search and sharing',
+    color: '#7dd3fc',
+    body: 'What turns a camera network into an enforcement tool is who can query it. Many ALPR networks let outside agencies run searches across jurisdictions, and audits in several states have found immigration-related searches run against networks that local residents believed were purely local. The camera does not decide who asks it questions.',
+  },
+  {
+    n: '03',
+    title: 'Enforcement',
+    color: '#f97316',
+    body: `A 287(g) agreement is where federal immigration authority is delegated to local officers. Minnesota has ${agreements} on ICE's current list${nationalAgreements ? `, out of ${nationalAgreements.toLocaleString(locale)} nationally` : ''}. The model matters enormously: a Jail Enforcement agreement acts on people already booked into a county jail, while a Task Force agreement pushes immigration enforcement out into ordinary street-level policing — the same streets the cameras watch.`,
+  },
+  {
+    n: '04',
+    title: 'Detention',
+    color: '#f43f5e',
+    body: `Enforcement needs somewhere to put people, and that is usually a county jail renting bed space to ICE. ${facilities} Minnesota facilities hold people under ICE contract, every one of them an intergovernmental service agreement with a local jail. This is where the pipeline stops being abstract: a local building, a local budget, a local sheriff.`,
+  },
+  {
+    n: '05',
+    title: 'Adjudication',
+    color: '#fb7185',
+    body: 'Immigration court sits at the end of the chain, and it is the part this map deliberately does not render. Court outcomes are made of individual cases, and individual cases are people. Aggregate, de-identified statistics published by researchers such as TRAC describe the system without describing anyone in it — that is the only form this project would ever carry.',
+  },
+];
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">
+    {t('navExplainer')}
+  </h1>
+  <p class="prose-civic mt-3">
+    The layers on this map are usually discussed separately — a camera story here, a sheriff story
+    there, a data-centre zoning fight in the local paper. They are not separate. They are stages of
+    one pipeline, running on ground that was shaped long before any of it was built.
+  </p>
+
+  <ol class="mt-10 space-y-0">
+    {
+      stages.map((stage, i) => (
+        <li class="relative pl-10">
+          {i < stages.length - 1 && (
+            <span
+              class="absolute top-8 bottom-0 left-3.75 w-px bg-ink-700"
+              aria-hidden="true"
+            />
+          )}
+          <span
+            class="absolute top-1 left-0 flex h-8 w-8 items-center justify-center rounded-full border text-[11px] font-semibold"
+            style={`border-color:${stage.color};color:${stage.color}`}
+            aria-hidden="true"
+          >
+            {stage.n}
+          </span>
+          <div class="pb-8">
+            <h2 class="text-lg font-semibold text-ink-100">{stage.title}</h2>
+            <p class="prose-civic mt-1.5">{stage.body}</p>
+          </div>
+        </li>
+      ))
+    }
+  </ol>
+
+  <section class="mt-4 rounded-lg border border-ink-800 bg-ink-900 p-5">
+    <h2 class="text-lg font-semibold text-ink-100">The substrate underneath</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        Two layers on this map are not stages in that pipeline. They are the ground it runs on.
+      </p>
+      <p>
+        <strong class="text-ink-100">Redlining</strong> came first. In the 1930s the federal Home
+        Owners' Loan Corporation graded neighbourhoods for mortgage risk, and the grade turned
+        explicitly on the race, ethnicity and immigration status of the people who lived there.
+        Areas graded D were outlined in red and starved of lending for decades. {redlineAreas} of
+        those graded areas are on this map, covering the eight Minnesota cities HOLC surveyed. The
+        resulting patterns in wealth, housing, and where police concentrate did not dissolve when
+        the practice was outlawed.
+      </p>
+      <p>
+        <strong class="text-ink-100">Data centres</strong> came last. {dataCentres} of them are
+        mapped in Minnesota. They are the physical machinery the rest of this runs on — the storage
+        behind plate-reader networks, records systems, and the analytics products sold to agencies
+        — and they arrive with immediate local consequences of their own: electricity and water
+        demand, tax abatements, and grid costs pushed onto other ratepayers.
+      </p>
+    </div>
+  </section>
+
+  {
+    convergence.length > 0 && (
+      <section class="mt-8">
+        <h2 class="text-lg font-semibold text-ink-100">Where the layers converge</h2>
+        <p class="prose-civic mt-2">
+          This is not a hypothetical. {convergence.length} Minnesota{' '}
+          {convergence.length === 1 ? 'county has' : 'counties have'} both a 287(g) agreement with
+          ICE and a jail holding people under ICE contract — the enforcement and detention stages
+          in the same jurisdiction, under the same sheriff, watched by the same cameras.
+        </p>
+
+        <ul class="mt-4 space-y-3">
+          {convergence.map((row) => (
+            <li class="rounded-lg border border-ink-800 bg-ink-900 p-4">
+              <h3 class="text-base font-semibold text-ink-100">{row.county}</h3>
+              <dl class="mt-2 grid gap-2.5 text-sm sm:grid-cols-3">
+                <div>
+                  <dt class="text-[11px] tracking-wider text-ink-400 uppercase">Mapped cameras</dt>
+                  <dd class="mt-0.5 font-mono text-ink-100" style="color:#38bdf8">
+                    {row.cameras}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-[11px] tracking-wider text-ink-400 uppercase">
+                    287(g) agreement
+                  </dt>
+                  <dd class="mt-0.5 text-ink-100" style="color:#f97316">
+                    {row.models.join(', ')}
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-[11px] tracking-wider text-ink-400 uppercase">ICE-contract jail</dt>
+                  <dd class="mt-0.5 text-ink-100" style="color:#f43f5e">
+                    {row.facilities.join(', ')}
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+
+        <p class="mt-3 text-xs leading-relaxed text-ink-400">
+          Computed from the shipped datasets at build time, joined on Census county identifiers. The
+          camera counts carry the usual caveat: crowd-sourced, incomplete, and a floor rather than a
+          total.
+        </p>
+      </section>
+    )
+  }
+
+  <section class="mt-8">
+    <h2 class="text-lg font-semibold text-ink-100">Why look at them together</h2>
+    <div class="prose-civic mt-2">
+      <p>
+        Because the questions only make sense together. Whether a plate reader on your corner
+        matters depends on who can search it. Whether that search matters depends on whether your
+        sheriff has signed an agreement, and which model. Whether that agreement matters depends on
+        whether there is a jail nearby holding people under contract. And which neighbourhoods sit
+        at the sharp end of all of it is not random — it tracks lines drawn on a map in 1937.
+      </p>
+      <p>
+        Every one of those facts is public. Held apart, each is a curiosity. Held together, they
+        describe a system, and a system is something a community can actually organise against.
+      </p>
+      <p>
+        <a href={localePath(locale, '/near-me')}>See what this looks like around a specific place →</a>
+      </p>
+    </div>
+  </section>
+
+  <p class="mt-10 rounded-lg border border-warn/30 bg-warn/5 p-4 text-sm leading-relaxed text-ink-200">
+    <strong class="text-warn">A caution about this page.</strong> This describes how these systems
+    connect in general, using documented mechanisms. It is not a claim that any specific camera on
+    this map has fed any specific enforcement action, and nothing here should be read as tracking
+    or predicting what happens to any individual. Check the
+    <a href={localePath(locale, '/sources')} class="text-accent underline underline-offset-2">
+      sources page
+    </a> for what each dataset does and does not establish.
+  </p>
+</div>

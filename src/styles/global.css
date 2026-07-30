@@ -1,1 +1,180 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+
+/*
+ * Design intent: this is a civic record, not a dashboard. Dark, quiet, high
+ * contrast, with colour reserved for the data itself so that layer identity is
+ * the only thing competing for attention on the map.
+ */
+@theme {
+  --color-ink-950: #0a0c10;
+  --color-ink-900: #11141b;
+  --color-ink-850: #161a23;
+  --color-ink-800: #1c212c;
+  --color-ink-700: #2a3140;
+  --color-ink-600: #3d4657;
+  --color-ink-400: #7c8798;
+  --color-ink-300: #a3adbd;
+  --color-ink-200: #c9d1dd;
+  --color-ink-100: #e7ecf3;
+
+  /* Layer identity — also used as the map symbol colours. */
+  --color-layer-alpr: #38bdf8;
+  --color-layer-287g: #f97316;
+  --color-layer-detention: #f43f5e;
+  --color-layer-datacenter: #34d399;
+  --color-layer-redlining: #c084fc;
+
+  --color-accent: #f5a524;
+  --color-warn: #fbbf24;
+
+  --font-sans: 'Inter var', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-ink-100);
+    font-family: var(--font-sans);
+    /* Keeps the map viewport honest on mobile browsers with dynamic chrome. */
+    min-height: 100dvh;
+  }
+
+  /* WCAG 2.1 AA: focus must be visible everywhere, including on the map. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Respect prefers-reduced-motion (spec §8) — including MapLibre's easing. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  ::selection {
+    background: var(--color-accent);
+    color: var(--color-ink-950);
+  }
+}
+
+@layer components {
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    padding: 0.75rem 1rem;
+    background: var(--color-accent);
+    color: var(--color-ink-950);
+    font-weight: 600;
+  }
+  .skip-link:focus {
+    left: 0.5rem;
+    top: 0.5rem;
+  }
+
+  .prose-civic {
+    max-width: 68ch;
+    line-height: 1.7;
+  }
+  .prose-civic p {
+    margin-bottom: 1rem;
+    color: var(--color-ink-200);
+  }
+  .prose-civic h2 {
+    margin-top: 2.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 1.375rem;
+    font-weight: 600;
+    color: var(--color-ink-100);
+  }
+  .prose-civic h3 {
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--color-ink-100);
+  }
+  .prose-civic ul {
+    margin-bottom: 1rem;
+    padding-left: 1.25rem;
+    list-style: disc;
+    color: var(--color-ink-200);
+  }
+  .prose-civic li {
+    margin-bottom: 0.375rem;
+  }
+  .prose-civic a {
+    color: var(--color-accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+/*
+ * MapLibre overrides. The library ships a light-theme popup and control set;
+ * these keep it inside the project's palette and contrast floor.
+ */
+.maplibregl-ctrl-group {
+  background: var(--color-ink-850) !important;
+  border: 1px solid var(--color-ink-700) !important;
+  box-shadow: none !important;
+}
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--color-ink-700) !important;
+}
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(1.6);
+}
+.maplibregl-ctrl-attrib {
+  background: rgba(10, 12, 16, 0.85) !important;
+  color: var(--color-ink-300) !important;
+  font-size: 11px !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--color-ink-200) !important;
+}
+.maplibregl-popup-content {
+  background: var(--color-ink-850) !important;
+  color: var(--color-ink-100) !important;
+  border: 1px solid var(--color-ink-700);
+  border-radius: 0.5rem;
+  padding: 0.75rem 0.875rem !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+}
+.maplibregl-popup-tip {
+  border-top-color: var(--color-ink-850) !important;
+  border-bottom-color: var(--color-ink-850) !important;
+}
+.maplibregl-popup-close-button {
+  color: var(--color-ink-300) !important;
+  font-size: 1.125rem;
+  padding: 0 0.375rem;
+}
+
+/* Thin scrollbars inside the side panels. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: var(--color-ink-600);
+  border-radius: 4px;
+}
