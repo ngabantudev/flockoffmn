@@ -1,127 +1,213 @@
+<div align="center">
+
 # get-flocked
 
-A free, open-source, community-driven map that makes the systems of
-surveillance, enforcement, and historical public policy visible — starting in
-Minnesota.
+**A free, open-source map of the systems watching your neighbourhood — built by the community, for the community. Starting in Minnesota.**
 
-**Transparency for systems. Privacy for people.** Every layer describes an
-institution, a piece of infrastructure, or a historical policy. No layer
-describes, names, or tracks a private individual. That is a hard product
-boundary, enforced in the schema, not a preference.
+[![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
+[![Data: CC BY 4.0](https://img.shields.io/badge/data-CC%20BY%204.0-green.svg)](LICENSE-DATA.md)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing--we-need-you)
+
+</div>
 
 ---
 
-## What is on the map
+## What is this?
 
-| Layer | Records (MN) | Source | Licence |
-|---|---|---|---|
-| 287(g) agency agreements | 10 | ICE published list | Public domain |
-| ALPR / Flock cameras | ~1,400 | OpenStreetMap via Overpass (DeFlock convention) | ODbL 1.0 |
-| Redlining zones (HOLC) | 168 | Mapping Inequality, Univ. of Richmond | CC BY-NC-SA 4.0 |
-| ICE-contract detention facilities | 5 | ICE Over-72-Hour Facility List | Public domain |
-| Data centres | 20 | FracTracker Alliance (FOIA permits) | FracTracker terms |
+Licence-plate cameras are going up on ordinary poles. Sheriffs are quietly
+signing agreements with ICE. County jails are renting beds to federal
+immigration authorities. Data centres are breaking ground next door. And the
+lines drawn around neighbourhoods in the 1930s still shape who lives where.
 
-Counts are as of the last ingest; the `/sources` page always shows what
-actually shipped.
+**Every one of those facts is public record.** They're also scattered across
+agency spreadsheets, permit filings, and university archives — which makes them
+public in theory and invisible in practice.
+
+get-flocked stitches them onto one map, so a resident can stand at their own
+address and see the whole system around them. Not five separate stories. One
+connected system.
+
+> **Transparency for systems. Privacy for people.**
+>
+> Every layer here describes an institution, a building, a contract, or a
+> policy. **No layer describes, names, or tracks a private individual** — not
+> detainees, not officers, not agents, not residents. That's a hard boundary
+> enforced in the code, not a promise in a footer: the data schema has no field
+> that could hold a personal identifier, and it never will.
+
+## Free, and staying that way
+
+This is a public good, not a product.
+
+- **No paywall. No account. No login.** Look at anything, download everything.
+- **No trackers, no analytics, no ads.** Zero third-party scripts. We do not
+  become the thing we map.
+- **No server that could log you.** The site is static files. When you look up
+  your address, the search runs *in your browser* against a place list shipped
+  with the page — nothing you type is sent anywhere, because there's nowhere
+  for it to go.
+- **Open code (MIT), open data (CC BY 4.0),** and every dataset rebuildable
+  from scratch with no API keys. If you don't trust our numbers, regenerate
+  them yourself in one command.
+
+## What's on the map
+
+| Layer | MN records | Where it comes from |
+|---|---:|---|
+| **287(g) agency agreements** | 10 | ICE's own published list (2,179 nationally) |
+| **ALPR / Flock cameras** | ~1,400 | OpenStreetMap, mapped by volunteers |
+| **Redlining zones (HOLC)** | 168 | Mapping Inequality, Univ. of Richmond |
+| **ICE-contract detention facilities** | 5 | ICE Over-72-Hour Facility List |
+| **Data centres** | 20 | FracTracker Alliance FOIA records |
+
+Plus the features that make it usable: a **"near me"** view that answers all
+five questions about one place at once, filters and search, a **records-request
+generator** built on Minnesota's actual public records statute, per-layer
+**downloads**, a **sources & methodology** page, and English/Spanish throughout.
+
+**The payoff:** three Minnesota counties have *both* a 287(g) agreement *and* a
+jail holding people under ICE contract. Sherburne has the full stack — mapped
+cameras, a Jail Enforcement agreement, and an ICE-contract jail. The site
+computes that from the shipped data, so it updates when reality does.
+
+## Contributing — we need you
+
+**This map is only as good as the community that builds it.** Several layers
+are literally community data, and the most useful contributions require no
+coding at all.
+
+### 🎯 Map a camera (highest impact, no coding)
+
+The camera layer comes from **OpenStreetMap**, so a camera you add there
+improves this map, [DeFlock](https://deflock.me), and every other project built
+on the same open data — instead of disappearing into one site's private
+database.
+
+1. Get a free [OpenStreetMap account](https://www.openstreetmap.org/user/new)
+2. Follow [DeFlock's mapping guide](https://deflock.me/how-to-map)
+3. Tag the node `man_made=surveillance`, `surveillance:type=ALPR`
+
+Our ingest re-queries OpenStreetMap on every refresh, so your addition shows up
+here without anyone needing to approve it.
+
+### 📢 Add a community campaign
+
+Organising against a data centre? The upstream data records the *facility* but
+not whether anyone is *fighting* it — which is often exactly what an organizer
+needs. That field is community-maintained in
+[`data/community/data-center-campaigns.json`](data/community/data-center-campaigns.json).
+Open a PR with the campaign, the group, and a public source.
+
+### 🐛 Tell us what's wrong
+
+Found a bad location, a misleading label, a dataset we've misread? [**Open an
+issue**](https://github.com/NgabantuDev/get-flocked/issues). Corrections to the
+underlying records usually belong upstream (OpenStreetMap for cameras, the
+publishing agency for the rest) and flow here automatically — we'll help you
+work out which is which.
+
+### 🌍 Translate
+
+Spanish covers the UI and key guidance; the long-form pages are still English.
+Given who this is for, finishing that translation — or adding Hmong, Somali, or
+Karen, all widely spoken in Minnesota — is high-value work.
+
+### 💻 Write code
+
+Adding a whole new layer is **two files**: one ingest script that emits the
+shared schema, plus one entry in
+[`src/layers/registry.ts`](src/layers/registry.ts). The map, legend, filters,
+detail panels, sources page and downloads all generate from that registry.
+
+Particularly wanted: **extending the ingest nationally** (the geocoding already
+keys on Census identifiers, so it mostly needs a national county reference).
+
+### One rule for all contributions
+
+Contributions describe **devices, buildings, agencies, and policies — never
+people**. No photographs of people or licence plates, nothing identifying a
+private individual, an officer, or an agent, and nothing obtained by
+trespassing. Contributions describing a person will be rejected.
 
 ## Quick start
 
 ```bash
 npm install
-npm run data      # build every layer from upstream public sources
+npm run data     # rebuild every layer from upstream public sources
 npm run dev
 ```
 
-`npm run data` needs a network connection and **no API keys or credentials**.
-Every dataset in this repository is reproducible from scratch by anyone.
+`npm run data` needs a network connection and **no API keys, tokens, or
+accounts** — deliberately. Anyone can reproduce every dataset in this
+repository from scratch and check our work.
 
-## How it is built
+## How it's built
 
-Static Astro + TypeScript + Tailwind. No backend, no database, no accounts, no
-analytics, no third-party scripts. The output is plain files, which keeps it
-cheap to host, trivial to mirror, and hard to take down.
+Static [Astro](https://astro.build) + TypeScript + Tailwind, with
+[MapLibre](https://maplibre.org) and OpenStreetMap tiles. No backend, no
+database, no accounts — which keeps it cheap to host, trivial to mirror, and
+hard to take down.
 
 ```
 scripts/ingest/     Node ETL — one script per layer, dependency-free
-  lib/util.mjs      shared helpers incl. a small ZIP/XLSX reader
-  counties.mjs      Census county boundaries + interior points (run first)
-  agencies-287g.mjs detention.mjs  data-centers.mjs  redlining.mjs  alpr.mjs
-src/layers/         the schema (types.ts) and the layer registry (registry.ts)
+src/layers/         the schema (types.ts) and layer registry (registry.ts)
 src/lib/            map controller, i18n, shared geometry
 src/components/     map UI and page content
 public/data/        generated GeoJSON + CSV — the published open datasets
-data/community/     community-maintained overlay (data-centre campaigns)
+data/community/     community-maintained overlays
 ```
 
-**Adding a layer** means writing one ingest script that emits the shared schema
-and adding one entry to `src/layers/registry.ts`. The map, legend, filters,
-detail panels, sources page, downloads and "near me" view are all generated
-from that registry — nothing else needs to change.
-
-## Design decisions worth knowing
+<details>
+<summary><strong>Design decisions worth knowing</strong></summary>
 
 **Geocoding without a geocoder.** ICE publishes 287(g) agreements with only a
-county name and detention facilities with only a city. Both are resolved
-against US Census reference geography — county interior points from the
-Gazetteer, boundaries from TIGERweb. Because the join key is a Census GEOID
-rather than anything Minnesota-specific, extending nationally is mostly a
-matter of building a national county reference.
+county name and facilities with only a city. Both resolve against US Census
+reference geography. Because the join key is a Census GEOID rather than
+anything Minnesota-specific, going national is mostly a matter of building a
+national county reference. A 287(g) dot therefore marks a **jurisdiction, not a
+building** — and where several agencies share a county, dots are spread on a
+small deterministic circle so each stays clickable, flagged on every record.
 
-A 287(g) dot therefore marks a **jurisdiction, not a building**. Where several
-agencies share a county, dots are spread on a small deterministic circle so
-each stays selectable; every affected record is flagged.
-
-**Location lookup that phones nobody.** The "near me" feature ships a static
-list of Minnesota places from the Census Gazetteer and resolves the lookup
-entirely in the browser. Sending a typed address to a geocoding service would
-hand a third party exactly the data this project promises not to collect. The
-trade is precision — results are town-level, not street-level — and the UI says
-so.
+**Location lookup that phones nobody.** Sending a typed address to a geocoding
+service would hand a third party exactly the data this project promises not to
+collect. So we ship the place index instead and resolve in-browser. The trade
+is precision — town-level, not street-level — and the UI says so.
 
 **Honest confidence.** Every record carries a `confidence` value.
-`probabilistic` on the camera layer is not decoration: the layer is
-crowd-sourced, incomplete, and historical, and the absence of a dot is not
-evidence that no camera exists.
+`probabilistic` on the camera layer isn't decoration: that layer is
+crowd-sourced, incomplete, and historical. **The absence of a dot is not
+evidence that no camera exists.**
 
-**No spreadsheet dependency.** ICE and Census both ship `.xlsx`/`.zip`.
-`scripts/ingest/lib/util.mjs` reads them with a ~120-line ZIP + worksheet
-reader built on Node's `zlib`, rather than taking on a large, historically
-CVE-prone parser for a project with this threat model.
+**Null over invented.** Where an upstream field doesn't exist, it stays `null`
+and the gap is documented. Placeholder data in a civic transparency tool is
+worse than a visible hole.
 
-## Refreshing the data
+**No spreadsheet dependency.** ICE and Census ship `.xlsx`/`.zip`, read here by
+a small `zlib`-based reader rather than a large, historically CVE-prone parser.
 
-```bash
-npm run data            # everything, in dependency order
-npm run data:287g       # or one layer
-SCOPE=national npm run data:287g   # ingest all states, not just MN
-```
+</details>
 
-A failing layer does not abort the run: upstream sources here are
-volunteer-run Overpass mirrors and federal web servers that go down without
-notice, and keeping yesterday's good file beats replacing it with nothing.
+## Built on other people's work
 
-`.github/workflows/refresh-data.yml` runs the pipeline on a schedule and opens
-a pull request when the data changes, so every refresh is reviewable rather
-than silently applied.
+Where an authoritative open dataset already exists, we integrate and attribute
+rather than rebuild. This project would not exist without:
 
-## Deployment
-
-Static output — deploy `dist/` anywhere. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
-for tile-server configuration (do not point production traffic at OpenStreetMap's
-volunteer tile servers) and mirroring guidance.
+[**DeFlock**](https://deflock.me) and the OpenStreetMap volunteers who map
+cameras · [**Mapping Inequality**](https://dsl.richmond.edu/panorama/redlining/)
+(Univ. of Richmond) · [**Mapping
+Prejudice**](https://mappingprejudice.umn.edu/) (Univ. of Minnesota) ·
+[**FracTracker Alliance**](https://www.fractracker.org/) · [**EFF Atlas of
+Surveillance**](https://atlasofsurveillance.org/) · the **U.S. Census Bureau**
 
 ## Licence
 
-Code is **MIT**. Data we compile is **CC BY 4.0**. Upstream layers keep their
-own terms and some are non-commercial or share-alike — read
-[LICENSE-DATA.md](LICENSE-DATA.md) before redistributing.
+Code **MIT**. Data we compile **CC BY 4.0**. Upstream layers keep their own
+terms — the camera layer is ODbL share-alike, redlining is CC BY-NC-SA — and
+those aren't ours to relax. Read [LICENSE-DATA.md](LICENSE-DATA.md) before
+redistributing.
 
-## Contributing
+## Not legal advice
 
-The highest-leverage contribution is mapping a camera in OpenStreetMap, which
-improves this map and every other project built on the same data. See the
-`/contribute` page.
-
-Contributions describe devices, buildings, agencies and policies — **never
-people**. Anything identifying a private individual, an officer, or an agent
-will be rejected.
+The records-request tools are informational. This map is not real-time, does
+not track anyone, and every layer is incomplete in ways each one documents. If
+you're facing enforcement action, talk to a lawyer.
