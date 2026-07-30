@@ -356,12 +356,3 @@ export const LAYERS: LayerDefinition[] = [
     ],
   },
 ];
-
-export const LAYERS_BY_ID = Object.fromEntries(LAYERS.map((l) => [l.id, l])) as Record<
-  LayerDefinition['id'],
-  LayerDefinition
->;
-
-export function layerBySlug(slug: string): LayerDefinition | undefined {
-  return LAYERS.find((l) => l.slug === slug);
-}
