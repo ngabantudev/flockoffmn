@@ -1,0 +1,54 @@
+---
+import '~/styles/global.css';
+import Nav from '~/components/Nav.astro';
+import Footer from '~/components/Footer.astro';
+import { localeFromUrl, useTranslations } from '~/lib/i18n';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** The map page manages its own scrolling and fills the viewport. */
+  fullBleed?: boolean;
+}
+
+const { title, description, fullBleed = false } = Astro.props;
+const locale = localeFromUrl(Astro.url);
+const t = useTranslations(locale);
+
+const pageTitle = title === t('siteName') ? title : `${title} · ${t('siteName')}`;
+const pageDescription = description ?? t('tagline');
+---
+
+<!doctype html>
+<html lang={locale} class={fullBleed ? 'h-full overflow-hidden' : ''}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={pageDescription} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      No analytics, no tag manager, no third-party fonts, no ad tech.
+      Spec §8: we do not become the thing we map. Referrer is suppressed so
+      that following a source link does not announce which record was read.
+    -->
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:type" content="website" />
+  </head>
+
+  <body class={fullBleed ? 'h-full overflow-hidden' : ''}>
+    <a href="#main" class="skip-link">{t('skipToContent')}</a>
+
+    <div class={fullBleed ? 'flex h-full flex-col' : 'flex min-h-dvh flex-col'}>
+      <Nav locale={locale} />
+      <main id="main" class={fullBleed ? 'relative min-h-0 flex-1' : 'flex-1'} tabindex="-1">
+        <slot />
+      </main>
+      {!fullBleed && <Footer locale={locale} />}
+    </div>
+  </body>
+</html>

@@ -1,0 +1,12 @@
+---
+import Base from '~/layouts/Base.astro';
+import About from '~/components/pages/About.astro';
+import { useTranslations } from '~/lib/i18n';
+
+const locale = 'es' as const;
+const t = useTranslations(locale);
+---
+
+<Base title={t('navAbout')}>
+  <About locale={locale} />
+</Base>
