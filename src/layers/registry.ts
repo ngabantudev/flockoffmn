@@ -202,8 +202,12 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Derivada de la capa de cámaras de origen comunitario, así que cada vacío de aquella se agrava aquí. Una carretera sin corredor dibujado puede ser simplemente una carretera que nadie ha terminado de mapear.',
       },
       {
-        en: 'The thresholds are a judgement, not a finding: at least four reader locations on one named or numbered road, no more than three miles apart, spanning at least a mile. Readers clustered at a single junction are real, and are not a corridor.',
-        es: 'Los umbrales son un criterio, no un hallazgo: al menos cuatro ubicaciones de lectores en una carretera con nombre o número, separadas por no más de tres millas y abarcando al menos una milla. Los lectores agrupados en un solo cruce son reales, y no son un corredor.',
+        en: 'The thresholds are a judgement, not a finding: at least four reader locations on one named or numbered road, no more than three miles apart, spanning at least a quarter-mile. The quarter-mile floor exists only to exclude four readers around a single intersection — readers clustered at one junction are real, and are not a corridor.',
+        es: 'Los umbrales son un criterio, no un hallazgo: al menos cuatro ubicaciones de lectores en una carretera con nombre o número, separadas por no más de tres millas y abarcando al menos un cuarto de milla. Ese mínimo de un cuarto de milla existe solo para excluir cuatro lectores alrededor de un mismo cruce: los lectores agrupados en un solo cruce son reales, y no son un corredor.',
+      },
+      {
+        en: 'A camera standing in an intersection is filed under whichever road its centre line is nearer, and at a crossroads that margin can be a couple of metres. Along East Franklin Avenue in Minneapolis, several readers on the Franklin line are counted under the avenue they cross instead. The recorded direction does not settle it — it disagrees with the assignment about as often as it confirms it — so no corridor here is a complete count of the readers a trip along it passes.',
+        es: 'Una cámara situada en un cruce se asigna a la vía cuyo eje esté más cerca, y en una intersección ese margen puede ser de un par de metros. En East Franklin Avenue, en Minneapolis, varios lectores que están sobre Franklin quedan contados en la avenida que la cruza. La dirección registrada no lo resuelve: contradice la asignación tantas veces como la confirma, así que ningún corredor aquí es un recuento completo de los lectores que se pasan al recorrerlo.',
       },
       {
         en: 'Gaps in the drawn line are stretches we hold no road geometry for. They are not stretches known to be unwatched.',

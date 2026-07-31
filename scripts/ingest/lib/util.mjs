@@ -63,9 +63,23 @@ export const OVERPASS_MIRRORS = [
   'https://overpass.osm.jp/api/interpreter',
 ];
 
+/**
+ * How long to wait after a failed attempt, doubling per attempt across the
+ * whole mirror walk rather than resetting per mirror.
+ *
+ * Without this, a rate-limited run retried four mirrors twice each in under a
+ * minute of actual waiting and reported "all Overpass mirrors failed" — which
+ * reads like every mirror is down when the real answer is that we asked too
+ * fast. Backing off is also the polite behaviour towards volunteer-run
+ * infrastructure this project depends on and does not pay for.
+ */
+const OVERPASS_BACKOFF_MS = 5_000;
+const OVERPASS_MAX_BACKOFF_MS = 60_000;
+
 /** POST an Overpass QL query, trying each mirror in turn. Returns parsed JSON. */
 export async function queryOverpass(scope, query, { retries = 1, timeoutMs = 190_000 } = {}) {
   let lastError;
+  let failures = 0;
   for (const mirror of OVERPASS_MIRRORS) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       const controller = new AbortController();
@@ -88,10 +102,19 @@ export async function queryOverpass(scope, query, { retries = 1, timeoutMs = 190
         clearTimeout(timer);
         lastError = err;
         log(scope, `  ${new URL(mirror).host} failed: ${err.message}`);
+        failures++;
+        const isLast = mirror === OVERPASS_MIRRORS.at(-1) && attempt === retries;
+        if (!isLast) {
+          const wait = Math.min(OVERPASS_BACKOFF_MS * 2 ** (failures - 1), OVERPASS_MAX_BACKOFF_MS);
+          log(scope, `  waiting ${Math.round(wait / 1000)}s before the next attempt`);
+          await new Promise((r) => setTimeout(r, wait));
+        }
       }
     }
   }
-  throw new Error(`all Overpass mirrors failed — last error: ${lastError?.message}`);
+  throw new Error(
+    `all Overpass mirrors failed after ${failures} attempts — last error: ${lastError?.message}`,
+  );
 }
 
 /* ------------------------------------------------------------------ *

@@ -71,9 +71,23 @@ const SITE_M = 75;
  */
 const LINK_M = 3 * MILE;
 
-/** A corridor has to be long enough, and have enough stops, to be a route. */
+/**
+ * A corridor has to have enough stops, and be long enough not to be a junction.
+ *
+ * The span floor is doing one job only: excluding four readers around a single
+ * intersection. An intersection is 50–100 m across, so a quarter-mile floor
+ * clears it comfortably while keeping the dense city-street case, which is the
+ * one a mile-long floor was silently throwing away — East Franklin Avenue in
+ * Minneapolis carries eight readers at six locations in 0.84 miles, a reader
+ * every 740 feet, and failed the old floor for being *too short* despite being
+ * four times denser than the average corridor that passed.
+ *
+ * Note that a density test would be redundant here: at four or more locations
+ * inside a mile, sites-per-mile is necessarily above four already. The floor
+ * and the site count together say everything a separate density rule would.
+ */
 const MIN_SITES = 4;
-const MIN_SPAN_M = 1 * MILE;
+const MIN_SPAN_M = 0.25 * MILE;
 
 /**
  * How far off the line of readers a piece of road may sit and still be drawn.
@@ -81,6 +95,15 @@ const MIN_SPAN_M = 1 * MILE;
  * reject a different stretch of a road that happens to share a number.
  */
 const CLIP_M = 300;
+
+/**
+ * Miles, for prose. Rounding to whole numbers would print the quarter-mile span
+ * floor as "0 mile", so sub-mile distances keep two decimals.
+ */
+function milesText(m) {
+  const mi = metersToMiles(m);
+  return mi < 1 ? mi.toFixed(2) : String(Math.round(mi));
+}
 
 /** Overpass QL is POSIX ERE; road names contain brackets and full stops. */
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -469,8 +492,9 @@ async function main() {
     },
     knownGaps: [
       'Derived, not surveyed. Every limit of the crowd-sourced camera layer applies here and compounds: a corridor is only as complete as the readers someone happened to map along it.',
-      `A corridor is drawn where at least ${MIN_SITES} reader locations sit on one named or numbered road, no more than ${Math.round(metersToMiles(LINK_M))} miles apart, spanning at least ${Math.round(metersToMiles(MIN_SPAN_M))} mile. Those thresholds are a judgement, not a finding.`,
-      `${tooFew} stretches were dropped for having fewer than ${MIN_SITES} reader locations and ${tooShort} for spanning less than ${Math.round(metersToMiles(MIN_SPAN_M))} mile. Readers clustered at a single junction are real, and are not corridors.`,
+      `A corridor is drawn where at least ${MIN_SITES} reader locations sit on one named or numbered road, no more than ${milesText(LINK_M)} miles apart, spanning at least ${milesText(MIN_SPAN_M)} of a mile. Those thresholds are a judgement, not a finding.`,
+      `${tooFew} stretches were dropped for having fewer than ${MIN_SITES} reader locations and ${tooShort} for spanning less than ${milesText(MIN_SPAN_M)} of a mile. Readers clustered at a single junction are real, and are not corridors.`,
+      'A camera standing in an intersection is assigned to whichever road its centre line is nearer, and at a crossroads that margin can be a couple of metres. Along East Franklin Avenue in Minneapolis, several readers on the Franklin line are filed under the avenue they cross rather than under Franklin. The recorded direction does not resolve it — it disagrees with the assignment about as often as it confirms it — so no corridor here should be read as a complete count of the readers a trip along it passes.',
       `${unsnapped} of ${cameras.length} cameras stand on no road that OpenStreetMap names or numbers, and appear in no corridor.`,
       'Distances are measured in straight lines between consecutive reader locations, not along the curve of the road, so a winding corridor is slightly longer to drive than the figure given.',
       'The line drawn is OpenStreetMap road geometry clipped to the run of readers. Gaps in it are roads we hold no geometry for, not stretches known to be unwatched.',
