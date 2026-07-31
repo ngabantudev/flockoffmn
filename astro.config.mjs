@@ -8,6 +8,14 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   site: 'https://example.org',
   output: 'static',
+  // Astro's HTML minifier strips the newline between a line of prose and an
+  // inline tag that starts the next line, so `...records law is the\n<a>Data
+  // Practices Act</a>` shipped as "is theData Practices Act". It hit thirteen
+  // places across both locales before anyone noticed, because the source looks
+  // correct and only the built page is wrong. This site is mostly prose in two
+  // languages; the fix costs about 5 KB gzipped across all sixteen pages, and
+  // buys back a whole class of silent, reader-visible bug.
+  compressHTML: false,
   trailingSlash: 'never',
   i18n: {
     defaultLocale: 'en',

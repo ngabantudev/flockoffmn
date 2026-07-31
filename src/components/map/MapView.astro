@@ -49,17 +49,13 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     ? {
         lngsKey: d.linkRadius.lngsKey,
         latsKey: d.linkRadius.latsKey,
-        pieceSpansKey: d.linkRadius.pieceSpansKey,
-        offsetsKey: d.positions!.offsetsKey,
-        countsKey: d.positions!.countsKey,
+        lengthKey: d.linkRadius.lengthKey,
         minMiles: d.linkRadius.minMiles,
         maxMiles: d.linkRadius.maxMiles,
         stepMiles: d.linkRadius.stepMiles,
         defaultMiles: d.linkRadius.defaultMiles,
-        minBodySites: d.linkRadius.minBodySites,
-        minRunSites: d.linkRadius.minRunSites,
         kindKey: d.linkRadius.kindKey,
-        branchKind: d.linkRadius.branchKind,
+        reachingKind: d.linkRadius.reachingKind,
         label: pick(d.linkRadius.label, locale),
         help: pick(d.linkRadius.help, locale),
       }
@@ -117,6 +113,7 @@ const strings = {
   actionAddressed: t('actionAddressed'),
   actionUnknownOperator: t('actionUnknownOperator'),
   actionPickBody: t('actionPickBody'),
+  filtersCleared: t('filtersCleared'),
 };
 ---
 
@@ -188,11 +185,11 @@ const strings = {
                   </p>
 
                   {/*
-                    The radius control. "Which cameras form a corridor" has no
-                    single answer — at a quarter-mile the state holds dozens of
-                    short dense runs, at two miles most of the network is one
-                    connected thing — so the choice is handed to the reader
-                    rather than published as a finding.
+                    The radius control. "How far does one camera reach towards
+                    the next" has no single answer — at half a mile half these
+                    strands have met their neighbour and half are still
+                    reaching, at ten miles every one has met — so the choice is
+                    handed to the reader rather than published as a finding.
                   */}
                   {layer.linkRadius && (
                     <div class="mt-2.5 rounded-md border border-ink-800 bg-ink-900 p-2">
@@ -787,23 +784,63 @@ const strings = {
     });
   });
 
-  // Re-cutting corridors is cheap enough to do on every input event, so the
-  // network visibly grows under the thumb rather than snapping once on release.
-  document.querySelectorAll<HTMLInputElement>('[data-radius-layer]').forEach((input) => {
+  /**
+   * Move one reach slider, and everything that reads it.
+   *
+   * Shared with the clear-filters button below, which puts the sliders back to
+   * their defaults. Having each caller re-cut the links *and* re-write the
+   * readout separately is how the number beside the label drifts away from the
+   * radius the map is actually drawn at.
+   */
+  function applyRadius(input: HTMLInputElement, miles: number) {
     const layerId = input.dataset.radiusLayer!;
+    input.value = String(miles);
     const output = document.getElementById(`radius-out-${layerId}`);
-    input.addEventListener('input', () => {
-      const miles = Number(input.value);
-      if (output) output.textContent = `${miles} mi`;
-      controller.setLinkRadius(layerId, miles);
-    });
+    if (output) output.textContent = `${miles} mi`;
+    controller.setLinkRadius(layerId, miles);
+  }
+
+  // Re-cutting the links is cheap enough to do on every input event, so the
+  // strands visibly grow out of the cameras under the thumb rather than
+  // snapping into place once on release.
+  document.querySelectorAll<HTMLInputElement>('[data-radius-layer]').forEach((input) => {
+    input.addEventListener('input', () => applyRadius(input, Number(input.value)));
   });
 
+  /**
+   * Everything the reader has narrowed the map by, put back to how it opened.
+   *
+   * "Filters" is whatever is currently hiding records, not just the value
+   * checkboxes: a reach slider left at half a mile and a half-typed search
+   * still cut the map down, so a clear that ignores them leaves the reader
+   * looking at a subset while every control claims otherwise. Layer toggles
+   * are not filters — they are what the reader came to look at — so they stay
+   * exactly as they are.
+   */
   document.getElementById('clear-filters')?.addEventListener('click', () => {
     document
-      .querySelectorAll<HTMLInputElement>('[data-filter-key]:checked')
+      .querySelectorAll<HTMLInputElement>('[data-filter-key]')
       .forEach((c) => (c.checked = false));
     controller.clearFilters();
+
+    document.querySelectorAll<HTMLInputElement>('[data-radius-layer]').forEach((input) => {
+      const miles = layerById.get(input.dataset.radiusLayer!)?.linkRadius?.defaultMiles;
+      if (miles != null) applyRadius(input, miles);
+    });
+
+    // Emptying the box is not enough on its own — the results list stays open
+    // over the map until something re-runs the search. Re-running it on an
+    // empty query is what closes it, and it is already the one piece of code
+    // that knows how. The boundary outline goes with it: it is on the map
+    // because of a search that is no longer there, and leaving a township
+    // ringed after clearing the thing that ringed it reads as a filter still
+    // running. Where the reader is looking is not ours to change — that is
+    // what "reset view" is for, next to this.
+    searchInput.value = '';
+    runSearch('');
+    controller.clearJurisdiction();
+
+    status(S.filtersCleared);
   });
 
   document.getElementById('reset-view')?.addEventListener('click', () => controller.resetView());
@@ -959,9 +996,9 @@ const strings = {
 
   // Default on: the layers that carry the roadmap's core claim, so the first
   // paint already shows enforcement over surveillance rather than an empty
-  // basemap. Corridors join them because the camera layer alone answers "is
-  // there one near me" and leaves the shape of the network — the part no
-  // single dot can show — switched off behind a checkbox.
+  // basemap. The camera-to-camera roads join them because the camera layer
+  // alone answers "is there one near me" and leaves the shape of the network —
+  // the part no single dot can show — switched off behind a checkbox.
   const DEFAULT_ON = ['agency_287g', 'alpr', 'alpr_corridor'];
   status(S.loading, 0);
   controller.map.once('load', () => {

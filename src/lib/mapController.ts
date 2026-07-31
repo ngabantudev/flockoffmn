@@ -3,15 +3,7 @@ import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { THREAD_STOPS, densityColorExpression } from './densityRamp';
-import {
-  branchRun,
-  formBodies,
-  parseSpans,
-  runsFor,
-  setReach,
-  type LinkRadiusConfig,
-  type Run,
-} from './linkRuns';
+import { growLinks, type LinkRadiusConfig } from './linkGrowth';
 import { groupNodes } from './nodes';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
@@ -185,28 +177,44 @@ const FILAMENT_DASHES: number[][] = [
 /** Slow enough to read as growth rather than as a marquee border. */
 const FILAMENT_FRAME_MS = 110;
 
-/** Written onto derived runs by us; not upstream fields. */
-const COLONY_SITES_PROP = '__colonySites';
+/** Written onto derived links by us; not an upstream field. */
+const NETWORK_SITES_PROP = '__networkSites';
 
 /**
- * How brightly a run burns, by the size of the connected network it belongs to.
+ * How brightly a link burns, by the size of the connected network it belongs to.
  *
- * Colour is doing the work a drawn connector would otherwise do. Two streets
- * with no road between them cannot be joined by a line without inventing one,
- * so instead they light up together: a stretch that is on its own stays dim,
- * and one that belongs to a hundred linked reader locations glows near-white.
- * Dragging the radius up turns the metro from scattered embers into one body.
+ * Colour is doing work a line cannot. Two links that meet at a shared reader
+ * are one network and two that do not are two, and no drawn line can say which
+ * — so instead they light up together, and the brighter a strand is the more
+ * reader locations its network holds.
+ *
+ * The stops are cut to the range the data actually holds, as the node ramp
+ * above is. That range is small and it is small for a structural reason worth
+ * stating: each reader location links to its single nearest neighbour, so the
+ * link graph is a nearest-neighbour graph, and those come apart into many tiny
+ * components rather than one big one. Across the whole of Minnesota, at the
+ * widest radius the control offers, the largest connected network is nine
+ * reader locations and there are 354 of them. A ramp spread to 150 — which
+ * this was, inherited from the cluster model that really could fuse the metro
+ * into one body — put every strand in the state within the bottom sixteenth of
+ * it, all the same dim purple, and threw away the whole encoding. The curve
+ * keeps climbing past nine so a denser extract, or another state, does not
+ * flatten out at the top.
  */
-const COLONY_COLOR = [
+const NETWORK_MAX_SITES = 12;
+
+const NETWORK_COLOR = [
   'interpolate',
   ['linear'],
-  ['get', COLONY_SITES_PROP],
+  ['get', NETWORK_SITES_PROP],
   ...THREAD_STOPS.flatMap(([at, color], i) => [
-    // Spread across the network sizes worth telling apart, anchored so a
-    // network of one lands on the first legible colour rather than on the
-    // background. At a narrow radius almost every network is small, so the
-    // bottom of this ramp is what the reader sees most of.
-    i === 0 ? 1 : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * 149) + 1,
+    // Anchored so a network of one lands on the first legible colour rather
+    // than on the background. At a narrow radius almost every network is a
+    // single unjoined pair, so the bottom of this ramp is what the reader sees
+    // most of and it has to be legible on its own.
+    i === 0
+      ? 1
+      : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * (NETWORK_MAX_SITES - 1)) + 1,
     color,
   ]),
 ] as unknown as maplibregl.ExpressionSpecification;
@@ -565,110 +573,36 @@ export class MapController {
   }
 
   /**
-   * Cut the shipped road stretches into the corridors a given radius implies.
+   * Cut every shipped link to the reach the current radius gives its readers.
    *
    * A layer without `linkRadius` passes straight through: this is the one place
    * that behaviour differs, so every other part of the controller can go on
    * treating `data` as simply "the layer's records".
+   *
+   * The record keeps its identity across the whole of the slider — one link is
+   * one pair of readers whatever fraction of the road between them is drawn —
+   * so focus, selection and the record list survive a drag.
    */
   private applyLinkRadius(layer: ClientLayer, raw: LoadedFeature[]): LoadedFeature[] {
     const config = layer.linkRadius;
     if (!config) return raw;
     const radius = this.linkRadius.get(layer.id) ?? config.defaultMiles;
 
-    // Everything the radius implies, runs and lone readers alike, then the
-    // bodies they form. Which of them survives is decided by the body it
-    // belongs to and never by the road it stands on — see formBodies.
-    const elements: Run[] = [];
-    raw.forEach((feature, index) => {
-      const kind = (feature.properties.attributes as Record<string, unknown>)[config.kindKey];
-      if (kind === config.branchKind) {
-        const branch = branchRun(feature.properties, config, index);
-        if (branch) elements.push(branch);
-        return;
-      }
-      elements.push(...runsFor(feature.properties, config, radius, index));
-    });
-
-    // Work out the road each element draws before forming bodies, because
-    // linking runs along those roads. A street is how one cluster reaches
-    // another — an eleven-mile run touches everything along its length, not
-    // only what happens to be near one of its readers.
-    for (const element of elements) {
-      const source = raw[element.source];
-      const attrs = source.properties.attributes as Record<string, unknown>;
-      const spans = parseSpans(attrs[config.pieceSpansKey]);
-      const allPieces =
-        source.geometry.type === 'MultiLineString'
-          ? (source.geometry.coordinates as number[][][])
-          : [];
-
-      // Draw the surveyed pieces this element covers. Where a piece has no
-      // recorded span it is kept rather than dropped: losing real road is the
-      // worse failure, and it can only ever make a run look longer than itself,
-      // never shorter than the ground.
-      setReach(
-        element,
-        element.branch
-          ? allPieces
-          : allPieces.filter((_, i) => {
-              const span = spans[i];
-              if (!span) return true;
-              return span[1] >= element.startMiles && span[0] <= element.endMiles;
-            }),
-        radius,
-      );
-    }
-
-    const all = formBodies(elements, radius, config.minBodySites);
-
-    return all.map((run) => {
-      const source = raw[run.source];
-      const pieces = run.pieces;
-
-      const totalMiles = Number((run.endMiles - run.startMiles).toFixed(2));
-      const gaps = run.offsets.slice(1).map((o, i) => o - run.offsets[i]);
-      const sortedGaps = [...gaps].sort((a, b) => a - b);
-      const round = (n: number) => Number(n.toFixed(2));
-
-      // A branch has no length of its own to report, so it keeps the ingest's
-      // own attributes and gains only its network size. Recomputing spacing for
-      // a single reader would print a row of confident zeroes.
-      if (run.branch) {
-        return {
-          type: 'Feature',
-          geometry: { type: 'MultiLineString', coordinates: pieces },
-          properties: {
-            ...source.properties,
-            attributes: {
-              ...source.properties.attributes,
-              connectedSites: run.colonySites,
-              [COLONY_SITES_PROP]: run.colonySites,
-            },
-          },
-        } as LoadedFeature;
-      }
-
+    return growLinks(raw, config, radius).map((link) => {
+      const source = raw[link.source];
       return {
         type: 'Feature',
-        geometry: { type: 'MultiLineString', coordinates: pieces },
+        geometry: { type: 'MultiLineString', coordinates: link.pieces },
         properties: {
           ...source.properties,
-          // Stable across radii for one stretch, distinct between runs cut from
-          // the same stretch, so focus and selection survive a slider drag.
-          id: run.branch ? source.properties.id : `${source.properties.id}-r${run.from}`,
           attributes: {
             ...source.properties.attributes,
-            readerCount: run.readers,
-            siteCount: run.sites,
-            corridorMiles: totalMiles,
-            averageGapMiles: run.sites > 1 ? round(totalMiles / (run.sites - 1)) : 0,
-            medianGapMiles: sortedGaps.length ? round(sortedGaps[Math.floor(sortedGaps.length / 2)]) : 0,
-            longestGapMiles: gaps.length ? round(Math.max(...gaps)) : 0,
-            siteOffsets: run.offsets.map((o) => o.toFixed(2)).join(';'),
-            siteReaders: run.counts.join(';'),
-            connectedSites: run.colonySites,
-            [COLONY_SITES_PROP]: run.colonySites,
+            // A link that has not reached its neighbour is drawn quieter and
+            // does not creep: it is a reader on a road, not a connection.
+            [config.kindKey]: link.complete ? source.properties.attributes[config.kindKey] : config.reachingKind,
+            drawnMiles: link.drawnMiles,
+            connectedSites: link.network,
+            [NETWORK_SITES_PROP]: link.network,
           },
         },
       } as LoadedFeature;
@@ -864,40 +798,43 @@ export class MapController {
       // road, not a band of ground.
       // Colour carries the connection where a line cannot be drawn.
       const thread = layer.linkRadius
-        ? COLONY_COLOR
+        ? NETWORK_COLOR
         : (layer.color as unknown as maplibregl.ExpressionSpecification);
 
       /*
-       * Branches are drawn quieter than the runs they hang off.
+       * A link still reaching for its neighbour is drawn quieter than one that
+       * has arrived.
        *
-       * A branch is one reader on a side street; a corridor is a run of them
-       * along a road. Drawing both at the same weight would let 960 stubs shout
-       * down 25 corridors and read as though the whole city were a corridor.
-       * Thin, dim and undashed, they behave like the density surface does —
-       * present everywhere there is something, insistent nowhere.
+       * A completed link is a road a driver is read along twice; a reaching one
+       * is a road growing out of a single camera towards one too far away to
+       * matter yet. Drawing both at the same weight would let hundreds of
+       * half-strands shout down the connections and read as though the whole
+       * city were joined up. Thin, dim and undashed, they behave like the
+       * density surface does — present everywhere there is something,
+       * insistent nowhere.
        */
-      const isBranch = layer.linkRadius
-        ? (['==', ['get', layer.linkRadius.kindKey], layer.linkRadius.branchKind] as unknown)
+      const isReaching = layer.linkRadius
+        ? (['==', ['get', layer.linkRadius.kindKey], layer.linkRadius.reachingKind] as unknown)
         : (false as unknown);
-      const byKind = (branch: unknown, run: unknown) =>
+      const byKind = (reaching: unknown, joined: unknown) =>
         (layer.linkRadius
-          ? ['case', isBranch, branch, run]
-          : run) as unknown as maplibregl.ExpressionSpecification;
+          ? ['case', isReaching, reaching, joined]
+          : joined) as unknown as maplibregl.ExpressionSpecification;
 
       /**
        * Zoom interpolation whose stops differ by kind.
        *
        * Built this way round because MapLibre allows only one zoom-based
-       * interpolation per expression — nesting a zoom curve inside each branch
-       * of a `case` is rejected by the style spec at runtime and takes the
-       * whole layer down with it. One curve, kind-dependent stop values.
+       * interpolation per expression — nesting a zoom curve inside each arm of
+       * a `case` is rejected by the style spec at runtime and takes the whole
+       * layer down with it. One curve, kind-dependent stop values.
        */
       const widthByKind = (stops: Array<[number, number, number]>) =>
         [
           'interpolate',
           ['linear'],
           ['zoom'],
-          ...stops.flatMap(([zoom, branch, run]) => [zoom, byKind(branch, run)]),
+          ...stops.flatMap(([zoom, reaching, joined]) => [zoom, byKind(reaching, joined)]),
         ] as unknown as maplibregl.ExpressionSpecification;
       if (layer.filament) {
         // A soft halo, wide and heavily blurred, so the thread looks like it is
@@ -951,12 +888,12 @@ export class MapController {
             id: `${layer.id}-line-growth`,
             type: 'line',
             source: src,
-            // Growth creeps along runs only. A 320 m stub is too short to read
-            // as travelling anywhere, and 960 of them flickering at once is
-            // noise rather than motion.
+            // The creep runs along completed links only. A strand that has not
+            // reached anything has nowhere to travel to, and hundreds of them
+            // flickering at once is noise rather than motion.
             ...(layer.linkRadius
               ? {
-                  filter: ['!=', ['get', layer.linkRadius.kindKey], layer.linkRadius.branchKind] as
+                  filter: ['!=', ['get', layer.linkRadius.kindKey], layer.linkRadius.reachingKind] as
                     unknown as maplibregl.FilterSpecification,
                 }
               : {}),
