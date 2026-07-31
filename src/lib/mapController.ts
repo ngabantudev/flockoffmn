@@ -563,7 +563,13 @@ export class MapController {
       const features = this.applyLinkRadius(layer, raw);
       this.data.set(layer.id, features);
       await this.ready();
-      this.addLayer(layer, features);
+      // Whatever the filters already say, not the whole layer. The controls are
+      // on the page before the data is, so a reader can tick a value under a
+      // layer that is still switched off — and if the first paint ignored that
+      // tick, the map would draw every record while the counter beside it said
+      // four, and clearing the filter would appear to do nothing because
+      // nothing had ever been filtered.
+      this.addLayer(layer, this.filteredFeatures(layer.id));
       this.events.onLayerReady?.(layer.id, features);
     } catch (err) {
       this.events.onError?.(layer.id, err instanceof Error ? err.message : String(err));
