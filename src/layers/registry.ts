@@ -106,10 +106,19 @@ export const LAYERS: LayerDefinition[] = [
         en: 'Not every mapped device is a Flock device; the layer covers ALPR cameras generally, and the manufacturer tag is often missing.',
         es: 'No todos los dispositivos mapeados son de Flock; la capa cubre cámaras ALPR en general y la etiqueta del fabricante suele faltar.',
       },
+      {
+        en: 'The arrow shows only the bearing a volunteer recorded — which way the camera faces. It is not a field of view and not a range: nothing in the source says how wide an area a camera sees or how far down the road it reads a plate.',
+        es: 'La flecha muestra solo la orientación que registró una persona voluntaria: hacia dónde apunta la cámara. No es un campo de visión ni un alcance: la fuente no indica qué área abarca una cámara ni a qué distancia lee una matrícula.',
+      },
+      {
+        en: 'Some records give a sector ("108-153") or several bearings at once ("321;109") where more than one camera shares a pole. Those have no single direction to draw, so they stay plain dots and the recorded value is shown in the detail panel as written.',
+        es: 'Algunos registros indican un sector («108-153») o varias orientaciones a la vez («321;109») cuando varias cámaras comparten un poste. Esos no tienen una dirección única que dibujar, así que se muestran como puntos simples y el valor registrado aparece tal cual en el panel de detalle.',
+      },
     ],
     geometry: 'point',
     color: '#38bdf8',
     cluster: true,
+    bearingKey: 'direction',
     dataPath: '/data/alpr.geojson',
     csvPath: '/data/alpr.csv',
     provenance: {
