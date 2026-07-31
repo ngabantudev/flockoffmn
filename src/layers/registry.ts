@@ -141,7 +141,12 @@ export const LAYERS: LayerDefinition[] = [
     cluster: true,
     bearingKey: 'direction',
     density: {
-      fadeOutZoom: 12,
+      // Records now draw individually from zoom 9, and the surface must be gone
+      // by then — the limitation below promises an estimate and a mapped
+      // position are never read off the same pixel. The controller clamps this
+      // to the clustering boundary as well, so the promise holds structurally
+      // rather than by whoever edits this line remembering it.
+      fadeOutZoom: 9,
       label: { en: 'Camera density', es: 'Densidad de cámaras' },
     },
     dataPath: '/data/alpr.geojson',
@@ -222,6 +227,14 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Dos calles del mismo color están conectadas porque un lector de una está dentro del radio de un lector de la otra. No se dibuja nada sobre el terreno entre ellas, porque a menudo no hay ninguna vía que dibujar: la conexión la transmite el color, nunca una línea. Las calles se sombrean según cuántas ubicaciones de lectores tiene su red conectada.',
       },
       {
+        en: 'Branches are not corridors. A branch is a short stub of a side street carrying a reader that belongs to no run at all, drawn when it falls inside the radius of a corridor. Its length is a drawing convention and says nothing about how far up that street the surveillance goes. They are here because leaving them out makes a corridor look like the whole network when it is only the trunk — most mapped cameras in Minnesota are on no run.',
+        es: 'Las ramas no son corredores. Una rama es un tramo corto de una calle lateral con un lector que no pertenece a ningún recorrido, dibujada cuando queda dentro del radio de un corredor. Su longitud es una convención de dibujo y no dice nada sobre hasta dónde llega la vigilancia por esa calle. Están aquí porque omitirlas hace que un corredor parezca toda la red cuando solo es el tronco: la mayoría de las cámaras mapeadas de Minnesota no está en ningún recorrido.',
+      },
+      {
+        en: 'A branch attaches to a corridor, never to another branch. Letting branches chain would grow long filaments through streets that nothing links but the radius, drawing a network shape the cameras do not support.',
+        es: 'Una rama se conecta a un corredor, nunca a otra rama. Permitir que las ramas se encadenen generaría filamentos largos por calles que nada conecta salvo el radio, dibujando una forma de red que las cámaras no respaldan.',
+      },
+      {
         en: 'Connection is measured between the corridors drawn, not between every camera. A reader standing on a road too sparse to form a corridor is not counted, so two networks shown as separate may in fact be bridged by cameras this layer does not draw.',
         es: 'La conexión se mide entre los corredores dibujados, no entre todas las cámaras. Un lector situado en una vía demasiado dispersa para formar un corredor no se cuenta, así que dos redes que aparecen separadas podrían estar unidas por cámaras que esta capa no dibuja.',
       },
@@ -263,10 +276,10 @@ export const LAYERS: LayerDefinition[] = [
       latsKey: 'siteLats',
       pieceSpansKey: 'pieceSpans',
       minMiles: 0.2,
-      // The ingest links at three miles; the control cannot exceed what was
+      // The ingest links at five miles; the control cannot exceed what was
       // surveyed, so this and LINK_M in scripts/ingest/corridors.mjs move
       // together or the top of the slider silently stops doing anything.
-      maxMiles: 3,
+      maxMiles: 5,
       stepMiles: 0.05,
       // Two miles. Below one, Minnesota holds almost nothing that is a
       // continuous run — which is worth discovering by dragging, but makes a
@@ -276,10 +289,12 @@ export const LAYERS: LayerDefinition[] = [
       defaultMiles: 2,
       minSites: 4,
       minSpanMiles: 0.25,
+      kindKey: 'kind',
+      branchKind: 'branch',
       label: { en: 'Linking radius', es: 'Radio de conexión' },
       help: {
-        en: 'How close two reader locations must be to count as part of one run. Widen it and separate stretches join into a single connected network; narrow it and only the densest streets survive.',
-        es: 'Qué tan cerca deben estar dos ubicaciones de lectores para contar como un mismo tramo. Amplíelo y los tramos separados se unen en una sola red conectada; redúzcalo y solo sobreviven las calles más densas.',
+        en: 'How close two reader locations must be to count as part of one run. Widen it and separate stretches join into a single connected network, and side streets carrying a reader branch off the trunks; narrow it and only the densest streets survive.',
+        es: 'Qué tan cerca deben estar dos ubicaciones de lectores para contar como un mismo tramo. Amplíelo y los tramos separados se unen en una sola red conectada, y las calles laterales con algún lector se ramifican desde los troncos; redúzcalo y solo sobreviven las calles más densas.',
       },
     },
     dataPath: '/data/alpr-corridors.geojson',
@@ -327,6 +342,7 @@ export const LAYERS: LayerDefinition[] = [
           es: 'Ubicaciones de lectores en esta red conectada',
         },
       },
+      { key: 'kind', label: { en: 'Drawn as', es: 'Dibujado como' } },
       { key: 'road', label: { en: 'Road', es: 'Carretera' } },
       { key: 'roadClass', label: { en: 'Road type', es: 'Tipo de vía' } },
       { key: 'countiesSpanned', label: { en: 'Counties spanned', es: 'Condados que atraviesa' } },

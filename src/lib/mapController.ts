@@ -2,8 +2,16 @@ import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
-import { densityColorExpression } from './densityRamp';
-import { assignColonies, parseSpans, runsFor, type LinkRadiusConfig, type Run } from './linkRuns';
+import { DENSITY_STOPS, densityColorExpression } from './densityRamp';
+import {
+  assignColonies,
+  branchRun,
+  branchesNear,
+  parseSpans,
+  runsFor,
+  type LinkRadiusConfig,
+  type Run,
+} from './linkRuns';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -70,15 +78,22 @@ const REDUCED_MOTION =
  * than a number in a bubble. Clustering past that hides exactly what someone
  * looking up their own neighbourhood came to see.
  */
-const CLUSTER_MAX_ZOOM = 11;
+const CLUSTER_MAX_ZOOM = 8;
 const CLUSTER_RADIUS = 40;
 
+/** The first zoom at which records are drawn one by one rather than in bubbles. */
+const UNCLUSTERED_ZOOM = CLUSTER_MAX_ZOOM + 1;
+
 /**
- * Coverage cones appear as soon as records stop clustering, so "where is it"
- * and "which way does it face" arrive together rather than a few zoom levels
- * apart.
+ * Coverage cones start well above the zoom where dots do.
+ *
+ * These used to arrive together, on the reasoning that "where is it" and "which
+ * way does it face" belong in the same view. That held while dots appeared at
+ * city zoom. Now that they appear across most of a region, a cone per camera
+ * would be several hundred overlapping wedges covering the roads underneath —
+ * and a cone is an indicator, not a record, so it is the one to give way.
  */
-const CONE_MIN_ZOOM = CLUSTER_MAX_ZOOM + 1;
+const CONE_MIN_ZOOM = 12;
 
 /**
  * Width of the cone drawn when the source records a heading but no arc.
@@ -142,16 +157,13 @@ const COLONY_COLOR = [
   'interpolate',
   ['linear'],
   ['get', COLONY_SITES_PROP],
-  4,
-  '#4c1d95',
-  10,
-  '#6d5ce0',
-  25,
-  '#818cf8',
-  60,
-  '#86efac',
-  150,
-  '#f0fdfa',
+  ...DENSITY_STOPS.flatMap(([at, color], i) => [
+    // Spread the surface's own stops across the range of network sizes worth
+    // distinguishing, so a bright thread and a bright patch of surface mean
+    // the same thing to the eye: more of it here.
+    i === 0 ? 1 : Math.round(1 + at * 149),
+    color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, 'rgb($1,$2,$3)'),
+  ]),
 ] as unknown as maplibregl.ExpressionSpecification;
 
 const normaliseDegrees = (d: number) => ((d % 360) + 360) % 360;
@@ -478,17 +490,30 @@ export class MapController {
     if (!config) return raw;
     const radius = this.linkRadius.get(layer.id) ?? config.defaultMiles;
 
+    // Runs first, then the branches close enough to any of them. A branch that
+    // reaches nothing is not drawn: it would be a stub of street floating on
+    // its own, which says less than the camera layer already says better.
     const runs: Run[] = [];
+    const loose: Run[] = [];
     raw.forEach((feature, index) => {
+      const kind = (feature.properties.attributes as Record<string, unknown>)[config.kindKey];
+      if (kind === config.branchKind) {
+        const branch = branchRun(feature.properties, config, index);
+        if (branch) loose.push(branch);
+        return;
+      }
       runs.push(...runsFor(feature.properties, config, radius, index));
     });
-    assignColonies(runs, radius);
 
-    return runs.map((run) => {
+    const attached = branchesNear(loose, runs, radius);
+    const all = [...runs, ...attached];
+    assignColonies(all, radius);
+
+    return all.map((run) => {
       const source = raw[run.source];
       const attrs = source.properties.attributes as Record<string, unknown>;
       const spans = parseSpans(attrs[config.pieceSpansKey]);
-      const all =
+      const allPieces =
         source.geometry.type === 'MultiLineString'
           ? (source.geometry.coordinates as number[][][])
           : [];
@@ -497,16 +522,36 @@ export class MapController {
       // span it is kept rather than dropped: losing real road is the worse
       // failure, and it can only ever make a corridor look longer than the run,
       // never shorter than the ground.
-      const pieces = all.filter((_, i) => {
-        const span = spans[i];
-        if (!span) return true;
-        return span[1] >= run.startMiles && span[0] <= run.endMiles;
-      });
+      const pieces = run.branch
+        ? allPieces
+        : allPieces.filter((_, i) => {
+            const span = spans[i];
+            if (!span) return true;
+            return span[1] >= run.startMiles && span[0] <= run.endMiles;
+          });
 
       const totalMiles = Number((run.endMiles - run.startMiles).toFixed(2));
       const gaps = run.offsets.slice(1).map((o, i) => o - run.offsets[i]);
       const sortedGaps = [...gaps].sort((a, b) => a - b);
       const round = (n: number) => Number(n.toFixed(2));
+
+      // A branch has no length of its own to report, so it keeps the ingest's
+      // own attributes and gains only its network size. Recomputing spacing for
+      // a single reader would print a row of confident zeroes.
+      if (run.branch) {
+        return {
+          type: 'Feature',
+          geometry: { type: 'MultiLineString', coordinates: pieces },
+          properties: {
+            ...source.properties,
+            attributes: {
+              ...source.properties.attributes,
+              connectedSites: run.colonySites,
+              [COLONY_SITES_PROP]: run.colonySites,
+            },
+          },
+        } as LoadedFeature;
+      }
 
       return {
         type: 'Feature',
@@ -515,7 +560,7 @@ export class MapController {
           ...source.properties,
           // Stable across radii for one stretch, distinct between runs cut from
           // the same stretch, so focus and selection survive a slider drag.
-          id: `${source.properties.id}-r${run.from}`,
+          id: run.branch ? source.properties.id : `${source.properties.id}-r${run.from}`,
           attributes: {
             ...source.properties.attributes,
             readerCount: run.readers,
@@ -568,7 +613,11 @@ export class MapController {
           id: `${layer.id}-density`,
           type: 'heatmap',
           source: densitySrc,
-          maxzoom: layer.density.fadeOutZoom,
+          // Clamped to where records start drawing individually. The layer's
+          // limitations promise an estimate and a mapped position are never
+          // read off the same pixel; enforcing it here means changing the
+          // clustering zoom cannot quietly make that promise false.
+          maxzoom: Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM),
           paint: {
             'heatmap-weight': layer.density.weightKey
               ? ['coalesce', ['to-number', ['get', layer.density.weightKey]], 1]
@@ -584,9 +633,9 @@ export class MapController {
               'interpolate',
               ['linear'],
               ['zoom'],
-              layer.density.fadeOutZoom - 2,
+              Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM) - 2,
               0.85,
-              layer.density.fadeOutZoom,
+              Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM),
               0,
             ],
           },
@@ -646,6 +695,39 @@ export class MapController {
       const thread = layer.linkRadius
         ? COLONY_COLOR
         : (layer.color as unknown as maplibregl.ExpressionSpecification);
+
+      /*
+       * Branches are drawn quieter than the runs they hang off.
+       *
+       * A branch is one reader on a side street; a corridor is a run of them
+       * along a road. Drawing both at the same weight would let 960 stubs shout
+       * down 25 corridors and read as though the whole city were a corridor.
+       * Thin, dim and undashed, they behave like the density surface does —
+       * present everywhere there is something, insistent nowhere.
+       */
+      const isBranch = layer.linkRadius
+        ? (['==', ['get', layer.linkRadius.kindKey], layer.linkRadius.branchKind] as unknown)
+        : (false as unknown);
+      const byKind = (branch: unknown, run: unknown) =>
+        (layer.linkRadius
+          ? ['case', isBranch, branch, run]
+          : run) as unknown as maplibregl.ExpressionSpecification;
+
+      /**
+       * Zoom interpolation whose stops differ by kind.
+       *
+       * Built this way round because MapLibre allows only one zoom-based
+       * interpolation per expression — nesting a zoom curve inside each branch
+       * of a `case` is rejected by the style spec at runtime and takes the
+       * whole layer down with it. One curve, kind-dependent stop values.
+       */
+      const widthByKind = (stops: Array<[number, number, number]>) =>
+        [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          ...stops.flatMap(([zoom, branch, run]) => [zoom, byKind(branch, run)]),
+        ] as unknown as maplibregl.ExpressionSpecification;
       if (layer.filament) {
         // A soft halo, wide and heavily blurred, so the thread looks like it is
         // lit from inside rather than drawn on top of the map.
@@ -657,9 +739,13 @@ export class MapController {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
               'line-color': thread,
-              'line-opacity': 0.3,
+              'line-opacity': byKind(0.16, 0.3),
               'line-blur': ['interpolate', ['linear'], ['zoom'], 6, 4, 11, 9, 16, 18],
-              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 5, 11, 12, 16, 26],
+              'line-width': widthByKind([
+                [6, 2.5, 5],
+                [11, 6, 12],
+                [16, 12, 26],
+              ]),
             },
           },
           under,
@@ -675,8 +761,12 @@ export class MapController {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
               'line-color': thread,
-              'line-opacity': 0.55,
-              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.1, 11, 2, 16, 4],
+              'line-opacity': byKind(0.4, 0.55),
+              'line-width': widthByKind([
+                [6, 0.6, 1.1],
+                [11, 1.1, 2],
+                [16, 2.2, 4],
+              ]),
             },
           },
           under,
@@ -686,6 +776,15 @@ export class MapController {
             id: `${layer.id}-line-growth`,
             type: 'line',
             source: src,
+            // Growth creeps along runs only. A 320 m stub is too short to read
+            // as travelling anywhere, and 960 of them flickering at once is
+            // noise rather than motion.
+            ...(layer.linkRadius
+              ? {
+                  filter: ['!=', ['get', layer.linkRadius.kindKey], layer.linkRadius.branchKind] as
+                    unknown as maplibregl.FilterSpecification,
+                }
+              : {}),
             layout: { 'line-cap': 'butt', 'line-join': 'round' },
             paint: {
               'line-color': '#f0fdfa',

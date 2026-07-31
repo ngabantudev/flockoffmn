@@ -54,6 +54,8 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
         defaultMiles: d.linkRadius.defaultMiles,
         minSites: d.linkRadius.minSites,
         minSpanMiles: d.linkRadius.minSpanMiles,
+        kindKey: d.linkRadius.kindKey,
+        branchKind: d.linkRadius.branchKind,
         label: pick(d.linkRadius.label, locale),
         help: pick(d.linkRadius.help, locale),
       }
