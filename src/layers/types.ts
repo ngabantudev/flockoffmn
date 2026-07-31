@@ -94,6 +94,53 @@ export interface DetailField {
   format?: 'text' | 'date' | 'link' | 'degrees';
 }
 
+/**
+ * How a layer is summarised on the "near me" page (spec F4).
+ *
+ * The page reads this instead of knowing layers by id. That mattered: while
+ * the summary lived in the component, a layer could be added to the registry,
+ * drawn on the map, downloaded on every "near me" load — and still never
+ * appear there, because nobody remembered to add a sixth branch. A layer with
+ * no `nearMe` is not summarised and, importantly, is not fetched either.
+ */
+export type NearMeMode =
+  /** Count records inside each radius. Point layers only. */
+  | 'radius'
+  /** The single closest record, and how far away it is. */
+  | 'nearest'
+  /** The polygon the point falls inside, if any. */
+  | 'contains'
+  /** Records whose `county` matches the county containing the point. */
+  | 'countyMatch';
+
+export interface NearMeSummary {
+  mode: NearMeMode;
+  /** Card heading. */
+  title: I18nString;
+  /** Shown when this layer has nothing to report for this point. */
+  empty: I18nString;
+  /**
+   * Radii in miles, ascending. `radius` mode only: the first is the headline
+   * figure, the rest are reported on a follow-up line.
+   */
+  radii?: number[];
+  /**
+   * Attribute keys to show beneath the record. Labels are reused from
+   * `detailFields`, so anything named here must also appear there.
+   */
+  detail?: string[];
+  /** Attribute holding an off-site URL, offered as a link when present. */
+  linkKey?: string;
+  /**
+   * The layer's honest limit in one line. The full `limitations` are on the
+   * map and the sources page, but a reader who sees only this card still needs
+   * the warning, so it is not optional in spirit even where it is in the type.
+   */
+  caveat?: I18nString;
+  /** Card spans both columns of the results grid. */
+  wide?: boolean;
+}
+
 export interface LayerDefinition {
   id: LayerId;
   /** URL-safe identifier used in query strings and file names. */
@@ -126,6 +173,11 @@ export interface LayerDefinition {
   provenance: Provenance;
   filters: FilterDefinition[];
   detailFields: DetailField[];
+  /**
+   * How the "near me" page summarises this layer. Omit and the layer is
+   * neither summarised there nor downloaded by that page.
+   */
+  nearMe?: NearMeSummary;
   /** Roadmap position (spec §12), used to order the layer list. */
   order: number;
 }
