@@ -185,20 +185,36 @@ const NETWORK_SITES_PROP = '__networkSites';
  *
  * Colour is doing work a line cannot. Two links that meet at a shared reader
  * are one network and two that do not are two, and no drawn line can say which
- * — so instead they light up together: a link on its own stays dim, and one
- * that belongs to a hundred linked reader locations glows near-white. Dragging
- * the radius up turns the metro from scattered embers into one body.
+ * — so instead they light up together, and the brighter a strand is the more
+ * reader locations its network holds.
+ *
+ * The stops are cut to the range the data actually holds, as the node ramp
+ * above is. That range is small and it is small for a structural reason worth
+ * stating: each reader location links to its single nearest neighbour, so the
+ * link graph is a nearest-neighbour graph, and those come apart into many tiny
+ * components rather than one big one. Across the whole of Minnesota, at the
+ * widest radius the control offers, the largest connected network is nine
+ * reader locations and there are 354 of them. A ramp spread to 150 — which
+ * this was, inherited from the cluster model that really could fuse the metro
+ * into one body — put every strand in the state within the bottom sixteenth of
+ * it, all the same dim purple, and threw away the whole encoding. The curve
+ * keeps climbing past nine so a denser extract, or another state, does not
+ * flatten out at the top.
  */
+const NETWORK_MAX_SITES = 12;
+
 const NETWORK_COLOR = [
   'interpolate',
   ['linear'],
   ['get', NETWORK_SITES_PROP],
   ...THREAD_STOPS.flatMap(([at, color], i) => [
-    // Spread across the network sizes worth telling apart, anchored so a
-    // network of one lands on the first legible colour rather than on the
-    // background. At a narrow radius almost every network is small, so the
-    // bottom of this ramp is what the reader sees most of.
-    i === 0 ? 1 : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * 149) + 1,
+    // Anchored so a network of one lands on the first legible colour rather
+    // than on the background. At a narrow radius almost every network is a
+    // single unjoined pair, so the bottom of this ramp is what the reader sees
+    // most of and it has to be legible on its own.
+    i === 0
+      ? 1
+      : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * (NETWORK_MAX_SITES - 1)) + 1,
     color,
   ]),
 ] as unknown as maplibregl.ExpressionSpecification;

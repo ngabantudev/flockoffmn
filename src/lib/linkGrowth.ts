@@ -11,11 +11,20 @@ import type { FeatureProperties } from '~/layers/types';
  * reaches out from each camera, and no further.
  *
  * So the drawing answers a question a static map cannot: at half a mile of
- * reach, what does the network look like? A few dozen city blocks. At two, the
- * blocks have joined into districts. At ten, most of a metro is one connected
- * thing. All three are true, and picking one of them for the reader would
+ * reach, how much of this is joined up? About half of it — the other half is
+ * still reaching. At two miles, seven strands in eight have met. At ten, all of
+ * them have. All three are true, and picking one of them for the reader would
  * publish an editorial judgement as though it were a finding. The control hands
  * the judgement back.
+ *
+ * What widening the radius does *not* do is fuse everything into one network,
+ * and it is worth being clear about that here because the cluster model this
+ * replaced really did. Each reader location reaches only for its single nearest
+ * neighbour, so the links form a nearest-neighbour graph, and those come apart
+ * into many small components by construction. Over the whole of Minnesota, at
+ * the widest radius the control offers, there are 354 connected networks and
+ * the largest holds nine reader locations. The colour ramp is scaled to that
+ * range rather than to the hundreds the old model produced.
  *
  * Nothing here is invented and nothing here can be: there is no road network in
  * the browser to invent from. Every metre drawn at every slider position was
