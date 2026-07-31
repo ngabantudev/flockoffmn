@@ -994,12 +994,13 @@ const strings = {
 
   /* ------------------------------ Start-up ------------------------------ */
 
-  // Default on: the layers that carry the roadmap's core claim, so the first
-  // paint already shows enforcement over surveillance rather than an empty
-  // basemap. The camera-to-camera roads join them because the camera layer
-  // alone answers "is there one near me" and leaves the shape of the network —
-  // the part no single dot can show — switched off behind a checkbox.
-  const DEFAULT_ON = ['agency_287g', 'alpr', 'alpr_corridor'];
+  // Default on: the corridors, alone. They are the one layer that shows the
+  // shape of the network rather than its parts — a reader arriving cold sees
+  // the roads plate readers watch, not a field of dots they have to join up
+  // themselves. Everything else, cameras included, is a checkbox away, and
+  // starting with one layer means the first paint is legible instead of three
+  // legends deep.
+  const DEFAULT_ON = ['alpr_corridor'];
   status(S.loading, 0);
   controller.map.once('load', () => {
     for (const id of DEFAULT_ON) {
