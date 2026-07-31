@@ -107,12 +107,16 @@ export const LAYERS: LayerDefinition[] = [
         es: 'No todos los dispositivos mapeados son de Flock; la capa cubre cámaras ALPR en general y la etiqueta del fabricante suele faltar.',
       },
       {
-        en: 'The arrow shows only the bearing a volunteer recorded — which way the camera faces. It is not a field of view and not a range: nothing in the source says how wide an area a camera sees or how far down the road it reads a plate.',
-        es: 'La flecha muestra solo la orientación que registró una persona voluntaria: hacia dónde apunta la cámara. No es un campo de visión ni un alcance: la fuente no indica qué área abarca una cámara ni a qué distancia lee una matrícula.',
+        en: 'The cone shows the direction a camera faces. Its length is a drawing convention and not a range — nothing in the source says how far down the road a camera reads a plate, and the cone stays the same size on screen as you zoom rather than covering a real distance on the ground.',
+        es: 'El cono muestra la dirección hacia la que apunta una cámara. Su longitud es una convención de dibujo y no un alcance: la fuente no indica a qué distancia una cámara lee una matrícula, y el cono mantiene el mismo tamaño en pantalla al hacer zoom en lugar de cubrir una distancia real sobre el terreno.',
       },
       {
-        en: 'Some records give a sector ("108-153") or several bearings at once ("321;109") where more than one camera shares a pole. Those have no single direction to draw, so they stay plain dots and the recorded value is shown in the detail panel as written.',
-        es: 'Algunos registros indican un sector («108-153») o varias orientaciones a la vez («321;109») cuando varias cámaras comparten un poste. Esos no tienen una dirección única que dibujar, así que se muestran como puntos simples y el valor registrado aparece tal cual en el panel de detalle.',
+        en: 'Where a record gives a real sector — 50 of them do, such as "108-153" — the cone is drawn at exactly that width. Where it gives only a heading, the cone is drawn at a fixed nominal width, because no field of view was recorded. The two look alike on the map, so treat cone width as evidence only when the detail panel shows a sector.',
+        es: 'Cuando un registro indica un sector real —50 lo hacen, como «108-153»— el cono se dibuja exactamente con esa amplitud. Cuando solo indica una orientación, el cono se dibuja con una amplitud nominal fija, porque no se registró ningún campo de visión. Ambos se ven igual en el mapa, así que considere la amplitud del cono como evidencia solo cuando el panel de detalle muestre un sector.',
+      },
+      {
+        en: 'A node where several cameras share a pole ("321;109") is drawn as one cone per recorded heading over a single dot. A record tagged "0-360" is drawn as a full circle, meaning the surveyor recorded no single direction at all.',
+        es: 'Un nodo donde varias cámaras comparten un poste («321;109») se dibuja con un cono por cada orientación registrada sobre un solo punto. Un registro etiquetado «0-360» se dibuja como un círculo completo, lo que significa que no se registró ninguna dirección concreta.',
       },
     ],
     geometry: 'point',
