@@ -41,6 +41,23 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   filament: d.filament,
+  linkRadius: d.linkRadius
+    ? {
+        lngsKey: d.linkRadius.lngsKey,
+        latsKey: d.linkRadius.latsKey,
+        pieceSpansKey: d.linkRadius.pieceSpansKey,
+        offsetsKey: d.positions!.offsetsKey,
+        countsKey: d.positions!.countsKey,
+        minMiles: d.linkRadius.minMiles,
+        maxMiles: d.linkRadius.maxMiles,
+        stepMiles: d.linkRadius.stepMiles,
+        defaultMiles: d.linkRadius.defaultMiles,
+        minSites: d.linkRadius.minSites,
+        minSpanMiles: d.linkRadius.minSpanMiles,
+        label: pick(d.linkRadius.label, locale),
+        help: pick(d.linkRadius.help, locale),
+      }
+    : undefined,
   dataPath: d.dataPath,
   csvPath: d.csvPath,
   filters: d.filters
@@ -150,6 +167,44 @@ const strings = {
                     <span> {strings.ofTotal} </span>
                     <span>{layer.featureCount}</span>
                   </p>
+
+                  {/*
+                    The radius control. "Which cameras form a corridor" has no
+                    single answer — at a quarter-mile the state holds dozens of
+                    short dense runs, at two miles most of the network is one
+                    connected thing — so the choice is handed to the reader
+                    rather than published as a finding.
+                  */}
+                  {layer.linkRadius && (
+                    <div class="mt-2.5 rounded-md border border-ink-800 bg-ink-900 p-2">
+                      <label
+                        for={`radius-${layer.id}`}
+                        class="flex items-baseline justify-between gap-2 text-[11px] font-medium text-ink-200"
+                      >
+                        <span>{layer.linkRadius.label}</span>
+                        <output
+                          id={`radius-out-${layer.id}`}
+                          for={`radius-${layer.id}`}
+                          class="font-mono text-[11px] text-accent"
+                        >
+                          {layer.linkRadius.defaultMiles} mi
+                        </output>
+                      </label>
+                      <input
+                        id={`radius-${layer.id}`}
+                        type="range"
+                        data-radius-layer={layer.id}
+                        min={layer.linkRadius.minMiles}
+                        max={layer.linkRadius.maxMiles}
+                        step={layer.linkRadius.stepMiles}
+                        value={layer.linkRadius.defaultMiles}
+                        class="mt-1.5 w-full accent-accent"
+                      />
+                      <p class="mt-1 text-[10px] leading-snug text-ink-400">
+                        {layer.linkRadius.help}
+                      </p>
+                    </div>
+                  )}
 
                   {/*
                     A density surface with no key is unreadable — the reader
@@ -592,6 +647,18 @@ const strings = {
         `[data-filter-layer="${layerId}"][data-filter-key="${key}"]:checked`,
       );
       controller.setFilter(layerId, key, new Set([...checked].map((c) => c.value)));
+    });
+  });
+
+  // Re-cutting corridors is cheap enough to do on every input event, so the
+  // network visibly grows under the thumb rather than snapping once on release.
+  document.querySelectorAll<HTMLInputElement>('[data-radius-layer]').forEach((input) => {
+    const layerId = input.dataset.radiusLayer!;
+    const output = document.getElementById(`radius-out-${layerId}`);
+    input.addEventListener('input', () => {
+      const miles = Number(input.value);
+      if (output) output.textContent = `${miles} mi`;
+      controller.setLinkRadius(layerId, miles);
     });
   });
 
