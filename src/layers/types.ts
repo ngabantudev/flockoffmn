@@ -211,9 +211,50 @@ export interface LayerDefinition {
   density?: {
     /** Attribute weighting each point, where some points count for more. */
     weightKey?: string;
-    /** Zoom at which the surface has fully faded and records take over. */
-    fadeOutZoom: number;
     label: I18nString;
+  };
+  /**
+   * Colour records by a category once they are drawn individually.
+   *
+   * Only at the closest scale, and deliberately: at the scales where records
+   * are a surface or a count, a per-record colour is either invisible or a lie
+   * about what a cluster contains. Close in, it is the difference between "a
+   * camera" and "a camera someone's homeowners association put there".
+   *
+   * The order here is the order of the key beside the map, so put the kinds a
+   * reader is looking for above the ones they are not. A value with no colour
+   * falls back, and the key says so rather than leaving it unexplained.
+   */
+  categoryColors?: {
+    /** Attribute holding the category. */
+    key: string;
+    label: I18nString;
+    /** Hex colour per observed value, in the order the key should list them. */
+    colors: Array<{ value: string; color: string }>;
+    /** Colour for any value not named above. */
+    fallback: string;
+  };
+  /**
+   * The two zooms at which this layer changes how it draws itself.
+   *
+   * A point layer answers a different question at every scale. Across a state
+   * the question is where the infrastructure is concentrated, and a thousand
+   * overlapping pins answer it worse than a surface does. Across a county it is
+   * how many are around here, which is a count. Across a street it is which
+   * pole, facing which way — and only there is a pin the right shape for the
+   * answer.
+   *
+   * Both numbers live here rather than beside the thing each one governs,
+   * because they are boundaries between the same three states and have to
+   * agree. Splitting them is how the density surface came to promise it had
+   * faded before records drew individually while a separate constant decided
+   * when that was.
+   */
+  scale?: {
+    /** First zoom with clusters. Below it the layer is a density surface only. */
+    clusterFrom: number;
+    /** First zoom with individual records, and with any per-record indicator. */
+    pointsFrom: number;
   };
   /**
    * Draw a line layer as a living filament: a blurred glow beneath a bright

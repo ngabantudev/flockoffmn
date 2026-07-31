@@ -36,6 +36,41 @@ function cleanTag(v) {
   return s === '' ? null : s;
 }
 
+/**
+ * Who runs a reader, sorted into kinds.
+ *
+ * `operator` is free text a volunteer typed, so this is keyword-matching a
+ * human's phrasing and nothing more. It records what a word in that field
+ * suggests, never a verified fact about a contract — "Eagan" is a city and
+ * "Paul Bunyan Drug Task Force" is several agencies at once, and both come out
+ * of one string with no schema behind it.
+ *
+ * The commonest answer by a wide margin is that nobody wrote anything down.
+ * That is the point of having the field: a reader who filters this layer
+ * discovers immediately that most of the network will not say whose it is.
+ */
+const OPERATOR_KINDS = [
+  [/sheriff/i, 'County sheriff'],
+  [/state patrol|minnesota state|mn ?dot|department of transportation/i, 'State agency'],
+  [/task ?force/i, 'Multi-agency task force'],
+  // `pd\b` without a leading boundary, so "SLMPD" lands with the police rather
+  // than in the bin for everything the patterns miss.
+  [/police|pd\b|public safety/i, 'Police department'],
+  [/school|isd\b|university|college|campus/i, 'School or campus'],
+  [/flock/i, 'Vendor-operated (Flock)'],
+  [/\bhoa\b|homeowner|association|neighborhood|neighbourhood/i, 'Neighbourhood association'],
+];
+
+function operatorKind(operator) {
+  if (!operator) return 'Not recorded';
+  for (const [pattern, label] of OPERATOR_KINDS) {
+    if (pattern.test(operator)) return label;
+  }
+  // Municipalities named without a suffix ("Eagan"), shops and congregations
+  // all land here. Calling it "private" would be wrong for half of them.
+  return 'Other or unclassified';
+}
+
 async function main() {
   const data = await queryOverpass('alpr', QUERY);
   const nodes = (data.elements ?? []).filter((e) => e.type === 'node' && e.lat != null);
@@ -72,6 +107,7 @@ async function main() {
         sourceDate: null,
         attributes: {
           operator,
+          operatorType: operatorKind(operator),
           manufacturer,
           cameraType: cleanTag(t['camera:type']),
           direction: cleanTag(t.direction),
