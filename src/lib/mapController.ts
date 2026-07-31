@@ -14,6 +14,8 @@ export interface ClientLayer {
   color: string;
   geometry: 'point' | 'polygon';
   cluster: boolean;
+  /** Attribute holding a compass bearing, if the layer records one. */
+  bearingKey?: string;
   dataPath: string;
   csvPath: string | null;
   filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];
@@ -41,6 +43,59 @@ export interface ControllerEvents {
 const REDUCED_MOTION =
   typeof window !== 'undefined' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Clustering is for reading the state at a glance, not for reading a street.
+ *
+ * Points cluster at or below this zoom and are drawn individually above it, so
+ * by the time the view holds a single city every camera is its own dot rather
+ * than a number in a bubble. Clustering past that hides exactly what someone
+ * looking up their own neighbourhood came to see.
+ */
+const CLUSTER_MAX_ZOOM = 11;
+const CLUSTER_RADIUS = 40;
+
+/**
+ * Bearing arrows appear as soon as records stop clustering, so "where is it"
+ * and "which way does it face" arrive together rather than a few zoom levels
+ * apart.
+ */
+const BEARING_MIN_ZOOM = CLUSTER_MAX_ZOOM + 1;
+
+/**
+ * Numeric bearing written onto the flattened copy for the map to rotate by.
+ * Prefixed because it is ours, not a field any upstream source published.
+ */
+const BEARING_PROP = '__bearing';
+
+/**
+ * A single compass bearing in degrees, or null when the source does not give
+ * one unambiguously.
+ *
+ * OSM's `direction` is free text and carries three different things:
+ *
+ *   "180"      one camera, one heading — the only case we can draw
+ *   "108-153"  a sector. Drawing its midpoint would state a heading the
+ *              surveyor did not record.
+ *   "321;109"  several cameras sharing a pole, each facing a different way.
+ *              One arrow cannot say that.
+ *
+ * The last two keep their verbatim value in the detail panel and render as
+ * plain dots. Turning them into a number would put a confident arrow on the
+ * map pointing somewhere nobody observed — and `Number("321;109")` is NaN,
+ * which MapLibre would happily rotate to due north.
+ */
+export function parseBearing(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const value = String(raw).trim();
+  if (!value || value.includes(';') || value.includes(',')) return null;
+  // A range such as "108-153". Guarded before Number() because Number("8-53")
+  // is NaN anyway, but the intent should be legible rather than incidental.
+  if (/^-?\d+(\.\d+)?\s*-\s*\d+(\.\d+)?$/.test(value)) return null;
+  const degrees = Number(value);
+  if (!Number.isFinite(degrees)) return null;
+  return ((degrees % 360) + 360) % 360;
+}
 
 /**
  * Owns the MapLibre instance and all layer state.
@@ -118,15 +173,68 @@ export class MapController {
    * MapLibre expressions and the filter UI both want flat keys. Flatten a copy
    * for the map; the panel still reads the structured original.
    */
-  private flatten(features: LoadedFeature[]): FeatureCollection {
+  private flatten(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
     return {
       type: 'FeatureCollection',
-      features: features.map((f) => ({
-        type: 'Feature',
-        geometry: f.geometry,
-        properties: { ...f.properties.attributes, ...f.properties, attributes: undefined },
-      })) as Feature[],
+      features: features.map((f) => {
+        const properties: Record<string, unknown> = {
+          ...f.properties.attributes,
+          ...f.properties,
+          attributes: undefined,
+        };
+        // Only set when a single bearing was actually recorded, so the arrow
+        // layer can filter on the property's presence rather than trying to
+        // distinguish "due north" from "unparseable" after the fact.
+        if (layer.bearingKey) {
+          const bearing = parseBearing(f.properties.attributes[layer.bearingKey]);
+          if (bearing !== null) properties[BEARING_PROP] = bearing;
+        }
+        return { type: 'Feature', geometry: f.geometry, properties };
+      }) as Feature[],
     };
+  }
+
+  /**
+   * Arrow sprite for a layer's bearing indicator, drawn once per layer.
+   *
+   * Generated rather than shipped as an asset: it has to carry the layer's own
+   * colour, and the project does not load images from anywhere but itself. The
+   * apex sits at the centre of the sprite so `icon-rotate` pivots on the
+   * record's own coordinate instead of swinging the arrow around it.
+   */
+  private ensureBearingIcon(layer: ClientLayer): string | null {
+    const id = `${layer.id}-bearing`;
+    if (this.map.hasImage(id)) return id;
+
+    const pixelRatio = 2;
+    const px = 44 * pixelRatio;
+    const canvas = document.createElement('canvas');
+    canvas.width = px;
+    canvas.height = px;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // The arrow starts clear of the dot rather than at the centre. The dot is
+    // ~7px across at the zoom where these first appear, so an arrow drawn from
+    // the middle is simply hidden underneath it — which is how the first
+    // version of this failed: the icons were rendering, just invisibly.
+    const centre = px / 2;
+    const base = centre - px * 0.3;
+    const tip = centre - px * 0.48;
+    ctx.beginPath();
+    ctx.moveTo(centre, tip);
+    ctx.lineTo(centre + px * 0.13, base);
+    ctx.lineTo(centre - px * 0.13, base);
+    ctx.closePath();
+    ctx.fillStyle = layer.color;
+    ctx.fill();
+    // Dark keyline so the arrow survives the pale basemap under it.
+    ctx.strokeStyle = '#0a0c10';
+    ctx.lineWidth = px * 0.03;
+    ctx.stroke();
+
+    this.map.addImage(id, ctx.getImageData(0, 0, px, px), { pixelRatio });
+    return id;
   }
 
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
@@ -155,8 +263,10 @@ export class MapController {
 
     this.map.addSource(src, {
       type: 'geojson',
-      data: this.flatten(features),
-      ...(layer.cluster ? { cluster: true, clusterRadius: 46, clusterMaxZoom: 13 } : {}),
+      data: this.flatten(layer, features),
+      ...(layer.cluster
+        ? { cluster: true, clusterRadius: CLUSTER_RADIUS, clusterMaxZoom: CLUSTER_MAX_ZOOM }
+        : {}),
     });
 
     if (layer.geometry === 'polygon') {
@@ -225,6 +335,31 @@ export class MapController {
       this.cursorOn(`${layer.id}-clusters`);
     }
 
+    // Arrows go under the dots: the dot is the record's exact position and the
+    // thing you click, so it should never be covered by the indicator.
+    const bearingIcon = layer.bearingKey ? this.ensureBearingIcon(layer) : null;
+    if (bearingIcon) {
+      this.map.addLayer({
+        id: `${layer.id}-bearing`,
+        type: 'symbol',
+        source: src,
+        minzoom: BEARING_MIN_ZOOM,
+        filter: ['all', ['!', ['has', 'point_count']], ['has', BEARING_PROP]],
+        layout: {
+          'icon-image': bearingIcon,
+          'icon-rotate': ['get', BEARING_PROP],
+          // Bearings are compass headings, so the arrow turns with the map
+          // rather than staying fixed on the screen.
+          'icon-rotation-alignment': 'map',
+          // Cameras cluster tightly along a corridor; hiding the ones that
+          // collide would misrepresent how many are there.
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'icon-size': ['interpolate', ['linear'], ['zoom'], BEARING_MIN_ZOOM, 0.68, 16, 1],
+        },
+      });
+    }
+
     this.map.addLayer({
       id: `${layer.id}-points`,
       type: 'circle',
@@ -274,7 +409,14 @@ export class MapController {
 
   private applyVisibility(layer: ClientLayer) {
     const on = this.visible.has(layer.id);
-    for (const suffix of ['-fill', '-outline', '-points', '-clusters', '-cluster-count']) {
+    for (const suffix of [
+      '-fill',
+      '-outline',
+      '-points',
+      '-bearing',
+      '-clusters',
+      '-cluster-count',
+    ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {
         this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
@@ -316,8 +458,9 @@ export class MapController {
 
   private refresh(layerId: string) {
     const source = this.map.getSource(this.sourceId(layerId)) as GeoJSONSource | undefined;
-    if (!source) return;
-    source.setData(this.flatten(this.filteredFeatures(layerId)));
+    const layer = this.layers.find((l) => l.id === layerId);
+    if (!source || !layer) return;
+    source.setData(this.flatten(layer, this.filteredFeatures(layerId)));
     this.emitCounts();
   }
 
