@@ -8,6 +8,7 @@ import {
   formBodies,
   parseSpans,
   runsFor,
+  setReach,
   type LinkRadiusConfig,
   type Run,
 } from './linkRuns';
@@ -519,10 +520,12 @@ export class MapController {
       elements.push(...runsFor(feature.properties, config, radius, index));
     });
 
-    const all = formBodies(elements, radius, config.minBodySites);
-
-    return all.map((run) => {
-      const source = raw[run.source];
+    // Work out the road each element draws before forming bodies, because
+    // linking runs along those roads. A street is how one cluster reaches
+    // another — an eleven-mile run touches everything along its length, not
+    // only what happens to be near one of its readers.
+    for (const element of elements) {
+      const source = raw[element.source];
       const attrs = source.properties.attributes as Record<string, unknown>;
       const spans = parseSpans(attrs[config.pieceSpansKey]);
       const allPieces =
@@ -530,17 +533,28 @@ export class MapController {
           ? (source.geometry.coordinates as number[][][])
           : [];
 
-      // Draw the surveyed pieces this run covers. Where a piece has no recorded
-      // span it is kept rather than dropped: losing real road is the worse
-      // failure, and it can only ever make a corridor look longer than the run,
+      // Draw the surveyed pieces this element covers. Where a piece has no
+      // recorded span it is kept rather than dropped: losing real road is the
+      // worse failure, and it can only ever make a run look longer than itself,
       // never shorter than the ground.
-      const pieces = run.branch
-        ? allPieces
-        : allPieces.filter((_, i) => {
-            const span = spans[i];
-            if (!span) return true;
-            return span[1] >= run.startMiles && span[0] <= run.endMiles;
-          });
+      setReach(
+        element,
+        element.branch
+          ? allPieces
+          : allPieces.filter((_, i) => {
+              const span = spans[i];
+              if (!span) return true;
+              return span[1] >= element.startMiles && span[0] <= element.endMiles;
+            }),
+        radius,
+      );
+    }
+
+    const all = formBodies(elements, radius, config.minBodySites);
+
+    return all.map((run) => {
+      const source = raw[run.source];
+      const pieces = run.pieces;
 
       const totalMiles = Number((run.endMiles - run.startMiles).toFixed(2));
       const gaps = run.offsets.slice(1).map((o, i) => o - run.offsets[i]);
