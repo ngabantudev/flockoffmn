@@ -24,8 +24,8 @@ agency spreadsheets, permit filings, and university archives — which makes the
 public in theory and invisible in practice.
 
 get-flocked stitches them onto one map, so a resident can stand at their own
-address and see the whole system around them. Not five separate stories. One
-connected system.
+address and see the whole system around them. Not a stack of separate stories.
+One connected system.
 
 > **Transparency for systems. Privacy for people.**
 >
@@ -56,14 +56,22 @@ This is a public good, not a product.
 |---|---:|---|
 | **287(g) agency agreements** | 10 | ICE's own published list (2,179 nationally) |
 | **ALPR / Flock cameras** | ~1,400 | OpenStreetMap, mapped by volunteers |
+| **ALPR corridors** | 21 | Derived: runs of readers along one road, on OSM road geometry |
 | **Redlining zones (HOLC)** | 168 | Mapping Inequality, Univ. of Richmond |
 | **ICE-contract detention facilities** | 5 | ICE Over-72-Hour Facility List |
 | **Data centres** | 20 | FracTracker Alliance FOIA records |
+| **Racial covenants (aggregate)** | 2,567 cells | Mapping Prejudice, Univ. of Minnesota — 34,741 covenants across 8 counties |
 
-Plus the features that make it usable: a **"near me"** view that answers all
-five questions about one place at once, filters and search, a **records-request
-generator** built on Minnesota's actual public records statute, per-layer
-**downloads**, a **sources & methodology** page, and English/Spanish throughout.
+The covenants layer is a deliberate aggregate: each record is a fixed 250-metre
+cell reporting how many covenants were recorded inside it, never a row for one
+property. The per-property data is Mapping Prejudice's to publish, not ours to
+copy.
+
+Plus the features that make it usable: a **"near me"** view that answers every
+one of those questions about a single place at once, filters and search, a
+**records-request generator** built on Minnesota's actual public records
+statute, per-layer **downloads**, a **sources & methodology** page, and
+English/Spanish throughout.
 
 **The payoff:** three Minnesota counties have *both* a 287(g) agreement *and* a
 jail holding people under ICE contract. Sherburne has the full stack — mapped

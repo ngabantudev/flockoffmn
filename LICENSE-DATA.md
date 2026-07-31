@@ -22,6 +22,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Layer | File | Upstream licence | Practical effect |
 |---|---|---|---|
 | ALPR cameras | `alpr.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike.** Derived databases must stay open under ODbL. Attribution to OpenStreetMap contributors required. |
+| ALPR corridors | `alpr-corridors.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike.** This layer *is* the derived database the row above warns about — built from the camera layer and OpenStreetMap road geometry, so ODbL follows it. Attribution to OpenStreetMap contributors required. |
 | 287(g) agreements | `287g.geojson` | Public domain (US federal work) | Free for any use. |
 | Detention facilities | `detention.geojson` | Public domain (US federal work) | Free for any use. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | **Non-commercial and share-alike.** Not usable commercially. |

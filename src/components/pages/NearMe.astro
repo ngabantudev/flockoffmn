@@ -144,7 +144,12 @@ const strings = {
 <script is:inline type="application/json" id="near-strings" set:html={JSON.stringify(strings)} />
 
 <script>
-  import { haversineMeters, metersToMiles, findContaining, representativePoint } from '~/lib/geo.mjs';
+  import {
+    haversineMeters,
+    metersToMiles,
+    findContaining,
+    distanceToGeometryMeters,
+  } from '~/lib/geo.mjs';
 
   type NearMeLayer = {
     id: string;
@@ -303,13 +308,20 @@ const strings = {
     return wrap;
   }
 
+  /**
+   * The closest record, measured to the geometry rather than to a point
+   * standing in for it.
+   *
+   * This used to measure to the centre of a record's bounding box, which is
+   * exact for a point and badly wrong for anything with extent: someone
+   * standing on an eleven-mile corridor would be told it was five miles away,
+   * because that is how far they were from its midpoint. The same rule the
+   * ingest uses to build corridors answers the question here.
+   */
   function nearest(point: [number, number], features: Feature[]) {
     let best: { feature: Feature; distance: number } | null = null;
     for (const f of features) {
-      const c = f.geometry.type === 'Point'
-        ? (f.geometry.coordinates as [number, number])
-        : (representativePoint(f.geometry) as [number, number]);
-      const d = haversineMeters(point, c);
+      const d = distanceToGeometryMeters(point, f.geometry);
       if (!best || d < best.distance) best = { feature: f, distance: d };
     }
     return best;

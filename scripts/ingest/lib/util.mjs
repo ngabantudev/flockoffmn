@@ -50,6 +50,74 @@ export async function fetchWithRetry(url, { retries = 3, timeoutMs = 60_000, ...
 }
 
 /* ------------------------------------------------------------------ *
+ * Overpass
+ *
+ * Public Overpass instances are volunteer-run and routinely 504 under load, so
+ * every query walks a list of mirrors rather than failing on the first one.
+ * ------------------------------------------------------------------ */
+
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.osm.jp/api/interpreter',
+];
+
+/**
+ * How long to wait after a failed attempt, doubling per attempt across the
+ * whole mirror walk rather than resetting per mirror.
+ *
+ * Without this, a rate-limited run retried four mirrors twice each in under a
+ * minute of actual waiting and reported "all Overpass mirrors failed" — which
+ * reads like every mirror is down when the real answer is that we asked too
+ * fast. Backing off is also the polite behaviour towards volunteer-run
+ * infrastructure this project depends on and does not pay for.
+ */
+const OVERPASS_BACKOFF_MS = 5_000;
+const OVERPASS_MAX_BACKOFF_MS = 60_000;
+
+/** POST an Overpass QL query, trying each mirror in turn. Returns parsed JSON. */
+export async function queryOverpass(scope, query, { retries = 1, timeoutMs = 190_000 } = {}) {
+  let lastError;
+  let failures = 0;
+  for (const mirror of OVERPASS_MIRRORS) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        log(scope, `querying ${new URL(mirror).host} (attempt ${attempt + 1}/${retries + 1})`);
+        const res = await fetch(mirror, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': USER_AGENT,
+          },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        clearTimeout(timer);
+        lastError = err;
+        log(scope, `  ${new URL(mirror).host} failed: ${err.message}`);
+        failures++;
+        const isLast = mirror === OVERPASS_MIRRORS.at(-1) && attempt === retries;
+        if (!isLast) {
+          const wait = Math.min(OVERPASS_BACKOFF_MS * 2 ** (failures - 1), OVERPASS_MAX_BACKOFF_MS);
+          log(scope, `  waiting ${Math.round(wait / 1000)}s before the next attempt`);
+          await new Promise((r) => setTimeout(r, wait));
+        }
+      }
+    }
+  }
+  throw new Error(
+    `all Overpass mirrors failed after ${failures} attempts — last error: ${lastError?.message}`,
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Minimal ZIP reader
  *
  * Census and ICE both ship data as .zip/.xlsx. Rather than take on a
