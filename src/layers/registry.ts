@@ -128,6 +128,10 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Cuando un registro indica un sector real —50 lo hacen, como «108-153»— el cono se dibuja exactamente con esa amplitud. Cuando solo indica una orientación, el cono se dibuja con una amplitud nominal fija, porque no se registró ningún campo de visión. Ambos se ven igual en el mapa, así que considere la amplitud del cono como evidencia solo cuando el panel de detalle muestre un sector.',
       },
       {
+        en: '“Who runs it” is derived by keyword-matching the free text a volunteer typed into the operator field. It records what a word there suggests, never a verified contract: “Eagan” is a city with no keyword in it and lands under “other”, and a name covering several agencies is filed under one of them. Four readers in five say nothing at all, and that — not the breakdown of the remaining fifth — is the finding here.',
+        es: '«Quién lo opera» se deduce buscando palabras clave en el texto libre que un voluntario escribió en el campo de operador. Registra lo que sugiere una palabra de ese campo, nunca un contrato verificado: «Eagan» es una ciudad sin ninguna palabra clave y queda en «otros», y un nombre que abarca varias agencias se archiva bajo una sola. Cuatro de cada cinco lectores no dicen nada en absoluto, y eso —no el desglose del quinto restante— es el hallazgo aquí.',
+      },
+      {
         en: 'The glow under the dots is a density estimate, not coverage. It smooths mapped cameras over a radius, so it paints colour on ground no camera stands on and none can see — it shows where mapped cameras cluster, and nothing else. It fades out as you zoom in, so an estimate and a mapped position are never read off the same pixel.',
         es: 'El resplandor bajo los puntos es una estimación de densidad, no una cobertura. Suaviza las cámaras mapeadas sobre un radio, así que colorea terreno donde no hay ninguna cámara ni alcance de ninguna: solo muestra dónde se agrupan las cámaras mapeadas. Se desvanece al acercar el zoom, de modo que una estimación y una posición mapeada nunca se leen en el mismo píxel.',
       },
@@ -141,14 +145,30 @@ export const LAYERS: LayerDefinition[] = [
     cluster: true,
     bearingKey: 'direction',
     density: {
-      // Records now draw individually from zoom 9, and the surface must be gone
-      // by then — the limitation below promises an estimate and a mapped
-      // position are never read off the same pixel. The controller clamps this
-      // to the clustering boundary as well, so the promise holds structurally
-      // rather than by whoever edits this line remembering it.
-      fadeOutZoom: 9,
       label: { en: 'Camera density', es: 'Densidad de cámaras' },
     },
+    categoryColors: {
+      key: 'operatorType',
+      label: { en: 'Who runs it', es: 'Quién lo opera' },
+      colors: [
+        // Muted, and first, because it is the answer four readers in five give.
+        { value: 'Not recorded', color: '#64748b' },
+        { value: 'Police department', color: '#38bdf8' },
+        { value: 'County sheriff', color: '#22d3ee' },
+        { value: 'State agency', color: '#a78bfa' },
+        { value: 'Multi-agency task force', color: '#fb7185' },
+        { value: 'Neighbourhood association', color: '#4ade80' },
+        { value: 'School or campus', color: '#facc15' },
+        { value: 'Vendor-operated (Flock)', color: '#f97316' },
+        { value: 'Other or unclassified', color: '#94a3b8' },
+      ],
+      fallback: '#94a3b8',
+    },
+    // State and region: a surface. County and city: counts. Street: the
+    // hardware. Each scale gets the shape that answers the question asked at
+    // it, and the surface is gone before any record is drawn individually, so
+    // an estimate and a mapped position are never read off the same pixel.
+    scale: { clusterFrom: 11, pointsFrom: 14 },
     dataPath: '/data/alpr.geojson',
     csvPath: '/data/alpr.csv',
     provenance: {
@@ -162,12 +182,14 @@ export const LAYERS: LayerDefinition[] = [
       refresh: 'frequent',
     },
     filters: [
+      { key: 'operatorType', kind: 'enum', label: { en: 'Who runs it', es: 'Quién lo opera' } },
       { key: 'operator', kind: 'enum', label: { en: 'Operator', es: 'Operador' } },
       { key: 'manufacturer', kind: 'enum', label: { en: 'Manufacturer', es: 'Fabricante' } },
       { key: 'cameraType', kind: 'enum', label: { en: 'Camera type', es: 'Tipo de cámara' } },
     ],
     detailFields: [
       { key: 'manufacturer', label: { en: 'Manufacturer', es: 'Fabricante' } },
+      { key: 'operatorType', label: { en: 'Who runs it', es: 'Quién lo opera' } },
       { key: 'operator', label: { en: 'Operator', es: 'Operador' } },
       { key: 'cameraType', label: { en: 'Camera type', es: 'Tipo de cámara' } },
       {

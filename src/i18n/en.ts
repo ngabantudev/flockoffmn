@@ -81,6 +81,7 @@ export const en: Record<string, string> = {
   positionsScale: 'Drawn to scale over {total} miles. A larger dot means more in one place.',
   positionsSummary: '{count} marks along {total} miles, at {offsets} miles from the start.',
   densityScale: 'sparse → dense',
+  categoryFromZoom: 'Colours apply once cameras are drawn one by one, from zoom {zoom}.',
 
   confidenceConfirmed: 'Confirmed — documented in an official public record.',
   confidenceReported: 'Reported — from permit filings or secondary records that may be out of date.',

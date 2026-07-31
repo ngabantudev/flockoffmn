@@ -34,10 +34,15 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   density: d.density
+    ? { weightKey: d.density.weightKey, label: pick(d.density.label, locale) }
+    : undefined,
+  scale: d.scale,
+  categoryColors: d.categoryColors
     ? {
-        weightKey: d.density.weightKey,
-        fadeOutZoom: d.density.fadeOutZoom,
-        label: pick(d.density.label, locale),
+        key: d.categoryColors.key,
+        label: pick(d.categoryColors.label, locale),
+        colors: d.categoryColors.colors,
+        fallback: d.categoryColors.fallback,
       }
     : undefined,
   filament: d.filament,
@@ -100,6 +105,7 @@ const strings = {
   positionsScale: t('positionsScale'),
   positionsSummary: t('positionsSummary'),
   densityScale: t('densityScale'),
+  categoryFromZoom: t('categoryFromZoom'),
 };
 ---
 
@@ -206,6 +212,36 @@ const strings = {
                         {layer.linkRadius.help}
                       </p>
                     </div>
+                  )}
+
+                  {/*
+                    A colour code with no key is a puzzle. This one only takes
+                    effect at the closest zoom, so the note says when, rather
+                    than leaving a reader to wonder why every dot looks the same.
+                  */}
+                  {layer.categoryColors && (
+                    <details class="mt-2">
+                      <summary class="cursor-pointer text-[10px] text-ink-400 hover:text-ink-100">
+                        {layer.categoryColors.label}
+                      </summary>
+                      <ul class="mt-1 space-y-0.5">
+                        {layer.categoryColors.colors.map((c) => (
+                          <li class="flex items-center gap-1.5 text-[10px] text-ink-300">
+                            <span
+                              class="h-2 w-2 shrink-0 rounded-full"
+                              style={`background:${c.color}`}
+                              aria-hidden="true"
+                            />
+                            <span class="min-w-0 truncate">{c.value}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {layer.scale && (
+                        <p class="mt-1 text-[10px] leading-snug text-ink-400">
+                          {strings.categoryFromZoom.replace('{zoom}', String(layer.scale.pointsFrom))}
+                        </p>
+                      )}
+                    </details>
                   )}
 
                   {/*
@@ -503,6 +539,20 @@ const strings = {
     titleWrap.append(badge, el('h2', 'text-base font-semibold leading-snug text-ink-100', p.name));
     if (p.county) {
       titleWrap.append(el('p', 'mt-0.5 text-xs text-ink-400', `${p.county}, ${p.state}`));
+    }
+    // The position itself, for a record that has one exactly. Six decimals is
+    // about 11 cm — far finer than a crowd-sourced pin deserves, but it is what
+    // the source holds, and rounding it here would quietly disagree with the
+    // OpenStreetMap record linked below.
+    if (feature.geometry.type === 'Point') {
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      titleWrap.append(
+        el(
+          'p',
+          'mt-0.5 font-mono text-[11px] text-ink-400',
+          `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+        ),
+      );
     }
 
     const close = el('button', 'shrink-0 rounded p-1 text-ink-400 hover:text-ink-100', '✕');

@@ -29,7 +29,16 @@ export interface ClientLayer {
   /** Offsets of a record's parts along its own length, if it has a length. */
   positions?: { offsetsKey: string; countsKey: string; label: string };
   /** Draw this layer's points as a density surface beneath the records. */
-  density?: { weightKey?: string; fadeOutZoom: number; label: string };
+  density?: { weightKey?: string; label: string };
+  /** The zooms at which this layer changes how it draws itself. */
+  scale?: { clusterFrom: number; pointsFrom: number };
+  /** Colour records by a category once they are drawn individually. */
+  categoryColors?: {
+    key: string;
+    label: string;
+    colors: Array<{ value: string; color: string }>;
+    fallback: string;
+  };
   /** Draw this line layer as a glowing, creeping filament. */
   filament?: boolean;
   /** Reader-chosen radius at which this layer's records are linked. */
@@ -77,22 +86,28 @@ const REDUCED_MOTION =
  * than a number in a bubble. Clustering past that hides exactly what someone
  * looking up their own neighbourhood came to see.
  */
-const CLUSTER_MAX_ZOOM = 8;
 const CLUSTER_RADIUS = 40;
 
-/** The first zoom at which records are drawn one by one rather than in bubbles. */
-const UNCLUSTERED_ZOOM = CLUSTER_MAX_ZOOM + 1;
-
 /**
- * Coverage cones start well above the zoom where dots do.
+ * Where a layer draws its three states, from the two boundaries it declares.
  *
- * These used to arrive together, on the reasoning that "where is it" and "which
- * way does it face" belong in the same view. That held while dots appeared at
- * city zoom. Now that they appear across most of a region, a cone per camera
- * would be several hundred overlapping wedges covering the roads underneath —
- * and a cone is an indicator, not a record, so it is the one to give way.
+ * Everything downstream reads these rather than a constant of its own, so the
+ * surface cannot outlive the clusters and the cones cannot arrive before the
+ * records they annotate. A layer that declares no `scale` keeps the old
+ * behaviour: cluster from the first zoom, records once clustering stops.
  */
-const CONE_MIN_ZOOM = 12;
+function scaleOf(layer: ClientLayer) {
+  const clusterFrom = layer.scale?.clusterFrom ?? 0;
+  const pointsFrom = layer.scale?.pointsFrom ?? clusterFrom + 1;
+  return {
+    /** Clusters and records both start here; below it, only the surface. */
+    clusterFrom,
+    /** Records draw individually from here, and so do their indicators. */
+    pointsFrom,
+    /** Last zoom at which the source groups points into clusters. */
+    clusterMaxZoom: pointsFrom - 1,
+  };
+}
 
 /**
  * Width of the cone drawn when the source records a heading but no arc.
@@ -600,6 +615,7 @@ export class MapController {
   private addLayer(layer: ClientLayer, features: LoadedFeature[]) {
     const src = this.sourceId(layer.id);
     if (this.map.getSource(src)) return;
+    const tier = scaleOf(layer);
 
     // The density surface goes down first and stays at the bottom of our stack.
     if (layer.density) {
@@ -614,7 +630,9 @@ export class MapController {
           // limitations promise an estimate and a mapped position are never
           // read off the same pixel; enforcing it here means changing the
           // clustering zoom cannot quietly make that promise false.
-          maxzoom: Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM),
+          // The surface owns everything below the first clustered zoom, and
+          // stops exactly where counts take over.
+          maxzoom: tier.clusterFrom,
           paint: {
             'heatmap-weight': layer.density.weightKey
               ? ['coalesce', ['to-number', ['get', layer.density.weightKey]], 1]
@@ -630,13 +648,13 @@ export class MapController {
               'interpolate',
               ['linear'],
               ['zoom'],
-              Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM) - 2,
-              // Held well under full strength. The surface and the threads now
-              // share a palette, so a surface at full opacity swallows the
-              // corridors sitting on top of it — which is precisely how a map
-              // with 25 corridors drawn on it came to look like it had none.
+              tier.clusterFrom - 2,
+              // Held well under full strength. The surface and the corridor
+              // threads share a palette, so a surface at full opacity swallows
+              // the corridors sitting on top of it — which is precisely how a
+              // map with 25 corridors drawn on it came to look like it had none.
               0.55,
-              Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM),
+              tier.clusterFrom,
               0,
             ],
           },
@@ -649,7 +667,7 @@ export class MapController {
       type: 'geojson',
       data: this.flatten(features),
       ...(layer.cluster
-        ? { cluster: true, clusterRadius: CLUSTER_RADIUS, clusterMaxZoom: CLUSTER_MAX_ZOOM }
+        ? { cluster: true, clusterRadius: CLUSTER_RADIUS, clusterMaxZoom: tier.clusterMaxZoom }
         : {}),
     });
 
@@ -853,6 +871,9 @@ export class MapController {
         id: `${layer.id}-clusters`,
         type: 'circle',
         source: src,
+        // Counts belong to the middle scale only. Below it the surface answers
+        // the question better; above it there is nothing left to count.
+        minzoom: tier.clusterFrom,
         filter: ['has', 'point_count'],
         paint: {
           'circle-color': layer.color,
@@ -866,6 +887,7 @@ export class MapController {
         id: `${layer.id}-cluster-count`,
         type: 'symbol',
         source: src,
+        minzoom: tier.clusterFrom,
         filter: ['has', 'point_count'],
         layout: {
           'text-field': ['get', 'point_count_abbreviated'],
@@ -900,7 +922,8 @@ export class MapController {
         id: `${layer.id}-cones`,
         type: 'symbol',
         source: coneSrc,
-        minzoom: CONE_MIN_ZOOM,
+        // A cone annotates a record, so it cannot arrive before one.
+        minzoom: tier.pointsFrom,
         layout: {
           'icon-image': ['get', CONE_PROP],
           'icon-rotate': ['get', BEARING_PROP],
@@ -911,7 +934,7 @@ export class MapController {
           // would misrepresent how many are there.
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
-          'icon-size': ['interpolate', ['linear'], ['zoom'], CONE_MIN_ZOOM, 0.78, 16, 1.3],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], tier.pointsFrom, 0.78, 18, 1.3],
         },
       });
     }
@@ -920,9 +943,36 @@ export class MapController {
       id: `${layer.id}-points`,
       type: 'circle',
       source: src,
+      // A record on its own — either genuinely isolated at the middle scale, or
+      // everything once clustering stops. Held above the surface's zooms so a
+      // lone rural camera does not sit on top of the estimate that already
+      // accounts for it.
+      ...(layer.cluster ? { minzoom: tier.clusterFrom } : {}),
       ...(layer.cluster ? { filter: ['!', ['has', 'point_count']] } : {}),
       paint: {
-        'circle-color': layer.color,
+        /*
+         * One colour until the records are individual, then the category.
+         *
+         * A `step` on zoom rather than two layers, so there is one dot per
+         * camera at every scale and nothing to keep in sync. Below the closest
+         * tier the dot is the layer's own colour: at that distance a coloured
+         * dot claims to distinguish things the reader cannot yet resolve, and
+         * most of them would be the "nobody wrote it down" grey anyway.
+         */
+        'circle-color': layer.categoryColors
+          ? ([
+              'step',
+              ['zoom'],
+              layer.color,
+              tier.pointsFrom,
+              [
+                'match',
+                ['get', layer.categoryColors.key],
+                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+                layer.categoryColors.fallback,
+              ],
+            ] as unknown as maplibregl.ExpressionSpecification)
+          : layer.color,
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8],
         'circle-stroke-color': '#0a0c10',
         'circle-stroke-width': 1.2,
