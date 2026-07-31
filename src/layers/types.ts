@@ -159,8 +159,6 @@ export interface LayerDefinition {
   geometry: 'point' | 'polygon' | 'line';
   /** Hex colour used for the map symbol and the legend swatch. */
   color: string;
-  /** Whether dense point data should cluster at low zoom (spec F1, §8). */
-  cluster: boolean;
   /**
    * Attribute holding a compass bearing in degrees, if the layer has one.
    *
@@ -200,13 +198,21 @@ export interface LayerDefinition {
    * thin to nothing across most of the state, and a field of identical dots
    * flattens that — a hundred dots in Hennepin County and a hundred spread over
    * the Iron Range look alike until you count them. The surface shows the shape
-   * of the concentration at a glance and then gets out of the way, fading off
-   * as the view closes in and individual records become readable.
+   * of the concentration at a glance, and it keeps showing it: the surface is
+   * drawn at every zoom and dims as the records rise out of it, rather than
+   * being switched off and replaced by another way of drawing the same data.
+   *
+   * Where two or more of the layer's points stand together — an intersection, a
+   * frontage road — the surface is drawn heavier over them, scaled by how many
+   * cameras are in the group. That is a node, and it is still the surface: no
+   * bubble, no count, nothing extra to click. See `src/lib/nodes.ts`.
    *
    * It is an estimate, and the layer's `limitations` must say so: a density
    * surface smooths over a radius, so it paints colour on ground that has no
-   * camera on it. It shows where mapped cameras cluster. It is not a map of
-   * what any camera can see.
+   * camera on it. It shows where mapped cameras gather. It is not a map of
+   * what any camera can see. Because it now runs under the dots as well, the
+   * limitations have to say that too — the reader is looking at an estimate and
+   * a mapped position in the same pixel, and only the text says which is which.
    */
   density?: {
     /** Attribute weighting each point, where some points count for more. */
@@ -235,25 +241,29 @@ export interface LayerDefinition {
     fallback: string;
   };
   /**
-   * The two zooms at which this layer changes how it draws itself.
+   * The two zooms across which this layer's records emerge from its surface.
    *
    * A point layer answers a different question at every scale. Across a state
    * the question is where the infrastructure is concentrated, and a thousand
-   * overlapping pins answer it worse than a surface does. Across a county it is
-   * how many are around here, which is a count. Across a street it is which
-   * pole, facing which way — and only there is a pin the right shape for the
-   * answer.
+   * overlapping pins answer it worse than a surface does. Across a street it is
+   * which pole, facing which way — and only there is a pin the right shape for
+   * the answer.
+   *
+   * There used to be a third state between them, a count in a bubble, and two
+   * hard cuts to get through it: the map stopped being one thing and became
+   * another, twice, on the way in. It is one drawing now. The surface is
+   * continuous, the gatherings in it are nodes, and between these two zooms the
+   * dots fade up from nothing to solid on top of it — so what a reader is
+   * looking at at zoom 12 is what they were looking at at zoom 9, with more of
+   * it resolved.
    *
    * Both numbers live here rather than beside the thing each one governs,
-   * because they are boundaries between the same three states and have to
-   * agree. Splitting them is how the density surface came to promise it had
-   * faded before records drew individually while a separate constant decided
-   * when that was.
+   * because they are ends of the same fade and have to agree.
    */
   scale?: {
-    /** First zoom with clusters. Below it the layer is a density surface only. */
-    clusterFrom: number;
-    /** First zoom with individual records, and with any per-record indicator. */
+    /** Zoom at which records start to appear, still faint over the surface. */
+    emergeFrom: number;
+    /** Zoom by which records are solid, coloured by category, and annotated. */
     pointsFrom: number;
   };
   /**

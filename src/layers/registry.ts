@@ -43,7 +43,6 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#f97316',
-    cluster: false,
     dataPath: '/data/287g.geojson',
     csvPath: '/data/287g.csv',
     provenance: {
@@ -132,8 +131,12 @@ export const LAYERS: LayerDefinition[] = [
         es: '«Quién lo opera» se deduce buscando palabras clave en el texto libre que un voluntario escribió en el campo de operador. Registra lo que sugiere una palabra de ese campo, nunca un contrato verificado: «Eagan» es una ciudad sin ninguna palabra clave y queda en «otros», y un nombre que abarca varias agencias se archiva bajo una sola. Cuatro de cada cinco lectores no dicen nada en absoluto, y eso —no el desglose del quinto restante— es el hallazgo aquí.',
       },
       {
-        en: 'The glow under the dots is a density estimate, not coverage. It smooths mapped cameras over a radius, so it paints colour on ground no camera stands on and none can see — it shows where mapped cameras cluster, and nothing else. It fades out as you zoom in, so an estimate and a mapped position are never read off the same pixel.',
-        es: 'El resplandor bajo los puntos es una estimación de densidad, no una cobertura. Suaviza las cámaras mapeadas sobre un radio, así que colorea terreno donde no hay ninguna cámara ni alcance de ninguna: solo muestra dónde se agrupan las cámaras mapeadas. Se desvanece al acercar el zoom, de modo que una estimación y una posición mapeada nunca se leen en el mismo píxel.',
+        en: 'The glow under the dots is a density estimate, not coverage. It smooths mapped cameras over a radius, so it paints colour on ground no camera stands on and none can see — it shows where mapped cameras gather, and nothing else. It stays on the map at every zoom and dims as the dots appear, which means the estimate and the mapped positions do overlap: the dot is the surveyed location, the haze around it is not evidence that anything stands there.',
+        es: 'El resplandor bajo los puntos es una estimación de densidad, no una cobertura. Suaviza las cámaras mapeadas sobre un radio, así que colorea terreno donde no hay ninguna cámara ni alcance de ninguna: solo muestra dónde se concentran las cámaras mapeadas. Permanece en el mapa en todos los niveles de zoom y se atenúa a medida que aparecen los puntos, por lo que la estimación y las posiciones mapeadas sí se superponen: el punto es la ubicación registrada; la neblina a su alrededor no es prueba de que allí haya nada.',
+      },
+      {
+        en: 'A brighter patch of that glow is a node: two or more reader locations within about 70 metres of one another, drawn as one body whose brightness rises with the number of cameras in it. The grouping distance is a drawing convention chosen to be roughly the size of a signalled intersection — widen it and a node would swallow a block, narrow it and cameras facing each other across a junction would come apart. Brightness is a rough scale and not a readable count: to know how many cameras are at a junction, zoom in and count the dots.',
+        es: 'Una mancha más brillante de ese resplandor es un nodo: dos o más ubicaciones de lectores a unos 70 metros entre sí, dibujadas como un solo cuerpo cuyo brillo aumenta con la cantidad de cámaras que contiene. Esa distancia de agrupación es una convención de dibujo elegida para aproximarse al tamaño de un cruce con semáforo: si se amplía, un nodo abarcaría una manzana; si se reduce, cámaras enfrentadas en un mismo cruce se separarían. El brillo es una escala aproximada, no un recuento legible: para saber cuántas cámaras hay en un cruce, acerque el zoom y cuente los puntos.',
       },
       {
         en: 'A node where several cameras share a pole ("321;109") is drawn as one cone per recorded heading over a single dot. A record tagged "0-360" is drawn as a full circle, meaning the surveyor recorded no single direction at all.',
@@ -142,7 +145,6 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#38bdf8',
-    cluster: true,
     bearingKey: 'direction',
     density: {
       label: { en: 'Camera density', es: 'Densidad de cámaras' },
@@ -164,11 +166,11 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#94a3b8',
     },
-    // State and region: a surface. County and city: counts. Street: the
-    // hardware. Each scale gets the shape that answers the question asked at
-    // it, and the surface is gone before any record is drawn individually, so
-    // an estimate and a mapped position are never read off the same pixel.
-    scale: { clusterFrom: 11, pointsFrom: 14 },
+    // One drawing, all the way in. The surface never leaves; it thickens into
+    // nodes where readers stand together, and from zoom 10 the dots fade up out
+    // of it until they are solid hardware at 14. There is no scale at which the
+    // reader is handed a different picture of the same cameras.
+    scale: { emergeFrom: 10, pointsFrom: 14 },
     dataPath: '/data/alpr.geojson',
     csvPath: '/data/alpr.csv',
     provenance: {
@@ -283,7 +285,6 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'line',
     color: '#818cf8',
-    cluster: false,
     filament: true,
     positions: {
       offsetsKey: 'siteOffsets',
@@ -431,7 +432,6 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'polygon',
     color: '#c084fc',
-    cluster: false,
     dataPath: '/data/redlining.geojson',
     csvPath: null,
     provenance: {
@@ -534,7 +534,6 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#f43f5e',
-    cluster: false,
     dataPath: '/data/detention.geojson',
     csvPath: '/data/detention.csv',
     provenance: {
@@ -603,7 +602,6 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#34d399',
-    cluster: false,
     dataPath: '/data/data-centers.geojson',
     csvPath: '/data/data-centers.csv',
     provenance: {
@@ -678,7 +676,6 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'polygon',
     color: '#f472b6',
-    cluster: false,
     dataPath: '/data/covenants.geojson',
     csvPath: null,
     provenance: {
