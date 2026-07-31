@@ -27,7 +27,7 @@ export const es: Record<string, string> = {
   showLayer: 'Mostrar',
   hideLayer: 'Ocultar',
   clearFilters: 'Borrar filtros',
-  filtersCleared: 'Filtros borrados, todas las capas desactivadas',
+  filtersCleared: 'Filtros borrados',
   featuresShown: 'mostrados',
   ofTotal: 'de',
   loading: 'Cargando datos del mapa…',
