@@ -58,9 +58,52 @@ export interface Run {
   points: Array<[number, number]>;
   offsets: number[];
   counts: number[];
+  /** The road actually drawn for this element. Set before bodies are formed. */
+  pieces: number[][][];
+  /** Points along that road, at which this element can link to another. */
+  reach: Array<[number, number]>;
   /** Filled in by formBodies. */
   colony: number;
   colonySites: number;
+}
+
+/**
+ * Points along a drawn road, spaced no further apart than `spacingM`.
+ *
+ * Linking runs along the streets, so the streets have to be reduced to
+ * something a proximity test can chew through — a corridor is a few thousand
+ * vertices and there are hundreds of them. Sampling by distance rather than by
+ * every nth vertex keeps the spacing honest whatever the survey's vertex
+ * density, and because the caller scales the spacing to the radius, the sample
+ * count falls as the radius grows and the work stays flat across the control.
+ *
+ * This makes linking approximate at the margin: two streets are found to touch
+ * when sampled points on them fall inside the radius, so a pair passing within
+ * a hair of it can be missed by up to half the spacing. The caller keeps that
+ * well inside the radius it is testing.
+ */
+function sampleAlong(
+  pieces: number[][][],
+  spacingM: number,
+  always: Array<[number, number]>,
+): Array<[number, number]> {
+  const out: Array<[number, number]> = [...always];
+  // One running distance across every piece, not one per piece. A corridor is
+  // clipped into dozens of fragments, so keeping the first and last vertex of
+  // each — as an earlier version did — pinned the sample count to the number of
+  // fragments and made the spacing decorative: the widest radius sampled more
+  // heavily than the narrowest and took over a second to link.
+  let carried = spacingM;
+  for (const piece of pieces) {
+    for (let i = 0; i < piece.length; i++) {
+      if (i > 0) carried += haversineMeters(piece[i - 1] as [number, number], piece[i] as [number, number]);
+      if (carried >= spacingM) {
+        out.push(piece[i] as [number, number]);
+        carried = 0;
+      }
+    }
+  }
+  return out;
 }
 
 /** Parse a ';'-separated numeric series, dropping anything unreadable. */
@@ -132,11 +175,25 @@ export function runsFor(
       // Re-based so the spacing diagram starts at zero for the run actually shown.
       offsets: offsets.slice(from, to + 1).map((o) => Number((o - offsets[from]).toFixed(2))),
       counts: counts.slice(from, to + 1),
+      pieces: [],
+      reach: [],
       colony: -1,
       colonySites: 0,
     });
   }
   return runs;
+}
+
+/**
+ * Attach the drawn road to an element and the points it can link from.
+ *
+ * Spacing is a quarter of the radius being tested, so the approximation in
+ * `sampleAlong` costs at most an eighth of it — far inside the precision this
+ * data has any claim to.
+ */
+export function setReach(element: Run, pieces: number[][][], radiusMiles: number): void {
+  element.pieces = pieces;
+  element.reach = sampleAlong(pieces, (radiusMiles * 1609.344) / 4, element.points);
 }
 
 /** A lone reader as a one-site element, so bodies can form over both kinds. */
@@ -162,6 +219,8 @@ export function branchRun(
     points: [[lng, lat]],
     offsets: [0],
     counts: [readers],
+    pieces: [],
+    reach: [],
     colony: -1,
     colonySites: 0,
   };
@@ -196,13 +255,13 @@ export function formBodies(elements: Run[], radiusMiles: number, minBodySites: n
     if (ra !== rb) parent[ra] = rb;
   };
 
-  // Bucket every reader location so the pairwise test only looks at neighbours.
+  // Bucket every linking point so the pairwise test only looks at neighbours.
   // Without it this is millions of haversines on every drag of the slider.
   const cell = Math.max(radiusM, 1);
   const mPerLng = 111_320 * Math.cos((46 * Math.PI) / 180);
   const grid = new Map<string, Array<{ element: number; point: [number, number] }>>();
   elements.forEach((element, i) => {
-    for (const point of element.points) {
+    for (const point of element.reach.length ? element.reach : element.points) {
       const gx = Math.floor((point[0] * mPerLng) / cell);
       const gy = Math.floor((point[1] * 110_574) / cell);
       const key = `${gx}|${gy}`;
