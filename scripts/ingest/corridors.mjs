@@ -383,6 +383,28 @@ async function main() {
       const pieces = clipToCorridor(waysByIdentity.get(identity) ?? [], chain);
       if (!pieces.length) continue;
 
+      /*
+       * Where each piece of road sits along the corridor, in miles from its
+       * start.
+       *
+       * The browser narrows a corridor as the linking radius comes down, and it
+       * cannot redo the clipping to do it — there is no road network in the
+       * page and there is never going to be one. Projecting each piece onto the
+       * same chain here turns that job into a numeric comparison later: a run
+       * covering miles 2 to 5 draws the pieces whose span overlaps 2 to 5, and
+       * the geometry it draws is the geometry this script surveyed.
+       */
+      const pieceSpans = pieces.map((piece) => {
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const vertex of piece) {
+          const at = locateOnLine(vertex, chain).fraction * spanM;
+          if (at < lo) lo = at;
+          if (at > hi) hi = at;
+        }
+        return [lo, hi];
+      });
+
       const readers = sites.reduce((sum, s) => sum + s.readers, 0);
       const midpoint = chain[Math.floor(chain.length / 2)];
       const county = findContaining(midpoint, counties.features);
@@ -440,6 +462,14 @@ async function main() {
             // a scalar; the map parses it to draw the corridor strip.
             siteOffsets: offsets.map((m) => round(m).toFixed(2)).join(';'),
             siteReaders: ordered.map((s) => s.readers).join(';'),
+            // Site coordinates, so the browser can ask which corridors are
+            // linked to which at a given radius. Six decimals is about 11 cm,
+            // far finer than anything this layer claims.
+            siteLngs: chain.map((p) => p[0].toFixed(6)).join(';'),
+            siteLats: chain.map((p) => p[1].toFixed(6)).join(';'),
+            // Start,end offset of each drawn piece, in the same miles as
+            // siteOffsets. Pairs are comma-separated, pieces semicolon-separated.
+            pieceSpans: pieceSpans.map(([lo, hi]) => `${round(lo)},${round(hi)}`).join(';'),
           },
         },
       });

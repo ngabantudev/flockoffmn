@@ -3,6 +3,7 @@ import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { densityColorExpression } from './densityRamp';
+import { assignColonies, parseSpans, runsFor, type LinkRadiusConfig, type Run } from './linkRuns';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -24,6 +25,15 @@ export interface ClientLayer {
   density?: { weightKey?: string; fadeOutZoom: number; label: string };
   /** Draw this line layer as a glowing, creeping filament. */
   filament?: boolean;
+  /** Reader-chosen radius at which this layer's records are linked. */
+  linkRadius?: LinkRadiusConfig & {
+    minMiles: number;
+    maxMiles: number;
+    stepMiles: number;
+    defaultMiles: number;
+    label: string;
+    help: string;
+  };
   dataPath: string;
   csvPath: string | null;
   filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];
@@ -116,6 +126,34 @@ const FILAMENT_DASHES: number[][] = [
 /** Slow enough to read as growth rather than as a marquee border. */
 const FILAMENT_FRAME_MS = 110;
 
+/** Written onto derived runs by us; not upstream fields. */
+const COLONY_SITES_PROP = '__colonySites';
+
+/**
+ * How brightly a run burns, by the size of the connected network it belongs to.
+ *
+ * Colour is doing the work a drawn connector would otherwise do. Two streets
+ * with no road between them cannot be joined by a line without inventing one,
+ * so instead they light up together: a stretch that is on its own stays dim,
+ * and one that belongs to a hundred linked reader locations glows near-white.
+ * Dragging the radius up turns the metro from scattered embers into one body.
+ */
+const COLONY_COLOR = [
+  'interpolate',
+  ['linear'],
+  ['get', COLONY_SITES_PROP],
+  4,
+  '#4c1d95',
+  10,
+  '#6d5ce0',
+  25,
+  '#818cf8',
+  60,
+  '#86efac',
+  150,
+  '#f0fdfa',
+] as unknown as maplibregl.ExpressionSpecification;
+
 const normaliseDegrees = (d: number) => ((d % 360) + 360) % 360;
 
 /**
@@ -182,6 +220,13 @@ export class MapController {
   private layers: ClientLayer[];
   private events: ControllerEvents;
 
+  /**
+   * As loaded from disk. `data` holds what the current linking radius derives
+   * from it, so the record list, the counter, search, the detail panel and the
+   * map are all reading the same corridors the reader is looking at.
+   */
+  private rawData = new Map<string, LoadedFeature[]>();
+  private linkRadius = new Map<string, number>();
   private data = new Map<string, LoadedFeature[]>();
   private visible = new Set<string>();
   private filters = new Map<string, FilterState>();
@@ -404,7 +449,12 @@ export class MapController {
       const res = await fetch(layer.dataPath);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const collection = await res.json();
-      const features: LoadedFeature[] = collection.features ?? [];
+      const raw: LoadedFeature[] = collection.features ?? [];
+      this.rawData.set(layer.id, raw);
+      if (layer.linkRadius && !this.linkRadius.has(layer.id)) {
+        this.linkRadius.set(layer.id, layer.linkRadius.defaultMiles);
+      }
+      const features = this.applyLinkRadius(layer, raw);
       this.data.set(layer.id, features);
       await this.ready();
       this.addLayer(layer, features);
@@ -414,6 +464,95 @@ export class MapController {
     } finally {
       this.loading.delete(layer.id);
     }
+  }
+
+  /**
+   * Cut the shipped road stretches into the corridors a given radius implies.
+   *
+   * A layer without `linkRadius` passes straight through: this is the one place
+   * that behaviour differs, so every other part of the controller can go on
+   * treating `data` as simply "the layer's records".
+   */
+  private applyLinkRadius(layer: ClientLayer, raw: LoadedFeature[]): LoadedFeature[] {
+    const config = layer.linkRadius;
+    if (!config) return raw;
+    const radius = this.linkRadius.get(layer.id) ?? config.defaultMiles;
+
+    const runs: Run[] = [];
+    raw.forEach((feature, index) => {
+      runs.push(...runsFor(feature.properties, config, radius, index));
+    });
+    assignColonies(runs, radius);
+
+    return runs.map((run) => {
+      const source = raw[run.source];
+      const attrs = source.properties.attributes as Record<string, unknown>;
+      const spans = parseSpans(attrs[config.pieceSpansKey]);
+      const all =
+        source.geometry.type === 'MultiLineString'
+          ? (source.geometry.coordinates as number[][][])
+          : [];
+
+      // Draw the surveyed pieces this run covers. Where a piece has no recorded
+      // span it is kept rather than dropped: losing real road is the worse
+      // failure, and it can only ever make a corridor look longer than the run,
+      // never shorter than the ground.
+      const pieces = all.filter((_, i) => {
+        const span = spans[i];
+        if (!span) return true;
+        return span[1] >= run.startMiles && span[0] <= run.endMiles;
+      });
+
+      const totalMiles = Number((run.endMiles - run.startMiles).toFixed(2));
+      const gaps = run.offsets.slice(1).map((o, i) => o - run.offsets[i]);
+      const sortedGaps = [...gaps].sort((a, b) => a - b);
+      const round = (n: number) => Number(n.toFixed(2));
+
+      return {
+        type: 'Feature',
+        geometry: { type: 'MultiLineString', coordinates: pieces },
+        properties: {
+          ...source.properties,
+          // Stable across radii for one stretch, distinct between runs cut from
+          // the same stretch, so focus and selection survive a slider drag.
+          id: `${source.properties.id}-r${run.from}`,
+          attributes: {
+            ...source.properties.attributes,
+            readerCount: run.readers,
+            siteCount: run.sites,
+            corridorMiles: totalMiles,
+            averageGapMiles: run.sites > 1 ? round(totalMiles / (run.sites - 1)) : 0,
+            medianGapMiles: sortedGaps.length ? round(sortedGaps[Math.floor(sortedGaps.length / 2)]) : 0,
+            longestGapMiles: gaps.length ? round(Math.max(...gaps)) : 0,
+            siteOffsets: run.offsets.map((o) => o.toFixed(2)).join(';'),
+            siteReaders: run.counts.join(';'),
+            connectedSites: run.colonySites,
+            [COLONY_SITES_PROP]: run.colonySites,
+          },
+        },
+      } as LoadedFeature;
+    });
+  }
+
+  /** Current linking radius in miles, for the control that sets it. */
+  linkRadiusOf(layerId: string): number | null {
+    return this.linkRadius.get(layerId) ?? null;
+  }
+
+  /**
+   * Re-cut a layer at a new linking radius.
+   *
+   * Everything downstream reads `data`, so re-deriving it and re-setting the
+   * source is the whole update — the record list, the counter and the map
+   * cannot disagree about what a corridor is at the radius on screen.
+   */
+  setLinkRadius(layerId: string, miles: number) {
+    const layer = this.layers.find((l) => l.id === layerId);
+    const raw = this.rawData.get(layerId);
+    if (!layer?.linkRadius || !raw) return;
+    this.linkRadius.set(layerId, miles);
+    this.data.set(layerId, this.applyLinkRadius(layer, raw));
+    this.refresh(layerId);
   }
 
   private addLayer(layer: ClientLayer, features: LoadedFeature[]) {
@@ -503,6 +642,10 @@ export class MapController {
       // line legible over a dark basemap without drawing it fat enough to
       // imply a width the data does not have — a corridor is a stretch of
       // road, not a band of ground.
+      // Colour carries the connection where a line cannot be drawn.
+      const thread = layer.linkRadius
+        ? COLONY_COLOR
+        : (layer.color as unknown as maplibregl.ExpressionSpecification);
       if (layer.filament) {
         // A soft halo, wide and heavily blurred, so the thread looks like it is
         // lit from inside rather than drawn on top of the map.
@@ -513,7 +656,7 @@ export class MapController {
             source: src,
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': layer.color,
+              'line-color': thread,
               'line-opacity': 0.3,
               'line-blur': ['interpolate', ['linear'], ['zoom'], 6, 4, 11, 9, 16, 18],
               'line-width': ['interpolate', ['linear'], ['zoom'], 6, 5, 11, 12, 16, 26],
@@ -531,7 +674,7 @@ export class MapController {
             source: src,
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': layer.color,
+              'line-color': thread,
               'line-opacity': 0.55,
               'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.1, 11, 2, 16, 4],
             },

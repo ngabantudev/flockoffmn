@@ -229,6 +229,39 @@ export interface LayerDefinition {
    * carry the look without it.
    */
   filament?: boolean;
+  /**
+   * Let the reader choose the radius at which this layer's records are linked.
+   *
+   * Some questions do not have one answer, and "which cameras form a corridor"
+   * is one of them. At a quarter-mile the state holds dozens of short dense
+   * runs; at two miles more than half of every mapped camera in Minnesota is
+   * one connected network. Both are true, and picking a single number for the
+   * reader would publish an editorial judgement as though it were a finding.
+   * The control hands the judgement back.
+   *
+   * Requires `positions`, whose offsets and counts it reuses. The file must
+   * ship the widest radius the control offers, because the browser can only
+   * ever narrow what the ingest surveyed — see `lib/linkRuns.ts`.
+   */
+  linkRadius?: {
+    /** Attribute holding each site's longitude, ';'-separated. */
+    lngsKey: string;
+    /** Attribute holding each site's latitude, ';'-separated. */
+    latsKey: string;
+    /** Attribute holding each drawn piece's `start,end` offset. */
+    pieceSpansKey: string;
+    minMiles: number;
+    /** Must equal the linking distance the ingest shipped. */
+    maxMiles: number;
+    stepMiles: number;
+    defaultMiles: number;
+    /** A run needs this many sites, and this much span, to be drawn at all. */
+    minSites: number;
+    minSpanMiles: number;
+    label: I18nString;
+    /** One line under the control saying what moving it does. */
+    help: I18nString;
+  };
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
   csvPath: string | null;

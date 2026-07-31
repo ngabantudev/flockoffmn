@@ -214,6 +214,18 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Los umbrales son un criterio, no un hallazgo: al menos cuatro ubicaciones de lectores en una carretera con nombre o número, separadas por no más de tres millas y abarcando al menos un cuarto de milla. Ese mínimo de un cuarto de milla existe solo para excluir cuatro lectores alrededor de un mismo cruce: los lectores agrupados en un solo cruce son reales, y no son un corredor.',
       },
       {
+        en: 'The linking radius is yours to set, and it changes the answer. At a quarter-mile Minnesota holds dozens of short dense runs; at two miles more than half of every mapped camera in the state belongs to one connected network. Both readings come from the same cameras. Any single number would be an editorial judgement published as a finding, which is why the control exists rather than a default nobody can see.',
+        es: 'El radio de conexión lo elige usted, y cambia la respuesta. A un cuarto de milla, Minnesota tiene decenas de tramos cortos y densos; a dos millas, más de la mitad de todas las cámaras mapeadas del estado pertenece a una sola red conectada. Ambas lecturas salen de las mismas cámaras. Cualquier cifra única sería un criterio editorial publicado como un hallazgo, y por eso existe el control en lugar de un valor por defecto invisible.',
+      },
+      {
+        en: 'Two streets shown in the same colour are linked because a reader on one stands within the radius of a reader on the other. Nothing is drawn across the ground between them, because there is often no road there to draw — the connection is carried by colour, never by a line. Streets are shaded by how many reader locations their connected network holds.',
+        es: 'Dos calles del mismo color están conectadas porque un lector de una está dentro del radio de un lector de la otra. No se dibuja nada sobre el terreno entre ellas, porque a menudo no hay ninguna vía que dibujar: la conexión la transmite el color, nunca una línea. Las calles se sombrean según cuántas ubicaciones de lectores tiene su red conectada.',
+      },
+      {
+        en: 'Connection is measured between the corridors drawn, not between every camera. A reader standing on a road too sparse to form a corridor is not counted, so two networks shown as separate may in fact be bridged by cameras this layer does not draw.',
+        es: 'La conexión se mide entre los corredores dibujados, no entre todas las cámaras. Un lector situado en una vía demasiado dispersa para formar un corredor no se cuenta, así que dos redes que aparecen separadas podrían estar unidas por cámaras que esta capa no dibuja.',
+      },
+      {
         en: 'A camera standing in an intersection is filed under whichever road its centre line is nearer, and at a crossroads that margin can be a couple of metres. Along East Franklin Avenue in Minneapolis, several readers on the Franklin line are counted under the avenue they cross instead. The recorded direction does not settle it — it disagrees with the assignment about as often as it confirms it — so no corridor here is a complete count of the readers a trip along it passes.',
         es: 'Una cámara situada en un cruce se asigna a la vía cuyo eje esté más cerca, y en una intersección ese margen puede ser de un par de metros. En East Franklin Avenue, en Minneapolis, varios lectores que están sobre Franklin quedan contados en la avenida que la cruza. La dirección registrada no lo resuelve: contradice la asignación tantas veces como la confirma, así que ningún corredor aquí es un recuento completo de los lectores que se pasan al recorrerlo.',
       },
@@ -244,6 +256,30 @@ export const LAYERS: LayerDefinition[] = [
       label: {
         en: 'Reader locations along this corridor',
         es: 'Ubicaciones de lectores a lo largo de este corredor',
+      },
+    },
+    linkRadius: {
+      lngsKey: 'siteLngs',
+      latsKey: 'siteLats',
+      pieceSpansKey: 'pieceSpans',
+      minMiles: 0.2,
+      // The ingest links at three miles; the control cannot exceed what was
+      // surveyed, so this and LINK_M in scripts/ingest/corridors.mjs move
+      // together or the top of the slider silently stops doing anything.
+      maxMiles: 3,
+      stepMiles: 0.05,
+      // Two miles. Below one, Minnesota holds almost nothing that is a
+      // continuous run — which is worth discovering by dragging, but makes a
+      // poor first view. Here 18 of the 21 shipped stretches are drawn in 12
+      // separate networks, so there is visibly something to pull apart and
+      // something to fuse.
+      defaultMiles: 2,
+      minSites: 4,
+      minSpanMiles: 0.25,
+      label: { en: 'Linking radius', es: 'Radio de conexión' },
+      help: {
+        en: 'How close two reader locations must be to count as part of one run. Widen it and separate stretches join into a single connected network; narrow it and only the densest streets survive.',
+        es: 'Qué tan cerca deben estar dos ubicaciones de lectores para contar como un mismo tramo. Amplíelo y los tramos separados se unen en una sola red conectada; redúzcalo y solo sobreviven las calles más densas.',
       },
     },
     dataPath: '/data/alpr-corridors.geojson',
@@ -284,6 +320,13 @@ export const LAYERS: LayerDefinition[] = [
         key: 'unattributedReaders',
         label: { en: 'Readers with no operator recorded', es: 'Lectores sin operador registrado' },
       },
+      {
+        key: 'connectedSites',
+        label: {
+          en: 'Reader locations in this connected network',
+          es: 'Ubicaciones de lectores en esta red conectada',
+        },
+      },
       { key: 'road', label: { en: 'Road', es: 'Carretera' } },
       { key: 'roadClass', label: { en: 'Road type', es: 'Tipo de vía' } },
       { key: 'countiesSpanned', label: { en: 'Counties spanned', es: 'Condados que atraviesa' } },
@@ -297,8 +340,8 @@ export const LAYERS: LayerDefinition[] = [
       },
       detail: ['readerCount', 'corridorMiles', 'averageGapMiles', 'operators'],
       caveat: {
-        en: 'Built from crowd-sourced camera records, and the thresholds that decide what counts as a corridor are our judgement. Treat it as the shape of the thing, not a measurement.',
-        es: 'Construido a partir de registros comunitarios de cámaras, y los umbrales que deciden qué cuenta como corredor son criterio nuestro. Considérelo la forma del fenómeno, no una medición.',
+        en: 'Built from crowd-sourced camera records, and the thresholds that decide what counts as a corridor are our judgement. This page reads the widest linking radius the map offers, so a corridor here may appear shorter, or not at all, at the radius you have set on the map. Treat it as the shape of the thing, not a measurement.',
+        es: 'Construido a partir de registros comunitarios de cámaras, y los umbrales que deciden qué cuenta como corredor son criterio nuestro. Esta página usa el radio de conexión más amplio que ofrece el mapa, así que un corredor puede aparecer más corto, o no aparecer, con el radio que haya fijado en el mapa. Considérelo la forma del fenómeno, no una medición.',
       },
       wide: true,
     },
