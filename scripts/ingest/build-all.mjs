@@ -25,6 +25,7 @@ const STEPS = [
   { name: 'detention', script: 'detention.mjs' },
   { name: 'data-centers', script: 'data-centers.mjs' },
   { name: 'redlining', script: 'redlining.mjs' },
+  { name: 'covenants', script: 'covenants.mjs' },
 ];
 
 function run(script) {
