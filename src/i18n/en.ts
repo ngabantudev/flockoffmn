@@ -26,7 +26,7 @@ export const en: Record<string, string> = {
   showLayer: 'Show',
   hideLayer: 'Hide',
   clearFilters: 'Clear filters',
-  filtersCleared: 'Filters cleared, all layers switched off',
+  filtersCleared: 'Filters cleared',
   featuresShown: 'shown',
   ofTotal: 'of',
   loading: 'Loading map data…',
