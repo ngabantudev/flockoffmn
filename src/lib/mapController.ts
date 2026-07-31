@@ -56,45 +56,76 @@ const CLUSTER_MAX_ZOOM = 11;
 const CLUSTER_RADIUS = 40;
 
 /**
- * Bearing arrows appear as soon as records stop clustering, so "where is it"
+ * Coverage cones appear as soon as records stop clustering, so "where is it"
  * and "which way does it face" arrive together rather than a few zoom levels
  * apart.
  */
-const BEARING_MIN_ZOOM = CLUSTER_MAX_ZOOM + 1;
+const CONE_MIN_ZOOM = CLUSTER_MAX_ZOOM + 1;
 
 /**
- * Numeric bearing written onto the flattened copy for the map to rotate by.
- * Prefixed because it is ours, not a field any upstream source published.
+ * Width of the cone drawn when the source records a heading but no arc.
+ *
+ * This is a drawing convention, not a measurement — nothing upstream says how
+ * wide any given camera sees. Where the surveyor *did* record an arc, that arc
+ * is used instead and this constant is ignored. The layer's limitations say
+ * which is which, because a cone looks like evidence whether or not it is.
  */
+const DEFAULT_CONE_ARC = 50;
+
+/** Written onto the cone features by us; not an upstream field. */
 const BEARING_PROP = '__bearing';
+const CONE_PROP = '__cone';
+
+const normaliseDegrees = (d: number) => ((d % 360) + 360) % 360;
 
 /**
- * A single compass bearing in degrees, or null when the source does not give
- * one unambiguously.
+ * Every sector a `direction` value describes, as a centre bearing plus an arc.
  *
- * OSM's `direction` is free text and carries three different things:
+ * OSM's `direction` is free text carrying four different things, and all four
+ * appear in this dataset:
  *
- *   "180"      one camera, one heading — the only case we can draw
- *   "108-153"  a sector. Drawing its midpoint would state a heading the
- *              surveyor did not record.
- *   "321;109"  several cameras sharing a pole, each facing a different way.
- *              One arrow cannot say that.
+ *   "180"       a heading, no arc          -> arc null, caller supplies one
+ *   "108-153"   a real sector, 45° wide    -> arc 45, drawn as recorded
+ *   "321;109"   several cameras on a pole  -> one sector each
+ *   "0-360"     covers everything          -> arc 360
  *
- * The last two keep their verbatim value in the detail panel and render as
- * plain dots. Turning them into a number would put a confident arrow on the
- * map pointing somewhere nobody observed — and `Number("321;109")` is NaN,
- * which MapLibre would happily rotate to due north.
+ * `arc: null` means "the surveyor gave a heading and nothing more", kept
+ * distinct from a recorded arc so the caller can decide what to draw and the
+ * limitations can be honest about which cones are measured.
  */
-export function parseBearing(raw: unknown): number | null {
-  if (raw === null || raw === undefined) return null;
-  const value = String(raw).trim();
-  if (!value || value.includes(';') || value.includes(',')) return null;
-  // A range such as "108-153". Guarded before Number() because Number("8-53")
-  // is NaN anyway, but the intent should be legible rather than incidental.
-  if (/^-?\d+(\.\d+)?\s*-\s*\d+(\.\d+)?$/.test(value)) return null;
-  const degrees = Number(value);
-  if (!Number.isFinite(degrees)) return null;
-  return ((degrees % 360) + 360) % 360;
+export function parseSectors(raw: unknown): { bearing: number; arc: number | null }[] {
+  if (raw === null || raw === undefined) return [];
+  const text = String(raw).trim();
+  if (!text) return [];
+
+  const sectors: { bearing: number; arc: number | null }[] = [];
+  for (const part of text.split(';')) {
+    const piece = part.trim();
+    if (!piece) continue;
+
+    const range = /^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)$/.exec(piece);
+    if (range) {
+      const from = Number(range[1]);
+      const to = Number(range[2]);
+      // "0-360" is the surveyor saying the camera covers every direction.
+      if (from === 0 && to === 360) {
+        sectors.push({ bearing: 0, arc: 360 });
+        continue;
+      }
+      const arc = normaliseDegrees(to - from);
+      // "180-180" collapses to nothing; read it as a bare heading.
+      if (arc === 0) {
+        sectors.push({ bearing: normaliseDegrees(from), arc: null });
+        continue;
+      }
+      sectors.push({ bearing: normaliseDegrees(from + arc / 2), arc });
+      continue;
+    }
+
+    const degrees = Number(piece);
+    if (Number.isFinite(degrees)) sectors.push({ bearing: normaliseDegrees(degrees), arc: null });
+  }
+  return sectors;
 }
 
 /**
@@ -173,69 +204,97 @@ export class MapController {
    * MapLibre expressions and the filter UI both want flat keys. Flatten a copy
    * for the map; the panel still reads the structured original.
    */
-  private flatten(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
+  private flatten(features: LoadedFeature[]): FeatureCollection {
     return {
       type: 'FeatureCollection',
-      features: features.map((f) => {
-        const properties: Record<string, unknown> = {
-          ...f.properties.attributes,
-          ...f.properties,
-          attributes: undefined,
-        };
-        // Only set when a single bearing was actually recorded, so the arrow
-        // layer can filter on the property's presence rather than trying to
-        // distinguish "due north" from "unparseable" after the fact.
-        if (layer.bearingKey) {
-          const bearing = parseBearing(f.properties.attributes[layer.bearingKey]);
-          if (bearing !== null) properties[BEARING_PROP] = bearing;
-        }
-        return { type: 'Feature', geometry: f.geometry, properties };
-      }) as Feature[],
+      features: features.map((f) => ({
+        type: 'Feature',
+        geometry: f.geometry,
+        properties: { ...f.properties.attributes, ...f.properties, attributes: undefined },
+      })) as Feature[],
     };
   }
 
   /**
-   * Arrow sprite for a layer's bearing indicator, drawn once per layer.
+   * Coverage cones, one feature per sector.
    *
-   * Generated rather than shipped as an asset: it has to carry the layer's own
-   * colour, and the project does not load images from anywhere but itself. The
-   * apex sits at the centre of the sprite so `icon-rotate` pivots on the
-   * record's own coordinate instead of swinging the arrow around it.
+   * Kept in their own source rather than alongside the dots because the dot
+   * source clusters: a camera whose `direction` names three headings needs
+   * three cones, and exploding it in the clustered source would inflate every
+   * cluster count and the record list with records that do not exist.
    */
-  private ensureBearingIcon(layer: ClientLayer): string | null {
-    const id = `${layer.id}-bearing`;
+  private coneFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
+    if (!layer.bearingKey) return { type: 'FeatureCollection', features: [] };
+    const cones: Feature[] = [];
+    for (const f of features) {
+      if (f.geometry.type !== 'Point') continue;
+      for (const sector of parseSectors(f.properties.attributes[layer.bearingKey])) {
+        const sprite = this.ensureConeSprite(layer, sector.arc ?? DEFAULT_CONE_ARC);
+        if (!sprite) continue;
+        cones.push({
+          type: 'Feature',
+          geometry: f.geometry,
+          properties: {
+            id: f.properties.id,
+            [BEARING_PROP]: sector.bearing,
+            [CONE_PROP]: sprite,
+          },
+        } as Feature);
+      }
+    }
+    return { type: 'FeatureCollection', features: cones };
+  }
+
+  /**
+   * Cone sprite for one arc width, generated once and reused.
+   *
+   * Generated rather than shipped as an asset: it carries the layer's own
+   * colour, and the project loads images from nowhere but itself. One sprite
+   * per distinct arc, so a recorded 45° sector and a default 50° cone are
+   * genuinely different shapes rather than the same picture relabelled.
+   *
+   * The apex sits at the sprite's centre so `icon-rotate` pivots on the
+   * camera's own coordinate instead of swinging the cone around it.
+   */
+  private ensureConeSprite(layer: ClientLayer, arc: number): string | null {
+    const rounded = Math.round(arc);
+    const id = `${layer.id}-cone-${rounded}`;
     if (this.map.hasImage(id)) return id;
 
     const pixelRatio = 2;
-    const px = 44 * pixelRatio;
+    const px = 52 * pixelRatio;
     const canvas = document.createElement('canvas');
     canvas.width = px;
     canvas.height = px;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // The arrow starts clear of the dot rather than at the centre. The dot is
-    // ~7px across at the zoom where these first appear, so an arrow drawn from
-    // the middle is simply hidden underneath it — which is how the first
-    // version of this failed: the icons were rendering, just invisibly.
     const centre = px / 2;
-    const base = centre - px * 0.3;
-    const tip = centre - px * 0.48;
+    const radius = px * 0.46;
+    const up = -Math.PI / 2;
     ctx.beginPath();
-    ctx.moveTo(centre, tip);
-    ctx.lineTo(centre + px * 0.13, base);
-    ctx.lineTo(centre - px * 0.13, base);
-    ctx.closePath();
+    if (rounded >= 360) {
+      // Recorded as covering every direction, so there is no cone to point.
+      ctx.arc(centre, centre, radius, 0, Math.PI * 2);
+    } else {
+      const half = ((rounded / 2) * Math.PI) / 180;
+      ctx.moveTo(centre, centre);
+      ctx.arc(centre, centre, radius, up - half, up + half);
+      ctx.closePath();
+    }
+    ctx.globalAlpha = 0.45;
     ctx.fillStyle = layer.color;
     ctx.fill();
-    // Dark keyline so the arrow survives the pale basemap under it.
-    ctx.strokeStyle = '#0a0c10';
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = layer.color;
     ctx.lineWidth = px * 0.03;
     ctx.stroke();
 
     this.map.addImage(id, ctx.getImageData(0, 0, px, px), { pixelRatio });
     return id;
   }
+
+  private coneSourceId = (layerId: string) => `src-${layerId}-cones`;
 
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
   async loadLayer(layer: ClientLayer): Promise<void> {
@@ -263,7 +322,7 @@ export class MapController {
 
     this.map.addSource(src, {
       type: 'geojson',
-      data: this.flatten(layer, features),
+      data: this.flatten(features),
       ...(layer.cluster
         ? { cluster: true, clusterRadius: CLUSTER_RADIUS, clusterMaxZoom: CLUSTER_MAX_ZOOM }
         : {}),
@@ -335,27 +394,30 @@ export class MapController {
       this.cursorOn(`${layer.id}-clusters`);
     }
 
-    // Arrows go under the dots: the dot is the record's exact position and the
+    // Cones go under the dots: the dot is the record's exact position and the
     // thing you click, so it should never be covered by the indicator.
-    const bearingIcon = layer.bearingKey ? this.ensureBearingIcon(layer) : null;
-    if (bearingIcon) {
+    if (layer.bearingKey) {
+      const coneSrc = this.coneSourceId(layer.id);
+      this.map.addSource(coneSrc, {
+        type: 'geojson',
+        data: this.coneFeatures(layer, features),
+      });
       this.map.addLayer({
-        id: `${layer.id}-bearing`,
+        id: `${layer.id}-cones`,
         type: 'symbol',
-        source: src,
-        minzoom: BEARING_MIN_ZOOM,
-        filter: ['all', ['!', ['has', 'point_count']], ['has', BEARING_PROP]],
+        source: coneSrc,
+        minzoom: CONE_MIN_ZOOM,
         layout: {
-          'icon-image': bearingIcon,
+          'icon-image': ['get', CONE_PROP],
           'icon-rotate': ['get', BEARING_PROP],
-          // Bearings are compass headings, so the arrow turns with the map
+          // Bearings are compass headings, so the cone turns with the map
           // rather than staying fixed on the screen.
           'icon-rotation-alignment': 'map',
-          // Cameras cluster tightly along a corridor; hiding the ones that
-          // collide would misrepresent how many are there.
+          // Cameras sit tightly along a corridor; hiding the ones that collide
+          // would misrepresent how many are there.
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
-          'icon-size': ['interpolate', ['linear'], ['zoom'], BEARING_MIN_ZOOM, 0.68, 16, 1],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], CONE_MIN_ZOOM, 0.78, 16, 1.3],
         },
       });
     }
@@ -413,7 +475,7 @@ export class MapController {
       '-fill',
       '-outline',
       '-points',
-      '-bearing',
+      '-cones',
       '-clusters',
       '-cluster-count',
     ]) {
@@ -460,7 +522,13 @@ export class MapController {
     const source = this.map.getSource(this.sourceId(layerId)) as GeoJSONSource | undefined;
     const layer = this.layers.find((l) => l.id === layerId);
     if (!source || !layer) return;
-    source.setData(this.flatten(layer, this.filteredFeatures(layerId)));
+    const visible = this.filteredFeatures(layerId);
+    source.setData(this.flatten(visible));
+    // Cones live in a second source, so a filter that hides a camera has to
+    // hide its cone too or the map keeps drawing coverage for records the
+    // record list no longer shows.
+    const cones = this.map.getSource(this.coneSourceId(layerId)) as GeoJSONSource | undefined;
+    cones?.setData(this.coneFeatures(layer, visible));
     this.emitCounts();
   }
 
