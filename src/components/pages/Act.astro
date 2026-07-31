@@ -30,7 +30,38 @@ const counties = [
 const facilities = (
   loaded.find((l) => l.definition.id === 'detention_facility')?.collection?.features ?? []
 ).map((f) => f.properties.name);
+
+// The locator's own strings. Everything else on this page is English prose in
+// the markup; these go through the dictionary because the same card is drawn
+// on the "near me" page, and one office must not be named two different ways.
+const locatorStrings = {
+  noResults: t('noResults'),
+  whoAnswersTitle: t('whoAnswersTitle'),
+  whoAnswersIntro: t('whoAnswersIntro'),
+  youAreIn: t('youAreIn'),
+  inCounty: t('inCounty'),
+  noLocalGovernment: t('noLocalGovernment'),
+  useThisBody: t('useThisBody'),
+  addressedTo: t('addressedTo'),
+  underStatute: t('underStatute'),
+  jurisdictionCity: t('jurisdictionCity'),
+  jurisdictionTownship: t('jurisdictionTownship'),
+  jurisdictionUnorganized: t('jurisdictionUnorganized'),
+  jurisdictionCounty: t('jurisdictionCounty'),
+  officeTownClerk: t('officeTownClerk'),
+  officeTownClerkRole: t('officeTownClerkRole'),
+  officeCityClerk: t('officeCityClerk'),
+  officeCityClerkRole: t('officeCityClerkRole'),
+  officeCountyAdministrator: t('officeCountyAdministrator'),
+  officeCountyAdministratorRole: t('officeCountyAdministratorRole'),
+  officeLawEnforcement: t('officeLawEnforcement'),
+  officeLawEnforcementRole: t('officeLawEnforcementRole'),
+  officeCommissioner: t('officeCommissioner'),
+  officeCommissionerRole: t('officeCommissionerRole'),
+};
 ---
+
+<script is:inline type="application/json" id="locator-strings" set:html={JSON.stringify(locatorStrings)} />
 
 <div class="mx-auto max-w-4xl px-4 py-10">
   <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">{t('navAct')}</h1>
@@ -38,6 +69,46 @@ const facilities = (
     Everything on this map came from a record somebody requested or published. These tools help you
     request the next one. They are informational, not legal advice.
   </p>
+
+  <!--
+    ------------------------- Where you live -------------------------
+    Placed before the letter generator because it answers the question that
+    blocks it. The generator has always been able to address any body — but
+    only to a reader who already knew which body to name. Somebody looking at a
+    camera down their road does not, and "Which body?" as an empty text box is
+    where they stopped.
+  -->
+  <section class="mt-8 rounded-lg border border-accent/30 bg-ink-900 p-5">
+    <h2 class="text-lg font-semibold text-ink-100">{t('locateTitle')}</h2>
+    <p class="mt-1.5 text-sm leading-relaxed text-ink-300">{t('locateIntro')}</p>
+
+    <div class="mt-4 max-w-md">
+      <label for="jurisdiction-search" class="mb-1.5 block text-sm font-medium text-ink-200">
+        {t('locateLabel')}
+      </label>
+      <div class="relative">
+        <input
+          id="jurisdiction-search"
+          type="search"
+          autocomplete="off"
+          role="combobox"
+          aria-expanded="false"
+          aria-controls="jurisdiction-results"
+          placeholder={t('locatePlaceholder')}
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2.5 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+        />
+        <ul
+          id="jurisdiction-results"
+          role="listbox"
+          class="absolute z-20 mt-1 hidden max-h-64 w-full overflow-y-auto rounded-md border border-ink-700 bg-ink-850 shadow-xl"
+        >
+        </ul>
+      </div>
+      <p class="mt-1.5 text-xs leading-relaxed text-ink-400">{t('locateHint')}</p>
+    </div>
+
+    <div id="jurisdiction-authorities" class="mt-5"></div>
+  </section>
 
   <!-- ------------------------- Records request ------------------------- -->
   <section class="mt-8 rounded-lg border border-ink-800 bg-ink-900 p-5">
@@ -270,6 +341,68 @@ const facilities = (
         <a href={localePath(locale, '/')}>map</a>, and see the
         <a href={localePath(locale, '/explainer')}>explainer</a> for what the redlining grades mean
         and what they do not.
+      </p>
+    </div>
+  </section>
+
+  <!-- ------------------- When it is not your government ------------------- -->
+  <section class="mt-8">
+    <h2 class="text-lg font-semibold text-ink-100">
+      When the cameras belong to a government you did not elect
+    </h2>
+    <div class="prose-civic mt-2">
+      <p>
+        This is the ordinary case outside a city with its own police force, and it is the thing
+        that most often stalls a local effort. A township has a board, an agenda, and an election
+        behind it — and the readers inside its borders were bought by a county sheriff, mounted on
+        a county road, on a county contract. Every lever the board can reach is real; none of them
+        is the one attached to that camera.
+      </p>
+      <p>
+        Two questions decide what instrument you actually need, and it is worth settling them
+        before drafting anything:
+      </p>
+      <ul>
+        <li>
+          <strong class="text-ink-100">Whose equipment is it?</strong> The camera layer records an
+          operator where somebody mapped one, and leaves it null where nobody did — look your
+          location up under <a href={localePath(locale, '/near-me')}>what is around this place</a>,
+          which now names the operators of the cameras near a point and flags the ones that are not
+          your own government. Where the operator is blank, that gap is itself the first records
+          request: § 13.82, subd. 31 makes the <em>existence</em> of the technology public.
+        </li>
+        <li>
+          <strong class="text-ink-100">How far do your town's powers reach?</strong> Minnesota
+          towns hold the powers that
+          <a href="https://www.revisor.mn.gov/statutes/cite/365" target="_blank" rel="noopener noreferrer">
+            ch. 365
+          </a> and
+          <a href="https://www.revisor.mn.gov/statutes/cite/366.01" target="_blank" rel="noopener noreferrer">
+            § 366.01
+          </a> give them, and the broader ordinance powers under
+          <a href="https://www.revisor.mn.gov/statutes/cite/368.01" target="_blank" rel="noopener noreferrer">
+            § 368.01
+          </a> are available only to towns meeting a population or proximity threshold. Whether a
+          given town's authority extends to equipment another government owns is a question for
+          your town attorney and the
+          <a href="https://www.mntownships.org/information-library/township-powers" target="_blank" rel="noopener noreferrer">
+            Minnesota Association of Townships
+          </a>, not one this site can answer for you. Ask it first: the answer decides whether you
+          are drafting a town ordinance or asking the county board for a resolution.
+        </li>
+      </ul>
+      <p>
+        Whatever the answer, three things are open to a local board immediately and none of them
+        depends on owning the equipment. It can file the records request itself — a government
+        entity asking another government entity tends to get a faster and more complete answer than
+        a resident does. It can put the item on a published agenda, which creates a public record
+        and a date. And it can ask the county for the audit that
+        <a href="https://www.revisor.mn.gov/statutes/cite/13.824" target="_blank" rel="noopener noreferrer">
+          § 13.824, subd. 6
+        </a> already requires every ALPR operator to commission every two years, along with the
+        public log under subd. 5 and the audit trail under subd. 7. Those documents exist whether or
+        not anyone has ever asked for them, and reading them is usually what turns a general worry
+        into a specific one.
       </p>
     </div>
   </section>
@@ -620,4 +753,284 @@ const facilities = (
   });
 
   refresh();
+</script>
+
+<!--
+  The locator, kept as its own module rather than folded into the letter
+  script above. The two communicate the way any two scripts on a page should:
+  this one writes the agency field and fires an `input` event, and the letter
+  rebuilds itself from that exactly as it does when a reader types. Nothing
+  here reaches into the letter's internals.
+-->
+<script>
+  import { resolveAuthorities, displayName } from '~/lib/authority.mjs';
+
+  type Jurisdiction = {
+    geoid: string;
+    name: string;
+    kind: 'city' | 'township' | 'unorganized';
+    governed: boolean;
+    county: string;
+    countyFips: string;
+    lat: number;
+    lng: number;
+  };
+
+  const S = JSON.parse(
+    document.getElementById('locator-strings')!.textContent!,
+  ) as Record<string, string>;
+
+  const searchEl = document.getElementById('jurisdiction-search') as HTMLInputElement;
+  const resultsEl = document.getElementById('jurisdiction-results')!;
+  const panelEl = document.getElementById('jurisdiction-authorities')!;
+  const agencyEl = document.getElementById('req-agency') as HTMLInputElement;
+
+  const KIND_LABEL: Record<string, string> = {
+    city: 'jurisdictionCity',
+    township: 'jurisdictionTownship',
+    unorganized: 'jurisdictionUnorganized',
+  };
+
+  const fill = (template: string, values: Record<string, string | number>) =>
+    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+
+  function el(tag: string, cls?: string, text?: string) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  let jurisdictions: Jurisdiction[] = [];
+
+  const ready = fetch('/data/reference/mn-jurisdictions.json')
+    .then((r) => r.json())
+    .then((doc) => {
+      jurisdictions = doc.jurisdictions ?? [];
+    })
+    .catch(() => {
+      jurisdictions = [];
+    });
+
+  /* ----------------------------- Search ----------------------------- */
+
+  function renderResults(query: string) {
+    const q = query.trim().toLowerCase();
+    resultsEl.textContent = '';
+    if (q.length < 2) {
+      resultsEl.classList.add('hidden');
+      searchEl.setAttribute('aria-expanded', 'false');
+      return;
+    }
+
+    const hits = jurisdictions
+      .filter((j) => j.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return as - bs || a.name.localeCompare(b.name);
+      })
+      .slice(0, 25);
+
+    if (!hits.length) {
+      resultsEl.append(el('li', 'px-3 py-2 text-xs text-ink-400', S.noResults));
+    } else {
+      for (const j of hits) {
+        const li = el('li');
+        li.setAttribute('role', 'option');
+        const button = el(
+          'button',
+          'flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm text-ink-200 hover:bg-ink-800 hover:text-ink-100',
+        );
+        button.setAttribute('type', 'button');
+        button.append(el('span', '', displayName(j.name)));
+        // Minnesota reuses township names freely; the county disambiguates.
+        button.append(el('span', 'shrink-0 text-xs text-ink-400', j.county));
+        button.addEventListener('click', () => select(j));
+        li.append(button);
+        resultsEl.append(li);
+      }
+    }
+    resultsEl.classList.remove('hidden');
+    searchEl.setAttribute('aria-expanded', 'true');
+  }
+
+  let timer: number;
+  searchEl.addEventListener('input', () => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => renderResults(searchEl.value), 120);
+  });
+  searchEl.addEventListener('blur', () =>
+    window.setTimeout(() => resultsEl.classList.add('hidden'), 180),
+  );
+
+  /* --------------------------- The chain --------------------------- */
+
+  function select(j: Jurisdiction) {
+    searchEl.value = displayName(j.name);
+    resultsEl.classList.add('hidden');
+    render(j);
+    // Keep the deep link honest: a reader who copies the URL out of the bar
+    // after choosing their township should get this page back.
+    const url = new URL(window.location.href);
+    url.searchParams.set('jurisdiction', j.geoid);
+    window.history.replaceState({}, '', url);
+  }
+
+  function render(j: Jurisdiction) {
+    panelEl.textContent = '';
+
+    const wrap = el('div', 'rounded-lg border border-ink-800 bg-ink-950 p-4');
+    wrap.append(el('h3', 'text-sm font-semibold text-ink-100', S.whoAnswersTitle));
+
+    const line = el('p', 'mt-1 text-sm');
+    line.append(
+      el('span', 'text-ink-400', `${S.youAreIn} `),
+      el('span', 'font-medium text-ink-100', displayName(j.name)),
+      el(
+        'span',
+        'text-ink-400',
+        ` — ${S[KIND_LABEL[j.kind]]} ${fill(S.inCounty, { county: j.county })}`,
+      ),
+    );
+    wrap.append(line);
+
+    if (!j.governed) {
+      wrap.append(
+        el(
+          'p',
+          'mt-3 rounded-md border border-warn/30 bg-warn/5 p-3 text-xs leading-relaxed text-warn',
+          S.noLocalGovernment,
+        ),
+      );
+    }
+
+    const status = el('p', 'mt-3 text-sm text-accent');
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+
+    const list = el('ol', 'mt-3 space-y-3');
+    for (const authority of resolveAuthorities(j, j.county)) {
+      const item = el('li', 'border-l-2 border-ink-800 pl-3');
+      item.append(el('p', 'text-sm font-medium text-ink-100', authority.entity));
+      item.append(
+        el('p', 'text-sm text-ink-200', S[`office${capitalise(authority.office.id)}`]),
+      );
+      item.append(
+        el(
+          'p',
+          'mt-0.5 text-xs leading-relaxed text-ink-400',
+          S[`office${capitalise(authority.office.id)}Role`],
+        ),
+      );
+
+      const cite = `Minn. Stat. § ${authority.office.cite}${
+        authority.office.subdivision ? `, ${authority.office.subdivision}` : ''
+      }`;
+      const a = el(
+        'a',
+        'mt-1 inline-block text-xs text-accent underline underline-offset-2',
+        fill(S.underStatute, { cite }),
+      );
+      a.setAttribute('href', authority.office.url);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+      item.append(a);
+
+      // The commissioner is where a refusal goes, not where a request starts,
+      // so it gets no "address the letter here" button.
+      if (authority.level !== 'state') {
+        const use = el(
+          'button',
+          'mt-2 block rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-accent hover:text-accent',
+          S.useThisBody,
+        );
+        use.setAttribute('type', 'button');
+        use.addEventListener('click', () => {
+          agencyEl.value = authority.entity;
+          // The letter script rebuilds on `input`, exactly as if typed.
+          agencyEl.dispatchEvent(new Event('input', { bubbles: true }));
+          status.textContent = fill(S.addressedTo, { entity: authority.entity });
+          agencyEl.scrollIntoView({
+            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+              ? 'auto'
+              : 'smooth',
+            block: 'center',
+          });
+        });
+        item.append(use);
+      }
+
+      list.append(item);
+    }
+
+    wrap.append(list, status);
+    panelEl.append(wrap);
+  }
+
+  /*
+    Arriving from somewhere else on the site with the work already started.
+
+    Two doors lead here. The "who answers to you here" card on the near-me page
+    sends `jurisdiction`; the take-action button in the map's detail panel
+    sends `type` and `body` — the request template for that kind of record and
+    the body to address — plus `at`, the record's position.
+
+    Without this the reader would arrive at a blank form having just been told
+    exactly what to ask and who to ask, and would have to enter all of it a
+    second time. That is where people give up.
+  */
+  const params = new URL(window.location.href).searchParams;
+
+  // The template and the addressee need no data, so they apply immediately.
+  const type = params.get('type');
+  if (type) {
+    const select = document.getElementById('req-type') as HTMLSelectElement;
+    if ([...select.options].some((o) => o.value === type)) {
+      select.value = type;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  const body = params.get('body');
+  if (body) {
+    agencyEl.value = body;
+    agencyEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  ready.then(async () => {
+    const geoid = params.get('jurisdiction');
+    if (geoid) {
+      const match = jurisdictions.find((j) => j.geoid === geoid);
+      if (match) {
+        searchEl.value = displayName(match.name);
+        render(match);
+      }
+      return;
+    }
+
+    /*
+      A record's coordinates, from the map. Resolving them to a jurisdiction
+      costs 1.6 MB of boundaries — which is why the map itself passes the point
+      rather than resolving it there. A reader who has clicked "take action"
+      has committed to this page, and this is the one place the download buys
+      something: the offices for the exact ground that camera stands on.
+    */
+    const at = params.get('at');
+    if (!at) return;
+    const [lng, lat] = at.split(',').map(Number);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+
+    const { findContaining } = await import('~/lib/geo.mjs');
+    const shapes = await fetch('/data/reference/mn-jurisdictions.geojson')
+      .then((r) => (r.ok ? r.json() : { features: [] }))
+      .catch(() => ({ features: [] }));
+    const hit = findContaining([lng, lat], shapes.features);
+    if (!hit) return;
+    const match = jurisdictions.find((j) => j.geoid === hit.properties.geoid);
+    if (!match) return;
+    searchEl.value = displayName(match.name);
+    render(match);
+  });
 </script>

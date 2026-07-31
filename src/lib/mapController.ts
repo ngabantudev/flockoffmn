@@ -51,6 +51,13 @@ export interface ClientLayer {
     label: string;
     help: string;
   };
+  /** The request a reader can file about one of these records, if any. */
+  action?: {
+    requestType: string;
+    label: string;
+    bodyKey?: string;
+    fallbackBody?: 'countySheriff' | 'county' | 'name';
+  };
   dataPath: string;
   csvPath: string | null;
   filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];
@@ -255,6 +262,15 @@ function parseSectors(raw: unknown): { bearing: number; arc: number | null }[] {
   }
   return sectors;
 }
+
+/**
+ * The searched-for jurisdiction outline. One source and one layer, reused —
+ * there is never more than one boundary on the map at a time.
+ */
+const JURISDICTION_SOURCE = 'src-jurisdiction';
+const JURISDICTION_LAYER = 'jurisdiction-outline';
+/** Neutral against every layer colour: this is a frame, not a finding. */
+const JURISDICTION_COLOR = '#94a3b8';
 
 /**
  * Owns the MapLibre instance and all layer state.
@@ -1274,6 +1290,61 @@ export class MapController {
 
   flyTo(center: [number, number], zoom = 12) {
     this.map.easeTo({ center, zoom, duration: REDUCED_MOTION ? 0 : 600 });
+  }
+
+  /**
+   * Outline one unit of government and fit the view to it.
+   *
+   * Deliberately not a layer in the registry. A layer is a finding — something
+   * the project went and gathered. A township boundary is the frame a reader
+   * brought with them, and 2,757 of them drawn at once would bury every dot on
+   * the map. Exactly one is ever shown: the one somebody searched for.
+   *
+   * It draws as an outline with no fill, because a filled polygon over camera
+   * dots reads as data about the area rather than as the edge of it.
+   */
+  showJurisdiction(feature: {
+    geometry: GeoJSON.Geometry;
+    properties: Record<string, unknown>;
+  }) {
+    const data = { type: 'Feature' as const, ...feature };
+
+    const existing = this.map.getSource(JURISDICTION_SOURCE) as GeoJSONSource | undefined;
+    if (existing) {
+      existing.setData(data as never);
+    } else {
+      this.map.addSource(JURISDICTION_SOURCE, { type: 'geojson', data: data as never });
+      this.map.addLayer(
+        {
+          id: JURISDICTION_LAYER,
+          type: 'line',
+          source: JURISDICTION_SOURCE,
+          paint: {
+            'line-color': JURISDICTION_COLOR,
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.2, 12, 2.5],
+            'line-opacity': 0.9,
+            'line-dasharray': [3, 2],
+          },
+        },
+        // Under the records, so a boundary never sits on top of a camera.
+        this.beneathDots(),
+      );
+    }
+
+    const [minLng, minLat, maxLng, maxLat] = bboxOf(feature.geometry);
+    this.map.fitBounds(
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
+      { padding: 48, maxZoom: 13, duration: REDUCED_MOTION ? 0 : 600 },
+    );
+  }
+
+  /** Remove the outline. The reader searched for something else. */
+  clearJurisdiction() {
+    if (this.map.getLayer(JURISDICTION_LAYER)) this.map.removeLayer(JURISDICTION_LAYER);
+    if (this.map.getSource(JURISDICTION_SOURCE)) this.map.removeSource(JURISDICTION_SOURCE);
   }
 
   resetView() {

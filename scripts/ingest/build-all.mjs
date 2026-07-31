@@ -20,6 +20,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const STEPS = [
   { name: 'counties', script: 'counties.mjs', required: true },
+  // Needs the county reference to name each subdivision's county, so it
+  // follows counties and precedes nothing — no layer depends on it. It is the
+  // index that turns a point into the government that has to answer for it.
+  { name: 'jurisdictions', script: 'jurisdictions.mjs' },
   { name: '287g', script: 'agencies-287g.mjs' },
   { name: 'alpr', script: 'alpr.mjs' },
   // Derived from the file alpr.mjs just wrote, so it has to follow it. If the

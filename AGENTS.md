@@ -50,6 +50,12 @@ instead.
 - `src/lib/geo.mjs` — shared by the ingest scripts *and* the browser, on
   purpose. Build-time county assignment and the in-browser "near me" lookup
   must not drift apart.
+- `src/lib/authority.mjs` — shared for the same reason: which office has to
+  answer a request is named beside a record on one page and written onto a
+  letter on another, and those have to be the same office. It returns
+  **offices, never individuals**, and every office it names is the statutory
+  default in Minn. Stat. § 13.02, subd. 16(b), cited in place. If you add an
+  office, cite the statute next to it or do not add it.
 - `src/layers/data.ts` — build-time reader. Pages show what the generated files
   actually contain, not what the registry claims, so counts and dates cannot go
   stale.

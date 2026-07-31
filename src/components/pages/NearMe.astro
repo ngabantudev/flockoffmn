@@ -62,7 +62,34 @@ const strings = {
   nearestIs: t('nearestIs'),
   distanceAway: t('distanceAway'),
   foundInCounty: t('foundInCounty'),
+
+  whoAnswersTitle: t('whoAnswersTitle'),
+  whoAnswersIntro: t('whoAnswersIntro'),
+  whoAnswersEmpty: t('whoAnswersEmpty'),
+  youAreIn: t('youAreIn'),
+  inCounty: t('inCounty'),
+  noLocalGovernment: t('noLocalGovernment'),
+  operatorMismatch: t('operatorMismatch'),
+  operatorUnattributed: t('operatorUnattributed'),
+  writeToThisOffice: t('writeToThisOffice'),
+  underStatute: t('underStatute'),
+  jurisdictionCity: t('jurisdictionCity'),
+  jurisdictionTownship: t('jurisdictionTownship'),
+  jurisdictionUnorganized: t('jurisdictionUnorganized'),
+  jurisdictionCounty: t('jurisdictionCounty'),
+  officeTownClerk: t('officeTownClerk'),
+  officeTownClerkRole: t('officeTownClerkRole'),
+  officeCityClerk: t('officeCityClerk'),
+  officeCityClerkRole: t('officeCityClerkRole'),
+  officeCountyAdministrator: t('officeCountyAdministrator'),
+  officeCountyAdministratorRole: t('officeCountyAdministratorRole'),
+  officeLawEnforcement: t('officeLawEnforcement'),
+  officeLawEnforcementRole: t('officeLawEnforcementRole'),
+  officeCommissioner: t('officeCommissioner'),
+  officeCommissionerRole: t('officeCommissionerRole'),
 };
+
+const actPath = localePath(locale, '/act');
 ---
 
 <div class="mx-auto max-w-4xl px-4 py-10">
@@ -126,6 +153,13 @@ const strings = {
     <h2 id="near-heading" class="text-lg font-semibold text-ink-100"></h2>
     <p id="near-sub" class="mt-0.5 text-sm text-ink-400"></p>
 
+    <!--
+      Who answers here comes before the layer cards, deliberately. Everything
+      below it is a finding; this is the part a reader can act on, and it was
+      the step the site used to leave them to work out for themselves.
+    -->
+    <div id="who-answers" class="mt-5"></div>
+
     <div id="near-cards" class="mt-5 grid gap-3 sm:grid-cols-2"></div>
 
     <div class="mt-6 rounded-lg border border-accent/30 bg-accent/5 p-4">
@@ -142,6 +176,7 @@ const strings = {
 
 <script is:inline type="application/json" id="near-layers" set:html={JSON.stringify(nearMeLayers)} />
 <script is:inline type="application/json" id="near-strings" set:html={JSON.stringify(strings)} />
+<script is:inline type="application/json" id="near-act-path" set:html={JSON.stringify(actPath)} />
 
 <script>
   import {
@@ -150,6 +185,7 @@ const strings = {
     findContaining,
     distanceToGeometryMeters,
   } from '~/lib/geo.mjs';
+  import { resolveAuthorities, operatorGap, displayName } from '~/lib/authority.mjs';
 
   type NearMeLayer = {
     id: string;
@@ -178,20 +214,35 @@ const strings = {
   const heading = document.getElementById('near-heading')!;
   const sub = document.getElementById('near-sub')!;
   const cards = document.getElementById('near-cards')!;
+  const whoEl = document.getElementById('who-answers')!;
 
   const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  type Place = { name: string; lat: number; lng: number };
+  type Jurisdiction = {
+    geoid: string;
+    name: string;
+    kind: 'city' | 'township' | 'unorganized';
+    governed: boolean;
+    county: string;
+    countyFips: string;
+    lat: number;
+    lng: number;
+  };
+  /** A search hit: either a Census place or a unit of government. */
+  type Place = { name: string; lat: number; lng: number; jurisdiction?: Jurisdiction };
   type Feature = { geometry: GeoJSON.Geometry; properties: Record<string, any> };
 
   let places: Place[] = [];
   let counties: { features: any[] } | null = null;
   const layerData = new Map<string, Feature[]>();
 
+  const ACT_PATH = JSON.parse(document.getElementById('near-act-path')!.textContent!) as string;
+
   /** Everything the page needs, fetched once, in parallel. */
   async function loadAll() {
-    const [placeDoc, countyDoc, ...layerDocs] = await Promise.all([
+    const [placeDoc, jurisdictionDoc, countyDoc, ...layerDocs] = await Promise.all([
       fetch('/data/reference/mn-places.json').then((r) => r.json()),
+      fetch('/data/reference/mn-jurisdictions.json').then((r) => r.json()),
       fetch('/data/reference/mn-counties.geojson').then((r) => r.json()),
       ...layers.map((l) =>
         fetch(l.dataPath)
@@ -199,12 +250,64 @@ const strings = {
           .catch(() => ({ features: [] })),
       ),
     ]);
-    places = placeDoc.places ?? [];
     counties = countyDoc;
     layers.forEach((l, i) => layerData.set(l.id, layerDocs[i].features ?? []));
+
+    const jurisdictions: Jurisdiction[] = jurisdictionDoc.jurisdictions ?? [];
+
+    /*
+      The two indexes overlap and neither contains the other, so the search
+      list is a merge rather than a replacement.
+
+      `mn-places.json` is the Census incorporated-place gazetteer: 914 cities,
+      plus the unincorporated communities that people actually use as
+      addresses. `mn-jurisdictions.json` is every unit of government: all 900
+      cities and, critically, all 1,798 townships, which had no entry here at
+      all — a fifth of the state's population could not find where they live.
+
+      Where both list the same city the jurisdiction record wins, because it
+      knows its county and its class and the gazetteer entry does not. What
+      survives from the gazetteer is the unincorporated communities, which are
+      real places to search for and are governed by whichever township or city
+      contains them.
+    */
+    const governmentNames = new Set(
+      jurisdictions.map((j) => displayName(j.name).toLowerCase()),
+    );
+    const gazetteer: Place[] = (placeDoc.places ?? []).filter(
+      (p: Place) =>
+        !governmentNames.has(`${p.name.toLowerCase()} city`) &&
+        !governmentNames.has(p.name.toLowerCase()),
+    );
+
+    places = [
+      ...jurisdictions.map((j) => ({
+        name: displayName(j.name),
+        lat: j.lat,
+        lng: j.lng,
+        jurisdiction: j,
+      })),
+      ...gazetteer,
+    ];
   }
 
   const ready = loadAll();
+
+  /**
+   * Jurisdiction boundaries, fetched only when they are actually needed.
+   *
+   * 1.6 MB of polygons answers exactly one question: which unit of government
+   * contains a raw pair of coordinates. When a reader picks a township by name
+   * we already know the answer and never touch this file — so the download
+   * happens only for "use my location", and only once.
+   */
+  let jurisdictionShapes: Promise<{ features: Feature[] }> | null = null;
+  function loadJurisdictionShapes() {
+    jurisdictionShapes ??= fetch('/data/reference/mn-jurisdictions.geojson')
+      .then((r) => (r.ok ? r.json() : { features: [] }))
+      .catch(() => ({ features: [] }));
+    return jurisdictionShapes;
+  }
 
   function el(tag: string, cls?: string, text?: string) {
     const n = document.createElement(tag);
@@ -249,12 +352,23 @@ const strings = {
       for (const place of hits) {
         const li = el('li');
         li.setAttribute('role', 'option');
-        const button = el('button', 'w-full px-3 py-2 text-left text-sm text-ink-200 hover:bg-ink-800 hover:text-ink-100', place.name);
+        const button = el(
+          'button',
+          'flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm text-ink-200 hover:bg-ink-800 hover:text-ink-100',
+        );
         button.setAttribute('type', 'button');
+        button.append(el('span', '', place.name));
+        // Minnesota has a Waterford township and a Waterford, and plenty more
+        // pairs like it. The county is what tells two hits apart in a list.
+        if (place.jurisdiction) {
+          button.append(
+            el('span', 'shrink-0 text-xs text-ink-400', place.jurisdiction.county),
+          );
+        }
         button.addEventListener('click', () => {
           searchInput.value = place.name;
           resultsList.classList.add('hidden');
-          void analyse([place.lng, place.lat], place.name);
+          void analyse([place.lng, place.lat], place.name, place.jurisdiction ?? null);
         });
         li.append(button);
         resultsList.append(li);
@@ -443,23 +557,184 @@ const strings = {
     return wrap;
   }
 
+  /* -------------------------- Who answers here ------------------------- */
+
+  const KIND_LABEL: Record<string, string> = {
+    city: 'jurisdictionCity',
+    township: 'jurisdictionTownship',
+    unorganized: 'jurisdictionUnorganized',
+    county: 'jurisdictionCounty',
+  };
+
+  /**
+   * The offices that have to answer for this ground, and — where the data
+   * supports saying it — the fact that the cameras here belong to none of
+   * them.
+   */
+  function renderWhoAnswers(
+    point: [number, number],
+    jurisdiction: Jurisdiction | null,
+    countyName: string | null,
+  ) {
+    whoEl.textContent = '';
+    if (!jurisdiction && !countyName) {
+      whoEl.append(
+        el(
+          'p',
+          'rounded-lg border border-ink-800 bg-ink-900 p-4 text-sm text-ink-300',
+          S.whoAnswersEmpty,
+        ),
+      );
+      return;
+    }
+
+    const wrap = el('div', 'rounded-lg border border-accent/30 bg-ink-900 p-5');
+    wrap.append(el('h3', 'text-base font-semibold text-ink-100', S.whoAnswersTitle));
+
+    if (jurisdiction) {
+      const line = el('p', 'mt-1 text-sm text-ink-200');
+      line.append(
+        el('span', 'text-ink-400', `${S.youAreIn} `),
+        el('span', 'font-medium text-ink-100', displayName(jurisdiction.name)),
+        el(
+          'span',
+          'text-ink-400',
+          ` — ${S[KIND_LABEL[jurisdiction.kind]]} ${fill(S.inCounty, { county: jurisdiction.county })}`,
+        ),
+      );
+      wrap.append(line);
+    }
+
+    wrap.append(el('p', 'mt-2 text-sm leading-relaxed text-ink-300', S.whoAnswersIntro));
+
+    // The 82 subdivisions with no government of their own. Said out loud, so
+    // a missing local row reads as a fact about the place rather than a gap
+    // in our data.
+    if (jurisdiction && !jurisdiction.governed) {
+      wrap.append(
+        el(
+          'p',
+          'mt-3 rounded-md border border-warn/30 bg-warn/5 p-3 text-xs leading-relaxed text-warn',
+          S.noLocalGovernment,
+        ),
+      );
+    }
+
+    // Who actually runs the cameras here, against who the reader elects.
+    const cameras = layerData.get('alpr') ?? [];
+    const nearby = cameras.filter(
+      (f) =>
+        f.geometry.type === 'Point' &&
+        miles(haversineMeters(point, (f.geometry as GeoJSON.Point).coordinates as [number, number])) <=
+          5,
+    );
+    if (nearby.length) {
+      const gap = operatorGap(
+        nearby.map((f) => f.properties.attributes?.operator ?? null),
+        jurisdiction,
+      );
+      if (gap.outside.length && jurisdiction) {
+        wrap.append(
+          el(
+            'p',
+            'mt-3 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs leading-relaxed text-ink-200',
+            fill(S.operatorMismatch, {
+              operators: gap.outside.join(', '),
+              jurisdiction: displayName(jurisdiction.name),
+            }),
+          ),
+        );
+      }
+      if (gap.unattributed) {
+        wrap.append(
+          el(
+            'p',
+            'mt-2 text-xs leading-relaxed text-ink-400',
+            fill(S.operatorUnattributed, { count: gap.unattributed }),
+          ),
+        );
+      }
+    }
+
+    const list = el('ol', 'mt-4 space-y-3');
+    for (const authority of resolveAuthorities(jurisdiction, countyName)) {
+      const item = el('li', 'border-l-2 border-ink-800 pl-3');
+      item.append(el('p', 'text-sm font-medium text-ink-100', authority.entity));
+      item.append(
+        el('p', 'text-sm text-ink-200', S[`office${capitalise(authority.office.id)}`]),
+      );
+      item.append(
+        el(
+          'p',
+          'mt-0.5 text-xs leading-relaxed text-ink-400',
+          S[`office${capitalise(authority.office.id)}Role`],
+        ),
+      );
+
+      const cite = `Minn. Stat. § ${authority.office.cite}${
+        authority.office.subdivision ? `, ${authority.office.subdivision}` : ''
+      }`;
+      const a = el('a', 'mt-1 inline-block text-xs text-accent underline underline-offset-2',
+        fill(S.underStatute, { cite }));
+      a.setAttribute('href', authority.office.url);
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+      item.append(a);
+
+      list.append(item);
+    }
+    wrap.append(list);
+
+    // The whole point of the card: a way out of it into a letter, with the
+    // body already chosen.
+    const act = el(
+      'a',
+      'mt-4 inline-block rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink-950 hover:brightness-110',
+      `${S.writeToThisOffice} →`,
+    );
+    act.setAttribute(
+      'href',
+      jurisdiction ? `${ACT_PATH}?jurisdiction=${encodeURIComponent(jurisdiction.geoid)}` : ACT_PATH,
+    );
+    wrap.append(act);
+
+    whoEl.append(wrap);
+  }
+
+  const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
   /** Guards against an older lookup finishing after a newer one. */
   let latest = 0;
 
-  async function analyse(point: [number, number], placeName: string | null) {
+  async function analyse(
+    point: [number, number],
+    placeName: string | null,
+    jurisdiction: Jurisdiction | null = null,
+  ) {
     const token = ++latest;
     statusEl.textContent = S.loading;
     await ready;
     if (token !== latest) return;
+
+    // A jurisdiction picked by name is already known. Only raw coordinates
+    // need the boundaries, and only then do we pay for them.
+    if (!jurisdiction) {
+      const shapes = await loadJurisdictionShapes();
+      if (token !== latest) return;
+      const hit = findContaining(point, shapes.features as any[]);
+      jurisdiction = (hit?.properties as Jurisdiction) ?? null;
+    }
     statusEl.textContent = '';
 
     const county = counties ? findContaining(point, counties.features) : null;
-    const countyName = county?.properties?.name ?? null;
+    const countyName = jurisdiction?.county ?? county?.properties?.name ?? null;
 
     heading.textContent = placeName
       ? fill(S.aroundPlace, { place: placeName })
       : S.aroundYourLocation;
     sub.textContent = countyName ? `${countyName}, ${S.stateName}` : S.stateName;
+
+    renderWhoAnswers(point, jurisdiction, countyName);
 
     cards.textContent = '';
     for (const layer of layers) cards.append(renderCard(layer, point, countyName));
