@@ -1,22 +1,30 @@
-import { haversineMeters, metersToMiles } from './geo.mjs';
+import { haversineMeters } from './geo.mjs';
 import type { FeatureProperties } from '~/layers/types';
 
 /**
- * Re-deriving corridors in the browser at a reader-chosen linking radius.
+ * Re-deriving the network in the browser at a reader-chosen linking radius.
  *
  * The shipped file is not a list of corridors. It is a list of road stretches
- * carrying everything needed to cut corridors out of them: where each reader
- * location sits along the road, how many readers are at each, and where each
- * surveyed piece of road sits on the same scale. A corridor is what you get
- * when you pick a radius, and picking it is the reader's job.
+ * and single readers, each carrying where its reader locations sit and where
+ * the surveyed road around them sits on the same scale. What counts as a
+ * corridor is what you get when you pick a radius, and picking it is the
+ * reader's job.
  *
- * That split exists because the geometry cannot be recomputed here. Clipping a
- * road to a run of readers needs the road network, which lives in OpenStreetMap
- * and reaches this project through two Overpass queries at build time. So the
- * ingest does the surveying once, at the widest radius the control offers, and
- * the browser only ever narrows: every metre drawn at any slider position was
- * clipped from real road geometry by the ingest. Nothing is invented here, and
- * nothing can be — there is no road data in this file to invent it from.
+ * The unit is the body, not the road. A cluster of reader locations within the
+ * radius of one another is one body, whatever roads they stand on; the roads
+ * are what it has grown along. That way round matters, and having it backwards
+ * is what made the first version of this miss things: while a road needed four
+ * readers of its own before anything was drawn, a downtown with ten readers
+ * spread across five streets — plainly a network — drew nothing at all, because
+ * no single street cleared the bar.
+ *
+ * The geometry cannot be recomputed here. Clipping a road to a run of readers
+ * needs the road network, which lives in OpenStreetMap and reaches this project
+ * through two Overpass queries at build time. So the ingest surveys once, at
+ * the widest radius the control offers, and the browser only ever narrows.
+ * Every metre drawn at any slider position was clipped from real road geometry
+ * by the ingest. Nothing is invented here, and nothing can be — there is no
+ * road data in this file to invent it from.
  */
 
 export interface LinkRadiusConfig {
@@ -25,18 +33,20 @@ export interface LinkRadiusConfig {
   lngsKey: string;
   latsKey: string;
   pieceSpansKey: string;
-  minSites: number;
-  minSpanMiles: number;
+  /** Reader locations a body needs before any of it is drawn. */
+  minBodySites: number;
+  /** Reader locations on one road before it is drawn as a run rather than stubs. */
+  minRunSites: number;
   /** Attribute distinguishing a run of readers from a lone one. */
   kindKey: string;
-  /** Value of `kindKey` marking a branch — a reader on a road with no run. */
+  /** Value of `kindKey` marking a lone reader. */
   branchKind: string;
 }
 
 export interface Run {
-  /** Index of the source feature this run was cut from. */
+  /** Index of the source feature this was cut from. */
   source: number;
-  /** A lone reader hanging off the network rather than a run along a road. */
+  /** A lone reader rather than a run along a road. */
   branch: boolean;
   /** Indices into the source feature's site list. */
   from: number;
@@ -48,7 +58,7 @@ export interface Run {
   points: Array<[number, number]>;
   offsets: number[];
   counts: number[];
-  /** Filled in by assignColonies. */
+  /** Filled in by formBodies. */
   colony: number;
   colonySites: number;
 }
@@ -74,14 +84,13 @@ export function parseSpans(raw: unknown): Array<[number, number]> {
 }
 
 /**
- * Cut one road stretch into the runs that survive a given linking radius.
+ * Cut one road stretch into the runs a given linking radius implies.
  *
  * Two reader locations belong to the same run when the gap between them is no
- * wider than the radius. Lowering the radius therefore breaks a long sparse
- * corridor into fragments and then removes them as they fall under the site and
- * span floors — which is the honest behaviour: at a quarter-mile radius, an
- * eleven-mile road with a reader every mile and a half is genuinely not a
- * continuous run of anything.
+ * wider than the radius, so narrowing the control breaks a long sparse stretch
+ * into shorter pieces. Whether any of them is drawn is not decided here — that
+ * is the body's job. A road carrying two readers inside a busy cluster is a
+ * root of something; the same road alone in open country is not.
  */
 export function runsFor(
   properties: FeatureProperties,
@@ -108,11 +117,11 @@ export function runsFor(
     start = i;
 
     const sites = to - from + 1;
-    const span = offsets[to] - offsets[from];
-    if (sites < config.minSites || span < config.minSpanMiles) continue;
+    if (sites < config.minRunSites) continue;
 
     runs.push({
       source: sourceIndex,
+      branch: false,
       from,
       to,
       startMiles: offsets[from],
@@ -123,7 +132,6 @@ export function runsFor(
       // Re-based so the spacing diagram starts at zero for the run actually shown.
       offsets: offsets.slice(from, to + 1).map((o) => Number((o - offsets[from]).toFixed(2))),
       counts: counts.slice(from, to + 1),
-      branch: false,
       colony: -1,
       colonySites: 0,
     });
@@ -131,120 +139,12 @@ export function runsFor(
   return runs;
 }
 
-/**
- * Group runs into colonies: sets of runs linked by readers within the radius.
- *
- * This is what the slider is really showing. Two streets are in one colony when
- * some reader on one stands within the radius of some reader on the other, so
- * raising it makes separate stretches fuse into a single connected thing — the
- * network's actual shape, rather than the shape of any one road.
- *
- * No line is drawn across the gap, because there is no road here to draw. The
- * membership is carried by colour: runs in one colony are shaded by how large
- * that colony is.
- */
-export function assignColonies(runs: Run[], radiusMiles: number): void {
-  const radiusM = radiusMiles * 1609.344;
-  const parent = runs.map((_, i) => i);
-  const find = (a: number): number => (parent[a] === a ? a : (parent[a] = find(parent[a])));
-  const union = (a: number, b: number) => {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) parent[ra] = rb;
-  };
-
-  // Bucket every reader location so the pairwise test only looks at neighbours.
-  // Without it this is 100k+ haversines on every drag of the slider.
-  const cell = Math.max(radiusM, 1);
-  const mPerLng = 111_320 * Math.cos((46 * Math.PI) / 180);
-  const grid = new Map<string, Array<{ run: number; point: [number, number] }>>();
-  runs.forEach((run, i) => {
-    for (const point of run.points) {
-      const gx = Math.floor((point[0] * mPerLng) / cell);
-      const gy = Math.floor((point[1] * 110_574) / cell);
-      const key = `${gx}|${gy}`;
-      if (!grid.has(key)) grid.set(key, []);
-      grid.get(key)!.push({ run: i, point });
-    }
-  });
-
-  for (const [key, entries] of grid) {
-    const [gx, gy] = key.split('|').map(Number);
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (const other of grid.get(`${gx + dx}|${gy + dy}`) ?? []) {
-          for (const entry of entries) {
-            if (entry.run === other.run) continue;
-            if (haversineMeters(entry.point, other.point) <= radiusM) union(entry.run, other.run);
-          }
-        }
-      }
-    }
-  }
-
-  const size = new Map<number, number>();
-  runs.forEach((run, i) => {
-    const root = find(i);
-    size.set(root, (size.get(root) ?? 0) + run.sites);
-  });
-  runs.forEach((run, i) => {
-    run.colony = find(i);
-    run.colonySites = size.get(run.colony) ?? run.sites;
-  });
-}
-
-/**
- * The branch readers close enough to a drawn run to be shown.
- *
- * A branch is a reader on a road that holds no run of its own. It appears when
- * some run's reader location is within the radius of it — so widening the
- * control makes side streets sprout off the trunks, one at a time, in the
- * direction cameras actually stand. Narrow it and they retract.
- *
- * The rule is deliberately one-directional: a branch attaches to a run, never
- * to another branch. Letting branches chain would grow arbitrarily long
- * filaments through streets where nothing links them but the radius, which
- * would draw a network shape the cameras do not support.
- */
-export function branchesNear(
-  branches: Run[],
-  runs: Run[],
-  radiusMiles: number,
-): Run[] {
-  if (!runs.length || !branches.length) return [];
-  const radiusM = radiusMiles * 1609.344;
-  const cell = Math.max(radiusM, 1);
-  const mPerLng = 111_320 * Math.cos((46 * Math.PI) / 180);
-
-  const grid = new Map<string, Array<[number, number]>>();
-  for (const run of runs) {
-    for (const point of run.points) {
-      const gx = Math.floor((point[0] * mPerLng) / cell);
-      const gy = Math.floor((point[1] * 110_574) / cell);
-      const key = `${gx}|${gy}`;
-      if (!grid.has(key)) grid.set(key, []);
-      grid.get(key)!.push(point);
-    }
-  }
-
-  return branches.filter((branch) => {
-    const point = branch.points[0];
-    if (!point) return false;
-    const gx = Math.floor((point[0] * mPerLng) / cell);
-    const gy = Math.floor((point[1] * 110_574) / cell);
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (const candidate of grid.get(`${gx + dx}|${gy + dy}`) ?? []) {
-          if (haversineMeters(point, candidate) <= radiusM) return true;
-        }
-      }
-    }
-    return false;
-  });
-}
-
-/** A branch feature as a one-site run, so colonies can be computed over both. */
-export function branchRun(properties: FeatureProperties, config: LinkRadiusConfig, sourceIndex: number): Run | null {
+/** A lone reader as a one-site element, so bodies can form over both kinds. */
+export function branchRun(
+  properties: FeatureProperties,
+  config: LinkRadiusConfig,
+  sourceIndex: number,
+): Run | null {
   const attrs = properties.attributes as Record<string, unknown>;
   const lng = Number(attrs[config.lngsKey]);
   const lat = Number(attrs[config.latsKey]);
@@ -267,6 +167,83 @@ export function branchRun(properties: FeatureProperties, config: LinkRadiusConfi
   };
 }
 
-/** Straight-line miles between two points, for run statistics. */
-export const milesBetween = (a: [number, number], b: [number, number]) =>
-  metersToMiles(haversineMeters(a, b));
+/**
+ * Group everything into bodies, and keep the bodies worth drawing.
+ *
+ * A body is a set of elements linked by reader locations within the radius of
+ * one another — runs and lone readers alike, across any number of streets. Its
+ * size is the reader locations it holds, and that is what has to clear the bar,
+ * not any single road. A dense downtown is a body whether or not its readers
+ * happen to share a street name.
+ *
+ * Nothing is drawn across the ground between the elements of one body, because
+ * there is frequently no road there to draw. Membership is carried by colour:
+ * everything in a body is shaded by how large that body is.
+ *
+ * Dropping the bodies under the threshold is the whole of the filtering. A lone
+ * reader in open country is not a network and is not drawn here; it is still on
+ * the camera layer, where it is a camera and claims nothing more than that.
+ */
+export function formBodies(elements: Run[], radiusMiles: number, minBodySites: number): Run[] {
+  if (!elements.length) return [];
+
+  const radiusM = radiusMiles * 1609.344;
+  const parent = elements.map((_, i) => i);
+  const find = (a: number): number => (parent[a] === a ? a : (parent[a] = find(parent[a])));
+  const union = (a: number, b: number) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+
+  // Bucket every reader location so the pairwise test only looks at neighbours.
+  // Without it this is millions of haversines on every drag of the slider.
+  const cell = Math.max(radiusM, 1);
+  const mPerLng = 111_320 * Math.cos((46 * Math.PI) / 180);
+  const grid = new Map<string, Array<{ element: number; point: [number, number] }>>();
+  elements.forEach((element, i) => {
+    for (const point of element.points) {
+      const gx = Math.floor((point[0] * mPerLng) / cell);
+      const gy = Math.floor((point[1] * 110_574) / cell);
+      const key = `${gx}|${gy}`;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key)!.push({ element: i, point });
+    }
+  });
+
+  for (const [key, entries] of grid) {
+    const [gx, gy] = key.split('|').map(Number);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const neighbours = grid.get(`${gx + dx}|${gy + dy}`);
+        if (!neighbours) continue;
+        for (const other of neighbours) {
+          for (const entry of entries) {
+            if (entry.element === other.element) continue;
+            if (find(entry.element) === find(other.element)) continue;
+            if (haversineMeters(entry.point, other.point) <= radiusM) {
+              union(entry.element, other.element);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const size = new Map<number, number>();
+  elements.forEach((element, i) => {
+    const root = find(i);
+    size.set(root, (size.get(root) ?? 0) + element.sites);
+  });
+
+  const kept: Run[] = [];
+  elements.forEach((element, i) => {
+    const root = find(i);
+    const total = size.get(root) ?? element.sites;
+    if (total < minBodySites) return;
+    element.colony = root;
+    element.colonySites = total;
+    kept.push(element);
+  });
+  return kept;
+}
