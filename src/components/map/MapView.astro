@@ -1,7 +1,7 @@
 ---
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
-import { useTranslations, pick } from '~/lib/i18n';
+import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { densityGradientCss } from '~/lib/densityRamp';
 
 interface Props {
@@ -80,6 +80,14 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     label: pick(f.label, locale),
     format: f.format,
   })),
+  action: d.action
+    ? {
+        requestType: d.action.requestType,
+        label: pick(d.action.label, locale),
+        bodyKey: d.action.bodyKey,
+        fallbackBody: d.action.fallbackBody,
+      }
+    : undefined,
   source: collection?.metadata.source ?? d.provenance.source,
   sourceUrl: collection?.metadata.sourceUrl ?? d.provenance.sourceUrl,
   license: collection?.metadata.license ?? d.provenance.license,
@@ -106,6 +114,9 @@ const strings = {
   densityScale: t('densityScale'),
   densityNodes: t('densityNodes'),
   categoryFromZoom: t('categoryFromZoom'),
+  actionAddressed: t('actionAddressed'),
+  actionUnknownOperator: t('actionUnknownOperator'),
+  actionPickBody: t('actionPickBody'),
 };
 ---
 
@@ -349,15 +360,29 @@ const strings = {
 
 <script is:inline type="application/json" id="layer-config" set:html={JSON.stringify(clientLayers)} />
 <script is:inline type="application/json" id="ui-strings" set:html={JSON.stringify(strings)} />
+<script is:inline type="application/json" id="act-path" set:html={JSON.stringify(localePath(locale, '/act'))} />
 
 <script>
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { compassLabel } from '~/lib/geo.mjs';
+  import { displayName } from '~/lib/authority.mjs';
+
+  type Jurisdiction = {
+    geoid: string;
+    name: string;
+    kind: 'city' | 'township' | 'unorganized';
+    governed: boolean;
+    county: string;
+    countyFips: string;
+    lat: number;
+    lng: number;
+  };
 
   const layers = JSON.parse(document.getElementById('layer-config')!.textContent!) as (ClientLayer & {
     featureCount: number;
   })[];
   const S = JSON.parse(document.getElementById('ui-strings')!.textContent!) as Record<string, string>;
+  const ACT_PATH = JSON.parse(document.getElementById('act-path')!.textContent!) as string;
 
   const mapEl = document.getElementById('map')!;
   const detailEl = document.getElementById('detail-panel')!;
@@ -569,6 +594,63 @@ const strings = {
 
     const body = el('div', 'space-y-4 p-3');
 
+    /*
+      The way out of the panel.
+
+      Sits above the fields rather than under the provenance at the bottom,
+      because a reader who has decided to act has already decided — making them
+      scroll past the licence to find the button is how a dead end gets
+      rebuilt. The panel is narrow and scrolls; anything below the fold on a
+      phone may as well not exist.
+
+      What it carries is the whole point: the request template for this kind of
+      record, the body to address, and where the record is, so the Take Action
+      page can name the offices for that exact ground instead of starting the
+      reader at a blank form.
+    */
+    if (layer.action) {
+      const named =
+        layer.action.bodyKey != null ? String(attrs[layer.action.bodyKey] ?? '').trim() : '';
+      let addressee = named;
+      if (!addressee) {
+        if (layer.action.fallbackBody === 'name') addressee = p.name;
+        else if (layer.action.fallbackBody === 'county' && p.county) addressee = p.county;
+        else if (layer.action.fallbackBody === 'countySheriff' && p.county) {
+          addressee = `${p.county} Sheriff's Office`;
+        }
+      }
+
+      const params = new URLSearchParams({ type: layer.action.requestType });
+      if (addressee) params.set('body', addressee);
+      if (feature.geometry.type === 'Point') {
+        const [lng, lat] = feature.geometry.coordinates as [number, number];
+        params.set('at', `${lng.toFixed(5)},${lat.toFixed(5)}`);
+      }
+
+      const cta = el(
+        'a',
+        'block rounded-md bg-accent px-3 py-2 text-center text-sm font-medium text-ink-950 hover:brightness-110',
+        layer.action.label,
+      );
+      cta.setAttribute('href', `${ACT_PATH}?${params}`);
+      body.append(cta);
+
+      // Say who the letter will be addressed to before the reader commits to
+      // a page change — and, where the operator is blank, say that instead of
+      // quietly substituting the sheriff and letting them think we knew.
+      body.append(
+        el(
+          'p',
+          '-mt-2 text-[11px] leading-relaxed text-ink-400',
+          named
+            ? fill(S.actionAddressed, { body: addressee })
+            : addressee
+              ? fill(S.actionUnknownOperator, { body: addressee })
+              : S.actionPickBody,
+        ),
+      );
+    }
+
     // Layer-specific fields.
     const rows = layer.detailFields
       .map((f) => ({ label: f.label, value: formatValue(attrs[f.key], f.format), format: f.format }))
@@ -731,6 +813,49 @@ const strings = {
   const searchInput = document.getElementById('map-search') as HTMLInputElement;
   const searchResults = document.getElementById('search-results')!;
 
+  /*
+    Places, above records.
+
+    The box has always said "Search a city, county, or agency" and has only
+    ever searched records — so typing the name of the township you live in
+    returned "no records match", which reads as "there is nothing here" rather
+    than "this box does not do that". Now the governments come first, because
+    somebody typing a place name is trying to get to a place, and a camera that
+    merely happens to be tagged with that county is not what they meant.
+  */
+  let jurisdictionIndex: Jurisdiction[] = [];
+  fetch('/data/reference/mn-jurisdictions.json')
+    .then((r) => r.json())
+    .then((doc) => {
+      jurisdictionIndex = doc.jurisdictions ?? [];
+    })
+    .catch(() => {
+      // Search still works over records; it just cannot find a township.
+      jurisdictionIndex = [];
+    });
+
+  /**
+   * Boundaries, fetched the first time somebody picks a place and not before.
+   * 1.6 MB is a lot to spend on a map that may only ever be panned.
+   */
+  let shapes: Promise<{ features: any[] }> | null = null;
+  function loadShapes() {
+    shapes ??= fetch('/data/reference/mn-jurisdictions.geojson')
+      .then((r) => (r.ok ? r.json() : { features: [] }))
+      .catch(() => ({ features: [] }));
+    return shapes;
+  }
+
+  async function focusJurisdiction(j: Jurisdiction) {
+    // Move immediately on the index's interior point, then outline the
+    // boundary when it arrives. Waiting for 1.6 MB before anything happens
+    // makes a click feel broken on a slow connection.
+    controller.flyTo([j.lng, j.lat], 11);
+    const doc = await loadShapes();
+    const match = doc.features.find((f: any) => f.properties?.geoid === j.geoid);
+    if (match) controller.showJurisdiction(match);
+  }
+
   function runSearch(query: string) {
     const q = query.trim().toLowerCase();
     searchResults.textContent = '';
@@ -738,6 +863,15 @@ const strings = {
       searchResults.classList.add('hidden');
       return;
     }
+
+    const placeHits = jurisdictionIndex
+      .filter((j) => j.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return as - bs || a.name.localeCompare(b.name);
+      })
+      .slice(0, 8);
 
     const hits: { layer: ClientLayer; feature: LoadedFeature }[] = [];
     for (const layer of layers) {
@@ -749,10 +883,34 @@ const strings = {
       }
     }
 
-    if (!hits.length) {
+    if (!placeHits.length && !hits.length) {
       searchResults.append(el('li', 'px-2.5 py-2 text-xs text-ink-400', S.noResults));
       searchResults.classList.remove('hidden');
       return;
+    }
+
+    for (const j of placeHits) {
+      const li = el('li');
+      li.setAttribute('role', 'option');
+      const button = el(
+        'button',
+        'flex w-full items-start gap-2 px-2.5 py-1.5 text-left hover:bg-ink-800',
+      );
+      button.setAttribute('type', 'button');
+      // An outline rather than a filled dot: a place is a frame, not a record.
+      const ring = el('span', 'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full border border-ink-300');
+      const text = el('span', 'min-w-0');
+      text.append(
+        el('span', 'block truncate text-xs text-ink-100', displayName(j.name)),
+        el('span', 'block truncate text-[11px] text-ink-400', j.county),
+      );
+      button.append(ring, text);
+      button.addEventListener('click', () => {
+        void focusJurisdiction(j);
+        searchResults.classList.add('hidden');
+      });
+      li.append(button);
+      searchResults.append(li);
     }
 
     for (const { layer, feature } of hits) {

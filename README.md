@@ -73,6 +73,15 @@ one of those questions about a single place at once, filters and search, a
 statute, per-layer **downloads**, a **sources & methodology** page, and
 English/Spanish throughout.
 
+And the step in between: **who has to answer you**. Pick any of Minnesota's
+2,757 cities, townships and unorganized territories — not just the 914
+incorporated places — and the site names the offices that must answer a data
+request for that ground, each with the statute that says so, and addresses the
+letter to the one you choose. It also says plainly when the cameras near you
+belong to a government you did not elect, which outside the bigger cities is
+the ordinary case: a township board has an agenda and an election behind it,
+and the readers inside its borders were bought by a county sheriff.
+
 **The payoff:** three Minnesota counties have *both* a 287(g) agreement *and* a
 jail holding people under ICE contract. Sherburne has the full stack — mapped
 cameras, a Jail Enforcement agreement, and an ICE-contract jail. The site
