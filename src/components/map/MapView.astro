@@ -813,15 +813,23 @@ const strings = {
    * "Filters" is whatever is currently hiding records, not just the value
    * checkboxes: a reach slider left at half a mile and a half-typed search
    * still cut the map down, so a clear that ignores them leaves the reader
-   * looking at a subset while every control claims otherwise. Layer toggles
-   * are not filters — they are what the reader came to look at — so they stay
-   * exactly as they are.
+   * looking at a subset while every control claims otherwise. The layer
+   * toggles go too: a control panel where every box is empty and the map is
+   * still drawing something is a panel that is lying about its own state, so
+   * clearing empties the map back to the basemap and leaves the reader to
+   * switch on what they came for.
    */
   document.getElementById('clear-filters')?.addEventListener('click', () => {
     document
       .querySelectorAll<HTMLInputElement>('[data-filter-key]')
       .forEach((c) => (c.checked = false));
     controller.clearFilters();
+
+    document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
+      input.checked = false;
+      const layer = layerById.get(input.dataset.layerToggle!);
+      if (layer) controller.setLayerVisible(layer, false);
+    });
 
     document.querySelectorAll<HTMLInputElement>('[data-radius-layer]').forEach((input) => {
       const miles = layerById.get(input.dataset.radiusLayer!)?.linkRadius?.defaultMiles;
@@ -994,12 +1002,13 @@ const strings = {
 
   /* ------------------------------ Start-up ------------------------------ */
 
-  // Default on: the layers that carry the roadmap's core claim, so the first
-  // paint already shows enforcement over surveillance rather than an empty
-  // basemap. The camera-to-camera roads join them because the camera layer
-  // alone answers "is there one near me" and leaves the shape of the network —
-  // the part no single dot can show — switched off behind a checkbox.
-  const DEFAULT_ON = ['agency_287g', 'alpr', 'alpr_corridor'];
+  // Default on: the surveillance layer and the roads that join one camera to
+  // the next, so the first paint already shows the network rather than an
+  // empty basemap. The cameras alone answer "is there one near me" and leave
+  // the shape of the network — the part no single dot can show — switched off
+  // behind a checkbox, so the corridors come on with them. Everything else is
+  // the reader's to add.
+  const DEFAULT_ON = ['alpr', 'alpr_corridor'];
   status(S.loading, 0);
   controller.map.once('load', () => {
     for (const id of DEFAULT_ON) {
