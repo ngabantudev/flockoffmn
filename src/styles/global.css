@@ -1,6 +1,22 @@
 @import 'tailwindcss';
 
 /*
+ * MapLibre's stylesheet, pulled into Tailwind's `base` layer on purpose.
+ *
+ * It sets `.maplibregl-map { position: relative }`, and MapLibre puts that
+ * class on our own map container — which Tailwind has already positioned with
+ * `absolute inset-0`. The two rules have identical specificity, and an
+ * unlayered rule beats a layered one no matter what order it loads in, so
+ * imported plainly it always wins: the container flips to `position:
+ * relative`, `inset-0` stops sizing anything, the height collapses to zero and
+ * `overflow: hidden` clips the canvas. The map goes blank with nothing in the
+ * console. Importing into `base` puts it below `utilities`, where the layout
+ * utilities on our own elements outrank it. The overrides at the foot of this
+ * file are unlayered and so still win.
+ */
+@import 'maplibre-gl/dist/maplibre-gl.css' layer(base);
+
+/*
  * Design intent: this is a civic record, not a dashboard. Dark, quiet, high
  * contrast, with colour reserved for the data itself so that layer identity is
  * the only thing competing for attention on the map.
