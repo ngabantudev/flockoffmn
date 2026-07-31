@@ -37,8 +37,8 @@ export const en: Record<string, string> = {
   noResults: 'No records match the current filters.',
 
   // Search / near me
-  searchPlaceholder: 'Search a city, county, or agency',
-  searchLabel: 'Search places, counties and agencies',
+  searchPlaceholder: 'Search a city, township, county, or agency',
+  searchLabel: 'Search cities, townships, counties and agencies',
   nearMeTitle: 'What is around this place',
   nearMeIntro:
     'Pick a place in Minnesota to see every layer around it in one view. Nothing you enter is sent anywhere or stored.',
