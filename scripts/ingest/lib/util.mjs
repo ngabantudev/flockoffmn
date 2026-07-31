@@ -50,6 +50,51 @@ export async function fetchWithRetry(url, { retries = 3, timeoutMs = 60_000, ...
 }
 
 /* ------------------------------------------------------------------ *
+ * Overpass
+ *
+ * Public Overpass instances are volunteer-run and routinely 504 under load, so
+ * every query walks a list of mirrors rather than failing on the first one.
+ * ------------------------------------------------------------------ */
+
+export const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.osm.jp/api/interpreter',
+];
+
+/** POST an Overpass QL query, trying each mirror in turn. Returns parsed JSON. */
+export async function queryOverpass(scope, query, { retries = 1, timeoutMs = 190_000 } = {}) {
+  let lastError;
+  for (const mirror of OVERPASS_MIRRORS) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        log(scope, `querying ${new URL(mirror).host} (attempt ${attempt + 1}/${retries + 1})`);
+        const res = await fetch(mirror, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': USER_AGENT,
+          },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        clearTimeout(timer);
+        lastError = err;
+        log(scope, `  ${new URL(mirror).host} failed: ${err.message}`);
+      }
+    }
+  }
+  throw new Error(`all Overpass mirrors failed — last error: ${lastError?.message}`);
+}
+
+/* ------------------------------------------------------------------ *
  * Minimal ZIP reader
  *
  * Census and ICE both ship data as .zip/.xlsx. Rather than take on a

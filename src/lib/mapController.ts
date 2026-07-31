@@ -1,7 +1,7 @@
 import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
-import { representativePoint } from './geo.mjs';
+import { bboxOf, representativePoint } from './geo.mjs';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -13,10 +13,12 @@ export interface ClientLayer {
   whatThisMeans: string;
   limitations: string[];
   color: string;
-  geometry: 'point' | 'polygon';
+  geometry: 'point' | 'polygon' | 'line';
   cluster: boolean;
   /** Attribute holding a compass bearing, if the layer records one. */
   bearingKey?: string;
+  /** Offsets of a record's parts along its own length, if it has a length. */
+  positions?: { offsetsKey: string; countsKey: string; label: string };
   dataPath: string;
   csvPath: string | null;
   filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];
@@ -297,6 +299,25 @@ export class MapController {
 
   private coneSourceId = (layerId: string) => `src-${layerId}-cones`;
 
+  /**
+   * The lowest of our own dot layers currently on the map, if any.
+   *
+   * Layers are added as a reader switches them on, so stacking follows the
+   * order the checkboxes were ticked in. A corridor turned on after the
+   * cameras would otherwise draw over the dots that stand along it — and its
+   * click target, deliberately 20px wide so a line can be tapped, would
+   * swallow every click meant for a camera. Areas and lines therefore insert
+   * beneath the first dot layer already present, and dots stay on top however
+   * a reader gets there.
+   */
+  private beneathDots(): string | undefined {
+    const marks = ['-points', '-clusters', '-cluster-count', '-cones'];
+    for (const styleLayer of this.map.getStyle().layers ?? []) {
+      if (marks.some((suffix) => styleLayer.id.endsWith(suffix))) return styleLayer.id;
+    }
+    return undefined;
+  }
+
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
   async loadLayer(layer: ClientLayer): Promise<void> {
     if (this.data.has(layer.id) || this.loading.has(layer.id)) return;
@@ -330,28 +351,85 @@ export class MapController {
     });
 
     if (layer.geometry === 'polygon') {
-      this.map.addLayer({
-        id: `${layer.id}-fill`,
-        type: 'fill',
-        source: src,
-        paint: {
-          // Use the grade colour HOLC printed on the original sheet where we
-          // have it, so the map reads like the historical document it is.
-          'fill-color': ['coalesce', ['get', 'holcFill'], layer.color],
-          'fill-opacity': 0.42,
+      const under = this.beneathDots();
+      this.map.addLayer(
+        {
+          id: `${layer.id}-fill`,
+          type: 'fill',
+          source: src,
+          paint: {
+            // Use the grade colour HOLC printed on the original sheet where we
+            // have it, so the map reads like the historical document it is.
+            'fill-color': ['coalesce', ['get', 'holcFill'], layer.color],
+            'fill-opacity': 0.42,
+          },
         },
-      });
-      this.map.addLayer({
-        id: `${layer.id}-outline`,
-        type: 'line',
-        source: src,
-        paint: {
-          'line-color': ['coalesce', ['get', 'holcFill'], layer.color],
-          'line-width': 1.1,
-          'line-opacity': 0.85,
+        under,
+      );
+      this.map.addLayer(
+        {
+          id: `${layer.id}-outline`,
+          type: 'line',
+          source: src,
+          paint: {
+            'line-color': ['coalesce', ['get', 'holcFill'], layer.color],
+            'line-width': 1.1,
+            'line-opacity': 0.85,
+          },
         },
-      });
+        under,
+      );
       this.bindInteractions(layer, `${layer.id}-fill`);
+      return;
+    }
+
+    if (layer.geometry === 'line') {
+      const under = this.beneathDots();
+      // Three layers for one line. The casing is what makes a thin coloured
+      // line legible over a dark basemap without drawing it fat enough to
+      // imply a width the data does not have — a corridor is a stretch of
+      // road, not a band of ground.
+      this.map.addLayer(
+        {
+          id: `${layer.id}-line-casing`,
+          type: 'line',
+          source: src,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': '#0a0c10',
+            'line-opacity': 0.85,
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 11, 6, 16, 11],
+          },
+        },
+        under,
+      );
+      this.map.addLayer(
+        {
+          id: `${layer.id}-line`,
+          type: 'line',
+          source: src,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': layer.color,
+            'line-opacity': 0.9,
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3, 16, 6],
+          },
+        },
+        under,
+      );
+      // A line is a hard thing to hit with a finger. This one is invisible and
+      // exists only to widen the target; a zero-opacity layer is still
+      // queryable, so click and hover behave as they do on every other layer.
+      this.map.addLayer(
+        {
+          id: `${layer.id}-line-hit`,
+          type: 'line',
+          source: src,
+          paint: { 'line-color': layer.color, 'line-opacity': 0, 'line-width': 20 },
+        },
+        under,
+      );
+      this.bindInteractions(layer, `${layer.id}-line-hit`);
       return;
     }
 
@@ -475,6 +553,9 @@ export class MapController {
     for (const suffix of [
       '-fill',
       '-outline',
+      '-line-casing',
+      '-line',
+      '-line-hit',
       '-points',
       '-cones',
       '-clusters',
@@ -550,12 +631,27 @@ export class MapController {
     const feature = this.data.get(layerId)?.find((f) => f.properties.id === featureId);
     const layer = this.layers.find((l) => l.id === layerId);
     if (!feature || !layer) return;
-    const point = representativePoint(feature.geometry) as [number, number];
-    this.map.easeTo({
-      center: point,
-      zoom: Math.max(this.map.getZoom(), feature.geometry.type === 'Point' ? 13 : 11),
-      duration: REDUCED_MOTION ? 0 : 500,
-    });
+    const duration = REDUCED_MOTION ? 0 : 500;
+    if (feature.geometry.type === 'Point') {
+      this.map.easeTo({
+        center: representativePoint(feature.geometry) as [number, number],
+        zoom: Math.max(this.map.getZoom(), 13),
+        duration,
+      });
+    } else {
+      // A corridor can be eleven miles long. Centring it at a fixed zoom shows
+      // a piece of it and hides the length, which is the one thing the record
+      // exists to convey, so fit the whole extent instead. Polygons get the
+      // same treatment for the same reason.
+      const [minLng, minLat, maxLng, maxLat] = bboxOf(feature.geometry);
+      this.map.fitBounds(
+        [
+          [minLng, minLat],
+          [maxLng, maxLat],
+        ],
+        { padding: 64, maxZoom: 14, duration },
+      );
+    }
     this.events.onSelect?.(feature, layer);
   }
 

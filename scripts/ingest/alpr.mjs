@@ -4,8 +4,7 @@
  *
  * Pulls ALPR camera nodes tagged in OpenStreetMap by DeFlock volunteers,
  * scoped to Minnesota via its OSM administrative boundary. ODbL data, no API
- * key. Public Overpass instances are volunteer-run and routinely 504 under
- * load, so this walks a list of mirrors rather than failing on the first one.
+ * key.
  *
  * We deliberately do not filter on `manufacturer=Flock Safety`: most
  * contributors omit the tag, and the surveillance question is about the
@@ -16,18 +15,8 @@
  * layer is complete or current — see the layer's limitations in the registry.
  */
 
-import { writeLayer, log, loadCounties, slugId } from './lib/util.mjs';
+import { writeLayer, log, loadCounties, slugId, queryOverpass } from './lib/util.mjs';
 import { findContaining } from '../../src/lib/geo.mjs';
-
-const OVERPASS_MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.osm.jp/api/interpreter',
-];
-
-const USER_AGENT =
-  'get-flocked-ingest/0.1 (open-source civic transparency project; contact via repository issues)';
 
 const STATE_ISO = process.env.STATE_ISO ?? 'US-MN';
 const STATE_USPS = process.env.STATE_USPS ?? 'MN';
@@ -42,43 +31,13 @@ area["ISO3166-2"="${STATE_ISO}"]["admin_level"="4"]->.scope;
 out body;
 `.trim();
 
-async function queryOverpass(query, { retries = 1, timeoutMs = 190_000 } = {}) {
-  let lastError;
-  for (const mirror of OVERPASS_MIRRORS) {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        log('alpr', `querying ${new URL(mirror).host} (attempt ${attempt + 1}/${retries + 1})`);
-        const res = await fetch(mirror, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': USER_AGENT,
-          },
-          body: `data=${encodeURIComponent(query)}`,
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
-      } catch (err) {
-        clearTimeout(timer);
-        lastError = err;
-        log('alpr', `  ${new URL(mirror).host} failed: ${err.message}`);
-      }
-    }
-  }
-  throw new Error(`all Overpass mirrors failed — last error: ${lastError?.message}`);
-}
-
 function cleanTag(v) {
   const s = (v ?? '').toString().trim();
   return s === '' ? null : s;
 }
 
 async function main() {
-  const data = await queryOverpass(QUERY);
+  const data = await queryOverpass('alpr', QUERY);
   const nodes = (data.elements ?? []).filter((e) => e.type === 'node' && e.lat != null);
   log('alpr', `Overpass returned ${nodes.length} camera nodes`);
   if (!nodes.length) throw new Error('Overpass returned no cameras; refusing to overwrite the layer');
