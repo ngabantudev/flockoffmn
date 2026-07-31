@@ -25,6 +25,13 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   geometry: d.geometry,
   cluster: d.cluster,
   bearingKey: d.bearingKey,
+  positions: d.positions
+    ? {
+        offsetsKey: d.positions.offsetsKey,
+        countsKey: d.positions.countsKey,
+        label: pick(d.positions.label, locale),
+      }
+    : undefined,
   dataPath: d.dataPath,
   csvPath: d.csvPath,
   filters: d.filters
@@ -62,6 +69,8 @@ const strings = {
   confidenceReported: t('confidenceReported'),
   confidenceProbabilistic: t('confidenceProbabilistic'),
   ofTotal: t('ofTotal'),
+  positionsScale: t('positionsScale'),
+  positionsSummary: t('positionsSummary'),
 };
 ---
 
@@ -287,6 +296,108 @@ const strings = {
     return String(value);
   }
 
+  /** Substitute {placeholders} in a dictionary string. */
+  const fill = (template: string, values: Record<string, string | number>) =>
+    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag: string, attrs: Record<string, string | number>) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+    return node;
+  }
+
+  /**
+   * Where a record's parts sit along its own length, drawn to scale.
+   *
+   * The total is the number people quote; the spacing is the number that
+   * matters, and it is the one a list of attributes cannot show. Nineteen
+   * readers bunched at a single interchange and nineteen spread evenly over
+   * eleven miles are different facts about an ordinary journey, and they print
+   * identically as "19".
+   *
+   * The drawing is never the only copy of the information. The same offsets go
+   * into the label a screen reader announces, so nobody has to be able to see
+   * the diagram to get the spacing out of it.
+   */
+  function positionsBlock(layer: ClientLayer, attrs: Record<string, unknown>) {
+    if (!layer.positions) return null;
+
+    const offsets = String(attrs[layer.positions.offsetsKey] ?? '')
+      .split(';')
+      .map(Number)
+      .filter(Number.isFinite);
+    const counts = String(attrs[layer.positions.countsKey] ?? '')
+      .split(';')
+      .map(Number);
+    const total = offsets[offsets.length - 1];
+    // Two marks and a real length, or there is nothing to draw to scale.
+    if (offsets.length < 2 || !(total > 0)) return null;
+
+    const W = 300;
+    const H = 26;
+    const PAD = 8;
+    const summary = fill(S.positionsSummary, {
+      count: offsets.length,
+      total: total.toFixed(1),
+      offsets: offsets.map((o) => o.toFixed(1)).join(', '),
+    });
+
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${W} ${H}`,
+      width: '100%',
+      height: H,
+      role: 'img',
+      'aria-label': `${layer.positions.label}. ${summary}`,
+    });
+    svg.append(
+      svgEl('line', {
+        x1: PAD,
+        y1: H / 2,
+        x2: W - PAD,
+        y2: H / 2,
+        stroke: layer.color,
+        'stroke-opacity': 0.35,
+        'stroke-width': 2,
+        'stroke-linecap': 'round',
+      }),
+    );
+    offsets.forEach((mi, i) => {
+      const n = Number.isFinite(counts[i]) && counts[i] > 0 ? counts[i] : 1;
+      svg.append(
+        svgEl('circle', {
+          cx: PAD + (mi / total) * (W - PAD * 2),
+          cy: H / 2,
+          // Area would be the honest encoding for a quantity, but these counts
+          // run 1–6 and an area scale makes them indistinguishable at 26px
+          // tall. The caption says a bigger dot is more, and the exact figures
+          // are in the fields above, so the diagram carries the shape only.
+          r: 2.2 + Math.min(n, 8) * 0.45,
+          fill: layer.color,
+          'fill-opacity': 0.9,
+          stroke: '#0a0c10',
+          'stroke-width': 1,
+        }),
+      );
+    });
+
+    const wrap = el('div');
+    wrap.append(
+      el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', layer.positions.label),
+    );
+    const frame = el('div', 'rounded-md border border-ink-800 bg-ink-850 px-2 py-1.5');
+    frame.append(svg);
+    wrap.append(frame);
+    wrap.append(
+      el(
+        'p',
+        'mt-1 text-[11px] leading-snug text-ink-400',
+        fill(S.positionsScale, { total: total.toFixed(1) }),
+      ),
+    );
+    return wrap;
+  }
+
   function renderDetail(feature: LoadedFeature | null, layer: ClientLayer) {
     detailEl.textContent = '';
     if (!feature) {
@@ -343,6 +454,10 @@ const strings = {
       }
       body.append(dl);
     }
+
+    // Spacing, where the record has a length to space things along.
+    const positions = positionsBlock(layer, attrs);
+    if (positions) body.append(positions);
 
     // Plain-language explanation (spec F5).
     const means = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');

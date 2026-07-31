@@ -56,6 +56,7 @@ This is a public good, not a product.
 |---|---:|---|
 | **287(g) agency agreements** | 10 | ICE's own published list (2,179 nationally) |
 | **ALPR / Flock cameras** | ~1,400 | OpenStreetMap, mapped by volunteers |
+| **ALPR corridors** | 16 | Derived: runs of readers along one road, on OSM road geometry |
 | **Redlining zones (HOLC)** | 168 | Mapping Inequality, Univ. of Richmond |
 | **ICE-contract detention facilities** | 5 | ICE Over-72-Hour Facility List |
 | **Data centres** | 20 | FracTracker Alliance FOIA records |

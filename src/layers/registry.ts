@@ -181,9 +181,120 @@ export const LAYERS: LayerDefinition[] = [
   },
 
   {
+    id: 'alpr_corridor',
+    slug: 'alpr-corridors',
+    order: 3,
+    label: {
+      en: 'ALPR corridors',
+      es: 'Corredores de ALPR',
+    },
+    summary: {
+      en: 'Stretches of road where plate readers stand in a line one after another, not clustered at a single junction.',
+      es: 'Tramos de carretera donde los lectores de matrículas se alinean uno tras otro, no agrupados en un solo cruce.',
+    },
+    whatThisMeans: {
+      en: 'A map of dots answers a narrow question: is there a camera here. This layer answers a different one: how many times does one ordinary trip get logged. A corridor is a stretch of a single named or numbered road with at least four reader locations strung along it — the school run, the commute, the drive to a clinic, read again and again by the same network, and the people read are overwhelmingly not suspects. The line drawn is real OpenStreetMap road geometry clipped to the run of readers; no connector is ever invented between two dots, because a drawn line would assert a relationship no source records. The operator count is the other half of the point. Almost none of this was planned as a corridor: a city police department, the neighbouring city’s, a county sheriff and a hardware store each buy cameras for their own reasons, and the continuous run is what they add up to. No one signed off on the whole of it, and no record of it exists anywhere except a map that goes looking for it.',
+      es: 'Un mapa de puntos responde a una pregunta estrecha: ¿hay una cámara aquí? Esta capa responde a otra: ¿cuántas veces queda registrado un trayecto cotidiano? Un corredor es un tramo de una sola carretera con nombre o número que tiene al menos cuatro ubicaciones de lectores a lo largo: el trayecto al colegio, el viaje al trabajo, la ida a la clínica, leídos una y otra vez por la misma red, y las personas leídas en su inmensa mayoría no son sospechosas. La línea dibujada es geometría vial real de OpenStreetMap recortada al tramo que ocupan los lectores; nunca se inventa un conector entre dos puntos, porque una línea trazada afirmaría una relación que ninguna fuente registra. El recuento de operadores es la otra mitad del asunto. Casi nada de esto se planificó como corredor: la policía de una ciudad, la de la ciudad vecina, el alguacil del condado y una ferretería compran cámaras cada uno por sus propios motivos, y el tramo continuo es la suma de todos ellos. Nadie aprobó el conjunto, y no existe constancia de él en ningún sitio salvo en un mapa que lo busque.',
+    },
+    limitations: [
+      {
+        en: 'Derived from the crowd-sourced camera layer, so every gap there compounds here. A road with no corridor drawn on it may simply be a road nobody has finished mapping.',
+        es: 'Derivada de la capa de cámaras de origen comunitario, así que cada vacío de aquella se agrava aquí. Una carretera sin corredor dibujado puede ser simplemente una carretera que nadie ha terminado de mapear.',
+      },
+      {
+        en: 'The thresholds are a judgement, not a finding: at least four reader locations on one named or numbered road, no more than three miles apart, spanning at least a mile. Readers clustered at a single junction are real, and are not a corridor.',
+        es: 'Los umbrales son un criterio, no un hallazgo: al menos cuatro ubicaciones de lectores en una carretera con nombre o número, separadas por no más de tres millas y abarcando al menos una milla. Los lectores agrupados en un solo cruce son reales, y no son un corredor.',
+      },
+      {
+        en: 'Gaps in the drawn line are stretches we hold no road geometry for. They are not stretches known to be unwatched.',
+        es: 'Los huecos en la línea dibujada son tramos de los que no tenemos geometría vial. No son tramos que se sepa que no están vigilados.',
+      },
+      {
+        en: 'Distances are measured in straight lines between consecutive reader locations rather than along the curve of the road, so a winding corridor is slightly longer to drive than the figure given.',
+        es: 'Las distancias se miden en línea recta entre ubicaciones consecutivas de lectores y no siguiendo la curva de la carretera, así que un corredor sinuoso es algo más largo de recorrer que la cifra indicada.',
+      },
+      {
+        en: 'Operator is recorded for only a minority of readers, so the agencies named on a corridor are a floor and never the full list. Naming an operator says who is recorded as running a reader — not who can search what it collects, which is a separate question this layer holds no data on.',
+        es: 'El operador solo consta en una minoría de los lectores, así que las agencias nombradas en un corredor son un mínimo y nunca la lista completa. Nombrar a un operador indica quién figura como responsable de un lector, no quién puede consultar lo que recopila, que es una cuestión distinta sobre la que esta capa no tiene datos.',
+      },
+      {
+        en: 'A reader location is one or more cameras within 75 m of each other. This layer does not claim that a single trip is read by every camera it passes; which way each camera faces is on the camera layer.',
+        es: 'Una ubicación de lector es una o más cámaras a menos de 75 m entre sí. Esta capa no afirma que un solo trayecto sea leído por cada cámara que pasa; hacia dónde apunta cada cámara está en la capa de cámaras.',
+      },
+    ],
+    geometry: 'line',
+    color: '#818cf8',
+    cluster: false,
+    positions: {
+      offsetsKey: 'siteOffsets',
+      countsKey: 'siteReaders',
+      label: {
+        en: 'Reader locations along this corridor',
+        es: 'Ubicaciones de lectores a lo largo de este corredor',
+      },
+    },
+    dataPath: '/data/alpr-corridors.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Derived from the ALPR layer and OpenStreetMap road geometry (Overpass API)',
+      sourceUrl: 'https://deflock.me',
+      license: 'ODbL 1.0',
+      licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
+      attribution: '© OpenStreetMap contributors, ODbL — mapped by DeFlock volunteers',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'frequent',
+    },
+    filters: [{ key: 'roadClass', kind: 'enum', label: { en: 'Road type', es: 'Tipo de vía' } }],
+    detailFields: [
+      { key: 'readerCount', label: { en: 'Readers on this corridor', es: 'Lectores en este corredor' } },
+      { key: 'siteCount', label: { en: 'Separate reader locations', es: 'Ubicaciones de lectores distintas' } },
+      { key: 'corridorMiles', label: { en: 'Corridor length (miles)', es: 'Longitud del corredor (millas)' } },
+      {
+        key: 'averageGapMiles',
+        label: { en: 'Average gap between locations (miles)', es: 'Distancia media entre ubicaciones (millas)' },
+      },
+      {
+        key: 'medianGapMiles',
+        label: { en: 'Median gap between locations (miles)', es: 'Distancia mediana entre ubicaciones (millas)' },
+      },
+      {
+        key: 'longestGapMiles',
+        label: { en: 'Longest gap (miles)', es: 'Mayor distancia sin lector (millas)' },
+      },
+      {
+        key: 'operatorCount',
+        label: { en: 'Operators recorded here', es: 'Operadores registrados aquí' },
+      },
+      { key: 'operators', label: { en: 'Who runs these readers', es: 'Quién opera estos lectores' } },
+      {
+        key: 'unattributedReaders',
+        label: { en: 'Readers with no operator recorded', es: 'Lectores sin operador registrado' },
+      },
+      { key: 'road', label: { en: 'Road', es: 'Carretera' } },
+      { key: 'roadClass', label: { en: 'Road type', es: 'Tipo de vía' } },
+      { key: 'countiesSpanned', label: { en: 'Counties spanned', es: 'Condados que atraviesa' } },
+    ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'The corridor nearest you', es: 'El corredor más cercano' },
+      empty: {
+        en: 'No mapped corridor is near this point. That means no run of readers has been mapped along one road here — not that the roads here are unwatched.',
+        es: 'No hay ningún corredor mapeado cerca de este punto. Eso significa que no se ha mapeado una sucesión de lectores a lo largo de una carretera aquí, no que estas carreteras no estén vigiladas.',
+      },
+      detail: ['readerCount', 'corridorMiles', 'averageGapMiles', 'operators'],
+      caveat: {
+        en: 'Built from crowd-sourced camera records, and the thresholds that decide what counts as a corridor are our judgement. Treat it as the shape of the thing, not a measurement.',
+        es: 'Construido a partir de registros comunitarios de cámaras, y los umbrales que deciden qué cuenta como corredor son criterio nuestro. Considérelo la forma del fenómeno, no una medición.',
+      },
+      wide: true,
+    },
+  },
+
+  {
     id: 'redlining',
     slug: 'redlining',
-    order: 3,
+    order: 4,
     label: {
       en: 'Redlining zones (HOLC)',
       es: 'Zonas de redlining (HOLC)',
@@ -302,7 +413,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'detention_facility',
     slug: 'detention',
-    order: 4,
+    order: 5,
     label: {
       en: 'ICE-contract detention facilities',
       es: 'Centros de detención con contrato de ICE',
@@ -371,7 +482,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'data_center',
     slug: 'data-centers',
-    order: 5,
+    order: 6,
     label: {
       en: 'Data centres',
       es: 'Centros de datos',
@@ -438,7 +549,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'racial_covenant',
     slug: 'covenants',
-    order: 6,
+    order: 7,
     label: {
       en: 'Racial covenants (aggregate)',
       es: 'Convenios raciales (agregado)',

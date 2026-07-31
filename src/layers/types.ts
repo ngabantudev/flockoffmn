@@ -13,6 +13,10 @@
 
 export type LayerId =
   | 'alpr'
+  // Derived from `alpr`, not ingested: the stretches of road where readers
+  // stand in a line rather than a cluster. A dot map answers "is there a camera
+  // here"; this answers "how many times does one ordinary trip get logged".
+  | 'alpr_corridor'
   | 'agency_287g'
   | 'detention_facility'
   | 'data_center'
@@ -152,7 +156,7 @@ export interface LayerDefinition {
   whatThisMeans: I18nString;
   /** Honest limitations, shown with the layer and on the sources page (F8). */
   limitations: I18nString[];
-  geometry: 'point' | 'polygon';
+  geometry: 'point' | 'polygon' | 'line';
   /** Hex colour used for the map symbol and the legend swatch. */
   color: string;
   /** Whether dense point data should cluster at low zoom (spec F1, §8). */
@@ -167,6 +171,28 @@ export interface LayerDefinition {
    * which way its subject points gets the same treatment by naming the field.
    */
   bearingKey?: string;
+  /**
+   * Where a record's parts sit along its own length, if it has a length.
+   *
+   * A corridor is eleven miles of road with nineteen readers on it, and the
+   * fact that matters is not the total but the spacing — bunched at one
+   * junction is a different claim from one every mile and a half the whole way.
+   * A record that carries those offsets names them here and the detail panel
+   * draws them to scale, with the same text in the record's own summary line so
+   * the drawing is never the only way to get the information.
+   *
+   * Like `bearingKey`, this describes the data rather than one layer's
+   * rendering: any layer whose records have things positioned along them gets
+   * the same treatment by naming the fields.
+   */
+  positions?: {
+    /** Attribute holding offsets in miles from the record's start, ';'-separated. */
+    offsetsKey: string;
+    /** Attribute holding how many things sit at each offset, ';'-separated, same length. */
+    countsKey: string;
+    /** Accessible name for the drawing, e.g. "Readers along this corridor". */
+    label: I18nString;
+  };
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
   csvPath: string | null;
@@ -196,6 +222,12 @@ export interface LayerCollection {
     type: 'Feature';
     geometry:
       | { type: 'Point'; coordinates: [number, number] }
+      | { type: 'LineString'; coordinates: number[][] }
+      // Corridors are drawn from real OSM road geometry clipped to the run of
+      // readers, so a single corridor is many disjoint pieces of surveyed road
+      // rather than one continuous line. The gaps are roads we hold no geometry
+      // for, and joining them would assert a road we cannot show.
+      | { type: 'MultiLineString'; coordinates: number[][][] }
       | { type: 'Polygon'; coordinates: number[][][] }
       | { type: 'MultiPolygon'; coordinates: number[][][][] };
     properties: FeatureProperties;
