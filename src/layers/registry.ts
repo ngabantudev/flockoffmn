@@ -355,4 +355,70 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'petitionUrl', label: { en: 'Petition', es: 'Petición' }, format: 'link' },
     ],
   },
+
+  {
+    id: 'racial_covenant',
+    slug: 'covenants',
+    order: 6,
+    label: {
+      en: 'Racial covenants (aggregate)',
+      es: 'Convenios raciales (agregado)',
+    },
+    summary: {
+      en: 'Deed clauses that barred non-white families from buying or living on a property, counted by block.',
+      es: 'Cláusulas de escritura que prohibían a familias no blancas comprar o vivir en una propiedad, contadas por manzana.',
+    },
+    whatThisMeans: {
+      en: 'A racial covenant is a sentence written into a property deed forbidding sale or occupancy to anyone not white. They were drafted from templates, recorded by the county like any other deed, and sold by developers as a feature. Minnesota covenants run from 1910, predating the federal redlining maps by a generation — the private restriction came first, and the federal appraiser later graded the neighbourhoods it had helped produce. Shelley v. Kraemer made them unenforceable in 1948 and they are void today, but the text stays in the chain of title until a homeowner files to remove it. This layer is deliberately an aggregate: each shape is a fixed 250-metre cell reporting how many covenants were recorded inside it, never a record for one property. It describes a restriction on land, not the people who live there now.',
+      es: 'Un convenio racial es una frase escrita en la escritura de una propiedad que prohíbe su venta u ocupación a cualquier persona no blanca. Se redactaban a partir de plantillas, se registraban en el condado como cualquier escritura y los promotores los vendían como una ventaja. Los convenios de Minnesota comienzan en 1910, una generación antes de los mapas federales de redlining: la restricción privada llegó primero, y el tasador federal calificó después los barrios que ella había ayudado a crear. Shelley v. Kraemer los hizo inaplicables en 1948 y hoy son nulos, pero el texto permanece en el historial de titularidad hasta que un propietario solicita eliminarlo. Esta capa es deliberadamente un agregado: cada forma es una celda fija de 250 metros que indica cuántos convenios se registraron dentro, nunca un registro por propiedad. Describe una restricción sobre la tierra, no a las personas que viven allí hoy.',
+    },
+    limitations: [
+      {
+        en: 'This is an aggregate, on purpose. A cell showing "1" means one covenant was recorded somewhere in an area of several houses — not which house. The per-property data is published by Mapping Prejudice and should be got from them, not from a copy here.',
+        es: 'Esto es un agregado, a propósito. Una celda que muestra «1» significa que se registró un convenio en algún lugar de un área de varias casas, no en cuál. Los datos por propiedad los publica Mapping Prejudice y deben obtenerse de ellos, no de una copia aquí.',
+      },
+      {
+        en: 'The original deeds name the seller and the buyer, and the source file also carries the present-day street address and parcel outline of the property. None of that is ingested here, and the build fails rather than write a file containing it.',
+        es: 'Las escrituras originales nombran al vendedor y al comprador, y el archivo de origen también incluye la dirección actual y el contorno de la parcela. Nada de eso se incorpora aquí, y la compilación falla antes que escribir un archivo que lo contenga.',
+      },
+      {
+        en: 'Covenants are found by reading digitised deeds county by county, so every count is a floor on the true number and never a ceiling. Only eight Minnesota counties have been published; a county with no cells has not been searched.',
+        es: 'Los convenios se localizan leyendo escrituras digitalizadas condado por condado, así que cada recuento es un mínimo y nunca un máximo. Solo se han publicado ocho condados de Minnesota; un condado sin celdas no ha sido investigado.',
+      },
+      {
+        en: 'A covenant describes land. Present-day residents of a covenanted property have no connection to the clause and are not the subject of this record.',
+        es: 'Un convenio describe la tierra. Los residentes actuales de una propiedad con convenio no tienen relación con la cláusula y no son el sujeto de este registro.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#f472b6',
+    cluster: false,
+    dataPath: '/data/covenants.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Mapping Prejudice, University of Minnesota Libraries',
+      sourceUrl: 'https://mappingprejudice.umn.edu',
+      license: 'CC0 1.0 Universal',
+      licenseUrl: 'https://creativecommons.org/public-domain/cc0/',
+      attribution:
+        'Ehrman-Solberg, Petersen, Mills, Delegard, Mattke and crowdsourcing community mapmakers — U.S. Racial Covenants Series, hosted by Mapping Prejudice',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'rare',
+    },
+    filters: [{ key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } }],
+    detailFields: [
+      {
+        key: 'covenantCount',
+        label: { en: 'Covenants recorded here', es: 'Convenios registrados aquí' },
+      },
+      { key: 'city', label: { en: 'City', es: 'Ciudad' } },
+      { key: 'earliestDeed', label: { en: 'Earliest deed', es: 'Escritura más antigua' } },
+      { key: 'latestDeed', label: { en: 'Latest deed', es: 'Escritura más reciente' } },
+      {
+        key: 'exampleWording',
+        label: { en: 'Example wording recorded here', es: 'Ejemplo de redacción registrada aquí' },
+      },
+    ],
+  },
 ];
