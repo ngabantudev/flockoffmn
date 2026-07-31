@@ -105,6 +105,16 @@ export interface LayerDefinition {
   color: string;
   /** Whether dense point data should cluster at low zoom (spec F1, §8). */
   cluster: boolean;
+  /**
+   * Attribute holding a compass bearing in degrees, if the layer has one.
+   *
+   * Set it and the map draws a small arrow at each record showing which way
+   * the thing faces, once the view is close enough to draw records
+   * individually. Left undefined, records render as plain dots. This is a
+   * property of the data, not of one layer's rendering: any layer that records
+   * which way its subject points gets the same treatment by naming the field.
+   */
+  bearingKey?: string;
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
   csvPath: string | null;
