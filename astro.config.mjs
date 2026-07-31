@@ -16,5 +16,14 @@ export default defineConfig({
   },
   vite: {
     plugins: [tailwindcss()],
+    optimizeDeps: {
+      // MapLibre is imported only from a client <script> inside an .astro
+      // component, which Vite's initial dependency scan does not reach. Left
+      // to itself it discovers the package on the first map page load,
+      // re-optimises mid-session and forces a reload — and the module request
+      // already in flight comes back 504, so the map silently never
+      // initialises. Naming it here gets it pre-bundled at server start.
+      include: ['maplibre-gl'],
+    },
   },
 });
