@@ -117,8 +117,7 @@ const CONE_PROP = '__cone';
 /** The density ramp lives in densityRamp.ts so the legend cannot drift from it. */
 const DENSITY_COLOR = densityColorExpression() as unknown as maplibregl.ExpressionSpecification;
 
-/** Written onto derived nodes by us; not upstream fields. */
-const NODE_SITES_PROP = '__nodeSites';
+/** Written onto derived nodes by us; not an upstream field. */
 const NODE_CAMERAS_PROP = '__nodeCameras';
 
 /**
@@ -222,7 +221,7 @@ const normaliseDegrees = (d: number) => ((d % 360) + 360) % 360;
  * distinct from a recorded arc so the caller can decide what to draw and the
  * limitations can be honest about which cones are measured.
  */
-export function parseSectors(raw: unknown): { bearing: number; arc: number | null }[] {
+function parseSectors(raw: unknown): { bearing: number; arc: number | null }[] {
   if (raw === null || raw === undefined) return [];
   const text = String(raw).trim();
   if (!text) return [];
@@ -498,7 +497,7 @@ export class MapController {
       features: groupNodes(sites).map((node) => ({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [node.lng, node.lat] },
-        properties: { [NODE_SITES_PROP]: node.sites, [NODE_CAMERAS_PROP]: node.cameras },
+        properties: { [NODE_CAMERAS_PROP]: node.cameras },
       })) as Feature[],
     };
   }

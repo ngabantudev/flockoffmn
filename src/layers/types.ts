@@ -222,10 +222,11 @@ export interface LayerDefinition {
   /**
    * Colour records by a category once they are drawn individually.
    *
-   * Only at the closest scale, and deliberately: at the scales where records
-   * are a surface or a count, a per-record colour is either invisible or a lie
-   * about what a cluster contains. Close in, it is the difference between "a
-   * camera" and "a camera someone's homeowners association put there".
+   * Only at the closest scale, and deliberately: while the records are still
+   * emerging from the surface, a per-record colour is a distinction the reader
+   * cannot yet resolve, and most of it would be the "nobody wrote it down"
+   * grey. Close in, it is the difference between "a camera" and "a camera
+   * someone's homeowners association put there".
    *
    * The order here is the order of the key beside the map, so put the kinds a
    * reader is looking for above the ones they are not. A value with no colour

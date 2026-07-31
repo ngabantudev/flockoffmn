@@ -33,9 +33,7 @@ export interface NodeSite {
 export interface CameraNode {
   lng: number;
   lat: number;
-  /** Reader locations in the group. */
-  sites: number;
-  /** Cameras across those locations, which is what the brightness scales on. */
+  /** Cameras across the locations in the group, which the brightness scales on. */
   cameras: number;
 }
 
@@ -75,9 +73,9 @@ const M_PER_DEG_LNG = M_PER_DEG_LAT * Math.cos((46.4 * Math.PI) / 180);
  * thousand of the others — the whole set is regrouped every time a filter
  * changes, so this runs on the reader's machine while they drag a checkbox.
  */
-export function groupNodes(sites: NodeSite[], radiusM = NODE_RADIUS_M): CameraNode[] {
-  const cellLat = radiusM / M_PER_DEG_LAT;
-  const cellLng = radiusM / M_PER_DEG_LNG;
+export function groupNodes(sites: NodeSite[]): CameraNode[] {
+  const cellLat = NODE_RADIUS_M / M_PER_DEG_LAT;
+  const cellLng = NODE_RADIUS_M / M_PER_DEG_LNG;
 
   const parent = sites.map((_, i) => i);
   const find = (i: number): number => {
@@ -112,7 +110,7 @@ export function groupNodes(sites: NodeSite[], radiusM = NODE_RADIUS_M): CameraNo
     const midLat = ((a.lat + b.lat) / 2) * (Math.PI / 180);
     const dx = (a.lng - b.lng) * M_PER_DEG_LAT * Math.cos(midLat);
     const dy = (a.lat - b.lat) * M_PER_DEG_LAT;
-    return dx * dx + dy * dy <= radiusM * radiusM;
+    return dx * dx + dy * dy <= NODE_RADIUS_M * NODE_RADIUS_M;
   };
 
   sites.forEach((site, i) => {
@@ -145,12 +143,14 @@ export function groupNodes(sites: NodeSite[], radiusM = NODE_RADIUS_M): CameraNo
   const nodes: CameraNode[] = [];
   for (const group of groups.values()) {
     // A lone reader is already drawn by the surface underneath and by its own
-    // dot. A node is what more than one of them together makes.
+    // dot. A node is what more than one of them together makes. The site count
+    // is only ever used here and for the centroid — what the map scales on is
+    // the cameras, because two poles carrying four cameras between them are
+    // four cameras.
     if (group.sites < 2) continue;
     nodes.push({
       lng: group.lng / group.sites,
       lat: group.lat / group.sites,
-      sites: group.sites,
       cameras: group.cameras,
     });
   }
