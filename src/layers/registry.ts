@@ -75,6 +75,19 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'signed', label: { en: 'Signed', es: 'Firmado' }, format: 'date' },
       { key: 'moa', label: { en: 'Memorandum (MOA)', es: 'Memorando (MOA)' }, format: 'link' },
     ],
+    nearMe: {
+      mode: 'countyMatch',
+      title: { en: 'Your county sheriff and ICE', es: 'Su alguacil del condado e ICE' },
+      empty: {
+        en: 'No 287(g) agreement is on ICE’s current list for agencies in this county.',
+        es: 'No hay ningún acuerdo 287(g) en la lista actual de ICE para agencias de este condado.',
+      },
+      detail: ['supportType', 'signed'],
+      caveat: {
+        en: 'A signed agreement does not tell you how actively an agency uses it.',
+        es: 'Un acuerdo firmado no indica con qué frecuencia la agencia lo utiliza.',
+      },
+    },
   },
 
   {
@@ -152,6 +165,19 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'zone', label: { en: 'Surveillance zone', es: 'Zona de vigilancia' } },
       { key: 'osmUrl', label: { en: 'OpenStreetMap record', es: 'Registro de OpenStreetMap' }, format: 'link' },
     ],
+    nearMe: {
+      mode: 'radius',
+      title: { en: 'Nearest ALPR cameras', es: 'Cámaras ALPR más cercanas' },
+      empty: {
+        en: 'No mapped cameras are near this point.',
+        es: 'No hay cámaras mapeadas cerca de este punto.',
+      },
+      radii: [1, 3],
+      caveat: {
+        en: 'Crowd-sourced and incomplete — the absence of a camera here is not evidence that none exists.',
+        es: 'De origen comunitario e incompleto: la ausencia de una cámara aquí no prueba que no exista ninguna.',
+      },
+    },
   },
 
   {
@@ -258,6 +284,19 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'holcId', label: { en: 'HOLC area ID', es: 'ID del área HOLC' } },
     ],
+    nearMe: {
+      mode: 'contains',
+      title: {
+        en: 'This area’s housing-policy history',
+        es: 'Historial de política de vivienda de esta zona',
+      },
+      empty: {
+        en: 'This point is not inside a HOLC-graded area. Only eight Minnesota cities were surveyed, so this is not evidence the area was untouched by housing discrimination.',
+        es: 'Este punto no está dentro de un área calificada por HOLC. Solo se evaluaron ocho ciudades de Minnesota, así que esto no prueba que la zona quedara libre de discriminación en la vivienda.',
+      },
+      detail: ['grade', 'gradeMeaning'],
+      wide: true,
+    },
   },
 
   {
@@ -311,6 +350,22 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'contractType', label: { en: 'Contract type', es: 'Tipo de contrato' } },
       { key: 'inspectionUrl', label: { en: 'Inspection records', es: 'Registros de inspección' }, format: 'link' },
     ],
+    nearMe: {
+      mode: 'nearest',
+      title: {
+        en: 'Nearest ICE-contract facility',
+        es: 'Centro con contrato de ICE más cercano',
+      },
+      empty: {
+        en: 'No facility in this dataset is near this point.',
+        es: 'Ningún centro de este conjunto de datos está cerca de este punto.',
+      },
+      detail: ['contractType'],
+      caveat: {
+        en: 'This describes a building and a contract. It holds no information about any person.',
+        es: 'Esto describe un edificio y un contrato. No contiene información sobre ninguna persona.',
+      },
+    },
   },
 
   {
@@ -361,12 +416,23 @@ export const LAYERS: LayerDefinition[] = [
     ],
     detailFields: [
       { key: 'operator', label: { en: 'Operator', es: 'Operador' } },
+      { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'status', label: { en: 'Status', es: 'Estado' } },
       { key: 'powerSource', label: { en: 'Power source', es: 'Fuente de energía' } },
       { key: 'resistanceStatus', label: { en: 'Community response', es: 'Respuesta comunitaria' } },
       { key: 'campaignUrl', label: { en: 'Local campaign', es: 'Campaña local' }, format: 'link' },
       { key: 'petitionUrl', label: { en: 'Petition', es: 'Petición' }, format: 'link' },
     ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'Nearest data centre', es: 'Centro de datos más cercano' },
+      empty: {
+        en: 'No data centre in this dataset is near this point.',
+        es: 'Ningún centro de datos de este conjunto de datos está cerca de este punto.',
+      },
+      detail: ['city'],
+      linkKey: 'campaignUrl',
+    },
   },
 
   {
@@ -433,5 +499,19 @@ export const LAYERS: LayerDefinition[] = [
         label: { en: 'Example wording recorded here', es: 'Ejemplo de redacción registrada aquí' },
       },
     ],
+    nearMe: {
+      mode: 'contains',
+      title: { en: 'Racial covenants recorded here', es: 'Convenios raciales registrados aquí' },
+      empty: {
+        en: 'No covenant is recorded in the cell containing this point. Only eight Minnesota counties have been searched, so a blank is not evidence that none was written.',
+        es: 'No hay ningún convenio registrado en la celda que contiene este punto. Solo se han investigado ocho condados de Minnesota, así que un vacío no prueba que no se escribiera ninguno.',
+      },
+      detail: ['covenantCount', 'earliestDeed', 'latestDeed'],
+      caveat: {
+        en: 'A count for an area of several houses, never a record for one property. It describes a restriction on land, not the people who live there now.',
+        es: 'Un recuento para un área de varias casas, nunca un registro de una propiedad. Describe una restricción sobre la tierra, no a las personas que viven allí ahora.',
+      },
+      wide: true,
+    },
   },
 ];

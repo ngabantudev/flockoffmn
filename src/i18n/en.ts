@@ -47,20 +47,21 @@ export const en: Record<string, string> = {
   locationDenied: 'Location permission was declined. You can search for a place instead.',
   locationUnavailable: 'Your device could not provide a location. You can search for a place instead.',
   chooseAPlace: 'Choose a place',
-  nearestCameras: 'Nearest ALPR cameras',
-  camerasWithin: 'cameras within',
-  sheriffAgreement: 'Your county sheriff and ICE',
-  nearestFacility: 'Nearest ICE-contract facility',
-  nearestDataCenter: 'Nearest data centre',
-  neighbourhoodHistory: 'This area’s housing-policy history',
-  noAgreement: 'No 287(g) agreement is on ICE’s current list for agencies in this county.',
-  hasAgreement: 'agreement(s) on ICE’s current list in this county:',
-  notInRedlinedArea: 'This point is not inside a HOLC-graded area. Only eight Minnesota cities were surveyed, so this is not evidence the area was untouched by housing discrimination.',
-  inRedlinedArea: 'This point falls inside a HOLC-graded area:',
-  milesAway: 'miles away',
-  inCounty: 'in',
+  // Card headings, empty states and caveats live on each layer in the registry
+  // now, so a new layer arrives carrying its own text. What is left here is the
+  // generic frame the page puts around them. {braces} are substituted.
+  nearMePrivacy:
+    'This lookup runs entirely in your browser. The list of Minnesota places is downloaded with the page, so nothing you type is sent to a geocoder, to us, or to anyone else — there is no server here to log it.',
+  aroundYourLocation: 'Around your location',
+  aroundPlace: 'Around {place}',
+  stateName: 'Minnesota',
+  mappedWithin: 'mapped within {miles} mi',
+  alsoWithin: '{count} within {miles} mi',
+  nearestIs: 'Nearest is {distance} mi away',
+  distanceAway: '{distance} mi away',
+  foundInCounty: '{count} in this county:',
   crossLayerNote:
-    'These are not five separate maps. Cameras feed searches, searches feed enforcement, enforcement feeds detention, and all of it sits on ground shaped by decades of housing policy.',
+    'These are not separate maps. Cameras feed searches, searches feed enforcement, enforcement feeds detention, and all of it sits on ground shaped by decades of housing policy.',
   readHowThisConnects: 'Read how this connects',
 
   // Detail panel

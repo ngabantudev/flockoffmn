@@ -1,5 +1,5 @@
 ---
-import type { Locale } from '~/layers/types';
+import type { Locale, LayerDefinition } from '~/layers/types';
 import { LAYERS } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 
@@ -9,30 +9,59 @@ interface Props {
 const { locale } = Astro.props;
 const t = useTranslations(locale);
 
-const layerMeta = LAYERS.map((l) => ({
-  id: l.id,
-  label: pick(l.label, locale),
-  color: l.color,
-  dataPath: l.dataPath,
-}));
+/**
+ * A `nearMe` key in `detail` must also be a `detailFields` entry, so the label
+ * is written once. Throwing here turns a registry typo into a build failure
+ * rather than a card that silently renders "undefined: 3" to a reader.
+ */
+function labelFor(layer: LayerDefinition, key: string): string {
+  const field = layer.detailFields.find((f) => f.key === key);
+  if (!field) {
+    throw new Error(
+      `Layer "${layer.id}" names "${key}" in nearMe.detail but has no detailFields entry for it.`,
+    );
+  }
+  return pick(field.label, locale);
+}
+
+/**
+ * Only layers that declare a `nearMe` summary. This list drives both what the
+ * page fetches and what it draws, so the two cannot disagree — previously the
+ * page fetched every layer and drew five by name, which meant the covenants
+ * layer was downloaded on every visit and never shown.
+ */
+const nearMeLayers = LAYERS.filter((l) => l.nearMe).map((l) => {
+  const n = l.nearMe!;
+  return {
+    id: l.id,
+    color: l.color,
+    dataPath: l.dataPath,
+    mode: n.mode,
+    title: pick(n.title, locale),
+    empty: pick(n.empty, locale),
+    radii: n.radii ?? [],
+    detail: (n.detail ?? []).map((key) => ({ key, label: labelFor(l, key) })),
+    linkKey: n.linkKey ?? null,
+    linkLabel: n.linkKey ? labelFor(l, n.linkKey) : null,
+    caveat: n.caveat ? pick(n.caveat, locale) : null,
+    wide: n.wide ?? false,
+  };
+});
 
 const strings = {
   locating: t('locating'),
   locationDenied: t('locationDenied'),
   locationUnavailable: t('locationUnavailable'),
   noResults: t('noResults'),
-  nearestCameras: t('nearestCameras'),
-  sheriffAgreement: t('sheriffAgreement'),
-  nearestFacility: t('nearestFacility'),
-  nearestDataCenter: t('nearestDataCenter'),
-  neighbourhoodHistory: t('neighbourhoodHistory'),
-  noAgreement: t('noAgreement'),
-  hasAgreement: t('hasAgreement'),
-  notInRedlinedArea: t('notInRedlinedArea'),
-  inRedlinedArea: t('inRedlinedArea'),
-  milesAway: t('milesAway'),
-  county: t('county'),
   loading: t('loading'),
+  aroundYourLocation: t('aroundYourLocation'),
+  aroundPlace: t('aroundPlace'),
+  stateName: t('stateName'),
+  mappedWithin: t('mappedWithin'),
+  alsoWithin: t('alsoWithin'),
+  nearestIs: t('nearestIs'),
+  distanceAway: t('distanceAway'),
+  foundInCounty: t('foundInCounty'),
 };
 ---
 
@@ -52,11 +81,7 @@ const strings = {
         d="M10 1.5 3.5 4.2v5c0 4 2.8 7.7 6.5 9.3 3.7-1.6 6.5-5.3 6.5-9.3v-5L10 1.5Zm2.9 6.6-3.4 4.2a.8.8 0 0 1-1.2 0L6.6 10.4a.8.8 0 1 1 1.2-1l1.1 1.4 2.8-3.5a.8.8 0 1 1 1.2 1Z"
         clip-rule="evenodd"></path>
     </svg>
-    <span>
-      This lookup runs entirely in your browser. The list of Minnesota places is downloaded with
-      the page, so nothing you type is sent to a geocoder, to us, or to anyone else — there is no
-      server here to log it.
-    </span>
+    <span>{t('nearMePrivacy')}</span>
   </p>
 
   <div class="mt-6 grid gap-3 sm:grid-cols-[1fr_auto]">
@@ -115,18 +140,30 @@ const strings = {
   </section>
 </div>
 
-<script is:inline type="application/json" id="near-layers" set:html={JSON.stringify(layerMeta)} />
+<script is:inline type="application/json" id="near-layers" set:html={JSON.stringify(nearMeLayers)} />
 <script is:inline type="application/json" id="near-strings" set:html={JSON.stringify(strings)} />
 
 <script>
   import { haversineMeters, metersToMiles, findContaining, representativePoint } from '~/lib/geo.mjs';
 
-  const layerMeta = JSON.parse(document.getElementById('near-layers')!.textContent!) as {
+  type NearMeLayer = {
     id: string;
-    label: string;
     color: string;
     dataPath: string;
-  }[];
+    mode: 'radius' | 'nearest' | 'contains' | 'countyMatch';
+    title: string;
+    empty: string;
+    radii: number[];
+    detail: { key: string; label: string }[];
+    linkKey: string | null;
+    linkLabel: string | null;
+    caveat: string | null;
+    wide: boolean;
+  };
+
+  const layers = JSON.parse(
+    document.getElementById('near-layers')!.textContent!,
+  ) as NearMeLayer[];
   const S = JSON.parse(document.getElementById('near-strings')!.textContent!) as Record<string, string>;
 
   const searchInput = document.getElementById('place-search') as HTMLInputElement;
@@ -136,6 +173,8 @@ const strings = {
   const heading = document.getElementById('near-heading')!;
   const sub = document.getElementById('near-sub')!;
   const cards = document.getElementById('near-cards')!;
+
+  const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   type Place = { name: string; lat: number; lng: number };
   type Feature = { geometry: GeoJSON.Geometry; properties: Record<string, any> };
@@ -149,7 +188,7 @@ const strings = {
     const [placeDoc, countyDoc, ...layerDocs] = await Promise.all([
       fetch('/data/reference/mn-places.json').then((r) => r.json()),
       fetch('/data/reference/mn-counties.geojson').then((r) => r.json()),
-      ...layerMeta.map((l) =>
+      ...layers.map((l) =>
         fetch(l.dataPath)
           .then((r) => (r.ok ? r.json() : { features: [] }))
           .catch(() => ({ features: [] })),
@@ -157,7 +196,7 @@ const strings = {
     ]);
     places = placeDoc.places ?? [];
     counties = countyDoc;
-    layerMeta.forEach((l, i) => layerData.set(l.id, layerDocs[i].features ?? []));
+    layers.forEach((l, i) => layerData.set(l.id, layerDocs[i].features ?? []));
   }
 
   const ready = loadAll();
@@ -168,6 +207,10 @@ const strings = {
     if (text != null) n.textContent = text;
     return n;
   }
+
+  /** Substitute {placeholders} in a dictionary string. */
+  const fill = (template: string, values: Record<string, string | number>) =>
+    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 
   const miles = (m: number) => metersToMiles(m);
   const fmtMiles = (m: number) => {
@@ -237,7 +280,8 @@ const strings = {
       (pos) => {
         statusEl.textContent = '';
         // Coordinates are used in memory and never stored or transmitted.
-        void analyse([pos.coords.longitude, pos.coords.latitude], 'your location');
+        // `null` for the place name selects the "your location" heading.
+        void analyse([pos.coords.longitude, pos.coords.latitude], null);
       },
       (err) => {
         statusEl.textContent =
@@ -271,124 +315,147 @@ const strings = {
     return best;
   }
 
-  async function analyse(point: [number, number], label: string) {
+  /** `label: value` lines for the attributes a layer asked to surface. */
+  function detailLines(layer: NearMeLayer, feature: Feature, cls: string) {
+    const out: HTMLElement[] = [];
+    for (const d of layer.detail) {
+      const value = feature.properties.attributes?.[d.key];
+      // A null attribute is a real gap in the source, not a zero. Say nothing
+      // rather than inventing a placeholder.
+      if (value === null || value === undefined || value === '') continue;
+      out.push(el('p', cls, `${d.label}: ${value}`));
+    }
+    return out;
+  }
+
+  /** Count of records inside each radius, plus the distance to the closest. */
+  function radiusBody(layer: NearMeLayer, features: Feature[], point: [number, number]) {
+    const distances = features
+      .filter((f) => f.geometry.type === 'Point')
+      .map((f) => haversineMeters(point, (f.geometry as GeoJSON.Point).coordinates as [number, number]))
+      .sort((a, b) => a - b);
+    if (!distances.length) return null;
+
+    const radii = layer.radii.length ? layer.radii : [1];
+    const countWithin = (mi: number) => distances.filter((d) => miles(d) <= mi).length;
+    const out = [
+      el('p', 'text-2xl font-semibold text-ink-100', String(countWithin(radii[0]))),
+      el('p', 'text-xs text-ink-400', fill(S.mappedWithin, { miles: radii[0] })),
+    ];
+
+    const rest = radii
+      .slice(1)
+      .map((mi) => fill(S.alsoWithin, { count: countWithin(mi), miles: mi }));
+    rest.push(fill(S.nearestIs, { distance: fmtMiles(distances[0]) }));
+    out.push(el('p', 'mt-2 text-sm text-ink-300', `${rest.join('. ')}.`));
+    return out;
+  }
+
+  /** The single closest record and how far away it is. */
+  function nearestBody(layer: NearMeLayer, features: Feature[], point: [number, number]) {
+    const best = nearest(point, features);
+    if (!best) return null;
+    const out = [
+      el('p', 'text-sm text-ink-100', best.feature.properties.name),
+      el(
+        'p',
+        'mt-0.5 text-xs text-ink-400',
+        fill(S.distanceAway, { distance: fmtMiles(best.distance) }),
+      ),
+      ...detailLines(layer, best.feature, 'mt-0.5 text-xs text-ink-400'),
+    ];
+    const url = layer.linkKey ? best.feature.properties.attributes?.[layer.linkKey] : null;
+    if (url) {
+      const a = el(
+        'a',
+        'mt-2 inline-block text-xs text-accent underline underline-offset-2',
+        `${layer.linkLabel} →`,
+      );
+      a.setAttribute('href', String(url));
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+      out.push(a);
+    }
+    return out;
+  }
+
+  /** The polygon this point falls inside, if any. */
+  function containsBody(layer: NearMeLayer, features: Feature[], point: [number, number]) {
+    const hit = findContaining(point, features as any[]);
+    if (!hit) return null;
+    return [
+      el('p', 'text-sm font-medium text-ink-100', hit.properties.name),
+      ...detailLines(layer, hit, 'mt-1 text-xs leading-relaxed text-ink-300'),
+    ];
+  }
+
+  /** Records filed against the county this point falls in. */
+  function countyBody(layer: NearMeLayer, features: Feature[], countyName: string | null) {
+    if (!countyName) return null;
+    const matches = features.filter((f) => f.properties.county === countyName);
+    if (!matches.length) return null;
+    const out = [
+      el('p', 'text-sm text-ink-200', fill(S.foundInCounty, { count: matches.length })),
+    ];
+    const ul = el('ul', 'mt-2 space-y-1.5');
+    for (const m of matches) {
+      const li = el('li', 'text-sm');
+      li.append(el('span', 'block text-ink-100', m.properties.name));
+      for (const line of detailLines(layer, m, 'block text-xs text-ink-400')) li.append(line);
+      ul.append(li);
+    }
+    out.push(ul);
+    return out;
+  }
+
+  function renderCard(layer: NearMeLayer, point: [number, number], countyName: string | null) {
+    const features = layerData.get(layer.id) ?? [];
+    const wrap = card(layer.title, layer.color);
+
+    let body: HTMLElement[] | null = null;
+    if (layer.mode === 'radius') body = radiusBody(layer, features, point);
+    else if (layer.mode === 'nearest') body = nearestBody(layer, features, point);
+    else if (layer.mode === 'contains') body = containsBody(layer, features, point);
+    else if (layer.mode === 'countyMatch') body = countyBody(layer, features, countyName);
+
+    if (body) wrap.append(...body);
+    else wrap.append(el('p', 'text-sm leading-relaxed text-ink-300', layer.empty));
+
+    // The caveat shows on empty cards too. "No camera near here" is exactly
+    // the answer a reader is most likely to over-trust, so the warning that
+    // absence is not evidence has to travel with it.
+    if (layer.caveat) {
+      wrap.append(el('p', 'mt-2 text-xs leading-relaxed text-warn', layer.caveat));
+    }
+    if (layer.wide) wrap.className += ' sm:col-span-2';
+    return wrap;
+  }
+
+  /** Guards against an older lookup finishing after a newer one. */
+  let latest = 0;
+
+  async function analyse(point: [number, number], placeName: string | null) {
+    const token = ++latest;
     statusEl.textContent = S.loading;
     await ready;
+    if (token !== latest) return;
     statusEl.textContent = '';
 
     const county = counties ? findContaining(point, counties.features) : null;
     const countyName = county?.properties?.name ?? null;
 
-    heading.textContent = label === 'your location' ? 'Around your location' : `Around ${label}`;
-    sub.textContent = countyName ? `${countyName}, Minnesota` : 'Minnesota';
+    heading.textContent = placeName
+      ? fill(S.aroundPlace, { place: placeName })
+      : S.aroundYourLocation;
+    sub.textContent = countyName ? `${countyName}, ${S.stateName}` : S.stateName;
+
     cards.textContent = '';
-
-    /* --- ALPR cameras --- */
-    const cameras = layerData.get('alpr') ?? [];
-    const withDistance = cameras
-      .filter((f) => f.geometry.type === 'Point')
-      .map((f) => ({
-        f,
-        d: haversineMeters(point, (f.geometry as GeoJSON.Point).coordinates as [number, number]),
-      }))
-      .sort((a, b) => a.d - b.d);
-    const within1 = withDistance.filter((c) => miles(c.d) <= 1).length;
-    const within3 = withDistance.filter((c) => miles(c.d) <= 3).length;
-
-    const camCard = card(S.nearestCameras, '#38bdf8');
-    if (!withDistance.length) {
-      camCard.append(el('p', 'text-sm text-ink-300', 'No mapped cameras in this dataset.'));
-    } else {
-      const big = el('p', 'text-2xl font-semibold text-ink-100', String(within1));
-      camCard.append(big, el('p', 'text-xs text-ink-400', 'mapped within 1 mile'));
-      camCard.append(
-        el('p', 'mt-2 text-sm text-ink-300', `${within3} within 3 miles. Nearest is ${fmtMiles(withDistance[0].d)} ${S.milesAway}.`),
-      );
-      camCard.append(
-        el(
-          'p',
-          'mt-2 text-xs leading-relaxed text-warn',
-          'Crowd-sourced and incomplete — the absence of a camera here is not evidence that none exists.',
-        ),
-      );
-    }
-    cards.append(camCard);
-
-    /* --- 287(g) agreements in this county --- */
-    const agreements = (layerData.get('agency_287g') ?? []).filter(
-      (f) => countyName && f.properties.county === countyName,
-    );
-    const agCard = card(S.sheriffAgreement, '#f97316');
-    if (!agreements.length) {
-      agCard.append(el('p', 'text-sm leading-relaxed text-ink-300', S.noAgreement));
-    } else {
-      agCard.append(
-        el('p', 'text-sm text-ink-200', `${agreements.length} ${S.hasAgreement}`),
-      );
-      const ul = el('ul', 'mt-2 space-y-1.5');
-      for (const a of agreements) {
-        const li = el('li', 'text-sm');
-        li.append(el('span', 'block text-ink-100', a.properties.name));
-        li.append(
-          el('span', 'block text-xs text-ink-400', `${a.properties.attributes.supportType} · signed ${a.properties.attributes.signed ?? '—'}`),
-        );
-        ul.append(li);
-      }
-      agCard.append(ul);
-    }
-    cards.append(agCard);
-
-    /* --- Nearest ICE-contract facility --- */
-    const facility = nearest(point, layerData.get('detention_facility') ?? []);
-    const facCard = card(S.nearestFacility, '#f43f5e');
-    if (!facility) {
-      facCard.append(el('p', 'text-sm text-ink-300', 'No facility in this dataset.'));
-    } else {
-      facCard.append(
-        el('p', 'text-sm text-ink-100', facility.feature.properties.name),
-        el('p', 'mt-0.5 text-xs text-ink-400', `${fmtMiles(facility.distance)} ${S.milesAway} · ${facility.feature.properties.attributes.contractType}`),
-        el('p', 'mt-2 text-xs leading-relaxed text-ink-400', 'This describes a building and a contract. It holds no information about any person.'),
-      );
-    }
-    cards.append(facCard);
-
-    /* --- Nearest data centre --- */
-    const dc = nearest(point, layerData.get('data_center') ?? []);
-    const dcCard = card(S.nearestDataCenter, '#34d399');
-    if (!dc) {
-      dcCard.append(el('p', 'text-sm text-ink-300', 'No data centre in this dataset.'));
-    } else {
-      dcCard.append(
-        el('p', 'text-sm text-ink-100', dc.feature.properties.name),
-        el('p', 'mt-0.5 text-xs text-ink-400', `${fmtMiles(dc.distance)} ${S.milesAway}${dc.feature.properties.attributes.city ? ` · ${dc.feature.properties.attributes.city}` : ''}`),
-      );
-      if (dc.feature.properties.attributes.campaignUrl) {
-        const a = el('a', 'mt-2 inline-block text-xs text-accent underline underline-offset-2', 'Local campaign →');
-        a.setAttribute('href', dc.feature.properties.attributes.campaignUrl);
-        a.setAttribute('target', '_blank');
-        a.setAttribute('rel', 'noopener noreferrer');
-        dcCard.append(a);
-      }
-    }
-    cards.append(dcCard);
-
-    /* --- Redlining --- */
-    const zones = layerData.get('redlining') ?? [];
-    const zone = findContaining(point, zones as any[]);
-    const redCard = card(S.neighbourhoodHistory, '#c084fc');
-    if (!zone) {
-      redCard.append(el('p', 'text-sm leading-relaxed text-ink-300', S.notInRedlinedArea));
-    } else {
-      redCard.append(
-        el('p', 'text-sm text-ink-200', S.inRedlinedArea),
-        el('p', 'mt-1 text-sm font-medium text-ink-100', zone.properties.name),
-        el('p', 'mt-1.5 text-xs leading-relaxed text-ink-300', zone.properties.attributes.gradeMeaning),
-      );
-    }
-    redCard.className += ' sm:col-span-2';
-    cards.append(redCard);
+    for (const layer of layers) cards.append(renderCard(layer, point, countyName));
 
     section.hidden = false;
-    section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    section.scrollIntoView({
+      behavior: REDUCED_MOTION ? 'auto' : 'smooth',
+      block: 'nearest',
+    });
   }
 </script>
