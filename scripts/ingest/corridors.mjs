@@ -73,12 +73,18 @@ const SITE_M = 75;
 /**
  * The widest linking distance this file supports.
  *
- * Not a claim that five miles of separation is one corridor — it is the ceiling
+ * Not a claim that ten miles of separation is one corridor — it is the ceiling
  * of the control in the browser, which can only ever narrow what was surveyed
  * here. Moving it means moving `linkRadius.maxMiles` in the registry to match,
- * or the top of the slider silently stops doing anything.
+ * or the top of the slider silently stops lengthening runs.
+ *
+ * Raising it merges more of a road into one stretch, which is the point, and
+ * risks joining two unrelated roads that share a number — Minnesota reuses
+ * county route numbers freely. Measured at ten miles the widest stretch this
+ * produces is 18 miles of CR 116, against 14 miles of CR 61 at five, and
+ * nothing anywhere near long enough to be two roads mistaken for one.
  */
-const LINK_M = 5 * MILE;
+const LINK_M = 10 * MILE;
 
 /**
  * A corridor has to have enough stops, and be long enough not to be a junction.

@@ -294,10 +294,10 @@ export const LAYERS: LayerDefinition[] = [
       latsKey: 'siteLats',
       pieceSpansKey: 'pieceSpans',
       minMiles: 0.2,
-      // The ingest links at five miles; the control cannot exceed what was
+      // The ingest links at ten miles; the control cannot exceed what was
       // surveyed, so this and LINK_M in scripts/ingest/corridors.mjs move
-      // together or the top of the slider silently stops doing anything.
-      maxMiles: 5,
+      // together or the top of the slider silently stops lengthening runs.
+      maxMiles: 10,
       stepMiles: 0.05,
       // Two miles. Below one, Minnesota holds almost nothing that is a
       // continuous run — which is worth discovering by dragging, but makes a
