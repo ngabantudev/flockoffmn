@@ -282,49 +282,37 @@ export interface LayerDefinition {
    */
   filament?: boolean;
   /**
-   * Let the reader choose the radius at which this layer's records are linked.
+   * Let the reader choose how far each record reaches towards its neighbour.
    *
    * Some questions do not have one answer, and "which cameras form a corridor"
-   * is one of them. At a quarter-mile the state holds dozens of short dense
-   * runs; at two miles more than half of every mapped camera in Minnesota is
-   * one connected network. Both are true, and picking a single number for the
-   * reader would publish an editorial judgement as though it were a finding.
-   * The control hands the judgement back.
+   * is one of them, so the control hands the judgement back to the reader and
+   * the drawing grows out of each camera as it moves. `lib/linkGrowth.ts` has
+   * the rule and the reasoning; this is only its wiring.
    *
-   * Requires `positions`, whose offsets and counts it reuses. The file must
-   * ship the widest radius the control offers, because the browser can only
-   * ever narrow what the ingest surveyed — see `lib/linkRuns.ts`.
+   * The one constraint a layer must honour: the file has to ship a whole route
+   * for every link, routed at the widest radius the control offers, because the
+   * browser can only ever cut those routes shorter — there is no road network
+   * in the page to extend one with.
    */
   linkRadius?: {
-    /** Attribute holding each site's longitude, ';'-separated. */
+    /** Attribute holding the link's two end longitudes, ';'-separated. */
     lngsKey: string;
-    /** Attribute holding each site's latitude, ';'-separated. */
+    /** Attribute holding the link's two end latitudes, ';'-separated. */
     latsKey: string;
-    /** Attribute holding each drawn piece's `start,end` offset. */
-    pieceSpansKey: string;
+    /** Attribute holding the routed length of the link, in miles. */
+    lengthKey: string;
     minMiles: number;
-    /** Must equal the linking distance the ingest shipped. */
+    /** Must equal the longest link the ingest routed. */
     maxMiles: number;
     stepMiles: number;
     defaultMiles: number;
     /**
-     * Reader locations a cluster needs before any of it is drawn.
-     *
-     * The bar is on the cluster, not on any one road. A downtown with ten
-     * readers spread over five streets is a network; requiring four on a single
-     * street drew nothing there at all.
-     */
-    minBodySites: number;
-    /** Reader locations on one road before it is drawn as a run rather than stubs. */
-    minRunSites: number;
-    /**
-     * Attribute telling a run of readers from a lone one, and the value marking
-     * the latter. Both are drawn when their cluster qualifies, so widening the
-     * control grows side streets out of the clusters in the directions cameras
-     * actually stand.
+     * Attribute the map styles on, and the value the browser writes onto a link
+     * whose two ends have not met yet. A reaching strand is drawn quieter and
+     * does not creep, so a connection never looks made before it is.
      */
     kindKey: string;
-    branchKind: string;
+    reachingKind: string;
     label: I18nString;
     /** One line under the control saying what moving it does. */
     help: I18nString;
