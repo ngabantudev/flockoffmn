@@ -37,8 +37,8 @@ export const es: Record<string, string> = {
   closePanel: 'Cerrar panel',
   noResults: 'Ningún registro coincide con los filtros actuales.',
 
-  searchPlaceholder: 'Busque una ciudad, condado o agencia',
-  searchLabel: 'Buscar lugares, condados y agencias',
+  searchPlaceholder: 'Busque una ciudad, municipio rural, condado o agencia',
+  searchLabel: 'Buscar ciudades, municipios rurales, condados y agencias',
   nearMeTitle: 'Qué hay alrededor de este lugar',
   nearMeIntro:
     'Elija un lugar en Minnesota para ver todas las capas a su alrededor en una sola vista. Nada de lo que escriba se envía ni se guarda en ningún lugar.',

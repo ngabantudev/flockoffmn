@@ -353,6 +353,18 @@ const strings = {
 <script>
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { compassLabel } from '~/lib/geo.mjs';
+  import { displayName } from '~/lib/authority.mjs';
+
+  type Jurisdiction = {
+    geoid: string;
+    name: string;
+    kind: 'city' | 'township' | 'unorganized';
+    governed: boolean;
+    county: string;
+    countyFips: string;
+    lat: number;
+    lng: number;
+  };
 
   const layers = JSON.parse(document.getElementById('layer-config')!.textContent!) as (ClientLayer & {
     featureCount: number;
@@ -731,6 +743,49 @@ const strings = {
   const searchInput = document.getElementById('map-search') as HTMLInputElement;
   const searchResults = document.getElementById('search-results')!;
 
+  /*
+    Places, above records.
+
+    The box has always said "Search a city, county, or agency" and has only
+    ever searched records — so typing the name of the township you live in
+    returned "no records match", which reads as "there is nothing here" rather
+    than "this box does not do that". Now the governments come first, because
+    somebody typing a place name is trying to get to a place, and a camera that
+    merely happens to be tagged with that county is not what they meant.
+  */
+  let jurisdictionIndex: Jurisdiction[] = [];
+  fetch('/data/reference/mn-jurisdictions.json')
+    .then((r) => r.json())
+    .then((doc) => {
+      jurisdictionIndex = doc.jurisdictions ?? [];
+    })
+    .catch(() => {
+      // Search still works over records; it just cannot find a township.
+      jurisdictionIndex = [];
+    });
+
+  /**
+   * Boundaries, fetched the first time somebody picks a place and not before.
+   * 1.6 MB is a lot to spend on a map that may only ever be panned.
+   */
+  let shapes: Promise<{ features: any[] }> | null = null;
+  function loadShapes() {
+    shapes ??= fetch('/data/reference/mn-jurisdictions.geojson')
+      .then((r) => (r.ok ? r.json() : { features: [] }))
+      .catch(() => ({ features: [] }));
+    return shapes;
+  }
+
+  async function focusJurisdiction(j: Jurisdiction) {
+    // Move immediately on the index's interior point, then outline the
+    // boundary when it arrives. Waiting for 1.6 MB before anything happens
+    // makes a click feel broken on a slow connection.
+    controller.flyTo([j.lng, j.lat], 11);
+    const doc = await loadShapes();
+    const match = doc.features.find((f: any) => f.properties?.geoid === j.geoid);
+    if (match) controller.showJurisdiction(match);
+  }
+
   function runSearch(query: string) {
     const q = query.trim().toLowerCase();
     searchResults.textContent = '';
@@ -738,6 +793,15 @@ const strings = {
       searchResults.classList.add('hidden');
       return;
     }
+
+    const placeHits = jurisdictionIndex
+      .filter((j) => j.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+        const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+        return as - bs || a.name.localeCompare(b.name);
+      })
+      .slice(0, 8);
 
     const hits: { layer: ClientLayer; feature: LoadedFeature }[] = [];
     for (const layer of layers) {
@@ -749,10 +813,34 @@ const strings = {
       }
     }
 
-    if (!hits.length) {
+    if (!placeHits.length && !hits.length) {
       searchResults.append(el('li', 'px-2.5 py-2 text-xs text-ink-400', S.noResults));
       searchResults.classList.remove('hidden');
       return;
+    }
+
+    for (const j of placeHits) {
+      const li = el('li');
+      li.setAttribute('role', 'option');
+      const button = el(
+        'button',
+        'flex w-full items-start gap-2 px-2.5 py-1.5 text-left hover:bg-ink-800',
+      );
+      button.setAttribute('type', 'button');
+      // An outline rather than a filled dot: a place is a frame, not a record.
+      const ring = el('span', 'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full border border-ink-300');
+      const text = el('span', 'min-w-0');
+      text.append(
+        el('span', 'block truncate text-xs text-ink-100', displayName(j.name)),
+        el('span', 'block truncate text-[11px] text-ink-400', j.county),
+      );
+      button.append(ring, text);
+      button.addEventListener('click', () => {
+        void focusJurisdiction(j);
+        searchResults.classList.add('hidden');
+      });
+      li.append(button);
+      searchResults.append(li);
     }
 
     for (const { layer, feature } of hits) {
