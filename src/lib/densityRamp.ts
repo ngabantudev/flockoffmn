@@ -28,6 +28,24 @@ export function densityColorExpression(): unknown[] {
 }
 
 /**
+ * The part of the palette a line can be drawn in.
+ *
+ * The surface's ramp starts transparent over `#0a0c10`, which is right for a
+ * surface — nothing should read as nothing. It is wrong for a line. Its first
+ * stop is literally the background colour, and the next two clear only 1.8:1
+ * and 2.3:1 against it, so a small network came out drawn in ink you cannot
+ * see. That is how a map with 25 corridors on it looked like it had none.
+ *
+ * The cut is at the alpha where the palette's own colours clear 3:1 against the
+ * background — the contrast floor for a graphical object you are expected to
+ * find. Threads keep the top of the surface's palette, so the two still read as
+ * one system; they just never reach for the end of it that is meant to vanish.
+ */
+export const THREAD_STOPS = DENSITY_STOPS.filter(
+  ([, color]) => Number(color.match(/,\s*([\d.]+)\)$/)?.[1] ?? 1) >= 0.6,
+).map(([at, color]) => [at, color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, 'rgb($1,$2,$3)')] as [number, string]);
+
+/**
  * The ramp as a CSS gradient for the legend.
  *
  * The swatch sits on the panel background rather than the map, so the

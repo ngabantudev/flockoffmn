@@ -2,7 +2,7 @@ import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
-import { DENSITY_STOPS, densityColorExpression } from './densityRamp';
+import { THREAD_STOPS, densityColorExpression } from './densityRamp';
 import {
   assignColonies,
   branchRun,
@@ -157,12 +157,13 @@ const COLONY_COLOR = [
   'interpolate',
   ['linear'],
   ['get', COLONY_SITES_PROP],
-  ...DENSITY_STOPS.flatMap(([at, color], i) => [
-    // Spread the surface's own stops across the range of network sizes worth
-    // distinguishing, so a bright thread and a bright patch of surface mean
-    // the same thing to the eye: more of it here.
-    i === 0 ? 1 : Math.round(1 + at * 149),
-    color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, 'rgb($1,$2,$3)'),
+  ...THREAD_STOPS.flatMap(([at, color], i) => [
+    // Spread across the network sizes worth telling apart, anchored so a
+    // network of one lands on the first legible colour rather than on the
+    // background. At a narrow radius almost every network is small, so the
+    // bottom of this ramp is what the reader sees most of.
+    i === 0 ? 1 : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * 149) + 1,
+    color,
   ]),
 ] as unknown as maplibregl.ExpressionSpecification;
 
@@ -634,7 +635,11 @@ export class MapController {
               ['linear'],
               ['zoom'],
               Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM) - 2,
-              0.85,
+              // Held well under full strength. The surface and the threads now
+              // share a palette, so a surface at full opacity swallows the
+              // corridors sitting on top of it — which is precisely how a map
+              // with 25 corridors drawn on it came to look like it had none.
+              0.55,
               Math.min(layer.density.fadeOutZoom, UNCLUSTERED_ZOOM),
               0,
             ],
@@ -740,10 +745,14 @@ export class MapController {
             paint: {
               'line-color': thread,
               'line-opacity': byKind(0.16, 0.3),
-              'line-blur': ['interpolate', ['linear'], ['zoom'], 6, 4, 11, 9, 16, 18],
+              'line-blur': ['interpolate', ['linear'], ['zoom'], 5, 3, 11, 9, 16, 18],
+              // The map opens on the whole state, where the median corridor is
+              // under three pixels long. A thread that is also thin there is a
+              // thread nobody can find, so the glow starts wide and the line
+              // grows into it rather than out of nothing.
               'line-width': widthByKind([
-                [6, 2.5, 5],
-                [11, 6, 12],
+                [5, 3, 9],
+                [11, 6, 14],
                 [16, 12, 26],
               ]),
             },
@@ -763,9 +772,9 @@ export class MapController {
               'line-color': thread,
               'line-opacity': byKind(0.4, 0.55),
               'line-width': widthByKind([
-                [6, 0.6, 1.1],
-                [11, 1.1, 2],
-                [16, 2.2, 4],
+                [5, 1, 2.6],
+                [11, 1.4, 3.2],
+                [16, 2.4, 5],
               ]),
             },
           },
