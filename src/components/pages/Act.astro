@@ -62,10 +62,21 @@ const facilities = (
           id="req-type"
           class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 focus:border-accent focus:outline-none"
         >
-          <option value="alpr">ALPR data retention and sharing audit</option>
-          <option value="287g">287(g) agreement records and activity</option>
-          <option value="detention">ICE detention contract and billing records</option>
-          <option value="datacenter">Data centre permits, utilities and tax abatements</option>
+          <optgroup label="Surveillance technology">
+            <option value="alpr">ALPR data retention and sharing audit</option>
+            <option value="inventory">Surveillance technology inventory</option>
+            <option value="drone">Drone / DFR programme records</option>
+          </optgroup>
+          <optgroup label="Immigration enforcement">
+            <option value="287g">287(g) agreement records and activity</option>
+            <option value="detention">ICE detention contract and billing records</option>
+            <option value="dvs">Driver and vehicle record disclosure agreements</option>
+          </optgroup>
+          <optgroup label="Money and infrastructure">
+            <option value="procurement">Purchase orders and vendor payment history</option>
+            <option value="permits">Permits for fixed surveillance installations</option>
+            <option value="datacenter">Data centre permits, utilities and tax abatements</option>
+          </optgroup>
         </select>
       </div>
 
@@ -84,6 +95,7 @@ const facilities = (
           {counties.map((c) => <option value={`${c} Sheriff's Office`} />)}
           {facilities.map((f) => <option value={f} />)}
         </datalist>
+        <p id="route-hint" class="mt-1.5 text-xs leading-relaxed text-ink-400"></p>
       </div>
 
       <div>
@@ -141,6 +153,125 @@ const facilities = (
       rows="18"
       class="scroll-slim w-full rounded-md border border-ink-700 bg-ink-950 p-3 font-mono text-xs leading-relaxed text-ink-100 focus:border-accent focus:outline-none"
     ></textarea>
+  </section>
+
+  <!-- ------------------------- Researcher tactics ------------------------- -->
+  <section class="mt-8">
+    <h2 class="text-lg font-semibold text-ink-100">What works, according to people who file a lot</h2>
+    <p class="mt-1.5 text-sm leading-relaxed text-ink-300">
+      The templates above already build in most of what follows. This section explains why they are
+      written the way they are, so you can adapt them. It comes from an independent researcher who
+      has spent four years filing these requests — more than three hundred of them — and it is a
+      summary of their practice, not a rule of law.
+    </p>
+
+    <div class="prose-civic mt-4">
+      <h3 class="text-base font-semibold text-ink-100">Ask the office that pays the bill</h3>
+      <p>
+        A request sent to a police department's public information officer competes with press
+        calls and lands with the people most practised at narrowing it. The same purchase appears
+        in the procurement, purchasing, finance, or accounts payable records of whoever actually
+        buys the equipment — a county board, a city finance office, a joint powers authority — and
+        those offices process records requests as routine paperwork. Purchase orders, requisitions,
+        and a vendor payment history for a fiscal year will show you what was bought, when, with
+        whose money, and often what has been deployed without any public announcement.
+      </p>
+
+      <h3 class="text-base font-semibold text-ink-100">Be specific enough to be inconvenient</h3>
+      <p>
+        Broad requests get delayed, estimated at an implausible fee, or refused as burdensome. Narrow
+        ones are harder to wave away. The useful vocabulary is the vendor's own: a system's
+        documentation will name its "user access logs", "network audit logs", or audit report
+        exports, and asking for a record by the name its own software gives it removes the argument
+        that no such record exists. Published audit logs from other jurisdictions are a good place
+        to learn those names — the
+        <a href="https://haveibeenflocked.com" target="_blank" rel="noopener noreferrer">
+          Have I Been Flocked
+        </a> project archives Flock audit logs released to other requesters. (It also offers a
+        personal plate lookup; this project does not do that, and does not hold data about anybody's
+        vehicle.)
+      </p>
+
+      <h3 class="text-base font-semibold text-ink-100">Carve out the active investigation</h3>
+      <p>
+        The most common refusal is that data are part of an active criminal investigation, which
+        Minn. Stat. § 13.82, subd. 7 does protect. Policies, contracts, inventories, audit logs, and
+        aggregate counts are not investigative data, so say so in the request and exclude that
+        category explicitly. It costs you nothing you wanted and takes away the easiest denial. Two
+        further provisions are worth quoting when you meet resistance:
+      </p>
+      <ul>
+        <li>
+          <strong class="text-ink-100">§ 13.82, subd. 31</strong> makes public "the existence of all
+          technology maintained by a law enforcement agency that may be used to electronically
+          capture an audio, video, photographic, or other record of the activities of the general
+          public." An agency may argue about the data a system collects; whether it owns the system
+          is public.
+        </li>
+        <li>
+          <strong class="text-ink-100">§ 13.05, subd. 11</strong> keeps data subject to the Act when
+          a private contractor performs a government function. "The vendor has it" and "the vendor
+          calls it proprietary" are not exemptions.
+        </li>
+      </ul>
+
+      <h3 class="text-base font-semibold text-ink-100">Follow the physical installation</h3>
+      <p>
+        A camera on a pole is construction. Permanent installations generally leave a trail of
+        right-of-way, building, or electrical permits, and pole attachment agreements, held by a
+        building or public works department that has no stake in the surveillance question. This
+        works best as a cross-check: if procurement shows forty cameras bought and permits show
+        twelve, the gap is the next question.
+      </p>
+      <p>
+        One caveat specific to Minnesota. Excavation notices go through
+        <a href="https://gopherstateonecall.org/" target="_blank" rel="noopener noreferrer">
+          Gopher State One Call
+        </a>, which is a private non-profit rather than a government entity, so it is not itself
+        subject to ch. 13. Request locate and excavation records from the city or county in its role
+        as a facility operator, where they are government data.
+      </p>
+
+      <h3 class="text-base font-semibold text-ink-100">Check what is already published</h3>
+      <p>
+        Some of this does not need a request at all. Every Minnesota law enforcement agency
+        operating a drone must report its warrantless deployments and total programme cost to the
+        Commissioner of Public Safety each January under Minn. Stat. § 626.19, subd. 12, and the
+        compiled statewide result is published by June —
+        <a
+          href="https://dps.mn.gov/divisions/bca/data-and-reports/uav-uav-annual-reports"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          UAV annual reports, Minnesota BCA
+        </a>. Read that first, then request the agency's own submission, which is more granular than
+        the compilation.
+      </p>
+
+      <h3 class="text-base font-semibold text-ink-100">Watch the commercial pipeline</h3>
+      <p>
+        Records can leave a public agency by agreement rather than by breach. State driver and
+        vehicle record systems disclose data to commercial brokers and to federal systems under
+        standing agreements; in Minnesota those disclosures run through Driver and Vehicle Services
+        under Minn. Stat. § 171.12, subd. 7 and the federal Driver's Privacy Protection Act, and
+        subd. 7b requires a requester to certify the data will not be used for immigration
+        enforcement. The agreements, and the record of how that certification is checked, are the
+        thing to ask for — not anybody's driver record.
+      </p>
+
+      <h3 class="text-base font-semibold text-ink-100">Do not do this alone</h3>
+      <p>
+        Local journalists can escalate a refusal in a way an individual requester cannot. University
+        geography and data science departments will often take on the mapping and analysis as
+        coursework. Historical and civic groups hold the context that makes a current map mean
+        something — surveillance infrastructure laid over historically redlined neighbourhoods is a
+        different argument than a dot map of cameras. This site ships redlining and racial covenant
+        layers for exactly that comparison — turn them on alongside the camera layer on the
+        <a href={localePath(locale, '/')}>map</a>, and see the
+        <a href={localePath(locale, '/explainer')}>explainer</a> for what the redlining grades mean
+        and what they do not.
+      </p>
+    </div>
   </section>
 
   <!-- --------------------------- Who to contact --------------------------- -->
@@ -230,10 +361,23 @@ const facilities = (
   const contactEl = document.getElementById('req-contact') as HTMLInputElement;
   const letterEl = document.getElementById('letter') as HTMLTextAreaElement;
   const statusEl = document.getElementById('copy-status')!;
+  const routeHintEl = document.getElementById('route-hint')!;
 
   const CITE = 'Minnesota Government Data Practices Act, Minn. Stat. ch. 13';
 
-  const BODIES: Record<string, { title: string; items: string[]; note?: string }> = {
+  interface RequestBody {
+    title: string;
+    items: string[];
+    note?: string;
+    /** Where this request actually gets answered — shown under the agency field. */
+    sendTo?: string;
+    /** Carve out § 13.82 subd. 7 so an open case cannot swallow the whole request. */
+    excludeActive?: boolean;
+    /** Data a vendor holds on the agency's behalf is still government data (§ 13.05 subd. 11). */
+    vendorHeld?: boolean;
+  }
+
+  const BODIES: Record<string, RequestBody> = {
     alpr: {
       title: 'automated licence plate reader (ALPR) data practices',
       items: [
@@ -241,11 +385,95 @@ const facilities = (
         'Any policy, general order, or standard operating procedure governing use of ALPR systems, including authorised query reasons.',
         'The total number of ALPR queries run by your agency in the most recent complete twelve-month period.',
         'A list of agencies and third parties with which your agency shares ALPR data, and any agreements governing that sharing.',
-        'Any audit logs or audit reports of ALPR queries, including query reason codes, for the most recent complete twelve-month period.',
+        'Any audit logs or audit reports of ALPR queries, including query reason codes, for the most recent complete twelve-month period. This includes the records the vendor’s own documentation calls "user access logs" and "network audit logs".',
+        'The current list of user accounts with query access to the system, by agency and role. I am requesting the count and the agency affiliation of those accounts, not the identity of any individual user.',
         'Contracts, purchase orders, and invoices for ALPR hardware, software, or services, including any agreement with Flock Safety or a comparable vendor.',
         'Records of any query run by, or on behalf of, a federal immigration authority against your agency’s ALPR data.',
       ],
       note: 'Minnesota has a specific ALPR statute at Minn. Stat. § 13.824, which sets retention limits and requires a biennial audit. If your agency operates ALPR systems, please also provide the most recent audit conducted under that section.',
+      sendTo:
+        'The responsible authority, but send a parallel request for the contracts and invoices to the county or city finance office — they answer faster and hold the same purchase records.',
+      excludeActive: true,
+      vendorHeld: true,
+    },
+
+    inventory: {
+      title: 'the inventory of surveillance technology maintained by the agency',
+      items: [
+        'A list of every technology your agency maintains that may be used to electronically capture an audio, video, photographic, or other record of the activities of the general public, whether or not it is currently deployed.',
+        'For each system on that list: the vendor and product name, the year it was acquired, the number of units, and whether it is currently in service.',
+        'Any policy, general order, or standard operating procedure governing each system, and the date each was last revised.',
+        'Any user access log, network audit log, or system audit report generated by each system in the most recent complete twelve-month period.',
+        'Any memorandum of understanding, data-sharing agreement, or interagency agreement under which another agency, a federal authority, or a private party may access each system or its data.',
+        'Any privacy impact assessment, civil liberties review, staff report, or public hearing record considered before each system was acquired.',
+      ],
+      note: 'Minn. Stat. § 13.82, subd. 31 classifies as public "the existence of all technology maintained by a law enforcement agency that may be used to electronically capture an audio, video, photographic, or other record of the activities of the general public." The first item above requests exactly that existence data, and it is public whether or not the technology is in active use.',
+      sendTo: 'The law enforcement agency’s responsible authority or data practices compliance official.',
+      excludeActive: true,
+      vendorHeld: true,
+    },
+
+    drone: {
+      title: 'the agency’s unmanned aerial vehicle (UAV) programme',
+      items: [
+        'The report your agency submitted to the commissioner of public safety under Minn. Stat. § 626.19, subd. 12 for each of the last three calendar years, as submitted.',
+        'The written policy your agency adopted under Minn. Stat. § 626.19, subd. 10 governing UAV use, and the record of its publication.',
+        'Any concept of operations, staff report, grant application, or vendor proposal relating to a "drone as first responder" or automated-launch programme, including planned or existing launch sites.',
+        'Any record of integration between UAV dispatch and computer-aided dispatch, a real-time crime centre, or a fixed camera or ALPR system.',
+        'Any Federal Aviation Administration certificate of waiver or authorization, Part 107 waiver, or beyond visual line of sight (BVLOS) authorization held by the agency, together with the application submitted for it.',
+        'Aggregate counts of UAV deployments by call type or dispatch category for the most recent complete twelve-month period. Counts only — I am not requesting records about any individual or any specific incident.',
+        'Contracts, purchase orders, and invoices for UAV hardware, software, docking stations, or services.',
+        'Any agreement permitting a vendor or another agency to receive a live UAV video feed.',
+      ],
+      note: 'The report requested in item 1 is required annually, so it should exist without any research on your part. The Department of Public Safety publishes a compiled statewide version; this request seeks your agency’s own submission, which is more detailed.',
+      sendTo: 'The agency itself — but check the published statewide compilation first (linked below); the answer may already be public.',
+      excludeActive: true,
+      vendorHeld: true,
+    },
+
+    dvs: {
+      title: 'agreements governing bulk disclosure of driver and vehicle records',
+      items: [
+        'A list of every entity holding a current bulk, batch, or automated access agreement to driver’s licence or motor vehicle record data, and the permissible use under United States Code, title 18, section 2721 asserted by each.',
+        'The executed agreement, contract, or memorandum of understanding for each entity on that list.',
+        'Any agreement providing access to, or receiving data from, a federal or military information system, including the FBI’s National Data Exchange (N-DEx).',
+        'The certification required of requesters under Minn. Stat. § 171.12, subd. 7b that data will not be used for immigration enforcement, and any record describing how compliance with that certification is verified or audited.',
+        'Aggregate counts of records disclosed to each entity in the most recent complete twelve-month period. Totals only.',
+        'Any audit, review, or investigation of misuse of driver and vehicle record data completed in the past three years, in summary or aggregate form.',
+      ],
+      note: 'To be explicit: this request seeks the agreements and the volume of disclosure under them. It does not seek any driver record, any motor vehicle record, or any data about an identifiable person — those data are protected by Minn. Stat. § 171.12, subd. 7 and United States Code, title 18, section 2721, and I am not asking you to release them.',
+      sendTo:
+        'Minnesota Department of Public Safety, Driver and Vehicle Services — a state agency, not your county.',
+    },
+
+    procurement: {
+      title: 'purchase orders and vendor payment history for law enforcement technology',
+      items: [
+        'All purchase orders, requisitions, and requisition approvals issued in the two most recent complete fiscal years for goods or services from any vendor of automated licence plate readers, unmanned aerial vehicles, real-time crime centre software, mobile device forensics, or data-broker search services. This includes, without limiting the request, Flock Safety, Axon Enterprise, Motorola Solutions, SoundThinking, Cellebrite, Magnet Forensics, Skydio, BRINC, Verkada, LexisNexis, and Thomson Reuters.',
+        'The check register, accounts payable ledger, or vendor payment history covering the same period for each vendor identified, showing payment date, amount, and the fund or account charged.',
+        'Any sole-source justification, cooperative purchasing agreement, or state or national contract number relied on to purchase from those vendors without competitive bidding.',
+        'Any grant application, award letter, or grant agreement under which such a purchase was funded in whole or in part, including any federal pass-through funding.',
+        'Any current quote, proposal, statement of work, or renewal or auto-renewal notice from those vendors, including line-item pricing.',
+        'Records sufficient to identify the department or cost centre that requested each purchase.',
+      ],
+      note: 'These are financial records of the entity. I am directing the request to the finance, purchasing, or accounts payable function rather than to a law enforcement agency for that reason. If another division holds responsive records, I ask that you forward this request rather than closing it.',
+      sendTo:
+        'Procurement, purchasing, finance, or accounts payable — not the police department’s public information officer. Whoever cuts the cheque holds the record, and that office has no reason to slow-walk it.',
+    },
+
+    permits: {
+      title: 'permits and right-of-way records for fixed surveillance installations',
+      items: [
+        'All right-of-way, encroachment, pole attachment, or small cell permits issued in the past three years for installation of a camera, licence plate reader, or associated equipment on public property or in the public right of way.',
+        'All building and electrical permits issued in the same period for installation of a pole-mounted camera or licence plate reader, including the applicant, the site address, and any inspection record.',
+        'Any master licence, pole attachment agreement, or right-of-way use agreement between this entity and a surveillance vendor or a law enforcement agency.',
+        'Any excavation or utility locate records this entity holds in its capacity as a facility operator under Minn. Stat. ch. 216D that relate to those installations.',
+        'Any public works or traffic engineering work order for the installation, relocation, or removal of such equipment.',
+        'Records of any permit fee waived, reduced, or charged to a vendor or agency for such an installation.',
+      ],
+      note: 'Permit and right-of-way records are ordinarily held by a building, engineering, or public works department rather than by a law enforcement agency, and they are public regardless of what was installed.',
+      sendTo:
+        'The building, engineering, or public works department. Anything bolted to a pole or set in the ground left a paper trail with them.',
     },
     '287g': {
       title: 'agreements with U.S. Immigration and Customs Enforcement under section 287(g)',
@@ -258,6 +486,9 @@ const facilities = (
         'Any cost, reimbursement, or budget records associated with participation in the programme.',
       ],
       note: 'To be explicit: this request seeks records about the agreement and its administration. It does not seek any record identifying a person encountered, detained, or arrested.',
+      sendTo:
+        'The sheriff’s office is the signatory, but the cost, reimbursement, and training-travel records also sit with the county finance office.',
+      excludeActive: true,
     },
     detention: {
       title: 'agreements to detain individuals on behalf of U.S. Immigration and Customs Enforcement',
@@ -270,6 +501,8 @@ const facilities = (
         'Minutes or records of any public body vote authorising or renewing the agreement.',
       ],
       note: 'This request seeks facility-level and contract-level records only. It does not seek any record identifying, describing, or relating to any individual held at the facility.',
+      sendTo:
+        'The county administrator or finance office holds the billing; the board’s own minutes record the vote that authorised it.',
     },
     datacenter: {
       title: 'permitting, utility, and public-subsidy records for data centre development',
@@ -281,6 +514,8 @@ const facilities = (
         'Any noise study, environmental assessment, or traffic study submitted in support of an application.',
         'Records of public comment received regarding a data centre project, and minutes of any hearing at which one was considered.',
       ],
+      sendTo:
+        'The city or county planning and zoning department. The abatement and financing records are with the finance office or the economic development authority.',
     },
   };
 
@@ -314,10 +549,26 @@ const facilities = (
 
     if (body.note) lines.push(body.note, '');
 
+    if (body.excludeActive) {
+      lines.push(
+        'This request expressly excludes any data that are confidential or protected nonpublic under Minn. Stat. § 13.82, subd. 7 because they are part of an active criminal investigation. What I have asked for above — policies, contracts, inventories, audit logs, and aggregate counts — is not investigative data. Please do not withhold an entire record on the ground that some part of it touches an investigation; redact that part and release the remainder.',
+        '',
+      );
+    }
+
+    if (body.vendorHeld) {
+      lines.push(
+        'If any responsive data are held by a private vendor performing this function under contract, those data remain subject to this chapter under Minn. Stat. § 13.05, subd. 11, and I request that you obtain and produce them. That a vendor stores the data on its own systems, or considers them proprietary, does not remove them from the Act.',
+        '',
+      );
+    }
+
     lines.push(
       'Please provide these data in electronic form where they already exist in that form, as this is generally the least costly method for both of us.',
       '',
       'If you determine that any portion of these data is not public, please identify the specific statutory provision that classifies it as such, and release the remaining portions rather than withholding a record in full.',
+      '',
+      'If your office is not the responsible authority for these data, I ask that you forward this request to the office that is and tell me where it went, rather than closing it.',
       '',
       'If you anticipate that responding will involve a charge for copies, please provide a written estimate before beginning work. I understand that inspection of public government data is provided at no charge.',
       '',
@@ -335,6 +586,7 @@ const facilities = (
 
   function refresh() {
     letterEl.value = buildLetter();
+    routeHintEl.textContent = BODIES[typeEl.value]?.sendTo ?? '';
   }
 
   [typeEl, agencyEl, nameEl, contactEl].forEach((input) =>
