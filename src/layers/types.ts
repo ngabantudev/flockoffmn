@@ -16,7 +16,12 @@ export type LayerId =
   | 'agency_287g'
   | 'detention_facility'
   | 'data_center'
-  | 'redlining';
+  | 'redlining'
+  // The only layer whose upstream source is a transaction between named
+  // private individuals. It is published as a clearly-labelled aggregate —
+  // counts per grid cell, never a record per property — and its ingest strips
+  // and then asserts. See scripts/ingest/covenants.mjs for the full reasoning.
+  | 'racial_covenant';
 
 export type Locale = 'en' | 'es';
 

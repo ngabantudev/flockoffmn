@@ -21,7 +21,8 @@
     "data:datacenters": "node scripts/ingest/data-centers.mjs",
     "data:redlining": "node scripts/ingest/redlining.mjs",
     "pages:dev": "wrangler pages dev dist",
-    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=get-flocked"
+    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=get-flocked",
+    "data:covenants": "node scripts/ingest/covenants.mjs"
   },
   "dependencies": {
     "astro": "^7.1.2",
