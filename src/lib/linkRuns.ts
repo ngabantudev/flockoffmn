@@ -27,11 +27,17 @@ export interface LinkRadiusConfig {
   pieceSpansKey: string;
   minSites: number;
   minSpanMiles: number;
+  /** Attribute distinguishing a run of readers from a lone one. */
+  kindKey: string;
+  /** Value of `kindKey` marking a branch — a reader on a road with no run. */
+  branchKind: string;
 }
 
 export interface Run {
   /** Index of the source feature this run was cut from. */
   source: number;
+  /** A lone reader hanging off the network rather than a run along a road. */
+  branch: boolean;
   /** Indices into the source feature's site list. */
   from: number;
   to: number;
@@ -117,6 +123,7 @@ export function runsFor(
       // Re-based so the spacing diagram starts at zero for the run actually shown.
       offsets: offsets.slice(from, to + 1).map((o) => Number((o - offsets[from]).toFixed(2))),
       counts: counts.slice(from, to + 1),
+      branch: false,
       colony: -1,
       colonySites: 0,
     });
@@ -184,6 +191,80 @@ export function assignColonies(runs: Run[], radiusMiles: number): void {
     run.colony = find(i);
     run.colonySites = size.get(run.colony) ?? run.sites;
   });
+}
+
+/**
+ * The branch readers close enough to a drawn run to be shown.
+ *
+ * A branch is a reader on a road that holds no run of its own. It appears when
+ * some run's reader location is within the radius of it — so widening the
+ * control makes side streets sprout off the trunks, one at a time, in the
+ * direction cameras actually stand. Narrow it and they retract.
+ *
+ * The rule is deliberately one-directional: a branch attaches to a run, never
+ * to another branch. Letting branches chain would grow arbitrarily long
+ * filaments through streets where nothing links them but the radius, which
+ * would draw a network shape the cameras do not support.
+ */
+export function branchesNear(
+  branches: Run[],
+  runs: Run[],
+  radiusMiles: number,
+): Run[] {
+  if (!runs.length || !branches.length) return [];
+  const radiusM = radiusMiles * 1609.344;
+  const cell = Math.max(radiusM, 1);
+  const mPerLng = 111_320 * Math.cos((46 * Math.PI) / 180);
+
+  const grid = new Map<string, Array<[number, number]>>();
+  for (const run of runs) {
+    for (const point of run.points) {
+      const gx = Math.floor((point[0] * mPerLng) / cell);
+      const gy = Math.floor((point[1] * 110_574) / cell);
+      const key = `${gx}|${gy}`;
+      if (!grid.has(key)) grid.set(key, []);
+      grid.get(key)!.push(point);
+    }
+  }
+
+  return branches.filter((branch) => {
+    const point = branch.points[0];
+    if (!point) return false;
+    const gx = Math.floor((point[0] * mPerLng) / cell);
+    const gy = Math.floor((point[1] * 110_574) / cell);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (const candidate of grid.get(`${gx + dx}|${gy + dy}`) ?? []) {
+          if (haversineMeters(point, candidate) <= radiusM) return true;
+        }
+      }
+    }
+    return false;
+  });
+}
+
+/** A branch feature as a one-site run, so colonies can be computed over both. */
+export function branchRun(properties: FeatureProperties, config: LinkRadiusConfig, sourceIndex: number): Run | null {
+  const attrs = properties.attributes as Record<string, unknown>;
+  const lng = Number(attrs[config.lngsKey]);
+  const lat = Number(attrs[config.latsKey]);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  const readers = Number(attrs[config.countsKey]) || 1;
+  return {
+    source: sourceIndex,
+    branch: true,
+    from: 0,
+    to: 0,
+    startMiles: 0,
+    endMiles: 0,
+    sites: 1,
+    readers,
+    points: [[lng, lat]],
+    offsets: [0],
+    counts: [readers],
+    colony: -1,
+    colonySites: 0,
+  };
 }
 
 /** Straight-line miles between two points, for run statistics. */

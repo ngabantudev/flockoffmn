@@ -258,6 +258,14 @@ export interface LayerDefinition {
     /** A run needs this many sites, and this much span, to be drawn at all. */
     minSites: number;
     minSpanMiles: number;
+    /**
+     * Attribute telling a run of readers from a lone one, and the value marking
+     * the latter. A branch is drawn only when it falls inside the radius of a
+     * run, so widening the control sprouts side streets off the trunks in the
+     * directions cameras actually stand.
+     */
+    kindKey: string;
+    branchKind: string;
     label: I18nString;
     /** One line under the control saying what moving it does. */
     help: I18nString;

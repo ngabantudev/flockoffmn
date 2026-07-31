@@ -37,7 +37,13 @@ import {
   queryOverpass,
   PUBLIC_DATA,
 } from './lib/util.mjs';
-import { findContaining, haversineMeters, locateOnLine, metersToMiles } from '../../src/lib/geo.mjs';
+import {
+  findContaining,
+  haversineMeters,
+  lineLengthMeters,
+  locateOnLine,
+  metersToMiles,
+} from '../../src/lib/geo.mjs';
 
 const STATE_ISO = process.env.STATE_ISO ?? 'US-MN';
 const STATE_USPS = process.env.STATE_USPS ?? 'MN';
@@ -65,11 +71,14 @@ const SNAP_M = 60;
 const SITE_M = 75;
 
 /**
- * The longest gap that still reads as one continuous corridor. Beyond this the
- * readers are on the same road but not on the same stretch of it, and joining
- * them would claim a run of surveillance that is not there.
+ * The widest linking distance this file supports.
+ *
+ * Not a claim that five miles of separation is one corridor — it is the ceiling
+ * of the control in the browser, which can only ever narrow what was surveyed
+ * here. Moving it means moving `linkRadius.maxMiles` in the registry to match,
+ * or the top of the slider silently stops doing anything.
  */
-const LINK_M = 3 * MILE;
+const LINK_M = 5 * MILE;
 
 /**
  * A corridor has to have enough stops, and be long enough not to be a junction.
@@ -95,6 +104,30 @@ const MIN_SPAN_M = 0.25 * MILE;
  * reject a different stretch of a road that happens to share a number.
  */
 const CLIP_M = 300;
+
+/**
+ * How much of a side street to draw around a reader that is not on a corridor.
+ *
+ * These are the branches. A camera on a side road is not a corridor and this
+ * layer must not call it one, but it is a real reader on a real road, and
+ * hiding it makes a corridor look like the whole of the network when it is the
+ * trunk of it. Drawing a short piece of the road it actually stands on says
+ * exactly what is known: a reader here, on this street, pointing somewhere.
+ *
+ * Kept short on purpose. The stub is evidence of a reader, not a claim about
+ * how far up that street the surveillance runs.
+ */
+const BRANCH_M = 160;
+
+/**
+ * The shortest branch worth drawing.
+ *
+ * A handful of readers snap to a tiny OpenStreetMap connector way — a five-metre
+ * fragment at a junction rather than the street itself — and the stub around
+ * them comes out too short to be a mark of anything. Drawing a nought-length
+ * line is not more honest than leaving it out, so they are dropped and counted.
+ */
+const MIN_STUB_M = 20;
 
 /**
  * Miles, for prose. Rounding to whole numbers would print the quarter-mile span
@@ -223,6 +256,57 @@ function clipToCorridor(ways, chain) {
   return pieces;
 }
 
+/** The point a fraction of the way along a segment. */
+const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+
+/**
+ * The stretch of a way within `radius` metres of a point, measured along the
+ * road rather than across it.
+ *
+ * A branch stub has to be bounded by construction, not by which vertices happen
+ * to fall near the camera. Keeping whole OpenStreetMap segments let a single
+ * reader on a rural road draw two kilometres of line, which asserts a run of
+ * surveillance where the source records one camera. Walking outward from the
+ * camera's own position and interpolating the last vertex gives the same length
+ * either side of every reader, whatever the survey's vertex spacing.
+ */
+function stubAround(point, coords, radius) {
+  if (!coords || coords.length < 2) return null;
+
+  let best = null;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const { distance, fraction } = locateOnLine(point, [coords[i], coords[i + 1]]);
+    if (!best || distance < best.distance) best = { distance, index: i, fraction };
+  }
+  if (!best) return null;
+
+  const anchor = lerp(coords[best.index], coords[best.index + 1], best.fraction);
+
+  const walk = (step, stop) => {
+    const out = [];
+    let travelled = 0;
+    let from = anchor;
+    for (let i = best.index + step; stop(i); i += step) {
+      const leg = haversineMeters(from, coords[i]);
+      if (travelled + leg >= radius) {
+        if (leg > 0) out.push(lerp(from, coords[i], (radius - travelled) / leg));
+        break;
+      }
+      travelled += leg;
+      out.push(coords[i]);
+      from = coords[i];
+    }
+    return out;
+  };
+
+  const back = walk(-1, (i) => i >= 0);
+  const forward = walk(1, (i) => i < coords.length);
+  // `walk(1, ...)` starts at index+1, which is the far end of the anchor's own
+  // segment, so both directions begin adjacent to the anchor.
+  const line = [...back.reverse(), anchor, ...forward];
+  return line.length > 1 ? line : null;
+}
+
 async function loadCameras() {
   const file = path.join(PUBLIC_DATA, 'alpr.geojson');
   const raw = await readFile(file, 'utf8').catch(() => null);
@@ -346,6 +430,7 @@ async function main() {
 
   const counties = await loadCounties();
   const features = [];
+  const inCorridor = new Set();
   let tooShort = 0;
   let tooFew = 0;
 
@@ -405,6 +490,8 @@ async function main() {
         return [lo, hi];
       });
 
+      for (const camera of stretch) inCorridor.add(camera.osmId);
+
       const readers = sites.reduce((sum, s) => sum + s.readers, 0);
       const midpoint = chain[Math.floor(chain.length / 2)];
       const county = findContaining(midpoint, counties.features);
@@ -444,6 +531,7 @@ async function main() {
           confidence: 'probabilistic',
           sourceDate: null,
           attributes: {
+            kind: 'corridor',
             road: identity,
             roadName: roadName && roadName !== identity ? roadName : null,
             roadClass,
@@ -478,9 +566,89 @@ async function main() {
 
   if (!features.length) throw new Error('no corridors survived the thresholds; not writing a layer');
 
-  features.sort((a, b) => b.properties.attributes.readerCount - a.properties.attributes.readerCount);
-  const totalReaders = features.reduce((s, f) => s + f.properties.attributes.readerCount, 0);
-  const paired = features.reduce(
+  /* ------------------------------------------------------------------ *
+   * Branches
+   *
+   * Every reader that snapped to a road but did not end up in a corridor,
+   * drawn as a short stub of the street it actually stands on.
+   *
+   * This is what makes the map stop lying by omission. A corridor layer alone
+   * says "here are the roads with runs of readers on them" and leaves a reader
+   * to assume the blank between two corridors is blank. It is not: most mapped
+   * cameras in this state are on roads that hold no run at all. Drawing the
+   * stub asserts only what the source records — a reader, on this street.
+   *
+   * The stub is real surveyed geometry, clipped from the same OpenStreetMap way
+   * the camera snapped to, exactly as a corridor is. Nothing here is a
+   * connector: whether a branch belongs to a corridor's network is decided in
+   * the browser by distance, and shown by colour, never by a drawn line.
+   * ------------------------------------------------------------------ */
+  const loose = [];
+  for (const list of byIdentity.values()) {
+    for (const camera of list) if (!inCorridor.has(camera.osmId)) loose.push(camera);
+  }
+
+  let branches = 0;
+  let stubTooShort = 0;
+  for (const group of cluster(loose, SITE_M, (c) => c.point)) {
+    const point = [mean(group.map((g) => g.point[0])), mean(group.map((g) => g.point[1]))];
+    // The stub: BRANCH_M of the camera's own road either side of it.
+    const stub = stubAround(point, group[0].way.coords, BRANCH_M);
+    if (!stub || lineLengthMeters(stub) < MIN_STUB_M) {
+      stubTooShort++;
+      continue;
+    }
+    const pieces = [stub];
+
+    const county = findContaining(point, counties.features);
+    const tags = group.map((g) => g.way.tags);
+    const roadName = commonest(tags.map((t) => (t.name ?? '').trim()));
+    const identity = identityOf(group[0].way.tags) ?? roadName ?? 'Unnamed road';
+    const operators = [...new Set(group.map((g) => g.operator).filter(Boolean))].sort();
+
+    branches++;
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'MultiLineString', coordinates: pieces },
+      properties: {
+        id: slugId('alpr-branch', identity, String(branches)),
+        layer: 'alpr_corridor',
+        name: roadName && roadName !== identity ? `${identity} — ${roadName}` : identity,
+        county: county?.properties.name ?? null,
+        state: STATE_USPS,
+        countyFips: county?.properties.geoid ?? null,
+        confidence: 'probabilistic',
+        sourceDate: null,
+        attributes: {
+          kind: 'branch',
+          road: identity,
+          roadName: roadName && roadName !== identity ? roadName : null,
+          roadClass: commonest(tags.map((t) => t.highway)),
+          readerCount: group.length,
+          siteCount: 1,
+          operatorCount: operators.length,
+          operators: operators.length ? operators.join('; ') : null,
+          unattributedReaders: group.filter((g) => !g.operator).length,
+          siteLngs: point[0].toFixed(6),
+          siteLats: point[1].toFixed(6),
+          siteReaders: String(group.length),
+        },
+      },
+    });
+  }
+  log('corridors', `${branches} branch readers on roads that hold no corridor`);
+
+  // Corridors first and longest-first within them, so the record list opens on
+  // the runs rather than on a thousand single readers.
+  const isCorridor = (f) => f.properties.attributes.kind === 'corridor';
+  features.sort((a, b) => {
+    if (isCorridor(a) !== isCorridor(b)) return isCorridor(a) ? -1 : 1;
+    return b.properties.attributes.readerCount - a.properties.attributes.readerCount;
+  });
+
+  const corridors = features.filter(isCorridor);
+  const totalReaders = corridors.reduce((s, f) => s + f.properties.attributes.readerCount, 0);
+  const paired = corridors.reduce(
     (s, f) => s + f.properties.attributes.readerCount - f.properties.attributes.siteCount,
     0,
   );
@@ -488,25 +656,61 @@ async function main() {
     (s, f) => s + f.properties.attributes.unattributedReaders,
     0,
   );
-  const attributed = totalReaders - unattributedTotal;
-  const multiOperator = features.filter((f) => f.properties.attributes.operatorCount > 1).length;
+  const branchReaders = features
+    .filter((f) => !isCorridor(f))
+    .reduce((s, f) => s + f.properties.attributes.readerCount, 0);
+  const attributed = totalReaders + branchReaders - unattributedTotal;
+  const multiOperator = corridors.filter((f) => f.properties.attributes.operatorCount > 1).length;
   log(
     'corridors',
-    `${attributed} of ${totalReaders} readers name an operator; ` +
+    `${attributed} of ${totalReaders + branchReaders} readers name an operator; ` +
       `${multiOperator} corridors are shared by more than one`,
   );
   log(
     'corridors',
-    `${features.length} corridors holding ${totalReaders} readers at ` +
-      `${totalReaders - paired} locations`,
+    `${corridors.length} corridors holding ${totalReaders} readers at ` +
+      `${totalReaders - paired} locations, plus ${branchReaders} readers on branches`,
   );
-  for (const f of features.slice(0, 10)) {
+  for (const f of corridors.slice(0, 10)) {
     const a = f.properties.attributes;
     log(
       'corridors',
       `  ${f.properties.name}: ${a.readerCount} readers, ${a.siteCount} locations, ` +
         `${a.corridorMiles} mi, one every ${a.averageGapMiles} mi`,
     );
+  }
+
+  /*
+   * Refuse to overwrite a fuller layer with a thinner one.
+   *
+   * Overpass mirrors do not only fail loudly. A run of this script came back
+   * HTTP 200 with 4,407 ways where the previous run saw 5,170, which snapped
+   * 182 fewer cameras and quietly shipped a smaller network — no error, no
+   * warning, just less of Minnesota. A partial answer that looks like a whole
+   * one is the failure mode worth guarding, because it is the one nobody
+   * notices.
+   *
+   * The bar is the file already on disk. Growth is always fine; a material
+   * shrink means the query, not the state, changed.
+   */
+  const previous = await readFile(path.join(PUBLIC_DATA, 'alpr-corridors.geojson'), 'utf8')
+    .then((raw) => JSON.parse(raw))
+    .catch(() => null);
+  if (previous) {
+    const readersIn = (collection) =>
+      (collection.features ?? []).reduce(
+        (sum, f) => sum + (Number(f.properties?.attributes?.readerCount) || 0),
+        0,
+      );
+    const before = readersIn(previous);
+    const now = totalReaders + branchReaders;
+    if (before > 0 && now < before * 0.9) {
+      throw new Error(
+        `refusing to overwrite: ${now} readers now against ${before} in the file on disk ` +
+          `(${Math.round((1 - now / before) * 100)}% fewer). Upstream returned a partial answer; ` +
+          `re-run rather than shipping a thinner network.`,
+      );
+    }
   }
 
   await writeLayer('alpr-corridors', {
@@ -531,6 +735,9 @@ async function main() {
       'A reader location is one or more cameras within 75 m. Which direction each faces is on the camera layer; this layer does not claim that a single trip is read by every camera it passes.',
       `Operator is recorded for only ${attributed} of the ${attributed + unattributedTotal} readers in these corridors, so the agencies named on a corridor are a floor and never the full list. A corridor showing one operator may well be shared by several.`,
       'Naming an operator says who is recorded as running a reader. It says nothing about who can search what it collects, which is a separate question this layer holds no data on.',
+      `Alongside the corridors, ${branches} branch readers are drawn: readers on roads that hold no run at all, shown as a short stub of the street each one stands on. A branch is not a corridor and is not evidence of one. It is drawn because leaving it out would make a corridor look like the whole network when it is only the trunk — most mapped cameras in this state are not on any run.`,
+      `A branch stub is ${BRANCH_M} m of road either side of the reader, the same everywhere. That length is a drawing convention, not a measurement: nothing in the source says how far along that street the surveillance extends.`,
+      `${stubTooShort} further reader locations are not drawn at all: each snapped to an OpenStreetMap way fragment shorter than ${MIN_STUB_M} m — a connector at a junction rather than a street — leaving nothing to draw a stub along. They remain on the camera layer.`,
     ],
     features,
   });
