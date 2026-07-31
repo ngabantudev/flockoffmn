@@ -51,6 +51,13 @@ export interface ClientLayer {
     label: string;
     help: string;
   };
+  /** The request a reader can file about one of these records, if any. */
+  action?: {
+    requestType: string;
+    label: string;
+    bodyKey?: string;
+    fallbackBody?: 'countySheriff' | 'county' | 'name';
+  };
   dataPath: string;
   csvPath: string | null;
   filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];

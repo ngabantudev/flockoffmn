@@ -110,6 +110,11 @@ export const es: Record<string, string> = {
   writeToThisOffice: 'Escriba a esta oficina',
   underStatute: 'Según {cite}',
 
+  actionAddressed: 'La carta irá dirigida a {body}, según consta en este registro.',
+  actionUnknownOperator:
+    'Nadie ha anotado quién opera esta. La carta irá dirigida a {body}, la agencia de este terreno, y preguntar quién la opera es en sí una pregunta legítima para ellos.',
+  actionPickBody: 'Elegirá a qué organismo dirigirse en la página siguiente.',
+
   locateTitle: 'Empiece por donde vive',
   locateIntro:
     'Elija su ciudad o municipio rural y esta página nombrará las oficinas obligadas a responderle, y dirigirá la carta de abajo a la que usted elija.',

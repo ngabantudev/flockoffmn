@@ -43,6 +43,15 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#f97316',
+    action: {
+      requestType: '287g',
+      label: {
+        en: 'Request the agreement',
+        es: 'Solicitar el acuerdo',
+      },
+      // The record is the agency, so it is also the body to write to.
+      fallbackBody: 'name',
+    },
     dataPath: '/data/287g.geojson',
     csvPath: '/data/287g.csv',
     provenance: {
@@ -171,6 +180,19 @@ export const LAYERS: LayerDefinition[] = [
     // of it until they are solid hardware at 14. There is no scale at which the
     // reader is handed a different picture of the same cameras.
     scale: { emergeFrom: 10, pointsFrom: 14 },
+    // The operator is recorded on maybe a third of these, so the fallback is
+    // not an edge case — it is the common path. Outside a city with its own
+    // force the sheriff is the agency for that ground, and asking the wrong
+    // county office still beats not asking.
+    action: {
+      requestType: 'alpr',
+      label: {
+        en: 'Ask who runs this camera',
+        es: 'Preguntar quién opera esta cámara',
+      },
+      bodyKey: 'operator',
+      fallbackBody: 'countySheriff',
+    },
     dataPath: '/data/alpr.geojson',
     csvPath: '/data/alpr.csv',
     provenance: {
@@ -321,6 +343,14 @@ export const LAYERS: LayerDefinition[] = [
         en: 'How close two clusters\u2019 streets must come to belong to the same network. Widen it and separate pockets fuse along the roads between them; narrow it and only the tightest clusters survive.',
         es: 'Cuánto deben acercarse las calles de dos conjuntos para pertenecer a la misma red. Amplíelo y los focos separados se fusionan a lo largo de las vías intermedias; redúzcalo y solo sobreviven los conjuntos más compactos.',
       },
+    },
+    action: {
+      requestType: 'alpr',
+      label: {
+        en: 'Ask about this corridor',
+        es: 'Preguntar por este corredor',
+      },
+      fallbackBody: 'countySheriff',
     },
     dataPath: '/data/alpr-corridors.geojson',
     csvPath: null,
@@ -534,6 +564,14 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#f43f5e',
+    action: {
+      requestType: 'detention',
+      label: {
+        en: 'Request the contract',
+        es: 'Solicitar el contrato',
+      },
+      fallbackBody: 'name',
+    },
     dataPath: '/data/detention.geojson',
     csvPath: '/data/detention.csv',
     provenance: {
@@ -602,6 +640,16 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#34d399',
+    action: {
+      requestType: 'datacenter',
+      label: {
+        en: 'Request the permits',
+        es: 'Solicitar los permisos',
+      },
+      // Permits and abatements sit with planning, zoning or finance — never
+      // with a sheriff, and never with the operator.
+      fallbackBody: 'county',
+    },
     dataPath: '/data/data-centers.geojson',
     csvPath: '/data/data-centers.csv',
     provenance: {
