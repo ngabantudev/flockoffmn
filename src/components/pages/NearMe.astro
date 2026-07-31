@@ -428,9 +428,9 @@ const actPath = localePath(locale, '/act');
    *
    * This used to measure to the centre of a record's bounding box, which is
    * exact for a point and badly wrong for anything with extent: someone
-   * standing on an eleven-mile corridor would be told it was five miles away,
-   * because that is how far they were from its midpoint. The same rule the
-   * ingest uses to build corridors answers the question here.
+   * standing on a nine-mile stretch of road would be told it was four miles
+   * away, because that is how far they were from its midpoint. The same rule
+   * the ingest uses to route between cameras answers the question here.
    */
   function nearest(point: [number, number], features: Feature[]) {
     let best: { feature: Feature; distance: number } | null = null;
