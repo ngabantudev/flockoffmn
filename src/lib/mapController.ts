@@ -4,9 +4,8 @@ import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { THREAD_STOPS, densityColorExpression } from './densityRamp';
 import {
-  assignColonies,
   branchRun,
-  branchesNear,
+  formBodies,
   parseSpans,
   runsFor,
   type LinkRadiusConfig,
@@ -491,24 +490,21 @@ export class MapController {
     if (!config) return raw;
     const radius = this.linkRadius.get(layer.id) ?? config.defaultMiles;
 
-    // Runs first, then the branches close enough to any of them. A branch that
-    // reaches nothing is not drawn: it would be a stub of street floating on
-    // its own, which says less than the camera layer already says better.
-    const runs: Run[] = [];
-    const loose: Run[] = [];
+    // Everything the radius implies, runs and lone readers alike, then the
+    // bodies they form. Which of them survives is decided by the body it
+    // belongs to and never by the road it stands on — see formBodies.
+    const elements: Run[] = [];
     raw.forEach((feature, index) => {
       const kind = (feature.properties.attributes as Record<string, unknown>)[config.kindKey];
       if (kind === config.branchKind) {
         const branch = branchRun(feature.properties, config, index);
-        if (branch) loose.push(branch);
+        if (branch) elements.push(branch);
         return;
       }
-      runs.push(...runsFor(feature.properties, config, radius, index));
+      elements.push(...runsFor(feature.properties, config, radius, index));
     });
 
-    const attached = branchesNear(loose, runs, radius);
-    const all = [...runs, ...attached];
-    assignColonies(all, radius);
+    const all = formBodies(elements, radius, config.minBodySites);
 
     return all.map((run) => {
       const source = raw[run.source];

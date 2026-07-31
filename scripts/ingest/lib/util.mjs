@@ -56,7 +56,7 @@ export async function fetchWithRetry(url, { retries = 3, timeoutMs = 60_000, ...
  * every query walks a list of mirrors rather than failing on the first one.
  * ------------------------------------------------------------------ */
 
-export const OVERPASS_MIRRORS = [
+const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',

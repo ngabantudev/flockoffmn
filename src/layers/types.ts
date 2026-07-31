@@ -255,14 +255,21 @@ export interface LayerDefinition {
     maxMiles: number;
     stepMiles: number;
     defaultMiles: number;
-    /** A run needs this many sites, and this much span, to be drawn at all. */
-    minSites: number;
-    minSpanMiles: number;
+    /**
+     * Reader locations a cluster needs before any of it is drawn.
+     *
+     * The bar is on the cluster, not on any one road. A downtown with ten
+     * readers spread over five streets is a network; requiring four on a single
+     * street drew nothing there at all.
+     */
+    minBodySites: number;
+    /** Reader locations on one road before it is drawn as a run rather than stubs. */
+    minRunSites: number;
     /**
      * Attribute telling a run of readers from a lone one, and the value marking
-     * the latter. A branch is drawn only when it falls inside the radius of a
-     * run, so widening the control sprouts side streets off the trunks in the
-     * directions cameras actually stand.
+     * the latter. Both are drawn when their cluster qualifies, so widening the
+     * control grows side streets out of the clusters in the directions cameras
+     * actually stand.
      */
     kindKey: string;
     branchKind: string;
