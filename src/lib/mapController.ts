@@ -2,6 +2,7 @@ import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
+import { densityColorExpression } from './densityRamp';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -19,6 +20,10 @@ export interface ClientLayer {
   bearingKey?: string;
   /** Offsets of a record's parts along its own length, if it has a length. */
   positions?: { offsetsKey: string; countsKey: string; label: string };
+  /** Draw this layer's points as a density surface beneath the records. */
+  density?: { weightKey?: string; fadeOutZoom: number; label: string };
+  /** Draw this line layer as a glowing, creeping filament. */
+  filament?: boolean;
   dataPath: string;
   csvPath: string | null;
   filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];
@@ -78,6 +83,38 @@ const DEFAULT_CONE_ARC = 50;
 /** Written onto the cone features by us; not an upstream field. */
 const BEARING_PROP = '__bearing';
 const CONE_PROP = '__cone';
+
+/** The density ramp lives in densityRamp.ts so the legend cannot drift from it. */
+const DENSITY_COLOR = densityColorExpression() as unknown as maplibregl.ExpressionSpecification;
+
+/**
+ * Dash phases for the creeping filament.
+ *
+ * Each frame lengthens the drawn part and shortens the gap ahead of it, so the
+ * pattern reads as something extending along the road rather than as traffic
+ * moving down it. Stepping through fixed phases is the only way to animate a
+ * dash in MapLibre — `line-dasharray` takes no expression, so it cannot be
+ * driven by a zoom or time expression and has to be set frame by frame.
+ */
+const FILAMENT_DASHES: number[][] = [
+  [0, 4, 3],
+  [0.5, 4, 2.5],
+  [1, 4, 2],
+  [1.5, 4, 1.5],
+  [2, 4, 1],
+  [2.5, 4, 0.5],
+  [3, 4, 0],
+  [0, 0.5, 3, 3.5],
+  [0, 1, 3, 3],
+  [0, 1.5, 3, 2.5],
+  [0, 2, 3, 2],
+  [0, 2.5, 3, 1.5],
+  [0, 3, 3, 1],
+  [0, 3.5, 3, 0.5],
+];
+
+/** Slow enough to read as growth rather than as a marquee border. */
+const FILAMENT_FRAME_MS = 110;
 
 const normaliseDegrees = (d: number) => ((d % 360) + 360) % 360;
 
@@ -152,6 +189,9 @@ export class MapController {
   private popup: maplibregl.Popup | null = null;
   /** Set once the map's `load` event has fired. See ready(). */
   private hasLoaded = false;
+  /** Line layers drawn as filaments, and the frame loop that creeps them. */
+  private filamentLayers = new Set<string>();
+  private filamentFrame: number | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -312,10 +352,48 @@ export class MapController {
    */
   private beneathDots(): string | undefined {
     const marks = ['-points', '-clusters', '-cluster-count', '-cones'];
+    return this.firstStyleLayer((id) => marks.some((suffix) => id.endsWith(suffix)));
+  }
+
+  /**
+   * The bottom-most style layer belonging to any registry layer.
+   *
+   * The density surface has to sit under everything of ours — including other
+   * layers' areas and lines — or a corridor switched on first would be washed
+   * out by a surface added afterwards.
+   */
+  private beneathEverything(): string | undefined {
+    return this.firstStyleLayer((id) => this.layers.some((l) => id.startsWith(`${l.id}-`)));
+  }
+
+  private firstStyleLayer(match: (id: string) => boolean): string | undefined {
     for (const styleLayer of this.map.getStyle().layers ?? []) {
-      if (marks.some((suffix) => styleLayer.id.endsWith(suffix))) return styleLayer.id;
+      if (match(styleLayer.id)) return styleLayer.id;
     }
     return undefined;
+  }
+
+  private densitySourceId = (layerId: string) => `src-${layerId}-density`;
+
+  /**
+   * Points for the density surface, in their own unclustered source.
+   *
+   * The record source clusters, and a heatmap over clustered data measures the
+   * cluster centroids rather than the cameras — so the surface would change
+   * shape at every zoom step as clusters merged, which is an artefact of the
+   * rendering and not a fact about where cameras are.
+   */
+  private densityFeatures(features: LoadedFeature[]): FeatureCollection {
+    return {
+      type: 'FeatureCollection',
+      features: features
+        .filter((f) => f.geometry.type === 'Point')
+        .map((f) => ({
+          type: 'Feature',
+          geometry: f.geometry,
+          properties: { ...f.properties.attributes },
+        })) as Feature[],
+    };
   }
 
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
@@ -341,6 +419,42 @@ export class MapController {
   private addLayer(layer: ClientLayer, features: LoadedFeature[]) {
     const src = this.sourceId(layer.id);
     if (this.map.getSource(src)) return;
+
+    // The density surface goes down first and stays at the bottom of our stack.
+    if (layer.density) {
+      const densitySrc = this.densitySourceId(layer.id);
+      this.map.addSource(densitySrc, { type: 'geojson', data: this.densityFeatures(features) });
+      this.map.addLayer(
+        {
+          id: `${layer.id}-density`,
+          type: 'heatmap',
+          source: densitySrc,
+          maxzoom: layer.density.fadeOutZoom,
+          paint: {
+            'heatmap-weight': layer.density.weightKey
+              ? ['coalesce', ['to-number', ['get', layer.density.weightKey]], 1]
+              : 1,
+            // Rising with zoom so the surface stays legible as points spread
+            // apart on screen instead of thinning into nothing.
+            'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 4, 0.55, 9, 1.2, 13, 2.4],
+            'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 4, 8, 9, 24, 13, 46],
+            'heatmap-color': DENSITY_COLOR,
+            // Gone by the time records are drawn individually, so nobody reads
+            // a smoothed estimate and a mapped camera off the same pixel.
+            'heatmap-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              layer.density.fadeOutZoom - 2,
+              0.85,
+              layer.density.fadeOutZoom,
+              0,
+            ],
+          },
+        },
+        this.beneathEverything(),
+      );
+    }
 
     this.map.addSource(src, {
       type: 'geojson',
@@ -389,34 +503,88 @@ export class MapController {
       // line legible over a dark basemap without drawing it fat enough to
       // imply a width the data does not have — a corridor is a stretch of
       // road, not a band of ground.
-      this.map.addLayer(
-        {
-          id: `${layer.id}-line-casing`,
-          type: 'line',
-          source: src,
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: {
-            'line-color': '#0a0c10',
-            'line-opacity': 0.85,
-            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 11, 6, 16, 11],
+      if (layer.filament) {
+        // A soft halo, wide and heavily blurred, so the thread looks like it is
+        // lit from inside rather than drawn on top of the map.
+        this.map.addLayer(
+          {
+            id: `${layer.id}-line-casing`,
+            type: 'line',
+            source: src,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-color': layer.color,
+              'line-opacity': 0.3,
+              'line-blur': ['interpolate', ['linear'], ['zoom'], 6, 4, 11, 9, 16, 18],
+              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 5, 11, 12, 16, 26],
+            },
           },
-        },
-        under,
-      );
-      this.map.addLayer(
-        {
-          id: `${layer.id}-line`,
-          type: 'line',
-          source: src,
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: {
-            'line-color': layer.color,
-            'line-opacity': 0.9,
-            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3, 16, 6],
+          under,
+        );
+        // The core, thin and bright. Drawn solid beneath the creeping dash so
+        // the corridor never disappears between phases — the growth reads as
+        // something travelling along a thread that is always there.
+        this.map.addLayer(
+          {
+            id: `${layer.id}-line`,
+            type: 'line',
+            source: src,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-color': layer.color,
+              'line-opacity': 0.55,
+              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.1, 11, 2, 16, 4],
+            },
           },
-        },
-        under,
-      );
+          under,
+        );
+        this.map.addLayer(
+          {
+            id: `${layer.id}-line-growth`,
+            type: 'line',
+            source: src,
+            layout: { 'line-cap': 'butt', 'line-join': 'round' },
+            paint: {
+              'line-color': '#f0fdfa',
+              'line-opacity': 0.9,
+              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.4, 11, 2.6, 16, 5],
+              'line-dasharray': FILAMENT_DASHES[0],
+            },
+          },
+          under,
+        );
+        this.filamentLayers.add(`${layer.id}-line-growth`);
+        this.startFilament();
+      } else {
+        this.map.addLayer(
+          {
+            id: `${layer.id}-line-casing`,
+            type: 'line',
+            source: src,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-color': '#0a0c10',
+              'line-opacity': 0.85,
+              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 11, 6, 16, 11],
+            },
+          },
+          under,
+        );
+        this.map.addLayer(
+          {
+            id: `${layer.id}-line`,
+            type: 'line',
+            source: src,
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: {
+              'line-color': layer.color,
+              'line-opacity': 0.9,
+              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3, 16, 6],
+            },
+          },
+          under,
+        );
+      }
       // A line is a hard thing to hit with a finger. This one is invisible and
       // exists only to widen the target; a zero-opacity layer is still
       // queryable, so click and hover behave as they do on every other layer.
@@ -518,6 +686,37 @@ export class MapController {
     this.bindInteractions(layer, `${layer.id}-points`);
   }
 
+  /**
+   * Creep the filament dash forward, one phase at a time.
+   *
+   * Runs on `requestAnimationFrame` but advances on a fixed interval, so the
+   * growth moves at the same speed on a 120 Hz display as on a 60 Hz one. The
+   * loop parks itself whenever no filament layer is switched on, so a reader
+   * who never turns corridors on pays nothing for this.
+   */
+  private startFilament() {
+    if (REDUCED_MOTION || this.filamentFrame !== null || !this.filamentLayers.size) return;
+    let step = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      const live = [...this.filamentLayers].filter(
+        (id) => this.map.getLayer(id) && this.visible.has(id.replace(/-line-growth$/, '')),
+      );
+      if (!live.length) {
+        this.filamentFrame = null;
+        return;
+      }
+      this.filamentFrame = requestAnimationFrame(tick);
+      if (now - last < FILAMENT_FRAME_MS) return;
+      last = now;
+      step = (step + 1) % FILAMENT_DASHES.length;
+      for (const id of live) {
+        this.map.setPaintProperty(id, 'line-dasharray', FILAMENT_DASHES[step]);
+      }
+    };
+    this.filamentFrame = requestAnimationFrame(tick);
+  }
+
   private cursorOn(layerId: string) {
     this.map.on('mouseenter', layerId, () => {
       this.map.getCanvas().style.cursor = 'pointer';
@@ -551,10 +750,12 @@ export class MapController {
   private applyVisibility(layer: ClientLayer) {
     const on = this.visible.has(layer.id);
     for (const suffix of [
+      '-density',
       '-fill',
       '-outline',
       '-line-casing',
       '-line',
+      '-line-growth',
       '-line-hit',
       '-points',
       '-cones',
@@ -566,6 +767,9 @@ export class MapController {
         this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       }
     }
+    // The creep loop parks itself when nothing is on; switching a filament
+    // layer back on has to wake it.
+    if (on) this.startFilament();
     this.emitCounts();
   }
 
@@ -611,6 +815,11 @@ export class MapController {
     // record list no longer shows.
     const cones = this.map.getSource(this.coneSourceId(layerId)) as GeoJSONSource | undefined;
     cones?.setData(this.coneFeatures(layer, visible));
+    // The density surface is a third source and drifts the same way: a filter
+    // that hides half the cameras must not leave the glow claiming they are
+    // still there.
+    const density = this.map.getSource(this.densitySourceId(layerId)) as GeoJSONSource | undefined;
+    density?.setData(this.densityFeatures(visible));
     this.emitCounts();
   }
 
@@ -677,6 +886,8 @@ export class MapController {
   }
 
   destroy() {
+    if (this.filamentFrame !== null) cancelAnimationFrame(this.filamentFrame);
+    this.filamentFrame = null;
     this.popup?.remove();
     this.map.remove();
   }

@@ -2,6 +2,7 @@
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
 import { useTranslations, pick } from '~/lib/i18n';
+import { densityGradientCss } from '~/lib/densityRamp';
 
 interface Props {
   locale: Locale;
@@ -32,6 +33,14 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
         label: pick(d.positions.label, locale),
       }
     : undefined,
+  density: d.density
+    ? {
+        weightKey: d.density.weightKey,
+        fadeOutZoom: d.density.fadeOutZoom,
+        label: pick(d.density.label, locale),
+      }
+    : undefined,
+  filament: d.filament,
   dataPath: d.dataPath,
   csvPath: d.csvPath,
   filters: d.filters
@@ -71,6 +80,7 @@ const strings = {
   ofTotal: t('ofTotal'),
   positionsScale: t('positionsScale'),
   positionsSummary: t('positionsSummary'),
+  densityScale: t('densityScale'),
 };
 ---
 
@@ -140,6 +150,26 @@ const strings = {
                     <span> {strings.ofTotal} </span>
                     <span>{layer.featureCount}</span>
                   </p>
+
+                  {/*
+                    A density surface with no key is unreadable — the reader
+                    sees a glow and has to guess whether brighter means more.
+                    The swatch is generated from the same stops the map is, so
+                    it cannot describe a ramp the map does not draw.
+                  */}
+                  {layer.density && (
+                    <div class="mt-2">
+                      <div
+                        class="h-1.5 w-full rounded-full border border-ink-800"
+                        style={`background:${densityGradientCss()}`}
+                        aria-hidden="true"
+                      />
+                      <p class="mt-1 flex items-baseline justify-between text-[10px] text-ink-400">
+                        <span>{layer.density.label}</span>
+                        <span>{strings.densityScale}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -647,10 +677,12 @@ const strings = {
 
   /* ------------------------------ Start-up ------------------------------ */
 
-  // Default on: the two layers that carry the roadmap's core claim, so the
-  // first paint already shows enforcement over surveillance rather than an
-  // empty basemap.
-  const DEFAULT_ON = ['agency_287g', 'alpr'];
+  // Default on: the layers that carry the roadmap's core claim, so the first
+  // paint already shows enforcement over surveillance rather than an empty
+  // basemap. Corridors join them because the camera layer alone answers "is
+  // there one near me" and leaves the shape of the network — the part no
+  // single dot can show — switched off behind a checkbox.
+  const DEFAULT_ON = ['agency_287g', 'alpr', 'alpr_corridor'];
   status(S.loading, 0);
   controller.map.once('load', () => {
     for (const id of DEFAULT_ON) {

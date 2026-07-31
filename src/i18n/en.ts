@@ -80,6 +80,7 @@ export const en: Record<string, string> = {
   // accessible equivalent, so it carries the same offsets the drawing does.
   positionsScale: 'Drawn to scale over {total} miles. A larger dot means more in one place.',
   positionsSummary: '{count} marks along {total} miles, at {offsets} miles from the start.',
+  densityScale: 'sparse → dense',
 
   confidenceConfirmed: 'Confirmed — documented in an official public record.',
   confidenceReported: 'Reported — from permit filings or secondary records that may be out of date.',

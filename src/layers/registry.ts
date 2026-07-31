@@ -128,6 +128,10 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Cuando un registro indica un sector real —50 lo hacen, como «108-153»— el cono se dibuja exactamente con esa amplitud. Cuando solo indica una orientación, el cono se dibuja con una amplitud nominal fija, porque no se registró ningún campo de visión. Ambos se ven igual en el mapa, así que considere la amplitud del cono como evidencia solo cuando el panel de detalle muestre un sector.',
       },
       {
+        en: 'The glow under the dots is a density estimate, not coverage. It smooths mapped cameras over a radius, so it paints colour on ground no camera stands on and none can see — it shows where mapped cameras cluster, and nothing else. It fades out as you zoom in, so an estimate and a mapped position are never read off the same pixel.',
+        es: 'El resplandor bajo los puntos es una estimación de densidad, no una cobertura. Suaviza las cámaras mapeadas sobre un radio, así que colorea terreno donde no hay ninguna cámara ni alcance de ninguna: solo muestra dónde se agrupan las cámaras mapeadas. Se desvanece al acercar el zoom, de modo que una estimación y una posición mapeada nunca se leen en el mismo píxel.',
+      },
+      {
         en: 'A node where several cameras share a pole ("321;109") is drawn as one cone per recorded heading over a single dot. A record tagged "0-360" is drawn as a full circle, meaning the surveyor recorded no single direction at all.',
         es: 'Un nodo donde varias cámaras comparten un poste («321;109») se dibuja con un cono por cada orientación registrada sobre un solo punto. Un registro etiquetado «0-360» se dibuja como un círculo completo, lo que significa que no se registró ninguna dirección concreta.',
       },
@@ -136,6 +140,10 @@ export const LAYERS: LayerDefinition[] = [
     color: '#38bdf8',
     cluster: true,
     bearingKey: 'direction',
+    density: {
+      fadeOutZoom: 12,
+      label: { en: 'Camera density', es: 'Densidad de cámaras' },
+    },
     dataPath: '/data/alpr.geojson',
     csvPath: '/data/alpr.csv',
     provenance: {
@@ -229,6 +237,7 @@ export const LAYERS: LayerDefinition[] = [
     geometry: 'line',
     color: '#818cf8',
     cluster: false,
+    filament: true,
     positions: {
       offsetsKey: 'siteOffsets',
       countsKey: 'siteReaders',

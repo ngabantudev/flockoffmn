@@ -75,6 +75,7 @@ export const es: Record<string, string> = {
   positionsScale:
     'Dibujado a escala sobre {total} millas. Un punto más grande significa más en un mismo lugar.',
   positionsSummary: '{count} marcas a lo largo de {total} millas, a {offsets} millas del inicio.',
+  densityScale: 'escasa → densa',
 
   confidenceConfirmed: 'Confirmado: documentado en un registro público oficial.',
   confidenceReported: 'Reportado: proviene de permisos o registros secundarios que pueden estar desactualizados.',
