@@ -109,6 +109,13 @@ export const en: Record<string, string> = {
   writeToThisOffice: 'Write to this office',
   underStatute: 'Under {cite}',
 
+  // The way out of the map's detail panel. A record is the end of somebody
+  // else's paperwork; these say what the next piece would be.
+  actionAddressed: 'The letter will be addressed to {body}, as recorded on this record.',
+  actionUnknownOperator:
+    'Nobody has recorded who operates this one. The letter will be addressed to {body} — the agency for this ground — and asking who runs it is itself a fair question to put to them.',
+  actionPickBody: 'You will choose which body to address on the next page.',
+
   // Locator on the Take Action page
   locateTitle: 'Start from where you live',
   locateIntro:

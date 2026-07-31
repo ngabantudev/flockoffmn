@@ -329,6 +329,45 @@ export interface LayerDefinition {
     /** One line under the control saying what moving it does. */
     help: I18nString;
   };
+  /**
+   * The request a reader can file about one of these records.
+   *
+   * A record on this map is the end of somebody else's paperwork, and until
+   * now the panel showing it was a dead end: it told a reader what was there,
+   * how confident we were, and where it came from, and then stopped. The one
+   * question it did not answer is the only one that leads anywhere — *so what
+   * do I do about it*. This field closes that, and lives on the layer rather
+   * than in the panel so a new layer arrives carrying its own next step
+   * instead of needing a branch added to a component.
+   *
+   * Omit it and the record simply has no obvious request behind it, which is
+   * honest for the historical layers: nobody files a data practices request
+   * about a 1935 redlining grade.
+   */
+  action?: {
+    /** Key of a template in the Take Action generator. */
+    requestType: string;
+    /** Button text, e.g. "Ask who runs this camera". */
+    label: I18nString;
+    /**
+     * Attribute naming the body to address — the camera's operator, say.
+     * Frequently null in the data, which is why `fallbackBody` exists.
+     */
+    bodyKey?: string;
+    /**
+     * Who to address when `bodyKey` is missing or empty.
+     *
+     * - `countySheriff` builds "<County> Sheriff's Office". Outside a city
+     *   with its own force that is the law enforcement agency for the ground,
+     *   so it is the right default for surveillance equipment.
+     * - `county` is the county government itself, for records a sheriff never
+     *   holds — permits, abatements, and anything else that lives with
+     *   planning, zoning or finance.
+     * - `name` uses the record's own name, right for a layer whose records
+     *   *are* the body: a 287(g) agency, an ICE-contract jail.
+     */
+    fallbackBody?: 'countySheriff' | 'county' | 'name';
+  };
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
   csvPath: string | null;

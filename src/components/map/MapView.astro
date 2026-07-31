@@ -1,7 +1,7 @@
 ---
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
-import { useTranslations, pick } from '~/lib/i18n';
+import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { densityGradientCss } from '~/lib/densityRamp';
 
 interface Props {
@@ -80,6 +80,14 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     label: pick(f.label, locale),
     format: f.format,
   })),
+  action: d.action
+    ? {
+        requestType: d.action.requestType,
+        label: pick(d.action.label, locale),
+        bodyKey: d.action.bodyKey,
+        fallbackBody: d.action.fallbackBody,
+      }
+    : undefined,
   source: collection?.metadata.source ?? d.provenance.source,
   sourceUrl: collection?.metadata.sourceUrl ?? d.provenance.sourceUrl,
   license: collection?.metadata.license ?? d.provenance.license,
@@ -106,6 +114,9 @@ const strings = {
   densityScale: t('densityScale'),
   densityNodes: t('densityNodes'),
   categoryFromZoom: t('categoryFromZoom'),
+  actionAddressed: t('actionAddressed'),
+  actionUnknownOperator: t('actionUnknownOperator'),
+  actionPickBody: t('actionPickBody'),
 };
 ---
 
@@ -349,6 +360,7 @@ const strings = {
 
 <script is:inline type="application/json" id="layer-config" set:html={JSON.stringify(clientLayers)} />
 <script is:inline type="application/json" id="ui-strings" set:html={JSON.stringify(strings)} />
+<script is:inline type="application/json" id="act-path" set:html={JSON.stringify(localePath(locale, '/act'))} />
 
 <script>
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
@@ -370,6 +382,7 @@ const strings = {
     featureCount: number;
   })[];
   const S = JSON.parse(document.getElementById('ui-strings')!.textContent!) as Record<string, string>;
+  const ACT_PATH = JSON.parse(document.getElementById('act-path')!.textContent!) as string;
 
   const mapEl = document.getElementById('map')!;
   const detailEl = document.getElementById('detail-panel')!;
@@ -580,6 +593,63 @@ const strings = {
     header.append(titleWrap, close);
 
     const body = el('div', 'space-y-4 p-3');
+
+    /*
+      The way out of the panel.
+
+      Sits above the fields rather than under the provenance at the bottom,
+      because a reader who has decided to act has already decided — making them
+      scroll past the licence to find the button is how a dead end gets
+      rebuilt. The panel is narrow and scrolls; anything below the fold on a
+      phone may as well not exist.
+
+      What it carries is the whole point: the request template for this kind of
+      record, the body to address, and where the record is, so the Take Action
+      page can name the offices for that exact ground instead of starting the
+      reader at a blank form.
+    */
+    if (layer.action) {
+      const named =
+        layer.action.bodyKey != null ? String(attrs[layer.action.bodyKey] ?? '').trim() : '';
+      let addressee = named;
+      if (!addressee) {
+        if (layer.action.fallbackBody === 'name') addressee = p.name;
+        else if (layer.action.fallbackBody === 'county' && p.county) addressee = p.county;
+        else if (layer.action.fallbackBody === 'countySheriff' && p.county) {
+          addressee = `${p.county} Sheriff's Office`;
+        }
+      }
+
+      const params = new URLSearchParams({ type: layer.action.requestType });
+      if (addressee) params.set('body', addressee);
+      if (feature.geometry.type === 'Point') {
+        const [lng, lat] = feature.geometry.coordinates as [number, number];
+        params.set('at', `${lng.toFixed(5)},${lat.toFixed(5)}`);
+      }
+
+      const cta = el(
+        'a',
+        'block rounded-md bg-accent px-3 py-2 text-center text-sm font-medium text-ink-950 hover:brightness-110',
+        layer.action.label,
+      );
+      cta.setAttribute('href', `${ACT_PATH}?${params}`);
+      body.append(cta);
+
+      // Say who the letter will be addressed to before the reader commits to
+      // a page change — and, where the operator is blank, say that instead of
+      // quietly substituting the sheriff and letting them think we knew.
+      body.append(
+        el(
+          'p',
+          '-mt-2 text-[11px] leading-relaxed text-ink-400',
+          named
+            ? fill(S.actionAddressed, { body: addressee })
+            : addressee
+              ? fill(S.actionUnknownOperator, { body: addressee })
+              : S.actionPickBody,
+        ),
+      );
+    }
 
     // Layer-specific fields.
     const rows = layer.detailFields

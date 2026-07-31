@@ -971,15 +971,64 @@ const locatorStrings = {
   }
 
   /*
-    Arriving from the "who answers to you here" card on the near-me page, which
-    links across with the jurisdiction already chosen. Without this the reader
-    would have to find their township a second time, on a second page, to do
-    the thing the first page just told them to do.
+    Arriving from somewhere else on the site with the work already started.
+
+    Two doors lead here. The "who answers to you here" card on the near-me page
+    sends `jurisdiction`; the take-action button in the map's detail panel
+    sends `type` and `body` — the request template for that kind of record and
+    the body to address — plus `at`, the record's position.
+
+    Without this the reader would arrive at a blank form having just been told
+    exactly what to ask and who to ask, and would have to enter all of it a
+    second time. That is where people give up.
   */
-  ready.then(() => {
-    const geoid = new URL(window.location.href).searchParams.get('jurisdiction');
-    if (!geoid) return;
-    const match = jurisdictions.find((j) => j.geoid === geoid);
+  const params = new URL(window.location.href).searchParams;
+
+  // The template and the addressee need no data, so they apply immediately.
+  const type = params.get('type');
+  if (type) {
+    const select = document.getElementById('req-type') as HTMLSelectElement;
+    if ([...select.options].some((o) => o.value === type)) {
+      select.value = type;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  const body = params.get('body');
+  if (body) {
+    agencyEl.value = body;
+    agencyEl.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  ready.then(async () => {
+    const geoid = params.get('jurisdiction');
+    if (geoid) {
+      const match = jurisdictions.find((j) => j.geoid === geoid);
+      if (match) {
+        searchEl.value = displayName(match.name);
+        render(match);
+      }
+      return;
+    }
+
+    /*
+      A record's coordinates, from the map. Resolving them to a jurisdiction
+      costs 1.6 MB of boundaries — which is why the map itself passes the point
+      rather than resolving it there. A reader who has clicked "take action"
+      has committed to this page, and this is the one place the download buys
+      something: the offices for the exact ground that camera stands on.
+    */
+    const at = params.get('at');
+    if (!at) return;
+    const [lng, lat] = at.split(',').map(Number);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+
+    const { findContaining } = await import('~/lib/geo.mjs');
+    const shapes = await fetch('/data/reference/mn-jurisdictions.geojson')
+      .then((r) => (r.ok ? r.json() : { features: [] }))
+      .catch(() => ({ features: [] }));
+    const hit = findContaining([lng, lat], shapes.features);
+    if (!hit) return;
+    const match = jurisdictions.find((j) => j.geoid === hit.properties.geoid);
     if (!match) return;
     searchEl.value = displayName(match.name);
     render(match);
