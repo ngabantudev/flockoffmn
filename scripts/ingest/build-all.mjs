@@ -22,6 +22,10 @@ const STEPS = [
   { name: 'counties', script: 'counties.mjs', required: true },
   { name: '287g', script: 'agencies-287g.mjs' },
   { name: 'alpr', script: 'alpr.mjs' },
+  // Derived from the file alpr.mjs just wrote, so it has to follow it. If the
+  // camera step failed, this reads whatever alpr.geojson already holds and
+  // inherits that file's source date, which is what dates the corridors too.
+  { name: 'corridors', script: 'corridors.mjs' },
   { name: 'detention', script: 'detention.mjs' },
   { name: 'data-centers', script: 'data-centers.mjs' },
   { name: 'redlining', script: 'redlining.mjs' },

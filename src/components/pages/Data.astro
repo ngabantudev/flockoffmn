@@ -161,9 +161,12 @@ const loaded = await loadAllLayers();
   "features": [{
     "type": "Feature",
     "geometry": { "type": "Point", "coordinates": [lng, lat] },
+                 // or Polygon / MultiPolygon for zones,
+                 // MultiLineString for corridors
     "properties": {
       "id":          "stable slug, safe to join on",
-      "layer":       "alpr | agency_287g | detention_facility | data_center | redlining",
+      "layer":       "alpr | alpr_corridor | agency_287g | detention_facility |
+                      data_center | redlining | racial_covenant",
       "name":        "institution, facility, or zone — never a person",
       "county":      "county name, or null",
       "countyFips":  "Census GEOID — join key across layers",

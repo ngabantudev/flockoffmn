@@ -97,6 +97,98 @@ export function findContaining(point, features) {
   return null;
 }
 
+/* ------------------------------------------------------------------ *
+ * Distance to a line
+ *
+ * Used at build time to decide which road a camera stands beside, and in the
+ * browser to answer "how far is that corridor from here". Both go through the
+ * same code for the same reason county assignment does: a corridor the ingest
+ * built by snapping at 60 m must not be measured by a different rule when a
+ * reader asks how close it is.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Metres per degree of longitude and latitude at a given latitude.
+ *
+ * An equirectangular approximation, which is what makes the segment maths
+ * below plain Euclidean geometry. Good to well under a metre over the tens of
+ * miles a corridor spans, and every use here is local.
+ */
+function metresPerDegree(lat) {
+  return [111_320 * Math.cos(toRad(lat)), 110_574];
+}
+
+/**
+ * Where a point falls relative to a line.
+ *
+ * @returns {{distance: number, fraction: number}} perpendicular distance in
+ * metres to the nearest point on the line, and how far along the line that
+ * nearest point sits, as a fraction of total length. The fraction is returned
+ * rather than a distance so a caller can scale it by a length measured with
+ * haversine, and never mixes the two ways of measuring.
+ */
+export function locateOnLine(point, coords) {
+  if (!coords || coords.length === 0) return { distance: Infinity, fraction: 0 };
+  if (coords.length === 1) return { distance: haversineMeters(point, coords[0]), fraction: 0 };
+
+  const [mx, my] = metresPerDegree(point[1]);
+  const px = point[0] * mx;
+  const py = point[1] * my;
+
+  let best = { distance: Infinity, along: 0 };
+  let travelled = 0;
+
+  for (let i = 0; i < coords.length - 1; i++) {
+    const ax = coords[i][0] * mx, ay = coords[i][1] * my;
+    const bx = coords[i + 1][0] * mx, by = coords[i + 1][1] * my;
+    const vx = bx - ax, vy = by - ay;
+    const lenSq = vx * vx + vy * vy;
+    // Clamp to the segment: the nearest point on an endpoint-bounded segment,
+    // not on the infinite line through it.
+    const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / lenSq));
+    const distance = Math.hypot(px - (ax + t * vx), py - (ay + t * vy));
+    if (distance < best.distance) best = { distance, along: travelled + t * Math.sqrt(lenSq) };
+    travelled += Math.sqrt(lenSq);
+  }
+
+  return { distance: best.distance, fraction: travelled === 0 ? 0 : best.along / travelled };
+}
+
+/** Total length of a coordinate list in metres. */
+export function lineLengthMeters(coords) {
+  let total = 0;
+  for (let i = 0; i < coords.length - 1; i++) total += haversineMeters(coords[i], coords[i + 1]);
+  return total;
+}
+
+/**
+ * Distance in metres from a point to any geometry. A point inside a polygon is
+ * zero away from it, not the distance to its edge.
+ */
+export function distanceToGeometryMeters(point, geometry) {
+  if (!geometry) return Infinity;
+  switch (geometry.type) {
+    case 'Point':
+      return haversineMeters(point, geometry.coordinates);
+    case 'LineString':
+      return locateOnLine(point, geometry.coordinates).distance;
+    case 'MultiLineString':
+      return Math.min(
+        Infinity,
+        ...geometry.coordinates.map((line) => locateOnLine(point, line).distance),
+      );
+    case 'Polygon':
+    case 'MultiPolygon': {
+      if (pointInGeometry(point, geometry)) return 0;
+      const rings =
+        geometry.type === 'Polygon' ? geometry.coordinates : geometry.coordinates.flat();
+      return Math.min(Infinity, ...rings.map((ring) => locateOnLine(point, ring).distance));
+    }
+    default:
+      return Infinity;
+  }
+}
+
 /** Representative point of a geometry, for placing a marker on a zone. */
 export function representativePoint(geometry) {
   if (geometry.type === 'Point') return geometry.coordinates;

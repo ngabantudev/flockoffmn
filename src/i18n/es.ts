@@ -72,6 +72,12 @@ export const es: Record<string, string> = {
   viewRecord: 'Ver el registro original',
   downloadLayer: 'Descargar esta capa',
 
+  positionsScale:
+    'Dibujado a escala sobre {total} millas. Un punto más grande significa más en un mismo lugar.',
+  positionsSummary: '{count} marcas a lo largo de {total} millas, a {offsets} millas del inicio.',
+  densityScale: 'escasa → densa',
+  categoryFromZoom: 'Los colores se aplican cuando las cámaras se dibujan una a una, desde el zoom {zoom}.',
+
   confidenceConfirmed: 'Confirmado: documentado en un registro público oficial.',
   confidenceReported: 'Reportado: proviene de permisos o registros secundarios que pueden estar desactualizados.',
   confidenceProbabilistic: 'Probabilístico: de origen comunitario; puede haberse movido o retirado.',

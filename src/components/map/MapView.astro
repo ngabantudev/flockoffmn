@@ -2,6 +2,7 @@
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
 import { useTranslations, pick } from '~/lib/i18n';
+import { densityGradientCss } from '~/lib/densityRamp';
 
 interface Props {
   locale: Locale;
@@ -25,6 +26,45 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   geometry: d.geometry,
   cluster: d.cluster,
   bearingKey: d.bearingKey,
+  positions: d.positions
+    ? {
+        offsetsKey: d.positions.offsetsKey,
+        countsKey: d.positions.countsKey,
+        label: pick(d.positions.label, locale),
+      }
+    : undefined,
+  density: d.density
+    ? { weightKey: d.density.weightKey, label: pick(d.density.label, locale) }
+    : undefined,
+  scale: d.scale,
+  categoryColors: d.categoryColors
+    ? {
+        key: d.categoryColors.key,
+        label: pick(d.categoryColors.label, locale),
+        colors: d.categoryColors.colors,
+        fallback: d.categoryColors.fallback,
+      }
+    : undefined,
+  filament: d.filament,
+  linkRadius: d.linkRadius
+    ? {
+        lngsKey: d.linkRadius.lngsKey,
+        latsKey: d.linkRadius.latsKey,
+        pieceSpansKey: d.linkRadius.pieceSpansKey,
+        offsetsKey: d.positions!.offsetsKey,
+        countsKey: d.positions!.countsKey,
+        minMiles: d.linkRadius.minMiles,
+        maxMiles: d.linkRadius.maxMiles,
+        stepMiles: d.linkRadius.stepMiles,
+        defaultMiles: d.linkRadius.defaultMiles,
+        minBodySites: d.linkRadius.minBodySites,
+        minRunSites: d.linkRadius.minRunSites,
+        kindKey: d.linkRadius.kindKey,
+        branchKind: d.linkRadius.branchKind,
+        label: pick(d.linkRadius.label, locale),
+        help: pick(d.linkRadius.help, locale),
+      }
+    : undefined,
   dataPath: d.dataPath,
   csvPath: d.csvPath,
   filters: d.filters
@@ -62,6 +102,10 @@ const strings = {
   confidenceReported: t('confidenceReported'),
   confidenceProbabilistic: t('confidenceProbabilistic'),
   ofTotal: t('ofTotal'),
+  positionsScale: t('positionsScale'),
+  positionsSummary: t('positionsSummary'),
+  densityScale: t('densityScale'),
+  categoryFromZoom: t('categoryFromZoom'),
 };
 ---
 
@@ -131,6 +175,94 @@ const strings = {
                     <span> {strings.ofTotal} </span>
                     <span>{layer.featureCount}</span>
                   </p>
+
+                  {/*
+                    The radius control. "Which cameras form a corridor" has no
+                    single answer — at a quarter-mile the state holds dozens of
+                    short dense runs, at two miles most of the network is one
+                    connected thing — so the choice is handed to the reader
+                    rather than published as a finding.
+                  */}
+                  {layer.linkRadius && (
+                    <div class="mt-2.5 rounded-md border border-ink-800 bg-ink-900 p-2">
+                      <label
+                        for={`radius-${layer.id}`}
+                        class="flex items-baseline justify-between gap-2 text-[11px] font-medium text-ink-200"
+                      >
+                        <span>{layer.linkRadius.label}</span>
+                        <output
+                          id={`radius-out-${layer.id}`}
+                          for={`radius-${layer.id}`}
+                          class="font-mono text-[11px] text-accent"
+                        >
+                          {layer.linkRadius.defaultMiles} mi
+                        </output>
+                      </label>
+                      <input
+                        id={`radius-${layer.id}`}
+                        type="range"
+                        data-radius-layer={layer.id}
+                        min={layer.linkRadius.minMiles}
+                        max={layer.linkRadius.maxMiles}
+                        step={layer.linkRadius.stepMiles}
+                        value={layer.linkRadius.defaultMiles}
+                        class="mt-1.5 w-full accent-accent"
+                      />
+                      <p class="mt-1 text-[10px] leading-snug text-ink-400">
+                        {layer.linkRadius.help}
+                      </p>
+                    </div>
+                  )}
+
+                  {/*
+                    A colour code with no key is a puzzle. This one only takes
+                    effect at the closest zoom, so the note says when, rather
+                    than leaving a reader to wonder why every dot looks the same.
+                  */}
+                  {layer.categoryColors && (
+                    <details class="mt-2">
+                      <summary class="cursor-pointer text-[10px] text-ink-400 hover:text-ink-100">
+                        {layer.categoryColors.label}
+                      </summary>
+                      <ul class="mt-1 space-y-0.5">
+                        {layer.categoryColors.colors.map((c) => (
+                          <li class="flex items-center gap-1.5 text-[10px] text-ink-300">
+                            <span
+                              class="h-2 w-2 shrink-0 rounded-full"
+                              style={`background:${c.color}`}
+                              aria-hidden="true"
+                            />
+                            <span class="min-w-0 truncate">{c.value}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      {layer.scale && (
+                        <p class="mt-1 text-[10px] leading-snug text-ink-400">
+                          {strings.categoryFromZoom.replace('{zoom}', String(layer.scale.pointsFrom))}
+                        </p>
+                      )}
+                    </details>
+                  )}
+
+                  {/*
+                    A density surface with no key is unreadable — the reader
+                    sees a glow and has to guess whether brighter means more.
+                    The swatch is generated from the same stops the map is, so
+                    it cannot describe a ramp the map does not draw.
+                  */}
+                  {layer.density && (
+                    <div class="mt-2">
+                      <div
+                        class="h-1.5 w-full rounded-full border border-ink-800"
+                        style={`background:${densityGradientCss()}`}
+                        aria-hidden="true"
+                      />
+                      <p class="mt-1 flex items-baseline justify-between text-[10px] text-ink-400">
+                        <span>{layer.density.label}</span>
+                        <span>{strings.densityScale}</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -287,6 +419,108 @@ const strings = {
     return String(value);
   }
 
+  /** Substitute {placeholders} in a dictionary string. */
+  const fill = (template: string, values: Record<string, string | number>) =>
+    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  function svgEl(tag: string, attrs: Record<string, string | number>) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+    return node;
+  }
+
+  /**
+   * Where a record's parts sit along its own length, drawn to scale.
+   *
+   * The total is the number people quote; the spacing is the number that
+   * matters, and it is the one a list of attributes cannot show. Nineteen
+   * readers bunched at a single interchange and nineteen spread evenly over
+   * eleven miles are different facts about an ordinary journey, and they print
+   * identically as "19".
+   *
+   * The drawing is never the only copy of the information. The same offsets go
+   * into the label a screen reader announces, so nobody has to be able to see
+   * the diagram to get the spacing out of it.
+   */
+  function positionsBlock(layer: ClientLayer, attrs: Record<string, unknown>) {
+    if (!layer.positions) return null;
+
+    const offsets = String(attrs[layer.positions.offsetsKey] ?? '')
+      .split(';')
+      .map(Number)
+      .filter(Number.isFinite);
+    const counts = String(attrs[layer.positions.countsKey] ?? '')
+      .split(';')
+      .map(Number);
+    const total = offsets[offsets.length - 1];
+    // Two marks and a real length, or there is nothing to draw to scale.
+    if (offsets.length < 2 || !(total > 0)) return null;
+
+    const W = 300;
+    const H = 26;
+    const PAD = 8;
+    const summary = fill(S.positionsSummary, {
+      count: offsets.length,
+      total: total.toFixed(1),
+      offsets: offsets.map((o) => o.toFixed(1)).join(', '),
+    });
+
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${W} ${H}`,
+      width: '100%',
+      height: H,
+      role: 'img',
+      'aria-label': `${layer.positions.label}. ${summary}`,
+    });
+    svg.append(
+      svgEl('line', {
+        x1: PAD,
+        y1: H / 2,
+        x2: W - PAD,
+        y2: H / 2,
+        stroke: layer.color,
+        'stroke-opacity': 0.35,
+        'stroke-width': 2,
+        'stroke-linecap': 'round',
+      }),
+    );
+    offsets.forEach((mi, i) => {
+      const n = Number.isFinite(counts[i]) && counts[i] > 0 ? counts[i] : 1;
+      svg.append(
+        svgEl('circle', {
+          cx: PAD + (mi / total) * (W - PAD * 2),
+          cy: H / 2,
+          // Area would be the honest encoding for a quantity, but these counts
+          // run 1–6 and an area scale makes them indistinguishable at 26px
+          // tall. The caption says a bigger dot is more, and the exact figures
+          // are in the fields above, so the diagram carries the shape only.
+          r: 2.2 + Math.min(n, 8) * 0.45,
+          fill: layer.color,
+          'fill-opacity': 0.9,
+          stroke: '#0a0c10',
+          'stroke-width': 1,
+        }),
+      );
+    });
+
+    const wrap = el('div');
+    wrap.append(
+      el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', layer.positions.label),
+    );
+    const frame = el('div', 'rounded-md border border-ink-800 bg-ink-850 px-2 py-1.5');
+    frame.append(svg);
+    wrap.append(frame);
+    wrap.append(
+      el(
+        'p',
+        'mt-1 text-[11px] leading-snug text-ink-400',
+        fill(S.positionsScale, { total: total.toFixed(1) }),
+      ),
+    );
+    return wrap;
+  }
+
   function renderDetail(feature: LoadedFeature | null, layer: ClientLayer) {
     detailEl.textContent = '';
     if (!feature) {
@@ -305,6 +539,20 @@ const strings = {
     titleWrap.append(badge, el('h2', 'text-base font-semibold leading-snug text-ink-100', p.name));
     if (p.county) {
       titleWrap.append(el('p', 'mt-0.5 text-xs text-ink-400', `${p.county}, ${p.state}`));
+    }
+    // The position itself, for a record that has one exactly. Six decimals is
+    // about 11 cm — far finer than a crowd-sourced pin deserves, but it is what
+    // the source holds, and rounding it here would quietly disagree with the
+    // OpenStreetMap record linked below.
+    if (feature.geometry.type === 'Point') {
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      titleWrap.append(
+        el(
+          'p',
+          'mt-0.5 font-mono text-[11px] text-ink-400',
+          `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+        ),
+      );
     }
 
     const close = el('button', 'shrink-0 rounded p-1 text-ink-400 hover:text-ink-100', '✕');
@@ -343,6 +591,10 @@ const strings = {
       }
       body.append(dl);
     }
+
+    // Spacing, where the record has a length to space things along.
+    const positions = positionsBlock(layer, attrs);
+    if (positions) body.append(positions);
 
     // Plain-language explanation (spec F5).
     const means = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
@@ -450,6 +702,18 @@ const strings = {
     });
   });
 
+  // Re-cutting corridors is cheap enough to do on every input event, so the
+  // network visibly grows under the thumb rather than snapping once on release.
+  document.querySelectorAll<HTMLInputElement>('[data-radius-layer]').forEach((input) => {
+    const layerId = input.dataset.radiusLayer!;
+    const output = document.getElementById(`radius-out-${layerId}`);
+    input.addEventListener('input', () => {
+      const miles = Number(input.value);
+      if (output) output.textContent = `${miles} mi`;
+      controller.setLinkRadius(layerId, miles);
+    });
+  });
+
   document.getElementById('clear-filters')?.addEventListener('click', () => {
     document
       .querySelectorAll<HTMLInputElement>('[data-filter-key]:checked')
@@ -532,10 +796,12 @@ const strings = {
 
   /* ------------------------------ Start-up ------------------------------ */
 
-  // Default on: the two layers that carry the roadmap's core claim, so the
-  // first paint already shows enforcement over surveillance rather than an
-  // empty basemap.
-  const DEFAULT_ON = ['agency_287g', 'alpr'];
+  // Default on: the layers that carry the roadmap's core claim, so the first
+  // paint already shows enforcement over surveillance rather than an empty
+  // basemap. Corridors join them because the camera layer alone answers "is
+  // there one near me" and leaves the shape of the network — the part no
+  // single dot can show — switched off behind a checkbox.
+  const DEFAULT_ON = ['agency_287g', 'alpr', 'alpr_corridor'];
   status(S.loading, 0);
   controller.map.once('load', () => {
     for (const id of DEFAULT_ON) {

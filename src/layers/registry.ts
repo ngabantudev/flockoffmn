@@ -128,6 +128,14 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Cuando un registro indica un sector real —50 lo hacen, como «108-153»— el cono se dibuja exactamente con esa amplitud. Cuando solo indica una orientación, el cono se dibuja con una amplitud nominal fija, porque no se registró ningún campo de visión. Ambos se ven igual en el mapa, así que considere la amplitud del cono como evidencia solo cuando el panel de detalle muestre un sector.',
       },
       {
+        en: '“Who runs it” is derived by keyword-matching the free text a volunteer typed into the operator field. It records what a word there suggests, never a verified contract: “Eagan” is a city with no keyword in it and lands under “other”, and a name covering several agencies is filed under one of them. Four readers in five say nothing at all, and that — not the breakdown of the remaining fifth — is the finding here.',
+        es: '«Quién lo opera» se deduce buscando palabras clave en el texto libre que un voluntario escribió en el campo de operador. Registra lo que sugiere una palabra de ese campo, nunca un contrato verificado: «Eagan» es una ciudad sin ninguna palabra clave y queda en «otros», y un nombre que abarca varias agencias se archiva bajo una sola. Cuatro de cada cinco lectores no dicen nada en absoluto, y eso —no el desglose del quinto restante— es el hallazgo aquí.',
+      },
+      {
+        en: 'The glow under the dots is a density estimate, not coverage. It smooths mapped cameras over a radius, so it paints colour on ground no camera stands on and none can see — it shows where mapped cameras cluster, and nothing else. It fades out as you zoom in, so an estimate and a mapped position are never read off the same pixel.',
+        es: 'El resplandor bajo los puntos es una estimación de densidad, no una cobertura. Suaviza las cámaras mapeadas sobre un radio, así que colorea terreno donde no hay ninguna cámara ni alcance de ninguna: solo muestra dónde se agrupan las cámaras mapeadas. Se desvanece al acercar el zoom, de modo que una estimación y una posición mapeada nunca se leen en el mismo píxel.',
+      },
+      {
         en: 'A node where several cameras share a pole ("321;109") is drawn as one cone per recorded heading over a single dot. A record tagged "0-360" is drawn as a full circle, meaning the surveyor recorded no single direction at all.',
         es: 'Un nodo donde varias cámaras comparten un poste («321;109») se dibuja con un cono por cada orientación registrada sobre un solo punto. Un registro etiquetado «0-360» se dibuja como un círculo completo, lo que significa que no se registró ninguna dirección concreta.',
       },
@@ -136,6 +144,31 @@ export const LAYERS: LayerDefinition[] = [
     color: '#38bdf8',
     cluster: true,
     bearingKey: 'direction',
+    density: {
+      label: { en: 'Camera density', es: 'Densidad de cámaras' },
+    },
+    categoryColors: {
+      key: 'operatorType',
+      label: { en: 'Who runs it', es: 'Quién lo opera' },
+      colors: [
+        // Muted, and first, because it is the answer four readers in five give.
+        { value: 'Not recorded', color: '#64748b' },
+        { value: 'Police department', color: '#38bdf8' },
+        { value: 'County sheriff', color: '#22d3ee' },
+        { value: 'State agency', color: '#a78bfa' },
+        { value: 'Multi-agency task force', color: '#fb7185' },
+        { value: 'Neighbourhood association', color: '#4ade80' },
+        { value: 'School or campus', color: '#facc15' },
+        { value: 'Vendor-operated (Flock)', color: '#f97316' },
+        { value: 'Other or unclassified', color: '#94a3b8' },
+      ],
+      fallback: '#94a3b8',
+    },
+    // State and region: a surface. County and city: counts. Street: the
+    // hardware. Each scale gets the shape that answers the question asked at
+    // it, and the surface is gone before any record is drawn individually, so
+    // an estimate and a mapped position are never read off the same pixel.
+    scale: { clusterFrom: 11, pointsFrom: 14 },
     dataPath: '/data/alpr.geojson',
     csvPath: '/data/alpr.csv',
     provenance: {
@@ -149,12 +182,14 @@ export const LAYERS: LayerDefinition[] = [
       refresh: 'frequent',
     },
     filters: [
+      { key: 'operatorType', kind: 'enum', label: { en: 'Who runs it', es: 'Quién lo opera' } },
       { key: 'operator', kind: 'enum', label: { en: 'Operator', es: 'Operador' } },
       { key: 'manufacturer', kind: 'enum', label: { en: 'Manufacturer', es: 'Fabricante' } },
       { key: 'cameraType', kind: 'enum', label: { en: 'Camera type', es: 'Tipo de cámara' } },
     ],
     detailFields: [
       { key: 'manufacturer', label: { en: 'Manufacturer', es: 'Fabricante' } },
+      { key: 'operatorType', label: { en: 'Who runs it', es: 'Quién lo opera' } },
       { key: 'operator', label: { en: 'Operator', es: 'Operador' } },
       { key: 'cameraType', label: { en: 'Camera type', es: 'Tipo de cámara' } },
       {
@@ -181,9 +216,181 @@ export const LAYERS: LayerDefinition[] = [
   },
 
   {
+    id: 'alpr_corridor',
+    slug: 'alpr-corridors',
+    order: 3,
+    label: {
+      en: 'ALPR corridors',
+      es: 'Corredores de ALPR',
+    },
+    summary: {
+      en: 'Stretches of road where plate readers stand in a line one after another, not clustered at a single junction.',
+      es: 'Tramos de carretera donde los lectores de matrículas se alinean uno tras otro, no agrupados en un solo cruce.',
+    },
+    whatThisMeans: {
+      en: 'A map of dots answers a narrow question: is there a camera here. This layer answers a different one: where do the readers form a network, and how far does it reach. The unit is the cluster, not the street. Reader locations sitting within the linking radius of one another are one body, whatever roads they stand on, and the roads are what that body has grown along — a run of readers down one street drawn as that street, a lone reader drawn as a short stub of the road beside it. The streets are what carries it: a network reaches as far as its roads run, so a street pushing out from one cluster joins it to the next one it comes near, and clusters that share no camera between them still connect through the road a car would actually drive. Nothing is ever drawn across the ground where there is no road: two streets in the same colour are in the same network, and the shade says how large that network is. Widen the radius and separate pockets fuse into one thing. The operator counts are the other half of the point. Almost none of this was planned as a network — a city police department, the neighbouring city\u2019s, a county sheriff and a hardware store each buy cameras for their own reasons, and what they add up to is what you are looking at.',
+      es: 'Un mapa de puntos responde a una pregunta estrecha: ¿hay una cámara aquí? Esta capa responde a otra: ¿dónde forman una red los lectores y hasta dónde llega? La unidad es el conjunto, no la calle. Las ubicaciones de lectores que están dentro del radio de conexión entre sí forman un mismo cuerpo, sea cual sea la vía en la que se encuentren, y las vías son aquello por lo que ese cuerpo ha crecido: una sucesión de lectores por una calle se dibuja como esa calle, y un lector aislado como un tramo corto de la vía contigua. Las calles son lo que la transporta: una red llega hasta donde llegan sus vías, así que una calle que sale de un conjunto lo une al siguiente al que se acerca, y conjuntos que no comparten ninguna cámara se conectan igualmente por la vía que un coche recorrería. Nunca se dibuja nada sobre el terreno donde no hay vía: dos calles del mismo color están en la misma red, y el tono indica cuán grande es esa red. Amplíe el radio y los focos separados se fusionan en uno solo. El recuento de operadores es la otra mitad del asunto. Casi nada de esto se planificó como una red: la policía de una ciudad, la de la ciudad vecina, el alguacil del condado y una ferretería compran cámaras cada uno por sus propios motivos, y lo que suman es lo que usted está viendo.'
+    },
+    limitations: [
+      {
+        en: 'Derived from the crowd-sourced camera layer, so every gap there compounds here. A road with no corridor drawn on it may simply be a road nobody has finished mapping.',
+        es: 'Derivada de la capa de cámaras de origen comunitario, así que cada vacío de aquella se agrava aquí. Una carretera sin corredor dibujado puede ser simplemente una carretera que nadie ha terminado de mapear.',
+      },
+      {
+        en: 'Something is drawn where at least four reader locations sit within the linking radius of one another, on any roads at all. That bar is on the cluster and not on any single street, which matters: while it sat on the street, a downtown with ten readers spread over five of them drew nothing, because none of the five cleared it alone. Four is a judgement, not a finding.',
+        es: 'Se dibuja algo donde al menos cuatro ubicaciones de lectores están dentro del radio de conexión entre sí, en cualquier vía. Ese mínimo se aplica al conjunto y no a una calle concreta, lo cual importa: mientras se aplicaba a la calle, un centro urbano con diez lectores repartidos entre cinco de ellas no dibujaba nada, porque ninguna de las cinco lo alcanzaba por sí sola. Cuatro es un criterio, no un hallazgo.',
+      },
+      {
+        en: 'The linking radius is yours to set, and it changes the answer. At a quarter-mile Minnesota holds dozens of short dense runs; at two miles more than half of every mapped camera in the state belongs to one connected network. Both readings come from the same cameras. Any single number would be an editorial judgement published as a finding, which is why the control exists rather than a default nobody can see.',
+        es: 'El radio de conexión lo elige usted, y cambia la respuesta. A un cuarto de milla, Minnesota tiene decenas de tramos cortos y densos; a dos millas, más de la mitad de todas las cámaras mapeadas del estado pertenece a una sola red conectada. Ambas lecturas salen de las mismas cámaras. Cualquier cifra única sería un criterio editorial publicado como un hallazgo, y por eso existe el control en lugar de un valor por defecto invisible.',
+      },
+      {
+        en: 'Two streets shown in the same colour are linked because a reader on one stands within the radius of a reader on the other. Nothing is drawn across the ground between them, because there is often no road there to draw — the connection is carried by colour, never by a line. Streets are shaded by how many reader locations their connected network holds.',
+        es: 'Dos calles del mismo color están conectadas porque un lector de una está dentro del radio de un lector de la otra. No se dibuja nada sobre el terreno entre ellas, porque a menudo no hay ninguna vía que dibujar: la conexión la transmite el color, nunca una línea. Las calles se sombrean según cuántas ubicaciones de lectores tiene su red conectada.',
+      },
+      {
+        en: 'A stub is not a corridor. It is a short piece of the street a lone reader stands beside, drawn because its cluster qualifies, and its length is a drawing convention that says nothing about how far up that street the surveillance goes. Stubs are here because leaving them out made a run of readers look like the whole network when it was only its longest root — most mapped cameras in Minnesota are on no run at all.',
+        es: 'Un tramo suelto no es un corredor. Es un trozo corto de la calle junto a la que está un lector aislado, dibujado porque su conjunto cumple el mínimo, y su longitud es una convención de dibujo que no dice nada sobre hasta dónde llega la vigilancia por esa calle. Están aquí porque omitirlos hacía que una sucesión de lectores pareciera toda la red cuando solo era su raíz más larga: la mayoría de las cámaras mapeadas de Minnesota no está en ninguna sucesión.',
+      },
+      {
+        en: 'Connection is measured along the streets, not just between the readers. A street carries a network as far as it runs, so two clusters join when any part of one\u2019s roads comes within the radius of any part of the other\u2019s — an eleven-mile stretch reaches everything along its length, not only what sits near one of its cameras. Distances along a street are sampled rather than measured continuously, at a quarter of the radius being tested, so a pair passing within a hair of the radius can be missed.',
+        es: 'La conexión se mide a lo largo de las calles, no solo entre los lectores. Una calle transporta la red hasta donde llega, así que dos conjuntos se unen cuando cualquier parte de las vías de uno queda dentro del radio de cualquier parte de las del otro: un tramo de once millas alcanza todo lo que hay a lo largo de su recorrido, no solo lo que está junto a una de sus cámaras. Las distancias a lo largo de una calle se muestrean en lugar de medirse de forma continua, a un cuarto del radio evaluado, así que un par que pase justo en el límite puede pasarse por alto.',
+      },
+      {
+        en: 'Only cameras OpenStreetMap places on a named or numbered road are in this layer at all. The 143 it does not, plus any nobody has mapped, are absent from the calculation entirely, so two networks shown as separate may in fact be bridged by readers that are not here to bridge them.',
+        es: 'Solo las cámaras que OpenStreetMap sitúa en una vía con nombre o número están en esta capa. Las 143 que no lo están, más las que nadie ha mapeado, quedan fuera del cálculo por completo, así que dos redes que aparecen separadas podrían estar unidas por lectores que no figuran aquí.',
+      },
+      {
+        en: 'A camera standing in an intersection is filed under whichever road its centre line is nearer, and at a crossroads that margin can be a couple of metres. Along East Franklin Avenue in Minneapolis, several readers on the Franklin line are counted under the avenue they cross instead. The recorded direction does not settle it — it disagrees with the assignment about as often as it confirms it — so no corridor here is a complete count of the readers a trip along it passes.',
+        es: 'Una cámara situada en un cruce se asigna a la vía cuyo eje esté más cerca, y en una intersección ese margen puede ser de un par de metros. En East Franklin Avenue, en Minneapolis, varios lectores que están sobre Franklin quedan contados en la avenida que la cruza. La dirección registrada no lo resuelve: contradice la asignación tantas veces como la confirma, así que ningún corredor aquí es un recuento completo de los lectores que se pasan al recorrerlo.',
+      },
+      {
+        en: 'Gaps in the drawn line are stretches we hold no road geometry for. They are not stretches known to be unwatched.',
+        es: 'Los huecos en la línea dibujada son tramos de los que no tenemos geometría vial. No son tramos que se sepa que no están vigilados.',
+      },
+      {
+        en: 'Distances are measured in straight lines between consecutive reader locations rather than along the curve of the road, so a winding corridor is slightly longer to drive than the figure given.',
+        es: 'Las distancias se miden en línea recta entre ubicaciones consecutivas de lectores y no siguiendo la curva de la carretera, así que un corredor sinuoso es algo más largo de recorrer que la cifra indicada.',
+      },
+      {
+        en: 'Operator is recorded for only a minority of readers, so the agencies named on a corridor are a floor and never the full list. Naming an operator says who is recorded as running a reader — not who can search what it collects, which is a separate question this layer holds no data on.',
+        es: 'El operador solo consta en una minoría de los lectores, así que las agencias nombradas en un corredor son un mínimo y nunca la lista completa. Nombrar a un operador indica quién figura como responsable de un lector, no quién puede consultar lo que recopila, que es una cuestión distinta sobre la que esta capa no tiene datos.',
+      },
+      {
+        en: 'A reader location is one or more cameras within 75 m of each other. This layer does not claim that a single trip is read by every camera it passes; which way each camera faces is on the camera layer.',
+        es: 'Una ubicación de lector es una o más cámaras a menos de 75 m entre sí. Esta capa no afirma que un solo trayecto sea leído por cada cámara que pasa; hacia dónde apunta cada cámara está en la capa de cámaras.',
+      },
+    ],
+    geometry: 'line',
+    color: '#818cf8',
+    cluster: false,
+    filament: true,
+    positions: {
+      offsetsKey: 'siteOffsets',
+      countsKey: 'siteReaders',
+      label: {
+        en: 'Reader locations along this corridor',
+        es: 'Ubicaciones de lectores a lo largo de este corredor',
+      },
+    },
+    linkRadius: {
+      lngsKey: 'siteLngs',
+      latsKey: 'siteLats',
+      pieceSpansKey: 'pieceSpans',
+      minMiles: 0.2,
+      // The ingest links at ten miles; the control cannot exceed what was
+      // surveyed, so this and LINK_M in scripts/ingest/corridors.mjs move
+      // together or the top of the slider silently stops lengthening runs.
+      maxMiles: 10,
+      stepMiles: 0.05,
+      // Two miles. Below one, Minnesota holds almost nothing that is a
+      // continuous run — which is worth discovering by dragging, but makes a
+      // poor first view. Here 18 of the 21 shipped stretches are drawn in 12
+      // separate networks, so there is visibly something to pull apart and
+      // something to fuse.
+      defaultMiles: 2,
+      minBodySites: 4,
+      // Two readers on one road is a run worth drawing as road rather than as
+      // two stubs. Whether it is drawn at all is the cluster's call.
+      minRunSites: 2,
+      kindKey: 'kind',
+      branchKind: 'branch',
+      label: { en: 'Linking radius', es: 'Radio de conexión' },
+      help: {
+        en: 'How close two clusters\u2019 streets must come to belong to the same network. Widen it and separate pockets fuse along the roads between them; narrow it and only the tightest clusters survive.',
+        es: 'Cuánto deben acercarse las calles de dos conjuntos para pertenecer a la misma red. Amplíelo y los focos separados se fusionan a lo largo de las vías intermedias; redúzcalo y solo sobreviven los conjuntos más compactos.',
+      },
+    },
+    dataPath: '/data/alpr-corridors.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Derived from the ALPR layer and OpenStreetMap road geometry (Overpass API)',
+      sourceUrl: 'https://deflock.me',
+      license: 'ODbL 1.0',
+      licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
+      attribution: '© OpenStreetMap contributors, ODbL — mapped by DeFlock volunteers',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'frequent',
+    },
+    filters: [{ key: 'roadClass', kind: 'enum', label: { en: 'Road type', es: 'Tipo de vía' } }],
+    detailFields: [
+      { key: 'readerCount', label: { en: 'Readers on this corridor', es: 'Lectores en este corredor' } },
+      { key: 'siteCount', label: { en: 'Separate reader locations', es: 'Ubicaciones de lectores distintas' } },
+      { key: 'corridorMiles', label: { en: 'Corridor length (miles)', es: 'Longitud del corredor (millas)' } },
+      {
+        key: 'averageGapMiles',
+        label: { en: 'Average gap between locations (miles)', es: 'Distancia media entre ubicaciones (millas)' },
+      },
+      {
+        key: 'medianGapMiles',
+        label: { en: 'Median gap between locations (miles)', es: 'Distancia mediana entre ubicaciones (millas)' },
+      },
+      {
+        key: 'longestGapMiles',
+        label: { en: 'Longest gap (miles)', es: 'Mayor distancia sin lector (millas)' },
+      },
+      {
+        key: 'operatorCount',
+        label: { en: 'Operators recorded here', es: 'Operadores registrados aquí' },
+      },
+      { key: 'operators', label: { en: 'Who runs these readers', es: 'Quién opera estos lectores' } },
+      {
+        key: 'unattributedReaders',
+        label: { en: 'Readers with no operator recorded', es: 'Lectores sin operador registrado' },
+      },
+      {
+        key: 'connectedSites',
+        label: {
+          en: 'Reader locations in this connected network',
+          es: 'Ubicaciones de lectores en esta red conectada',
+        },
+      },
+      { key: 'kind', label: { en: 'Drawn as', es: 'Dibujado como' } },
+      { key: 'road', label: { en: 'Road', es: 'Carretera' } },
+      { key: 'roadClass', label: { en: 'Road type', es: 'Tipo de vía' } },
+      { key: 'countiesSpanned', label: { en: 'Counties spanned', es: 'Condados que atraviesa' } },
+    ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'The corridor nearest you', es: 'El corredor más cercano' },
+      empty: {
+        en: 'No mapped corridor is near this point. That means no run of readers has been mapped along one road here — not that the roads here are unwatched.',
+        es: 'No hay ningún corredor mapeado cerca de este punto. Eso significa que no se ha mapeado una sucesión de lectores a lo largo de una carretera aquí, no que estas carreteras no estén vigiladas.',
+      },
+      detail: ['readerCount', 'corridorMiles', 'averageGapMiles', 'operators'],
+      caveat: {
+        en: 'Built from crowd-sourced camera records, and the thresholds that decide what counts as a corridor are our judgement. This page reads the widest linking radius the map offers, so a corridor here may appear shorter, or not at all, at the radius you have set on the map. Treat it as the shape of the thing, not a measurement.',
+        es: 'Construido a partir de registros comunitarios de cámaras, y los umbrales que deciden qué cuenta como corredor son criterio nuestro. Esta página usa el radio de conexión más amplio que ofrece el mapa, así que un corredor puede aparecer más corto, o no aparecer, con el radio que haya fijado en el mapa. Considérelo la forma del fenómeno, no una medición.',
+      },
+      wide: true,
+    },
+  },
+
+  {
     id: 'redlining',
     slug: 'redlining',
-    order: 3,
+    order: 4,
     label: {
       en: 'Redlining zones (HOLC)',
       es: 'Zonas de redlining (HOLC)',
@@ -302,7 +509,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'detention_facility',
     slug: 'detention',
-    order: 4,
+    order: 5,
     label: {
       en: 'ICE-contract detention facilities',
       es: 'Centros de detención con contrato de ICE',
@@ -371,7 +578,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'data_center',
     slug: 'data-centers',
-    order: 5,
+    order: 6,
     label: {
       en: 'Data centres',
       es: 'Centros de datos',
@@ -438,7 +645,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'racial_covenant',
     slug: 'covenants',
-    order: 6,
+    order: 7,
     label: {
       en: 'Racial covenants (aggregate)',
       es: 'Convenios raciales (agregado)',

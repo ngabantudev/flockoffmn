@@ -13,6 +13,10 @@
 
 export type LayerId =
   | 'alpr'
+  // Derived from `alpr`, not ingested: the stretches of road where readers
+  // stand in a line rather than a cluster. A dot map answers "is there a camera
+  // here"; this answers "how many times does one ordinary trip get logged".
+  | 'alpr_corridor'
   | 'agency_287g'
   | 'detention_facility'
   | 'data_center'
@@ -152,7 +156,7 @@ export interface LayerDefinition {
   whatThisMeans: I18nString;
   /** Honest limitations, shown with the layer and on the sources page (F8). */
   limitations: I18nString[];
-  geometry: 'point' | 'polygon';
+  geometry: 'point' | 'polygon' | 'line';
   /** Hex colour used for the map symbol and the legend swatch. */
   color: string;
   /** Whether dense point data should cluster at low zoom (spec F1, §8). */
@@ -167,6 +171,153 @@ export interface LayerDefinition {
    * which way its subject points gets the same treatment by naming the field.
    */
   bearingKey?: string;
+  /**
+   * Where a record's parts sit along its own length, if it has a length.
+   *
+   * A corridor is eleven miles of road with nineteen readers on it, and the
+   * fact that matters is not the total but the spacing — bunched at one
+   * junction is a different claim from one every mile and a half the whole way.
+   * A record that carries those offsets names them here and the detail panel
+   * draws them to scale, with the same text in the record's own summary line so
+   * the drawing is never the only way to get the information.
+   *
+   * Like `bearingKey`, this describes the data rather than one layer's
+   * rendering: any layer whose records have things positioned along them gets
+   * the same treatment by naming the fields.
+   */
+  positions?: {
+    /** Attribute holding offsets in miles from the record's start, ';'-separated. */
+    offsetsKey: string;
+    /** Attribute holding how many things sit at each offset, ';'-separated, same length. */
+    countsKey: string;
+    /** Accessible name for the drawing, e.g. "Readers along this corridor". */
+    label: I18nString;
+  };
+  /**
+   * Draw this layer's points as a density surface underneath the records.
+   *
+   * Cameras do not spread evenly. They thicken around a few metro corridors and
+   * thin to nothing across most of the state, and a field of identical dots
+   * flattens that — a hundred dots in Hennepin County and a hundred spread over
+   * the Iron Range look alike until you count them. The surface shows the shape
+   * of the concentration at a glance and then gets out of the way, fading off
+   * as the view closes in and individual records become readable.
+   *
+   * It is an estimate, and the layer's `limitations` must say so: a density
+   * surface smooths over a radius, so it paints colour on ground that has no
+   * camera on it. It shows where mapped cameras cluster. It is not a map of
+   * what any camera can see.
+   */
+  density?: {
+    /** Attribute weighting each point, where some points count for more. */
+    weightKey?: string;
+    label: I18nString;
+  };
+  /**
+   * Colour records by a category once they are drawn individually.
+   *
+   * Only at the closest scale, and deliberately: at the scales where records
+   * are a surface or a count, a per-record colour is either invisible or a lie
+   * about what a cluster contains. Close in, it is the difference between "a
+   * camera" and "a camera someone's homeowners association put there".
+   *
+   * The order here is the order of the key beside the map, so put the kinds a
+   * reader is looking for above the ones they are not. A value with no colour
+   * falls back, and the key says so rather than leaving it unexplained.
+   */
+  categoryColors?: {
+    /** Attribute holding the category. */
+    key: string;
+    label: I18nString;
+    /** Hex colour per observed value, in the order the key should list them. */
+    colors: Array<{ value: string; color: string }>;
+    /** Colour for any value not named above. */
+    fallback: string;
+  };
+  /**
+   * The two zooms at which this layer changes how it draws itself.
+   *
+   * A point layer answers a different question at every scale. Across a state
+   * the question is where the infrastructure is concentrated, and a thousand
+   * overlapping pins answer it worse than a surface does. Across a county it is
+   * how many are around here, which is a count. Across a street it is which
+   * pole, facing which way — and only there is a pin the right shape for the
+   * answer.
+   *
+   * Both numbers live here rather than beside the thing each one governs,
+   * because they are boundaries between the same three states and have to
+   * agree. Splitting them is how the density surface came to promise it had
+   * faded before records drew individually while a separate constant decided
+   * when that was.
+   */
+  scale?: {
+    /** First zoom with clusters. Below it the layer is a density surface only. */
+    clusterFrom: number;
+    /** First zoom with individual records, and with any per-record indicator. */
+    pointsFrom: number;
+  };
+  /**
+   * Draw a line layer as a living filament: a blurred glow beneath a bright
+   * core, with the dash pattern creeping along its length.
+   *
+   * Not decoration for its own sake. A corridor is not a route anyone drew — it
+   * is what independent purchases add up to, and it accumulates the way a root
+   * system does, opportunistically and with no plan behind it. A flat drawn
+   * line implies an author. A filament does not, which is the more truthful
+   * picture of how this infrastructure actually arrived.
+   *
+   * The creep stops dead under `prefers-reduced-motion`; the glow and core
+   * carry the look without it.
+   */
+  filament?: boolean;
+  /**
+   * Let the reader choose the radius at which this layer's records are linked.
+   *
+   * Some questions do not have one answer, and "which cameras form a corridor"
+   * is one of them. At a quarter-mile the state holds dozens of short dense
+   * runs; at two miles more than half of every mapped camera in Minnesota is
+   * one connected network. Both are true, and picking a single number for the
+   * reader would publish an editorial judgement as though it were a finding.
+   * The control hands the judgement back.
+   *
+   * Requires `positions`, whose offsets and counts it reuses. The file must
+   * ship the widest radius the control offers, because the browser can only
+   * ever narrow what the ingest surveyed — see `lib/linkRuns.ts`.
+   */
+  linkRadius?: {
+    /** Attribute holding each site's longitude, ';'-separated. */
+    lngsKey: string;
+    /** Attribute holding each site's latitude, ';'-separated. */
+    latsKey: string;
+    /** Attribute holding each drawn piece's `start,end` offset. */
+    pieceSpansKey: string;
+    minMiles: number;
+    /** Must equal the linking distance the ingest shipped. */
+    maxMiles: number;
+    stepMiles: number;
+    defaultMiles: number;
+    /**
+     * Reader locations a cluster needs before any of it is drawn.
+     *
+     * The bar is on the cluster, not on any one road. A downtown with ten
+     * readers spread over five streets is a network; requiring four on a single
+     * street drew nothing there at all.
+     */
+    minBodySites: number;
+    /** Reader locations on one road before it is drawn as a run rather than stubs. */
+    minRunSites: number;
+    /**
+     * Attribute telling a run of readers from a lone one, and the value marking
+     * the latter. Both are drawn when their cluster qualifies, so widening the
+     * control grows side streets out of the clusters in the directions cameras
+     * actually stand.
+     */
+    kindKey: string;
+    branchKind: string;
+    label: I18nString;
+    /** One line under the control saying what moving it does. */
+    help: I18nString;
+  };
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
   csvPath: string | null;
@@ -196,6 +347,12 @@ export interface LayerCollection {
     type: 'Feature';
     geometry:
       | { type: 'Point'; coordinates: [number, number] }
+      | { type: 'LineString'; coordinates: number[][] }
+      // Corridors are drawn from real OSM road geometry clipped to the run of
+      // readers, so a single corridor is many disjoint pieces of surveyed road
+      // rather than one continuous line. The gaps are roads we hold no geometry
+      // for, and joining them would assert a road we cannot show.
+      | { type: 'MultiLineString'; coordinates: number[][][] }
       | { type: 'Polygon'; coordinates: number[][][] }
       | { type: 'MultiPolygon'; coordinates: number[][][][] };
     properties: FeatureProperties;
