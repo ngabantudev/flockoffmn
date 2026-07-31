@@ -193,6 +193,42 @@ export interface LayerDefinition {
     /** Accessible name for the drawing, e.g. "Readers along this corridor". */
     label: I18nString;
   };
+  /**
+   * Draw this layer's points as a density surface underneath the records.
+   *
+   * Cameras do not spread evenly. They thicken around a few metro corridors and
+   * thin to nothing across most of the state, and a field of identical dots
+   * flattens that — a hundred dots in Hennepin County and a hundred spread over
+   * the Iron Range look alike until you count them. The surface shows the shape
+   * of the concentration at a glance and then gets out of the way, fading off
+   * as the view closes in and individual records become readable.
+   *
+   * It is an estimate, and the layer's `limitations` must say so: a density
+   * surface smooths over a radius, so it paints colour on ground that has no
+   * camera on it. It shows where mapped cameras cluster. It is not a map of
+   * what any camera can see.
+   */
+  density?: {
+    /** Attribute weighting each point, where some points count for more. */
+    weightKey?: string;
+    /** Zoom at which the surface has fully faded and records take over. */
+    fadeOutZoom: number;
+    label: I18nString;
+  };
+  /**
+   * Draw a line layer as a living filament: a blurred glow beneath a bright
+   * core, with the dash pattern creeping along its length.
+   *
+   * Not decoration for its own sake. A corridor is not a route anyone drew — it
+   * is what independent purchases add up to, and it accumulates the way a root
+   * system does, opportunistically and with no plan behind it. A flat drawn
+   * line implies an author. A filament does not, which is the more truthful
+   * picture of how this infrastructure actually arrived.
+   *
+   * The creep stops dead under `prefers-reduced-motion`; the glow and core
+   * carry the look without it.
+   */
+  filament?: boolean;
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
   csvPath: string | null;
