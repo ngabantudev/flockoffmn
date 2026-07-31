@@ -72,6 +72,54 @@ export const es: Record<string, string> = {
   viewRecord: 'Ver el registro original',
   downloadLayer: 'Descargar esta capa',
 
+  // Quién responde aquí
+  whoAnswersTitle: 'Quién le debe respuesta aquí',
+  whoAnswersIntro:
+    'Cada punto de Minnesota está bajo varios gobiernos a la vez. Estas son las oficinas obligadas a responder una solicitud sobre este terreno, de la más cercana a la más lejana.',
+  whoAnswersEmpty:
+    'Este punto queda fuera de los límites jurisdiccionales que tenemos. Pruebe con el nombre de un lugar.',
+  youAreIn: 'Usted está en',
+  jurisdictionCity: 'Ciudad',
+  jurisdictionTownship: 'Municipio rural (township)',
+  jurisdictionUnorganized: 'Territorio no organizado',
+  jurisdictionCounty: 'Condado',
+  inCounty: 'en {county}',
+
+  officeTownClerk: 'Secretario del municipio rural (town clerk)',
+  officeTownClerkRole:
+    'La junta del municipio designa quién responde las solicitudes de datos. Mientras no lo haga, la ley de Minnesota se lo asigna al secretario, que ya custodia los registros, libros y documentos del municipio.',
+  officeCityClerk: 'Secretario municipal (city clerk)',
+  officeCityClerkRole:
+    'El concejo municipal designa quién responde las solicitudes de datos. Mientras no lo haga, la ley de Minnesota se lo asigna al secretario municipal, electo o designado.',
+  officeCountyAdministrator: 'Coordinador o administrador del condado',
+  officeCountyAdministratorRole:
+    'La junta del condado designa quién responde las solicitudes de datos. Mientras no lo haga, la ley de Minnesota se lo asigna al coordinador o administrador del condado, o al auditor del condado si no existe ninguno de los dos.',
+  officeLawEnforcement: 'Oficina del sheriff',
+  officeLawEnforcementRole:
+    'Donde realmente se guardan los datos de los lectores de matrículas. La ley de ALPR de Minnesota exige un registro público, una pista de auditoría de cada acceso y una auditoría independiente cada dos años.',
+  officeCommissioner: 'Comisionado de Administración',
+  officeCommissionerRole:
+    'Si le niegan una solicitud, el comisionado dictaminará por escrito, en un plazo de 50 días, si la negativa fue legal. La opinión no obliga a la entidad, pero un tribunal debe darle deferencia.',
+
+  noLocalGovernment:
+    'Este terreno no tiene gobierno local propio. Aquí no hay junta municipal ni secretario: el condado es el gobierno local, y todo lo que trataría una junta municipal empieza en el condado.',
+  operatorMismatch:
+    'Las cámaras registradas cerca de aquí las opera {operators}, no {jurisdiction}. Un organismo que usted elige localmente no controla equipos que instaló otro gobierno, ni siquiera dentro de sus propios límites.',
+  operatorUnattributed:
+    '{count} de las cámaras registradas cerca de aquí no tienen operador anotado. Quién las opera es una pregunta, no un hallazgo, y es de las que una solicitud de datos puede responder.',
+  writeToThisOffice: 'Escriba a esta oficina',
+  underStatute: 'Según {cite}',
+
+  locateTitle: 'Empiece por donde vive',
+  locateIntro:
+    'Elija su ciudad o municipio rural y esta página nombrará las oficinas obligadas a responderle, y dirigirá la carta de abajo a la que usted elija.',
+  locateLabel: 'Su ciudad o municipio rural',
+  locatePlaceholder: 'p. ej. Waterford Township, o Northfield',
+  locateHint:
+    'Están listadas las 2.757 ciudades, municipios rurales y territorios no organizados de Minnesota, no solo las ciudades incorporadas.',
+  useThisBody: 'Dirigir la carta a esta oficina',
+  addressedTo: 'La carta de abajo ahora va dirigida a {entity}.',
+
   positionsScale:
     'Dibujado a escala sobre {total} millas. Un punto más grande significa más en un mismo lugar.',
   positionsSummary: '{count} marcas a lo largo de {total} millas, a {offsets} millas del inicio.',

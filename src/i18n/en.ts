@@ -64,6 +64,62 @@ export const en: Record<string, string> = {
     'These are not separate maps. Cameras feed searches, searches feed enforcement, enforcement feeds detention, and all of it sits on ground shaped by decades of housing policy.',
   readHowThisConnects: 'Read how this connects',
 
+  // Who answers here
+  //
+  // The site could always show a reader a camera and never tell them whose it
+  // was or who had to answer for it. These strings are that answer. The
+  // offices are the statutory defaults of Minn. Stat. § 13.02, subd. 16(b);
+  // the citations live next to the rule in src/lib/authority.mjs.
+  whoAnswersTitle: 'Who answers to you here',
+  whoAnswersIntro:
+    'Every point in Minnesota sits under several governments at once. These are the offices that have to answer a request about this ground, closest first.',
+  whoAnswersEmpty:
+    'This point falls outside the jurisdiction boundaries we hold. Try a place name instead.',
+  youAreIn: 'You are in',
+  jurisdictionCity: 'City',
+  jurisdictionTownship: 'Township',
+  jurisdictionUnorganized: 'Unorganized territory',
+  jurisdictionCounty: 'County',
+  inCounty: 'in {county}',
+
+  // One line per office: what it is, and what to bring it.
+  officeTownClerk: 'Town clerk',
+  officeTownClerkRole:
+    'The town board designates who answers data requests. Until it does, Minnesota law makes it the clerk, who already holds the town’s records, books and papers.',
+  officeCityClerk: 'City clerk',
+  officeCityClerkRole:
+    'The city council designates who answers data requests. Until it does, Minnesota law makes it the elected or appointed city clerk.',
+  officeCountyAdministrator: 'County coordinator or administrator',
+  officeCountyAdministratorRole:
+    'The county board designates who answers data requests. Until it does, Minnesota law makes it the county coordinator or administrator — or the county auditor, where the county employs neither.',
+  officeLawEnforcement: 'Sheriff’s office',
+  officeLawEnforcementRole:
+    'Where licence plate reader data actually sits. Minnesota’s ALPR statute requires a public log, an audit trail of every access, and an independent audit every two years.',
+  officeCommissioner: 'Commissioner of Administration',
+  officeCommissionerRole:
+    'If a request is refused, the commissioner will say in writing whether the refusal was lawful, within 50 days. The opinion does not bind the entity, but a court must give it deference.',
+
+  // The finding this page exists to surface.
+  noLocalGovernment:
+    'This ground has no local government of its own. There is no town board and no clerk here — the county is the local government, and everything a town board would handle starts with the county.',
+  operatorMismatch:
+    'The cameras mapped near here are operated by {operators} — not by {jurisdiction}. A body you elect locally does not control equipment another government installed, even inside your own borders.',
+  operatorUnattributed:
+    '{count} of the cameras mapped near here have no operator recorded. Who runs them is a question, not a finding — and it is one a records request can answer.',
+  writeToThisOffice: 'Write to this office',
+  underStatute: 'Under {cite}',
+
+  // Locator on the Take Action page
+  locateTitle: 'Start from where you live',
+  locateIntro:
+    'Pick your city or township and this page will name the offices that have to answer you, and address the letter below to the one you choose.',
+  locateLabel: 'Your city or township',
+  locatePlaceholder: 'e.g. Waterford Township, or Northfield',
+  locateHint:
+    'All 2,757 Minnesota cities, townships and unorganized territories are listed — not only the incorporated cities.',
+  useThisBody: 'Address the letter to this office',
+  addressedTo: 'The letter below is now addressed to {entity}.',
+
   // Detail panel
   whatThisMeans: 'What this means',
   source: 'Source',

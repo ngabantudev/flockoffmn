@@ -27,7 +27,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Detention facilities | `detention.geojson` | Public domain (US federal work) | Free for any use. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | **Non-commercial and share-alike.** Not usable commercially. |
 | Data centres | `data-centers.geojson` | FracTracker Alliance terms | Attribution required, non-commercial. |
-| County / place reference | `reference/*` | Public domain (US federal work) | Free for any use. |
+| County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
 
 **Combining layers:** the most restrictive term governs the combination. A
 product mixing the camera layer with the redlining layer inherits both ODbL
@@ -43,7 +43,7 @@ Reproduce these when redistributing the corresponding layer:
   Redlining in New Deal America," *American Panorama*, ed. Robert K. Nelson and
   Edward L. Ayers.
 - **Data centres** — FracTracker Alliance.
-- **County and place geography** — U.S. Census Bureau.
+- **County, place and jurisdiction geography** — U.S. Census Bureau.
 
 ## A note on scope
 
