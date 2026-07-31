@@ -56,7 +56,7 @@ export async function fetchWithRetry(url, { retries = 3, timeoutMs = 60_000, ...
  * every query walks a list of mirrors rather than failing on the first one.
  * ------------------------------------------------------------------ */
 
-const OVERPASS_MIRRORS = [
+export const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
@@ -76,11 +76,23 @@ const OVERPASS_MIRRORS = [
 const OVERPASS_BACKOFF_MS = 5_000;
 const OVERPASS_MAX_BACKOFF_MS = 60_000;
 
-/** POST an Overpass QL query, trying each mirror in turn. Returns parsed JSON. */
-export async function queryOverpass(scope, query, { retries = 1, timeoutMs = 190_000 } = {}) {
+/**
+ * POST an Overpass QL query, trying each mirror in turn. Returns parsed JSON.
+ *
+ * `mirrors` lets a caller change the order it walks them in. The corridor build
+ * asks a hundred-odd questions in a row about residential street networks and
+ * gets 504s from the main instance for it, which is the instance behaving
+ * correctly under a load it did not ask for; it starts on one sized for that
+ * kind of work instead.
+ */
+export async function queryOverpass(
+  scope,
+  query,
+  { retries = 1, timeoutMs = 190_000, mirrors = OVERPASS_MIRRORS } = {},
+) {
   let lastError;
   let failures = 0;
-  for (const mirror of OVERPASS_MIRRORS) {
+  for (const mirror of mirrors) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -103,7 +115,7 @@ export async function queryOverpass(scope, query, { retries = 1, timeoutMs = 190
         lastError = err;
         log(scope, `  ${new URL(mirror).host} failed: ${err.message}`);
         failures++;
-        const isLast = mirror === OVERPASS_MIRRORS.at(-1) && attempt === retries;
+        const isLast = mirror === mirrors.at(-1) && attempt === retries;
         if (!isLast) {
           const wait = Math.min(OVERPASS_BACKOFF_MS * 2 ** (failures - 1), OVERPASS_MAX_BACKOFF_MS);
           log(scope, `  waiting ${Math.round(wait / 1000)}s before the next attempt`);
