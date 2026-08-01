@@ -21,7 +21,6 @@ export const es: Record<string, string> = {
   skipToMap: 'Saltar al mapa',
 
   layers: 'Capas',
-  legend: 'Leyenda',
   filters: 'Filtros',
   toggleLayer: 'Mostrar u ocultar capa',
   showLayer: 'Mostrar',

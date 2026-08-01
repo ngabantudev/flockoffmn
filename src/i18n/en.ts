@@ -20,7 +20,6 @@ export const en: Record<string, string> = {
 
   // Map chrome
   layers: 'Layers',
-  legend: 'Legend',
   filters: 'Filters',
   toggleLayer: 'Toggle layer',
   showLayer: 'Show',
