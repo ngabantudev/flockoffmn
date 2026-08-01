@@ -667,7 +667,7 @@ export const LAYERS: LayerDefinition[] = [
     category: 'infrastructure',
     order: 6,
     label: {
-      en: 'Data centres',
+      en: 'Data centers',
       es: 'Centros de datos',
     },
     summary: {
@@ -675,7 +675,7 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Grandes instalaciones de cómputo, sus operadores y fuentes de energía, y dónde las comunidades se organizan contra ellas.',
     },
     whatThisMeans: {
-      en: 'Data centres are the physical substrate the rest of this map runs on: the storage and compute behind plate-reader networks, records systems and the analytics sold to agencies. They also carry immediate local consequences — electricity and water demand, land use, noise, tax abatements, and grid costs borne by other ratepayers. Where a community has organised in response, this layer surfaces the campaign so you can find it rather than start from nothing.',
+      en: 'Data centers are the physical substrate the rest of this map runs on: the storage and compute behind plate-reader networks, records systems and the analytics sold to agencies. They also carry immediate local consequences — electricity and water demand, land use, noise, tax abatements, and grid costs borne by other ratepayers. Where a community has organised in response, this layer surfaces the campaign so you can find it rather than start from nothing.',
       es: 'Los centros de datos son el sustrato físico sobre el que funciona el resto de este mapa: el almacenamiento y el cómputo detrás de las redes de lectores de matrículas, los sistemas de registros y las analíticas vendidas a las agencias. También tienen consecuencias locales inmediatas: demanda de electricidad y agua, uso del suelo, ruido, exenciones fiscales y costos de red que pagan otros usuarios. Donde una comunidad se ha organizado, esta capa muestra la campaña para que pueda encontrarla en lugar de empezar de cero.',
     },
     limitations: [
@@ -686,6 +686,14 @@ export const LAYERS: LayerDefinition[] = [
       {
         en: 'Power-source and capacity figures are as reported by the operator or permit filings and are not independently verified.',
         es: 'Las cifras de fuente de energía y capacidad son las reportadas por el operador o en permisos y no están verificadas de forma independiente.',
+      },
+      {
+        en: 'The four trackers this layer draws on contradict each other about several projects. Where they do, the record says so and shows what each one claims.',
+        es: 'Los cuatro rastreadores en los que se basa esta capa se contradicen sobre varios proyectos. Cuando ocurre, el registro lo indica y muestra lo que afirma cada uno.',
+      },
+      {
+        en: 'This is contextual background, not a facility register. It is not complete and should not be cited as an inventory.',
+        es: 'Esto es contexto de fondo, no un registro de instalaciones. No está completo y no debe citarse como un inventario.',
       },
     ],
     geometry: 'point',
@@ -703,7 +711,7 @@ export const LAYERS: LayerDefinition[] = [
     dataPath: '/data/data-centers.geojson',
     csvPath: '/data/data-centers.csv',
     provenance: {
-      source: 'FracTracker Alliance — national data centre database',
+      source: 'FracTracker Alliance — national data center database',
       sourceUrl: 'https://www.fractracker.org/data-centers/',
       license: 'CC BY-NC 4.0',
       licenseUrl: 'https://creativecommons.org/licenses/by-nc/4.0/',
@@ -711,26 +719,86 @@ export const LAYERS: LayerDefinition[] = [
       sourceDate: null,
       lastUpdated: null,
       refresh: 'periodic',
+      // The permit file is the spine, but it carries no status and no capacity
+      // and none of the hyperscale build-out. Those facts come from four public
+      // trackers, so four publishers are named rather than one.
+      secondarySources: [
+        {
+          key: 'mtjp',
+          name: 'More Than Just Parks — Data Center Tracker',
+          url: 'https://morethanjustparks.com/data-center-tracker/state/minnesota',
+          license: 'No reuse licence stated; beta preview, publisher disclaims reliance',
+          licenseUrl: null,
+          contributes: {
+            en: 'Most of the project list, including status and megawatt capacity for the operating, proposed and cancelled build-out.',
+            es: 'La mayor parte de la lista de proyectos, incluidos el estado y la capacidad en megavatios de las instalaciones en operación, propuestas y canceladas.',
+          },
+        },
+        {
+          key: 'cleanview',
+          name: 'Cleanview — Minnesota data centers',
+          url: 'https://cleanview.co/data-centers/minnesota',
+          license: 'Proprietary platform, free web access, no reuse licence stated',
+          licenseUrl: null,
+          contributes: {
+            en: 'Independent status and capacity figures for the large projects, and the disagreements with the other trackers that this layer records rather than resolves.',
+            es: 'Cifras independientes de estado y capacidad de los grandes proyectos, y las discrepancias con los demás rastreadores que esta capa registra en lugar de resolver.',
+          },
+        },
+        {
+          key: 'baxtel',
+          name: 'Baxtel — Minnesota data centers',
+          url: 'https://baxtel.com/data-center/minnesota',
+          license: '© all rights reserved; detailed specifications sold separately',
+          licenseUrl: null,
+          contributes: {
+            en: 'Corroboration that particular operators run particular sites. Its detailed specifications are paywalled and are not reproduced here.',
+            es: 'Corroboración de que ciertos operadores gestionan ciertos sitios. Sus especificaciones detalladas son de pago y no se reproducen aquí.',
+          },
+        },
+        {
+          key: 'poweredbywho',
+          name: 'PoweredByWho',
+          url: 'https://poweredbywho.com/map',
+          license: 'Public-records journalism; no reuse licence stated',
+          licenseUrl: null,
+          contributes: {
+            en: 'Consulted for project context and reporting on local opposition. Its public map yielded no field-level figures we could attribute, so no value in this layer rests on it.',
+            es: 'Consultado para contexto de proyectos e informes sobre la oposición local. Su mapa público no aportó cifras atribuibles, por lo que ningún valor de esta capa depende de él.',
+          },
+        },
+      ],
     },
     filters: [
       { key: 'operator', kind: 'enum', label: { en: 'Operator', es: 'Operador' } },
-      { key: 'status', kind: 'enum', label: { en: 'Status', es: 'Estado' } },
+      {
+        key: 'status',
+        kind: 'enum',
+        label: { en: 'Status', es: 'Estado' },
+        // A withdrawn proposal is worth finding — it marks a place where people
+        // organised and the project did not happen — but it is not a building,
+        // and drawing it by default would say there is one.
+        defaultExcluded: ['cancelled', 'withdrawn'],
+      },
       { key: 'powerSource', kind: 'enum', label: { en: 'Power source', es: 'Fuente de energía' } },
     ],
     detailFields: [
       { key: 'operator', label: { en: 'Operator', es: 'Operador' } },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'status', label: { en: 'Status', es: 'Estado' } },
+      { key: 'capacityMw', label: { en: 'Capacity (MW)', es: 'Capacidad (MW)' } },
+      { key: 'disputedNote', label: { en: 'Sources disagree', es: 'Las fuentes discrepan' } },
       { key: 'powerSource', label: { en: 'Power source', es: 'Fuente de energía' } },
+      { key: 'locationPrecision', label: { en: 'Location precision', es: 'Precisión de ubicación' } },
       { key: 'resistanceStatus', label: { en: 'Community response', es: 'Respuesta comunitaria' } },
       { key: 'campaignUrl', label: { en: 'Local campaign', es: 'Campaña local' }, format: 'link' },
       { key: 'petitionUrl', label: { en: 'Petition', es: 'Petición' }, format: 'link' },
     ],
     nearMe: {
       mode: 'nearest',
-      title: { en: 'Nearest data centre', es: 'Centro de datos más cercano' },
+      title: { en: 'Nearest data center', es: 'Centro de datos más cercano' },
       empty: {
-        en: 'No data centre in this dataset is near this point.',
+        en: 'No data center in this dataset is near this point.',
         es: 'Ningún centro de datos de este conjunto de datos está cerca de este punto.',
       },
       detail: ['city'],
