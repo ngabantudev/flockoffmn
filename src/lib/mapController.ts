@@ -1,6 +1,6 @@
 import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
-import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
+import { baseStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { THREAD_STOPS, densityColorExpression } from './densityRamp';
 import { groupNodes } from './nodes';
@@ -1286,11 +1286,24 @@ export class MapController {
       if (n > maxLat) maxLat = n;
     }
     if (!Number.isFinite(minLng)) return;
+    // The default destination is the metro, not the matches' own bbox: both
+    // downtowns and the suburban ring, framed the same way every time, so
+    // successive filters compare against a steady ground. Only when nothing
+    // that matched is inside that frame does the view chase the records
+    // instead — a reader filtering to Rochester should not be shown an empty
+    // metro.
+    const inMetro =
+      minLng <= METRO_BOUNDS[1][0] &&
+      maxLng >= METRO_BOUNDS[0][0] &&
+      minLat <= METRO_BOUNDS[1][1] &&
+      maxLat >= METRO_BOUNDS[0][1];
     this.map.fitBounds(
-      [
-        [minLng, minLat],
-        [maxLng, maxLat],
-      ],
+      inMetro
+        ? METRO_BOUNDS
+        : [
+            [minLng, minLat],
+            [maxLng, maxLat],
+          ],
       { padding: 48, maxZoom: 13, duration: REDUCED_MOTION ? 0 : 600 },
     );
   }
