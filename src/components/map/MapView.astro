@@ -18,7 +18,6 @@ const loaded = await loadAllLayers();
 // record has.
 const clientLayers = loaded.map(({ definition: d, collection }) => ({
   id: d.id,
-  slug: d.slug,
   category: d.category,
   label: pick(d.label, locale),
   summary: pick(d.summary, locale),
@@ -63,7 +62,6 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   dataPath: d.dataPath,
-  csvPath: d.csvPath,
   filters: d.filters
     .filter((f) => f.kind === 'enum')
     .map((f) => ({
@@ -125,7 +123,6 @@ const strings = {
   source: t('source'),
   license: t('license'),
   confidence: t('confidence'),
-  county: t('county'),
   viewRecord: t('viewRecord'),
   closePanel: t('closePanel'),
   confidenceConfirmed: t('confidenceConfirmed'),
@@ -1079,7 +1076,4 @@ const strings = {
     refreshGroups();
     status('', 400);
   });
-
-  // Expose for the near-me page, which reuses this controller instance.
-  (window as unknown as Record<string, unknown>).__getFlocked = { controller, layers };
 </script>
