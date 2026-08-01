@@ -1,0 +1,2 @@
+id,name,county,state,countyFips,lat,lng,confidence,sourceDate,airport,tailNumber,reportedPassengerCount,reportedDestinations,reportedBy,sourceNote
+ice-air-flight-2026-07-31-n625sw,N625SW — 2026-07-31,Hennepin,MN,27053,44.88194,-93.22167,reported,2026-07-31,MSP,N625SW,28,"Alexandria, LA; El Paso, TX","MN50501: MSP ICE Air Flights, compiled by Nick Benson",Logged by volunteer observers at MSP.

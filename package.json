@@ -27,7 +27,8 @@
     "pages:publish": "npm run build && wrangler pages deploy dist --project-name=flockoffmn --branch=main",
     "data:covenants": "node scripts/ingest/covenants.mjs",
     "data:ej": "node scripts/ingest/ej-cumulative.mjs",
-    "data:flights": "node scripts/ingest/flights.mjs"
+    "data:flights": "node scripts/ingest/flights.mjs",
+    "data:ice-air-flights": "node scripts/ingest/ice-air-flights.mjs"
   },
   "dependencies": {
     "astro": "^7.1.6",

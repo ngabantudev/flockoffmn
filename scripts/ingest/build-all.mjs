@@ -42,6 +42,9 @@ const STEPS = [
   // refresh-flights.yml; included here too so `npm run data` alone still
   // rebuilds every layer from a clean clone.
   { name: 'flights', script: 'flights.mjs' },
+  // Reads data/community/ice-air-flights.json, not a live fetch — see that
+  // file's own header for why this layer can't be scraped like the others.
+  { name: 'ice-air-flights', script: 'ice-air-flights.mjs' },
 ];
 
 function run(script) {

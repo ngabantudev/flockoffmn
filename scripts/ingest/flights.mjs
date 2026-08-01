@@ -13,7 +13,11 @@
  *  2. Locate. Ask adsb.lol — a keyless, community-run, explicitly *unfiltered*
  *     ADS-B aggregator (ODbL) — where each identified aircraft last reported
  *     its position. An aircraft not seen in the last hour is dropped rather
- *     than drawn at a stale position.
+ *     than drawn at a stale position. Each position is also checked against
+ *     Minnesota's real county geometry (inMinnesota) and cross-referenced
+ *     against data/community/ice-air-flights.json, so an aircraft a
+ *     volunteer has directly observed on an ICE Air flight is tracked live
+ *     even when owner-name matching alone wouldn't have caught it.
  *
  * Categories the user asked about but that turned up no sourceable aircraft
  * (BCA, county sheriff offices, ICE Air charters) are recorded in
@@ -27,7 +31,10 @@
  * a live tracker with no data export).
  */
 
-import { fetchWithRetry, unzip, writeLayer, log, slugId } from './lib/util.mjs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fetchWithRetry, unzip, writeLayer, loadCounties, log, slugId, ROOT } from './lib/util.mjs';
+import { findContaining } from '../../src/lib/geo.mjs';
 
 const FAA_LANDING =
   'https://www.faa.gov/licenses_certificates/aircraft_certification/aircraft_registry/releasable_aircraft_download/index.cfm';
@@ -90,7 +97,17 @@ const AGENCY_MATCHERS = [
   { agency: 'county_sheriff', label: 'MN county sheriff aviation units', confidence: 'confirmed', test: () => false },
 ];
 
-/** Minimal comma-split CSV reader for the FAA's flat, unquoted MASTER.txt. */
+/**
+ * Minimal comma-split CSV reader for the FAA's flat, unquoted MASTER.txt.
+ *
+ * No state pre-filter: the Minnesota agency matchers are already scoped by
+ * their own name patterns ("MINNESOTA STATE PATROL", "STATE OF MINNESOTA
+ * ..."), and the ICE Air charter matcher is deliberately national — Eastern
+ * Air Express (Kansas City, MO) and GlobalX (Miami, FL) are registered
+ * nowhere near Minnesota. An early `STATE === 'MN'` filter silently dropped
+ * every one of their aircraft during development; scanning all ~300k rows
+ * costs a couple of seconds and is the only way to get both scopes right.
+ */
 function parseMaster(text) {
   const lines = text.split('\n');
   const header = lines[0].replace(/^﻿/, '').split(',').map((h) => h.trim());
@@ -102,9 +119,7 @@ function parseMaster(text) {
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i];
     if (!line || line[idx.STATE] === undefined) continue;
-    const cols = line.split(',');
-    if (cols[idx.STATE]?.trim() !== 'MN') continue; // cheap filter before the agency test
-    rows.push(cols);
+    rows.push(line.split(','));
   }
   return { idx, rows };
 }
@@ -113,6 +128,26 @@ function faaDate(yyyymmdd) {
   const s = (yyyymmdd ?? '').trim();
   if (!/^\d{8}$/.test(s)) return null;
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+}
+
+/**
+ * Aircraft directly observed flying an ICE Air mission, from the volunteer
+ * flight log — a stronger, more specific basis for tracking a given tail
+ * number live than "its current owner is a known contractor". Read here so
+ * that aircraft this repo already has eyewitness evidence about get tracked
+ * even if a future entry's owner isn't yet one of the two named companies.
+ */
+async function loadFlightLog() {
+  const p = path.join(ROOT, 'data/community/ice-air-flights.json');
+  const doc = JSON.parse(await readFile(p, 'utf8'));
+  const byHex = new Map();
+  for (const flight of doc.flights ?? []) {
+    if (!flight.icao24) continue;
+    const hex = flight.icao24.toLowerCase();
+    if (!byHex.has(hex)) byHex.set(hex, { tailNumber: flight.tailNumber, dates: [] });
+    byHex.get(hex).dates.push(flight.date);
+  }
+  return byHex;
 }
 
 async function identifyRoster() {
@@ -135,11 +170,13 @@ async function identifyRoster() {
   const { idx, rows } = parseMaster(masterBuf.toString('utf8'));
 
   const roster = [];
+  const allByHex = new Map(); // every registered hex -> its row, for the flight-log cross-reference below
   for (const cols of rows) {
     const name = (cols[idx.NAME] ?? '').trim().toUpperCase();
     const other1 = (cols[idx['OTHER NAMES(1)']] ?? '').trim().toUpperCase();
     const hex = (cols[idx['MODE S CODE HEX']] ?? '').trim().toLowerCase();
     if (!hex) continue;
+    allByHex.set(hex, cols);
     const match = AGENCY_MATCHERS.find((m) => m.test(name, other1));
     if (!match) continue;
     roster.push({
@@ -150,9 +187,42 @@ async function identifyRoster() {
       lastActionDate: faaDate(cols[idx['LAST ACTION DATE']]),
       confidence: match.confidence,
       citation: match.citation,
+      flightLogDates: null,
     });
   }
   log('flights', `matched ${roster.length} aircraft against ${AGENCY_MATCHERS.length} agency patterns`);
+
+  // Cross-reference the volunteer-observed flight log both ways: enrich an
+  // aircraft already tracked via owner match with its observed flight
+  // date(s), and separately track any aircraft the log identifies that owner
+  // matching missed — eyewitness evidence of a specific ICE Air flight is at
+  // least as strong a basis for live-tracking that tail number as "its owner
+  // is a known contractor".
+  const flightLog = await loadFlightLog();
+  for (const entry of roster) {
+    if (flightLog.has(entry.icao24)) entry.flightLogDates = flightLog.get(entry.icao24).dates;
+  }
+  let addedFromLog = 0;
+  for (const [hex, obs] of flightLog) {
+    if (roster.some((r) => r.icao24 === hex)) continue;
+    const cols = allByHex.get(hex);
+    roster.push({
+      agency: 'ice_air',
+      icao24: hex,
+      tailNumber: obs.tailNumber,
+      ownerName: cols ? (cols[idx.NAME] ?? '').trim() : null,
+      lastActionDate: cols ? faaDate(cols[idx['LAST ACTION DATE']]) : null,
+      confidence: 'reported',
+      citation: {
+        name: 'Directly observed operating an ICE Air flight — see the "Observed ICE Air flights" layer',
+        url: '/data/observed-ice-flights.geojson',
+      },
+      flightLogDates: obs.dates,
+    });
+    addedFromLog++;
+  }
+  if (addedFromLog) log('flights', `+${addedFromLog} aircraft added from the observed flight log (not caught by owner matching)`);
+
   return roster;
 }
 
@@ -172,22 +242,29 @@ async function locate(roster) {
 async function main() {
   const roster = await identifyRoster();
   const positions = await locate(roster);
+  const counties = await loadCounties();
 
   const features = [];
+  let inMnCount = 0;
   for (const entry of roster) {
     const ac = positions.get(entry.icao24);
     if (!ac || typeof ac.lat !== 'number' || typeof ac.lon !== 'number') continue;
     const onGround = ac.alt_baro === 'ground';
+    // Real containment against MN's actual county geometry, not a padded
+    // display bounding box — the same reference every other layer resolves
+    // a Minnesota location against.
+    const county = findContaining([ac.lon, ac.lat], counties.features);
+    if (county) inMnCount++;
     features.push({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [ac.lon, ac.lat] },
       properties: {
         id: slugId('aircraft', entry.icao24),
         layer: 'agency_aircraft',
-        name: entry.tailNumber,
-        county: null,
+        county: county?.properties.name ?? null,
         state: 'MN',
-        countyFips: null,
+        countyFips: county?.properties.geoid ?? null,
+        name: entry.tailNumber,
         confidence: entry.confidence,
         sourceDate: entry.lastActionDate,
         attributes: {
@@ -200,10 +277,13 @@ async function main() {
           track: ac.track ?? null,
           onGround,
           lastContactSeconds: Math.round(ac.seen),
+          inMinnesota: Boolean(county),
+          observedFlightDates: entry.flightLogDates ? entry.flightLogDates.join('; ') : null,
         },
       },
     });
   }
+  log('flights', `${inMnCount} of ${features.length} airborne aircraft currently in Minnesota`);
 
   const byAgency = features.reduce((acc, f) => {
     acc[f.properties.attributes.agency] = (acc[f.properties.attributes.agency] ?? 0) + 1;
@@ -255,6 +335,8 @@ async function main() {
       `No FAA-registered aircraft was found under any Minnesota county sheriff's office name as of ${today}.`,
       'ice_air records identify aircraft owned by companies currently reported to hold ICE Air charter subcontracts (Eastern Air Express, GlobalX) — this is NOT a claim that any specific flight shown is an active ICE mission; these are charter airlines that also fly unrelated commercial work. See the layer description for the full caveat.',
       'FAA ownership matching under-counts these fleets: most charter capacity is leased rather than owned outright by the operating brand, so aircraft flying real ICE Air missions may be registered to a lessor with no name resembling either company and will not appear here.',
+      'inMinnesota is computed against real Minnesota county geometry, the same reference every other layer resolves a location against — not a padded display bounding box. county/countyFips are populated only when the aircraft is actually inside a Minnesota county at ingest time; both stay null otherwise, including for ice_air aircraft flying elsewhere in the country, which is most of the time.',
+      'observedFlightDates links an aircraft to the "Observed ICE Air flights" layer when a volunteer has directly logged it. A small number of tail numbers are tracked live on that basis alone, independent of the owner-name matchers above — see data/community/ice-air-flights.json.',
     ],
     features,
   });
