@@ -1247,6 +1247,44 @@ export class MapController {
     if (values.size === 0) state.delete(key);
     else state.set(key, values);
     this.refresh(layerId);
+    this.zoomToFiltered(layerId);
+  }
+
+  /**
+   * Carry the view to what a filter just narrowed the layer to.
+   *
+   * Picking "Duluth" and then panning around Minneapolis looking for the
+   * records is the reader doing work the map already knows how to do. Runs
+   * only while a filter is actively narrowing a visible layer with matches:
+   * un-narrowing (clearing the last value, clearing all filters) moves
+   * nothing, because where the reader is looking is theirs unless they just
+   * asked a question whose answer is somewhere else.
+   */
+  private zoomToFiltered(layerId: string) {
+    const state = this.filters.get(layerId);
+    if (!state || state.size === 0) return;
+    if (!this.visible.has(layerId)) return;
+    const matches = this.filteredFeatures(layerId);
+    if (!matches.length) return;
+    let minLng = Infinity;
+    let minLat = Infinity;
+    let maxLng = -Infinity;
+    let maxLat = -Infinity;
+    for (const f of matches) {
+      const [w, s, e, n] = bboxOf(f.geometry);
+      if (w < minLng) minLng = w;
+      if (s < minLat) minLat = s;
+      if (e > maxLng) maxLng = e;
+      if (n > maxLat) maxLat = n;
+    }
+    if (!Number.isFinite(minLng)) return;
+    this.map.fitBounds(
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
+      { padding: 48, maxZoom: 13, duration: REDUCED_MOTION ? 0 : 600 },
+    );
   }
 
   clearFilters(layerId?: string) {
