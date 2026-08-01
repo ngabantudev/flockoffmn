@@ -34,6 +34,8 @@ export interface ClientLayer {
   filament?: boolean;
   /** Colour this line layer by the size of each record's connected network. */
   networkColor?: { key: string; maxRecords: number };
+  /** A second, heavier tier of line inside the same filament layer. */
+  cordTier?: { key: string; value: string; color: string };
   /** The request a reader can file about one of these records, if any. */
   action?: {
     requestType: string;
@@ -702,14 +704,53 @@ export class MapController {
         ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords)
         : (layer.color as unknown as maplibregl.ExpressionSpecification);
 
-      const widthByZoom = (stops: Array<[number, number]>) =>
-        [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          ...stops.flat(),
-        ] as unknown as maplibregl.ExpressionSpecification;
       if (layer.filament) {
+        /*
+         * Two tiers, where the layer carries two kinds of line.
+         *
+         * The mesh is the fine tissue: short, dense, coloured by the ramp. The
+         * cords are the trunks that fuse one patch of mesh to the next — wide,
+         * pale, one colour, and drawn underneath so the mesh always sits on top
+         * of them.
+         *
+         * `byTier` returns the cord value where a layer declares a cord tier
+         * and the mesh value everywhere else, so a filament layer with only
+         * one kind of line is left exactly as it was.
+         */
+        const cord = layer.cordTier;
+        const byTier = (mesh: unknown, cordValue: unknown) =>
+          (cord
+            ? ['case', ['==', ['get', cord.key], cord.value], cordValue, mesh]
+            : mesh) as unknown as maplibregl.ExpressionSpecification;
+        // Cords stay off the network ramp: it says how many reader locations a
+        // mesh body holds, and a cord belongs to two bodies at once.
+        const threadByTier = cord ? byTier(thread, cord.color) : thread;
+        // Painted first within the layer, so the mesh sits on top of the trunk
+        // rather than the other way round. MapLibre sorts ascending.
+        const sortByTier = byTier(1, 0);
+
+        /*
+         * Both tiers' widths and opacities, as one ramp over zoom.
+         *
+         * The zoom interpolation has to be the outer expression and there may
+         * only be one of them: a `case` picking between two zoom ramps looks
+         * like the obvious way to write this and MapLibre rejects it outright,
+         * taking the whole layer down with it rather than falling back. So the
+         * zoom ramp is on the outside and each of its stops is where the two
+         * tiers differ.
+         *
+         * A stop is `[zoom, mesh, cord]`. With no cord tier declared the inner
+         * choice collapses to the mesh number and this is an ordinary zoom
+         * ramp, which is what every other filament layer gets.
+         */
+        const byZoomAndTier = (stops: Array<[number, number, number]>) =>
+          [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            ...stops.flatMap(([at, mesh, cordValue]) => [at, byTier(mesh, cordValue)]),
+          ] as unknown as maplibregl.ExpressionSpecification;
+
         // A soft halo, wide and heavily blurred, so the thread looks like it is
         // lit from inside rather than drawn on top of the map.
         this.map.addLayer(
@@ -717,10 +758,19 @@ export class MapController {
             id: `${layer.id}-line-casing`,
             type: 'line',
             source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
             paint: {
-              'line-color': thread,
-              'line-opacity': 0.3,
+              'line-color': threadByTier,
+              // The cord's halo is what makes it read as lit rather than ruled,
+              // and it is the half that has to be watched: it is spread over a
+              // line five times as wide and often a hundred times as long as a
+              // mesh link's, so it turns to fog long before the core does. It
+              // gets a little under half the core's strength at either end.
+              'line-opacity': byZoomAndTier([
+                [5, 0.3, 0.3],
+                [9, 0.3, 0.26],
+                [13, 0.3, 0.13],
+              ]),
               /*
                * Blur is paid per pixel covered, and this layer now covers a
                * great deal more of them: every link is drawn whole where half
@@ -735,10 +785,10 @@ export class MapController {
               // under three pixels long. A thread that is also thin there is a
               // thread nobody can find, so the glow starts wide and the line
               // grows into it rather than out of nothing.
-              'line-width': widthByZoom([
-                [5, 6],
-                [11, 9],
-                [16, 16],
+              'line-width': byZoomAndTier([
+                [5, 6, 9],
+                [11, 9, 15],
+                [16, 16, 26],
               ]),
             },
           },
@@ -755,14 +805,34 @@ export class MapController {
             id: `${layer.id}-line`,
             type: 'line',
             source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
             paint: {
-              'line-color': thread,
-              'line-opacity': 0.55,
-              'line-width': widthByZoom([
-                [5, 2.6],
-                [11, 3.2],
-                [16, 5],
+              'line-color': threadByTier,
+              /*
+               * A cord is brightest where the whole state is in frame, and
+               * eases back as a city fills the screen.
+               *
+               * The two ends answer different questions. Zoomed out, the
+               * question is whether these cameras are one connected thing, and
+               * the answer — that they are, right across Minnesota — is carried
+               * entirely by the cords, because at that zoom the mesh is a few
+               * pixels of haze. Zoomed in, the question is what lies between
+               * these particular cameras, the mesh is the answer, and a
+               * near-white band five times its width would bury it.
+               *
+               * No cord's data changes across this ramp. It is emphasis
+               * following the question the zoom is asking; the miles on the
+               * strand and the panel behind it read the same at every zoom.
+               */
+              'line-opacity': byZoomAndTier([
+                [5, 0.55, 0.75],
+                [9, 0.55, 0.64],
+                [13, 0.55, 0.3],
+              ]),
+              'line-width': byZoomAndTier([
+                [5, 2.6, 4],
+                [11, 3.2, 6.5],
+                [16, 5, 11],
               ]),
             },
           },

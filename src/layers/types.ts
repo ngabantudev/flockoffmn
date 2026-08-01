@@ -333,6 +333,45 @@ export interface LayerDefinition {
     maxRecords: number;
   };
   /**
+   * A second, heavier tier of line within the same filament layer.
+   *
+   * A mycelium is not one kind of thread. Fine hyphae fill a patch and fuse
+   * into a dense mesh; thick cords then run across dead ground to join one
+   * patch to the next, and it is the cords that make scattered patches one
+   * organism rather than a scatter of organisms (Fricker et al., *The Mycelium
+   * as a Network*, PMC11687498). The corridor layer has exactly that shape —
+   * a Gabriel mesh of short neighbourhood links, and a spanning tree of long
+   * roads fusing the mesh bodies — and drawing both at one weight would say
+   * they are one kind of claim when they are not.
+   *
+   * So this is not styling for its own sake. The cord tier carries the weaker
+   * claim — a cord says two clusters are on one road network, where a mesh link
+   * says a trip between two cameras is logged twice — but it carries the
+   * finding that only shows at a distance, which is that the cameras of this
+   * state are one connected thing. Hence the weight, and hence the brightness
+   * ramp in the controller: loud where the whole state is in frame and nothing
+   * else on the map is legible, quiet where a city fills the screen and the
+   * mesh is the subject. Cords stay outside the network colour ramp throughout,
+   * so the ramp keeps meaning what it means.
+   *
+   * Omit it and a filament layer is one uniform tier, which is right for any
+   * layer whose lines are all the same kind of statement.
+   */
+  cordTier?: {
+    /** Attribute the two tiers are told apart by. */
+    key: string;
+    /** The value of that attribute on the heavier tier. */
+    value: string;
+    /**
+     * Colour for the heavier tier, off the network ramp.
+     *
+     * Cords cannot ride the ramp: the ramp encodes how many reader locations a
+     * mesh body holds, and a cord belongs to two bodies at once. Giving them a
+     * ramp colour would make up an answer to a question they do not answer.
+     */
+    color: string;
+  };
+  /**
    * The request a reader can file about one of these records.
    *
    * A record on this map is the end of somebody else's paperwork, and until

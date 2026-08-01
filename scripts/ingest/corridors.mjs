@@ -54,6 +54,42 @@
  * geometry that, at the slider's opening position, over half the links never
  * showed. Both are gone: a link is here only if it is short enough to draw, and
  * what is written is exactly what is drawn. See `STATIC_MILES`.
+ *
+ * ---
+ *
+ * Two tiers, because one was drawing the wrong picture.
+ *
+ * The Gabriel test above, capped at a mile and a half, produced 150 separate
+ * networks and left 155 reader locations joined to nothing at all. Read on the
+ * map that is scatter — a scatter of islands, which is a fair description of
+ * neither the cameras nor the driving. It is an artefact of the cap: the
+ * cameras of Duluth and the cameras of St Cloud are not unrelated, they are
+ * simply further apart than five minutes of city traffic.
+ *
+ * A fungal mycelium has the same problem and solves it with two kinds of tissue
+ * (Fricker, Heaton, Jones & Boddy, *The Mycelium as a Network*, Microbiol
+ * Spectr, PMC11687498). Dense local foraging fills a patch with fine hyphae
+ * that branch and fuse into loops; long exploratory **cords** then run across
+ * dead ground to fuse one patch to the next, and it is the cords that make
+ * scattered patches one colony rather than a scatter of colonies.
+ *
+ * So this layer has both:
+ *
+ *   - `kind: 'link'` — the Gabriel mesh, unchanged, capped at STATIC_MILES.
+ *     Fine, dense, and the tier that carries the finding: this is the ordinary
+ *     trip logged repeatedly by the same network.
+ *   - `kind: 'cord'` — a minimum spanning tree over those mesh bodies, routed
+ *     on real roads with no length cap, so every mapped reader in the state
+ *     ends up in one connected body. See `cordTier`.
+ *
+ * The cords are real routed roads like everything else here — a cord is drawn
+ * only where OSRM returns a drivable route between two mapped readers. What a
+ * cord is *not* is a claim about a trip. It is the shortest road by which one
+ * watched cluster reaches the next, and where that road is ninety miles of
+ * interstate, the honest reading of the strand is "these two clusters are on
+ * the same road network", not "somebody drives this and is read at both ends".
+ * The two tiers are drawn differently and labelled differently for exactly that
+ * reason, and `knownGaps` says it again in the file itself.
  */
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -127,6 +163,56 @@ const SIMPLIFY_M = 5;
  */
 const DETOUR_RATIO = 3;
 const DETOUR_FLOOR_M = 0.5 * MILE;
+
+/* ------------------------------------------------------------------ *
+ * The cord tier
+ * ------------------------------------------------------------------ */
+
+/**
+ * How much longer than the straight line a *cord* may be.
+ *
+ * Looser than the mesh's ratio, and for a reason that is about what the two
+ * tiers are for. A mesh link is a claim about a specific trip, so a detour
+ * corrupts it. A cord is a claim about reachability — that this cluster and
+ * that one are on one road network — and a route that swings wide around a lake
+ * to make the connection is still the true answer to that question. It is not
+ * unbounded: past four times the straight line the road has stopped being the
+ * way between these two clusters and become the way between two others.
+ */
+const CORD_DETOUR_RATIO = 4;
+
+/**
+ * Tolerance for a cord's drawn line, five times the mesh's.
+ *
+ * A cord can be a hundred miles of interstate and OSRM answers with every node
+ * on it. At the zooms a cord is legible at — the whole state, a whole region —
+ * twenty-five metres is a third of a pixel, and the file is what every reader's
+ * browser parses before the map draws anything.
+ */
+const CORD_SIMPLIFY_M = 25;
+
+/**
+ * How many nearby readers outside its own body each reader offers as a cord
+ * candidate.
+ *
+ * The spanning tree wants the shortest road between two bodies, and the sites
+ * that could supply it are the ones near the seam between them. Forty is far
+ * more than the handful that ever win — no accepted cord in this data comes
+ * from past the fourth — and holding a bounded list per site is what keeps this
+ * from being an all-pairs table that grows with the square of the survey.
+ */
+const CORD_NEIGHBOURS = 40;
+
+/**
+ * How many routes may be asked for before two bodies are given up on.
+ *
+ * A pair of bodies separated by something unroutable — a lake with no causeway,
+ * a reader stranded in a car park OSRM will not enter — fails the same way for
+ * every candidate pair of sites across the seam. Three is enough to get past a
+ * single badly placed reader and few enough that a genuinely unreachable body
+ * costs three requests rather than forty.
+ */
+const CORD_TRIES = 3;
 
 /**
  * Public OSRM instances, in the order they are tried.
@@ -386,6 +472,110 @@ function simplify(coords, toleranceM) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Cord candidates
+ * ------------------------------------------------------------------ */
+
+/**
+ * The seams between mesh bodies: pairs of reader locations in different bodies,
+ * shortest first.
+ *
+ * Only the near ones. A cord runs between the two bodies' closest points, so
+ * the sites that can supply one are the sites facing the gap, and each site
+ * offers its `CORD_NEIGHBOURS` nearest outsiders. The full table would be every
+ * site against every other, which is a number that squares as the survey grows
+ * and which is almost entirely pairs on opposite sides of the state.
+ *
+ * Straight-line distance is the ordering, not the answer: it is a floor on the
+ * driven distance and so ranks the seams correctly, and the road that is
+ * actually drawn is asked of the router pair by pair as the tree is built.
+ */
+function cordCandidates(sites, bodyOf) {
+  const mLng = 111_320 * Math.cos((46 * Math.PI) / 180);
+  const flat = sites.map((s) => [s.point[0] * mLng, s.point[1] * 110_574]);
+
+  const edges = new Map();
+  for (let i = 0; i < sites.length; i++) {
+    const near = [];
+    for (let j = 0; j < sites.length; j++) {
+      if (bodyOf[j] === bodyOf[i]) continue;
+      near.push([j, (flat[i][0] - flat[j][0]) ** 2 + (flat[i][1] - flat[j][1]) ** 2]);
+    }
+    near.sort((a, b) => a[1] - b[1]);
+    for (const [j] of near.slice(0, CORD_NEIGHBOURS)) {
+      const key = i < j ? `${i}|${j}` : `${j}|${i}`;
+      if (edges.has(key)) continue;
+      edges.set(key, {
+        i: Math.min(i, j),
+        j: Math.max(i, j),
+        straightM: haversineMeters(sites[i].point, sites[j].point),
+      });
+    }
+  }
+
+  return [...edges.values()].sort((a, b) => a.straightM - b.straightM);
+}
+
+/**
+ * For each cord: how big the colony it ends up in is, and how much of that
+ * colony hangs off it.
+ *
+ * Every cord merged two colonies that were separate when it was drawn, so the
+ * cords form a forest over the mesh bodies and every cord is a bridge. Cutting
+ * one splits its tree in two, and the smaller side is the number this reports —
+ * the reader locations that reach the rest of the network through that cord and
+ * nothing else.
+ */
+function splitSizes(seams, bodySize) {
+  const adj = new Map();
+  seams.forEach(([a, b], e) => {
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a).push(e);
+    adj.get(b).push(e);
+  });
+  const other = (e, n) => (seams[e][0] === n ? seams[e][1] : seams[e][0]);
+
+  const out = seams.map(() => ({ colony: 0, smaller: 0 }));
+  const seen = new Set();
+  for (const start of adj.keys()) {
+    if (seen.has(start)) continue;
+
+    // Depth-first, keeping the visit order and the edge each node arrived by.
+    // A node is only ever pushed by its parent, so a child always lands later
+    // in the order than the node that reached it.
+    const order = [];
+    const arrivedBy = new Map();
+    const stack = [start];
+    seen.add(start);
+    while (stack.length) {
+      const node = stack.pop();
+      order.push(node);
+      for (const e of adj.get(node) ?? []) {
+        const next = other(e, node);
+        if (seen.has(next)) continue;
+        seen.add(next);
+        arrivedBy.set(next, e);
+        stack.push(next);
+      }
+    }
+
+    const total = order.reduce((sum, node) => sum + (bodySize.get(node) ?? 0), 0);
+    const below = new Map(order.map((node) => [node, bodySize.get(node) ?? 0]));
+    // Walking the order backwards settles every subtree in one pass, because
+    // by the time a node is reached every node beneath it has been folded in.
+    for (let k = order.length - 1; k > 0; k--) {
+      const node = order[k];
+      const e = arrivedBy.get(node);
+      const parentNode = other(e, node);
+      const hanging = below.get(node);
+      below.set(parentNode, below.get(parentNode) + hanging);
+      out[e] = { colony: total, smaller: Math.min(hanging, total - hanging) };
+    }
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ *
  * Routing
  * ------------------------------------------------------------------ */
 
@@ -559,6 +749,10 @@ async function main() {
         sourceDate: null,
         attributes: {
           kind: 'link',
+          // Which tier this strand belongs to, in words, because the record
+          // list beside the map is the whole of the layer for a reader who
+          // cannot see the two line weights that carry it on the canvas.
+          tier: 'Neighbourhood link',
           // Named from the router's own driving instructions. There is no
           // road *class* here: OSRM reports the roads it used but not their
           // OpenStreetMap `highway` tag, and guessing a class from a road's
@@ -574,8 +768,13 @@ async function main() {
           siteOffsets: `0.00;${round(result.meters, 2).toFixed(2)}`,
           siteReaders: `${a.readers};${b.readers}`,
           // Filled in by the pass below, once every surviving link is known:
-          // how many reader locations this link's network joins.
+          // how many reader locations this link's mesh body joins.
           connectedSites: 0,
+          // Nothing hangs off a mesh link: cut one and its two ends are still
+          // joined to the colony, through the loops the Gabriel test draws and
+          // through the cords. Only a cord can be the single thread holding
+          // part of the network on, so only a cord carries a figure here.
+          bringsInSites: 0,
           operatorCount: operators.length,
           operators: operators.length ? operators.join('; ') : null,
           unattributedReaders: a.unattributed + b.unattributed,
@@ -638,14 +837,201 @@ async function main() {
   const networkSizes = [...members.values()].map((g) => g.length).sort((x, y) => y - x);
   log(
     'corridors',
-    `${members.size} networks; largest joins ${networkSizes[0]} reader locations, ` +
+    `mesh: ${members.size} bodies; largest joins ${networkSizes[0]} reader locations, ` +
       `${networkSizes.filter((n) => n === 2).length} are a single pair`,
+  );
+
+  /*
+   * Cords.
+   *
+   * Every site now belongs to a mesh body — a group reachable through drawn
+   * links alone — and a site in no link is a body of one. What follows fuses
+   * those bodies into a single colony by adding the shortest road between each
+   * pair, cheapest first, exactly as Kruskal builds a spanning tree.
+   *
+   * Routing happens lazily, inside the loop, and only for an edge that would
+   * actually merge two bodies. The candidate list runs to tens of thousands of
+   * pairs; the number of roads that have to be asked for is one per body minus
+   * one, plus the few that come back unroutable.
+   */
+  const bodyOf = sites.map((_, i) => (parent.has(i) ? find(i) : i));
+  const bodySize = new Map();
+  sites.forEach((_, i) => bodySize.set(bodyOf[i], (bodySize.get(bodyOf[i]) ?? 0) + 1));
+  log('corridors', `${bodySize.size} mesh bodies to fuse (counting lone readers as a body of one)`);
+
+  const cordEdges = cordCandidates(sites, bodyOf);
+  log('corridors', `${cordEdges.length} candidate seams between bodies, shortest first`);
+
+  const cordParent = new Map([...bodySize.keys()].map((r) => [r, r]));
+  const cordFind = (x) => {
+    let root = x;
+    while (cordParent.get(root) !== root) root = cordParent.get(root);
+    while (cordParent.get(x) !== root) {
+      const next = cordParent.get(x);
+      cordParent.set(x, root);
+      x = next;
+    }
+    return root;
+  };
+
+  const cordTries = new Map();
+  /** `[bodyRootA, bodyRootB]` for each drawn cord, for the split pass below. */
+  const cordSeams = [];
+  const cordFeatures = [];
+  let cordNoRoute = 0;
+  let cordUnsnapped = 0;
+  let cordCrooked = 0;
+  let cordRouted = 0;
+
+  for (const edge of cordEdges) {
+    const ra = cordFind(bodyOf[edge.i]);
+    const rb = cordFind(bodyOf[edge.j]);
+    if (ra === rb) continue;
+    const seam = ra < rb ? `${ra}|${rb}` : `${rb}|${ra}`;
+    const attempts = cordTries.get(seam) ?? 0;
+    if (attempts >= CORD_TRIES) continue;
+    cordTries.set(seam, attempts + 1);
+
+    const a = sites[edge.i];
+    const b = sites[edge.j];
+    const key = `${a.point[0].toFixed(6)},${a.point[1].toFixed(6)};${b.point[0].toFixed(6)},${b.point[1].toFixed(6)}`;
+
+    let result = cache.get(key);
+    if (!result) {
+      result = await fetchRoute(a.point, b.point);
+      cache.set(key, result);
+      await sleep(POLITE_MS);
+      cordRouted++;
+      if (cordRouted % 50 === 0) {
+        await saveCache(cache);
+        const left = new Set([...cordParent.keys()].map(cordFind)).size;
+        log('corridors', `  ${cordRouted} routes asked for, ${left} bodies still separate`);
+      }
+    }
+
+    if (result.code !== 'Ok') {
+      cordNoRoute++;
+      continue;
+    }
+    if (result.snapM.some((d) => d > SNAP_M)) {
+      cordUnsnapped++;
+      continue;
+    }
+    if (result.meters > Math.max(edge.straightM * CORD_DETOUR_RATIO, DETOUR_FLOOR_M)) {
+      cordCrooked++;
+      continue;
+    }
+
+    const line = simplify(result.coordinates, CORD_SIMPLIFY_M);
+    if (!Array.isArray(line) || line.length < 2) {
+      cordNoRoute++;
+      continue;
+    }
+    vertexCount += result.coordinates.length;
+    keptVertices += line.length;
+
+    // A cord can cross forty named roads. Naming all of them would fill the
+    // panel with a turn list nobody asked for, so this keeps the ones the cord
+    // actually runs along and says how many it left out.
+    const byIdentity = new Map();
+    for (const step of result.steps) {
+      const identity = identityOf(step);
+      if (!identity) continue;
+      byIdentity.set(identity, (byIdentity.get(identity) ?? 0) + (step.distance ?? 0));
+    }
+    const ranked = [...byIdentity.entries()].sort((x, y) => y[1] - x[1]).map(([id]) => id);
+    const along = ranked.slice(0, 8);
+    const roadsAlong = along.length
+      ? along.join('; ') + (ranked.length > along.length ? ` (+${ranked.length - along.length} more)` : '')
+      : null;
+
+    const midpoint = line[Math.floor(line.length / 2)];
+    const county = findContaining(midpoint, counties.features);
+    const operators = [...new Set([...a.operators, ...b.operators])].sort();
+
+    cordParent.set(ra, rb);
+    cordSeams.push([bodyOf[edge.i], bodyOf[edge.j]]);
+    cordFeatures.push({
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: line },
+      properties: {
+        id: slugId('alpr-cord', String(edge.i), String(edge.j)),
+        layer: 'alpr_corridor',
+        // Prefixed, and not decoratively. On the canvas the two tiers are told
+        // apart by line weight; in the record list beside it they are told
+        // apart by this, and the list is the whole layer for a reader using a
+        // screen reader.
+        name: `Cord — ${(along.length ? along.slice(0, 2) : [county?.properties.name ?? STATE_USPS]).join(' → ')}`,
+        county: county?.properties.name ?? null,
+        state: STATE_USPS,
+        countyFips: county?.properties.geoid ?? null,
+        confidence: 'probabilistic',
+        sourceDate: null,
+        attributes: {
+          kind: 'cord',
+          tier: 'Connecting cord',
+          roadsAlong,
+          readerCount: a.readers + b.readers,
+          linkMiles: round(result.meters, 2),
+          straightMiles: round(edge.straightM, 2),
+          siteOffsets: `0.00;${round(result.meters, 2).toFixed(2)}`,
+          siteReaders: `${a.readers};${b.readers}`,
+          // Both filled in by the split pass below.
+          connectedSites: 0,
+          bringsInSites: 0,
+          operatorCount: operators.length,
+          operators: operators.length ? operators.join('; ') : null,
+          unattributedReaders: a.unattributed + b.unattributed,
+        },
+      },
+    });
+  }
+
+  await saveCache(cache);
+
+  /*
+   * What each cord holds on.
+   *
+   * The cords form a forest over the mesh bodies — every one of them merged two
+   * colonies that were separate when it was drawn, so none of them closes a
+   * loop. That makes every cord a bridge, and a bridge has an exact meaning
+   * worth reporting: cut it, and a known number of reader locations falls off
+   * the colony. That number is the smaller of the two sides, and it is the
+   * difference between a cord that brings in one stranded reader and one that
+   * brings in half a city.
+   */
+  const cordSplits = splitSizes(cordSeams, bodySize);
+  cordFeatures.forEach((feature, i) => {
+    feature.properties.attributes.connectedSites = cordSplits[i].colony;
+    feature.properties.attributes.bringsInSites = cordSplits[i].smaller;
+  });
+
+  const colonies = new Set([...bodySize.keys()].map((r) => cordFind(r)));
+  log(
+    'corridors',
+    `${cordFeatures.length} cords drawn from ${cordRouted} routes; ` +
+      `${bodySize.size} bodies fused into ${colonies.size}`,
   );
   log(
     'corridors',
-    `geometry simplified at ${SIMPLIFY_M} m: ${vertexCount} vertices to ${keptVertices} ` +
+    `cords refused: ${cordNoRoute} unroutable, ${cordUnsnapped} with an end off the road network, ` +
+      `${cordCrooked} over ${CORD_DETOUR_RATIO}× their straight-line distance to drive`,
+  );
+
+  features.push(...cordFeatures);
+  log(
+    'corridors',
+    `geometry simplified at ${SIMPLIFY_M} m (links) and ${CORD_SIMPLIFY_M} m (cords): ` +
+      `${vertexCount} vertices to ${keptVertices} ` +
       `(${Math.round((1 - keptVertices / vertexCount) * 100)}% fewer)`,
   );
+
+  // How many reader locations the finished layer leaves out entirely. Different
+  // from `alone` above, which counts sites with no *mesh* neighbour: most of
+  // those are now the far end of a cord. What is left is the readers no road
+  // could be routed to at all.
+  const fusedBodies = new Set(cordSeams.flat());
+  const unconnected = sites.filter((_, i) => !parent.has(i) && !fusedBodies.has(bodyOf[i])).length;
 
   // Longest first, so the record list opens on the strands that cross open
   // country rather than on a thousand city blocks.
@@ -658,11 +1044,17 @@ async function main() {
     (s, f) => s + f.properties.attributes.unattributedReaders,
     0,
   );
+  const cordMiles = cordFeatures
+    .map((f) => f.properties.attributes.linkMiles)
+    .sort((x, y) => x - y);
   log(
     'corridors',
-    `${features.length} links drawn; median ${round(median).toFixed(2)} mi, ` +
-      `longest ${round(sorted.at(-1)).toFixed(2)} mi`,
+    `${features.length} strands drawn — ${features.length - cordFeatures.length} mesh links ` +
+      `(median ${round(median).toFixed(2)} mi, longest ${round(sorted.at(-1)).toFixed(2)} mi) and ` +
+      `${cordFeatures.length} cords (median ${cordMiles[Math.floor(cordMiles.length / 2)]} mi, ` +
+      `longest ${cordMiles.at(-1)} mi)`,
   );
+  log('corridors', `${unconnected} reader locations remain in no strand at all`);
   log(
     'corridors',
     `${noRoute} pairs had no road route, ${unsnapped} stood too far from a drivable road, ` +
@@ -686,7 +1078,7 @@ async function main() {
   const previous = await readFile(path.join(PUBLIC_DATA, 'alpr-corridors.geojson'), 'utf8')
     .then((raw) => JSON.parse(raw))
     .catch(() => null);
-  if (previous?.metadata?.linkModel === 'gabriel-static') {
+  if (previous?.metadata?.linkModel === 'gabriel-mesh+cord-mst') {
     const before = previous.features?.length ?? 0;
     if (before > 0 && features.length < before * 0.9) {
       throw new Error(
@@ -710,20 +1102,22 @@ async function main() {
       refresh: 'frequent',
       // Read by the guard above, so a file written by an older corridor build
       // is never compared against a file written by this one.
-      linkModel: 'gabriel-static',
+      linkModel: 'gabriel-mesh+cord-mst',
     },
     knownGaps: [
       'Derived, not surveyed. Every limit of the crowd-sourced camera layer applies here and compounds: a link is only as real as the two readers it joins, and a reader nobody has mapped moves every strand around it.',
-      `Two reader locations are linked when no third mapped reader stands between them — no other location falls inside the circle drawn with the two of them at its ends. A strand says that and only that. It is never a claim that a driver's route between them is the only watched way, and "nothing in between" means nothing *mapped* in between: an unmapped reader moves every strand around it.`,
-      `Only pairs within ${STATIC_MILES} miles by road are drawn. Readers whose nearest neighbour is further away appear on the camera layer and in no link, so the network thins towards rural Minnesota partly because the readers do and partly because this limit says so. Earlier versions of this layer drew links up to ten miles long; those strands described a distance more than a trip, and they are gone.`,
+      `This layer holds two kinds of strand and they are not the same claim. A **neighbourhood link** (\`kind: link\`) joins two readers with nothing mapped between them, under ${STATIC_MILES} miles apart by road: that is a claim about an ordinary trip. A **cord** (\`kind: cord\`) is the shortest road joining one cluster of readers to the next, with no length cap at all: that is a claim about reachability — these two clusters sit on one road network — and nothing more. A cord dozens of miles long does not say anybody drives it, or that a driver on it is read at both ends. Read a cord as the seam between two watched places, not as a journey.`,
+      `The cords exist because the links alone drew the wrong picture. Capped at ${STATIC_MILES} miles, the neighbourhood links leave the state as ${members.size} unconnected pieces, which reads as scatter — an artefact of the cap, not of the cameras. The cords are the shortest set of real roads that fuses those pieces into one body: a minimum spanning tree over them, one road per join, the cheapest available every time. Nothing redundant is added, so every cord is load-bearing, and \`bringsInSites\` says exactly how many reader locations would fall off the network if that one road were removed.`,
+      `Only *links* are capped at ${STATIC_MILES} miles by road. Beyond that a line stops describing a trip, which is why the mesh stops there and why a reader whose nearest neighbour is further away sits in no link. Cords carry no cap and some of them are very long; the mile figure on every strand is on the strand, and a long one should be read as the distance it plainly is.`,
       `The line is the route a car would drive between the two readers, as OSRM reads OpenStreetMap: it honours one-way streets and turn restrictions, but knows nothing of traffic, closures or roadworks, and it is the shortest such route rather than the one a local would pick.`,
-      `Nearest neighbour is decided by distance across the map and the line is then measured along the road, so the two can disagree — a reader across a river is near on the map and far to drive. Where driving takes more than ${DETOUR_RATIO} times the straight-line distance the pair is refused, because at that point the line stops describing the pair and starts describing the detour.`,
-      `The line drawn is the route simplified to ${SIMPLIFY_M} m, so it departs from the road by up to that much where the road curves. Nothing is added and no corner is cut that a reader could see at any zoom this map offers; the length quoted for a link is the router's own figure for the full route, not the length of the simplified line.`,
-      `This layer records which roads a link follows, from the router's own driving instructions, but not what class of road they are. The router does not report the OpenStreetMap \`highway\` tag, and a road's class is not something to infer from its name, so the field is absent rather than guessed.`,
-      `${alone} reader locations have no other reader within ${metersToMiles(LINK_M)} miles and appear in no link. They remain on the camera layer.`,
-      `${unsnapped} pairs had an end more than ${SNAP_M} m from any drivable road OpenStreetMap records, so the route would have started somewhere no camera stands. ${noRoute} more could not be routed at all, and ${tooFar} were over ${metersToMiles(LINK_M)} miles by road despite being within that distance across the map.`,
-      `A reader location is one or more cameras within ${SITE_M} m of each other; ${totalReaders} readers stand at the ends of these links. Which way each camera faces is on the camera layer, and this layer does not claim that a trip along a link is read at both of its ends.`,
-      `Operator is recorded for only ${totalReaders - unattributedTotal} of those ${totalReaders} readers, so the agencies named on a link are a floor and never the full list. Naming an operator says who is recorded as running a reader, not who can search what it collects — a separate question this layer holds no data on.`,
+      `Nearest neighbour is decided by distance across the map and the line is then measured along the road, so the two can disagree — a reader across a river is near on the map and far to drive. Where driving takes more than ${DETOUR_RATIO} times the straight-line distance the pair is refused, because at that point the line stops describing the pair and starts describing the detour. A cord is held to a looser ${CORD_DETOUR_RATIO} times, because a cord is about reachability rather than about a trip and a road that swings wide to make the connection is still the answer to that question.`,
+      `The line drawn is the route simplified to ${SIMPLIFY_M} m for a link and ${CORD_SIMPLIFY_M} m for a cord, so it departs from the road by up to that much where the road curves. Nothing is added and no corner is cut that a reader could see at the zooms each tier is legible at; the length quoted for a strand is the router's own figure for the full route, not the length of the simplified line.`,
+      `This layer records which roads a strand follows, from the router's own driving instructions, but not what class of road they are. The router does not report the OpenStreetMap \`highway\` tag, and a road's class is not something to infer from its name, so the field is absent rather than guessed. A cord can run along dozens of named roads; only the eight it covers most ground on are listed, and the count of the rest is in the same field.`,
+      `${alone} reader locations have no other reader within ${metersToMiles(LINK_M)} miles and so appear in no link. Most of them are now the far end of a cord instead; ${unconnected} are in no strand of either kind, because no road could be routed to them at all. All of them remain on the camera layer.`,
+      `The colony is not one body everywhere. ${colonies.size} separate colonies remain after the cords are drawn, where a body could not be reached by any road the router would return — an island reader, a private road, a car park the car profile will not enter.`,
+      `${unsnapped} pairs had an end more than ${SNAP_M} m from any drivable road OpenStreetMap records, so the route would have started somewhere no camera stands. ${noRoute} more could not be routed at all, and ${tooFar} were over ${metersToMiles(LINK_M)} miles by road despite being within that distance across the map. Among cord candidates, ${cordUnsnapped} were refused for the same snapping reason, ${cordNoRoute} could not be routed and ${cordCrooked} were too crooked.`,
+      `A reader location is one or more cameras within ${SITE_M} m of each other; ${totalReaders} readers stand at the ends of these strands. Which way each camera faces is on the camera layer, and this layer does not claim that a trip along a strand is read at both of its ends.`,
+      `Operator is recorded for only ${totalReaders - unattributedTotal} of those ${totalReaders} readers, so the agencies named on a strand are a floor and never the full list. Naming an operator says who is recorded as running a reader, not who can search what it collects — a separate question this layer holds no data on.`,
       'Each end of a link is snapped to the drivable road nearest to it, and at a crossroads that margin can be a couple of metres. A reader aimed along one street can be attached to the one it crosses, which moves the first few metres of its strand.',
       'Distances are measured along the routed road, not along the reader’s own street: a link of one mile is a mile of driving between two cameras, which is longer than the mile between them on the map.',
     ],
