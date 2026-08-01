@@ -21,9 +21,6 @@ pnpm-debug.log*
 .env
 .env.production
 
-# API credentials — never committed; CI reads these from repo secrets instead
-credentials.json
-
 # macOS-specific files
 .DS_Store
 
