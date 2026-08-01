@@ -3,7 +3,6 @@ import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { THREAD_STOPS, densityColorExpression } from './densityRamp';
-import { growLinks, type LinkRadiusConfig } from './linkGrowth';
 import { groupNodes } from './nodes';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
@@ -31,16 +30,14 @@ export interface ClientLayer {
     colors: Array<{ value: string; color: string }>;
     fallback: string;
   };
-  /** Draw this line layer as a glowing, creeping filament. */
+  /** Draw this line layer as a glowing filament. */
   filament?: boolean;
-  /** Reader-chosen radius at which this layer's records are linked. */
-  linkRadius?: LinkRadiusConfig & {
-    minMiles: number;
-    maxMiles: number;
-    stepMiles: number;
-    defaultMiles: number;
-    label: string;
-    help: string;
+  /** Send a pulse of light travelling along this layer's records. */
+  pulse?: {
+    phaseKey: string;
+    bands: number;
+    periodMs: number;
+    networkKey: string;
   };
   /** The request a reader can file about one of these records, if any. */
   action?: {
@@ -75,6 +72,8 @@ export interface ControllerEvents {
 const REDUCED_MOTION =
   typeof window !== 'undefined' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+
 
 /**
  * Where a layer's records emerge from its surface, from the two zooms it names.
@@ -146,37 +145,60 @@ const NODE_WEIGHT = [
   20, 1,
 ] as unknown as maplibregl.ExpressionSpecification;
 
+
 /**
- * Dash phases for the creeping filament.
+ * The pulse: a bright head with a tail fading out behind it.
  *
- * Each frame lengthens the drawn part and shortens the gap ahead of it, so the
- * pattern reads as something extending along the road rather than as traffic
- * moving down it. Stepping through fixed phases is the only way to animate a
- * dash in MapLibre — `line-dasharray` takes no expression, so it cannot be
- * driven by a zoom or time expression and has to be set frame by frame.
+ * Written as `line-gradient` stops against `line-progress`, which is why the
+ * source below needs `lineMetrics`. Every stop is a fraction of the way along a
+ * line, so one ramp fits every record whatever its length, and moving the pulse
+ * is a single paint property away — no geometry is touched, no tile relaid, and
+ * the cost of a frame does not grow with the number of records on screen.
  */
-const FILAMENT_DASHES: number[][] = [
-  [0, 4, 3],
-  [0.5, 4, 2.5],
-  [1, 4, 2],
-  [1.5, 4, 1.5],
-  [2, 4, 1],
-  [2.5, 4, 0.5],
-  [3, 4, 0],
-  [0, 0.5, 3, 3.5],
-  [0, 1, 3, 3],
-  [0, 1.5, 3, 2.5],
-  [0, 2, 3, 2],
-  [0, 2.5, 3, 1.5],
-  [0, 3, 3, 1],
-  [0, 3.5, 3, 0.5],
-];
+const PULSE_TAIL = 0.28;
+const PULSE_HEAD = '#f0fdfa';
 
-/** Slow enough to read as growth rather than as a marquee border. */
-const FILAMENT_FRAME_MS = 110;
+/**
+ * One frame of the pulse, as a colour ramp along the line.
+ *
+ * `at` runs from 0 to 1 and wraps, so the pulse leaves one end of a link as it
+ * arrives at the other. Stops must climb, and MapLibre rejects the whole layer
+ * if they do not, so a pulse crossing the seam is drawn as the two pieces it
+ * actually is rather than by letting the numbers run past the end.
+ */
+function pulseRamp(at: number): maplibregl.ExpressionSpecification {
+  const stops: Array<[number, string]> = [[0, 'rgba(240,253,250,0)']];
+  const clear = 'rgba(240,253,250,0)';
+  // Walk the tail back from the head, drawing whatever part of it falls inside
+  // the line, plus the part that has wrapped around to the far end.
+  for (const head of [at, at + 1]) {
+    const tail = head - PULSE_TAIL;
+    for (const [pos, color] of [
+      [tail, clear],
+      [head - PULSE_TAIL * 0.35, 'rgba(153,246,228,0.55)'],
+      [head, PULSE_HEAD],
+      [head + 0.004, clear],
+    ] as Array<[number, string]>) {
+      if (pos > 0 && pos < 1) stops.push([pos, color]);
+    }
+  }
+  stops.push([1, clear]);
+  stops.sort((a, b) => a[0] - b[0]);
 
-/** Written onto derived links by us; not an upstream field. */
-const NETWORK_SITES_PROP = '__networkSites';
+  // Equal stops are rejected too, and two can collide when the head sits almost
+  // exactly on the seam.
+  const out: Array<[number, string]> = [];
+  for (const stop of stops) {
+    if (out.length && stop[0] <= out[out.length - 1][0]) continue;
+    out.push(stop);
+  }
+  return [
+    'interpolate',
+    ['linear'],
+    ['line-progress'],
+    ...out.flat(),
+  ] as unknown as maplibregl.ExpressionSpecification;
+}
 
 /**
  * How brightly a link burns, by the size of the connected network it belongs to.
@@ -187,35 +209,36 @@ const NETWORK_SITES_PROP = '__networkSites';
  * reader locations its network holds.
  *
  * The stops are cut to the range the data actually holds, as the node ramp
- * above is. That range is small and it is small for a structural reason worth
- * stating: each reader location links to its single nearest neighbour, so the
- * link graph is a nearest-neighbour graph, and those come apart into many tiny
- * components rather than one big one. Across the whole of Minnesota, at the
- * widest radius the control offers, the largest connected network is nine
- * reader locations and there are 354 of them. A ramp spread to 150 — which
- * this was, inherited from the cluster model that really could fuse the metro
- * into one body — put every strand in the state within the bottom sixteenth of
- * it, all the same dim purple, and threw away the whole encoding. The curve
- * keeps climbing past nine so a denser extract, or another state, does not
- * flatten out at the top.
+ * above is, and that range is a finding in its own right. Under the old
+ * nearest-neighbour model the largest network in Minnesota was nine reader
+ * locations and there were 354 of them: linking each reader to exactly one
+ * neighbour cannot help but shatter a map into pieces, and the pieces were an
+ * artefact of the question. Linking readers that have nothing between them
+ * instead, the same cameras form 150 networks and the largest is 101 reader
+ * locations — the Twin Cities are one connected body, which the earlier map
+ * could not have shown however it was coloured.
+ *
+ * The spread is wide now: half of all strands sit in a network of 19 or more,
+ * a fifth in the 101. The curve keeps climbing past the largest so a denser
+ * extract, or another state, does not flatten out at the top.
  */
-const NETWORK_MAX_SITES = 12;
+const NETWORK_MAX_SITES = 120;
 
-const NETWORK_COLOR = [
-  'interpolate',
-  ['linear'],
-  ['get', NETWORK_SITES_PROP],
-  ...THREAD_STOPS.flatMap(([at, color], i) => [
-    // Anchored so a network of one lands on the first legible colour rather
-    // than on the background. At a narrow radius almost every network is a
-    // single unjoined pair, so the bottom of this ramp is what the reader sees
-    // most of and it has to be legible on its own.
-    i === 0
-      ? 1
-      : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * (NETWORK_MAX_SITES - 1)) + 1,
-    color,
-  ]),
-] as unknown as maplibregl.ExpressionSpecification;
+const networkColor = (key: string) =>
+  [
+    'interpolate',
+    ['linear'],
+    ['get', key],
+    ...THREAD_STOPS.flatMap(([at, color], i) => [
+      // Anchored so the smallest network lands on the first legible colour
+      // rather than on the background. Most networks are small, so the bottom
+      // of this ramp is what the reader sees most of and it has to work alone.
+      i === 0
+        ? 2
+        : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * (NETWORK_MAX_SITES - 2)) + 2,
+      color,
+    ]),
+  ] as unknown as maplibregl.ExpressionSpecification;
 
 const normaliseDegrees = (d: number) => ((d % 360) + 360) % 360;
 
@@ -298,7 +321,6 @@ export class MapController {
    * map are all reading the same corridors the reader is looking at.
    */
   private rawData = new Map<string, LoadedFeature[]>();
-  private linkRadius = new Map<string, number>();
   private data = new Map<string, LoadedFeature[]>();
   private visible = new Set<string>();
   private filters = new Map<string, FilterState>();
@@ -306,9 +328,9 @@ export class MapController {
   private popup: maplibregl.Popup | null = null;
   /** Set once the map's `load` event has fired. See ready(). */
   private hasLoaded = false;
-  /** Line layers drawn as filaments, and the frame loop that creeps them. */
-  private filamentLayers = new Set<string>();
-  private filamentFrame: number | null = null;
+  /** Pulse layers, and the frame loop that moves the light along them. */
+  private pulseLayers = new Set<string>();
+  private pulseFrame: number | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -553,12 +575,8 @@ export class MapController {
       const res = await fetch(layer.dataPath);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const collection = await res.json();
-      const raw: LoadedFeature[] = collection.features ?? [];
-      this.rawData.set(layer.id, raw);
-      if (layer.linkRadius && !this.linkRadius.has(layer.id)) {
-        this.linkRadius.set(layer.id, layer.linkRadius.defaultMiles);
-      }
-      const features = this.applyLinkRadius(layer, raw);
+      const features: LoadedFeature[] = collection.features ?? [];
+      this.rawData.set(layer.id, features);
       this.data.set(layer.id, features);
       await this.ready();
       // Whatever the filters already say, not the whole layer. The controls are
@@ -576,63 +594,6 @@ export class MapController {
     }
   }
 
-  /**
-   * Cut every shipped link to the reach the current radius gives its readers.
-   *
-   * A layer without `linkRadius` passes straight through: this is the one place
-   * that behaviour differs, so every other part of the controller can go on
-   * treating `data` as simply "the layer's records".
-   *
-   * The record keeps its identity across the whole of the slider — one link is
-   * one pair of readers whatever fraction of the road between them is drawn —
-   * so focus, selection and the record list survive a drag.
-   */
-  private applyLinkRadius(layer: ClientLayer, raw: LoadedFeature[]): LoadedFeature[] {
-    const config = layer.linkRadius;
-    if (!config) return raw;
-    const radius = this.linkRadius.get(layer.id) ?? config.defaultMiles;
-
-    return growLinks(raw, config, radius).map((link) => {
-      const source = raw[link.source];
-      return {
-        type: 'Feature',
-        geometry: { type: 'MultiLineString', coordinates: link.pieces },
-        properties: {
-          ...source.properties,
-          attributes: {
-            ...source.properties.attributes,
-            // A link that has not reached its neighbour is drawn quieter and
-            // does not creep: it is a reader on a road, not a connection.
-            [config.kindKey]: link.complete ? source.properties.attributes[config.kindKey] : config.reachingKind,
-            drawnMiles: link.drawnMiles,
-            connectedSites: link.network,
-            [NETWORK_SITES_PROP]: link.network,
-          },
-        },
-      } as LoadedFeature;
-    });
-  }
-
-  /** Current linking radius in miles, for the control that sets it. */
-  linkRadiusOf(layerId: string): number | null {
-    return this.linkRadius.get(layerId) ?? null;
-  }
-
-  /**
-   * Re-cut a layer at a new linking radius.
-   *
-   * Everything downstream reads `data`, so re-deriving it and re-setting the
-   * source is the whole update — the record list, the counter and the map
-   * cannot disagree about what a corridor is at the radius on screen.
-   */
-  setLinkRadius(layerId: string, miles: number) {
-    const layer = this.layers.find((l) => l.id === layerId);
-    const raw = this.rawData.get(layerId);
-    if (!layer?.linkRadius || !raw) return;
-    this.linkRadius.set(layerId, miles);
-    this.data.set(layerId, this.applyLinkRadius(layer, raw));
-    this.refresh(layerId);
-  }
 
   private addLayer(layer: ClientLayer, features: LoadedFeature[]) {
     const src = this.sourceId(layer.id);
@@ -759,7 +720,14 @@ export class MapController {
     // Never clustered. The source holds one feature per record at every zoom,
     // which is what lets the record list, the counter and the dots agree
     // without the special-casing a clustered source used to need.
-    this.map.addSource(src, { type: 'geojson', data: this.flatten(features) });
+    this.map.addSource(src, {
+      type: 'geojson',
+      data: this.flatten(features),
+      // `line-gradient` is measured against how far along a line a point sits,
+      // and MapLibre only computes that when asked. Without it the pulse layers
+      // below are rejected by the style spec at runtime.
+      ...(layer.pulse ? { lineMetrics: true } : {}),
+    });
 
     if (layer.geometry === 'polygon') {
       const under = this.beneathDots();
@@ -801,44 +769,16 @@ export class MapController {
       // imply a width the data does not have — a corridor is a stretch of
       // road, not a band of ground.
       // Colour carries the connection where a line cannot be drawn.
-      const thread = layer.linkRadius
-        ? NETWORK_COLOR
+      const thread = layer.pulse
+        ? networkColor(layer.pulse.networkKey)
         : (layer.color as unknown as maplibregl.ExpressionSpecification);
 
-      /*
-       * A link still reaching for its neighbour is drawn quieter than one that
-       * has arrived.
-       *
-       * A completed link is a road a driver is read along twice; a reaching one
-       * is a road growing out of a single camera towards one too far away to
-       * matter yet. Drawing both at the same weight would let hundreds of
-       * half-strands shout down the connections and read as though the whole
-       * city were joined up. Thin, dim and undashed, they behave like the
-       * density surface does — present everywhere there is something,
-       * insistent nowhere.
-       */
-      const isReaching = layer.linkRadius
-        ? (['==', ['get', layer.linkRadius.kindKey], layer.linkRadius.reachingKind] as unknown)
-        : (false as unknown);
-      const byKind = (reaching: unknown, joined: unknown) =>
-        (layer.linkRadius
-          ? ['case', isReaching, reaching, joined]
-          : joined) as unknown as maplibregl.ExpressionSpecification;
-
-      /**
-       * Zoom interpolation whose stops differ by kind.
-       *
-       * Built this way round because MapLibre allows only one zoom-based
-       * interpolation per expression — nesting a zoom curve inside each arm of
-       * a `case` is rejected by the style spec at runtime and takes the whole
-       * layer down with it. One curve, kind-dependent stop values.
-       */
-      const widthByKind = (stops: Array<[number, number, number]>) =>
+      const widthByZoom = (stops: Array<[number, number]>) =>
         [
           'interpolate',
           ['linear'],
           ['zoom'],
-          ...stops.flatMap(([zoom, reaching, joined]) => [zoom, byKind(reaching, joined)]),
+          ...stops.flat(),
         ] as unknown as maplibregl.ExpressionSpecification;
       if (layer.filament) {
         // A soft halo, wide and heavily blurred, so the thread looks like it is
@@ -851,23 +791,23 @@ export class MapController {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
               'line-color': thread,
-              'line-opacity': byKind(0.16, 0.3),
+              'line-opacity': 0.3,
               'line-blur': ['interpolate', ['linear'], ['zoom'], 5, 3, 11, 9, 16, 18],
               // The map opens on the whole state, where the median corridor is
               // under three pixels long. A thread that is also thin there is a
               // thread nobody can find, so the glow starts wide and the line
               // grows into it rather than out of nothing.
-              'line-width': widthByKind([
-                [5, 3, 9],
-                [11, 6, 14],
-                [16, 12, 26],
+              'line-width': widthByZoom([
+                [5, 9],
+                [11, 14],
+                [16, 26],
               ]),
             },
           },
           under,
         );
-        // The core, thin and bright. Drawn solid beneath the creeping dash so
-        // the corridor never disappears between phases — the growth reads as
+        // The core, thin and bright. Drawn solid beneath the pulse so the
+        // corridor never disappears between passes — the movement reads as
         // something travelling along a thread that is always there.
         this.map.addLayer(
           {
@@ -877,42 +817,54 @@ export class MapController {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
               'line-color': thread,
-              'line-opacity': byKind(0.4, 0.55),
-              'line-width': widthByKind([
-                [5, 1, 2.6],
-                [11, 1.4, 3.2],
-                [16, 2.4, 5],
+              'line-opacity': 0.55,
+              'line-width': widthByZoom([
+                [5, 2.6],
+                [11, 3.2],
+                [16, 5],
               ]),
             },
           },
           under,
         );
-        this.map.addLayer(
-          {
-            id: `${layer.id}-line-growth`,
-            type: 'line',
-            source: src,
-            // The creep runs along completed links only. A strand that has not
-            // reached anything has nowhere to travel to, and hundreds of them
-            // flickering at once is noise rather than motion.
-            ...(layer.linkRadius
-              ? {
-                  filter: ['!=', ['get', layer.linkRadius.kindKey], layer.linkRadius.reachingKind] as
-                    unknown as maplibregl.FilterSpecification,
-                }
-              : {}),
-            layout: { 'line-cap': 'butt', 'line-join': 'round' },
-            paint: {
-              'line-color': '#f0fdfa',
-              'line-opacity': 0.9,
-              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.4, 11, 2.6, 16, 5],
-              'line-dasharray': FILAMENT_DASHES[0],
+        /*
+         * One layer per phase band.
+         *
+         * `line-gradient` is a single ramp for a whole layer — it cannot be
+         * driven from a feature's own properties the way a colour or a width
+         * can. So the per-record phase that makes this a ripple rather than a
+         * blink has to come from somewhere else, and the cheapest somewhere is
+         * a handful of layers over the same source, each filtered to one band
+         * and each offset a fraction of a period from the last.
+         *
+         * The cost of that choice is a fixed number of style layers, paid once.
+         * What it buys is a frame that costs `bands` paint updates no matter how
+         * many records are drawn — the reason this can carry a network several
+         * times denser than the one the slider could.
+         */
+        for (let band = 0; band < (layer.pulse?.bands ?? 1); band++) {
+          this.map.addLayer(
+            {
+              id: `${layer.id}-line-pulse-${band}`,
+              type: 'line',
+              source: src,
+              filter: ['==', ['get', layer.pulse!.phaseKey], band] as unknown as
+                maplibregl.FilterSpecification,
+              layout: { 'line-cap': 'butt', 'line-join': 'round' },
+              paint: {
+                'line-opacity': 0.9,
+                'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.4, 11, 2.6, 16, 5],
+                // Under reduced motion this ramp is never replaced, so what a
+                // reader who asked for stillness gets is one soft pass of light
+                // frozen along each strand rather than a flat line.
+                'line-gradient': pulseRamp(band / (layer.pulse?.bands ?? 1)),
+              },
             },
-          },
-          under,
-        );
-        this.filamentLayers.add(`${layer.id}-line-growth`);
-        this.startFilament();
+            under,
+          );
+          this.pulseLayers.add(`${layer.id}-line-pulse-${band}`);
+        }
+        this.startPulse();
       } else {
         this.map.addLayer(
           {
@@ -1049,34 +1001,45 @@ export class MapController {
   }
 
   /**
-   * Creep the filament dash forward, one phase at a time.
+   * Run the pulse along every visible band.
    *
-   * Runs on `requestAnimationFrame` but advances on a fixed interval, so the
-   * growth moves at the same speed on a 120 Hz display as on a 60 Hz one. The
-   * loop parks itself whenever no filament layer is switched on, so a reader
-   * who never turns corridors on pays nothing for this.
+   * Driven by the clock rather than by a frame counter, so the light travels at
+   * the same speed on a 120 Hz display as on a 60 Hz one and at the same speed
+   * again on a machine dropping frames. The loop parks itself whenever no pulse
+   * layer is switched on, so a reader who never turns corridors on pays nothing
+   * for this.
+   *
+   * A frame is one `setPaintProperty` per band — six small colour ramps, no
+   * geometry, no tile relaid, nothing sent to the worker. That is the whole
+   * reason the layer underneath it can be static: the movement costs the same
+   * whether the map is drawing eight hundred links or eight thousand.
    */
-  private startFilament() {
-    if (REDUCED_MOTION || this.filamentFrame !== null || !this.filamentLayers.size) return;
-    let step = 0;
-    let last = 0;
+  private startPulse() {
+    if (REDUCED_MOTION || this.pulseFrame !== null || !this.pulseLayers.size) return;
+    const start = performance.now();
     const tick = (now: number) => {
-      const live = [...this.filamentLayers].filter(
-        (id) => this.map.getLayer(id) && this.visible.has(id.replace(/-line-growth$/, '')),
+      const live = [...this.pulseLayers].filter(
+        (id) => this.map.getLayer(id) && this.visible.has(id.replace(/-line-pulse-\d+$/, '')),
       );
       if (!live.length) {
-        this.filamentFrame = null;
+        this.pulseFrame = null;
         return;
       }
-      this.filamentFrame = requestAnimationFrame(tick);
-      if (now - last < FILAMENT_FRAME_MS) return;
-      last = now;
-      step = (step + 1) % FILAMENT_DASHES.length;
+      this.pulseFrame = requestAnimationFrame(tick);
       for (const id of live) {
-        this.map.setPaintProperty(id, 'line-dasharray', FILAMENT_DASHES[step]);
+        const band = Number(id.match(/-line-pulse-(\d+)$/)?.[1] ?? 0);
+        const layer = this.layers.find((l) => id.startsWith(`${l.id}-line-pulse-`));
+        const bands = layer?.pulse?.bands ?? 1;
+        const period = layer?.pulse?.periodMs ?? 2600;
+        // Bands are staggered a fraction of a period apart, and because the
+        // ingest ordered them from the middle of each network outwards, the
+        // stagger is what turns a row of independent pulses into one wave
+        // leaving the centre of a cluster.
+        const at = ((now - start) / period + band / bands) % 1;
+        this.map.setPaintProperty(id, 'line-gradient', pulseRamp(at));
       }
     };
-    this.filamentFrame = requestAnimationFrame(tick);
+    this.pulseFrame = requestAnimationFrame(tick);
   }
 
   private cursorOn(layerId: string) {
@@ -1118,19 +1081,21 @@ export class MapController {
       '-outline',
       '-line-casing',
       '-line',
-      '-line-growth',
       '-line-hit',
       '-points',
       '-cones',
+      // One per phase band, so switching the layer off stops the pulse dead
+      // rather than leaving a row of lit strands over a hidden layer.
+      ...Array.from({ length: layer.pulse?.bands ?? 0 }, (_, band) => `-line-pulse-${band}`),
     ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {
         this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       }
     }
-    // The creep loop parks itself when nothing is on; switching a filament
+    // The pulse loop parks itself when nothing is on; switching a filament
     // layer back on has to wake it.
-    if (on) this.startFilament();
+    if (on) this.startPulse();
     this.emitCounts();
   }
 
@@ -1302,8 +1267,8 @@ export class MapController {
   }
 
   destroy() {
-    if (this.filamentFrame !== null) cancelAnimationFrame(this.filamentFrame);
-    this.filamentFrame = null;
+    if (this.pulseFrame !== null) cancelAnimationFrame(this.pulseFrame);
+    this.pulseFrame = null;
     this.popup?.remove();
     this.map.remove();
   }
