@@ -332,26 +332,6 @@ export interface LayerDefinition {
     fallback: string;
   };
   /**
-   * Draw an aggregate polygon layer as one dot per cell, scaled by a count.
-   *
-   * For layers whose polygons are fixed grid cells rather than real ground
-   * shapes: a field of graduated dots reads as the stippled density it is,
-   * where a mesh of rectangles reads as a claim about parcels. The cells stay
-   * underneath at low opacity as the click target and the honest geometry —
-   * the dot is a rendering of the cell's count, never a position finer than
-   * the cell.
-   */
-  graduatedDots?: {
-    /** Attribute holding the cell's count. */
-    countKey: string;
-    /**
-     * Count at which a dot reaches full size. Take it from the ingest log's
-     * densest cell, with a little headroom, or the top of the scale is spent
-     * on a count no cell reaches.
-     */
-    maxCount: number;
-  };
-  /**
    * The two zooms across which this layer's records emerge from its surface.
    *
    * A point layer answers a different question at every scale. Across a state

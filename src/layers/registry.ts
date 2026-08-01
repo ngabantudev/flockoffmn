@@ -985,6 +985,22 @@ export const LAYERS: LayerDefinition[] = [
     // Mapping Prejudice draw covenants as red marks on a dark ground; the
     // layer keeps the source's visual language.
     color: '#dc2626',
+    categoryColors: {
+      key: 'deedDecade',
+      label: { en: 'Decade the deed was recorded', es: 'Década en que se registró la escritura' },
+      // One hue, light to dark in deed order, so the spread of covenants
+      // across the century reads as a deepening of the same red.
+      colors: [
+        { value: '1910s', color: '#fee2d5' },
+        { value: '1920s', color: '#fcbba1' },
+        { value: '1930s', color: '#fc9272' },
+        { value: '1940s', color: '#f4604d' },
+        { value: '1950s', color: '#de2d26' },
+        { value: '1960s', color: '#a50f15' },
+        { value: '1970s', color: '#67000d' },
+      ],
+      fallback: '#9ca3af',
+    },
     dataPath: '/data/covenants.geojson',
     csvPath: null,
     provenance: {
