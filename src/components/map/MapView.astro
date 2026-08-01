@@ -25,6 +25,10 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   limitations: d.limitations.map((l) => pick(l, locale)),
   color: d.color,
   geometry: d.geometry,
+  // The panel's order is the draw order. Reading it off LAYER_CATEGORIES here
+  // means a category can be moved, renamed or inserted in one place and the
+  // map restacks itself to match, instead of the two drifting apart silently.
+  stackRank: LAYER_CATEGORIES.findIndex((c) => c.id === d.category),
   bearingKey: d.bearingKey,
   positions: d.positions
     ? {
@@ -48,6 +52,10 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   filament: d.filament,
   networkColor: d.networkColor,
   cordTier: d.cordTier,
+  weightBy: d.weightBy
+    ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
+    : undefined,
+  opacity: d.opacity,
   dataPath: d.dataPath,
   filters: d.filters
     .filter((f) => f.kind === 'enum')

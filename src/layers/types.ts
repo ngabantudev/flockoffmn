@@ -20,6 +20,10 @@ export type LayerId =
   | 'agency_287g'
   | 'detention_facility'
   | 'data_center'
+  // How much traffic each stretch of road carries on an average day. The
+  // substrate the cameras are bolted to, and deliberately not a surveillance
+  // record: it counts vehicles passing a point, never which ones.
+  | 'aadt'
   | 'redlining'
   // The only layer whose upstream source is a transaction between named
   // private individuals. It is published as a clearly-labelled aggregate —
@@ -158,8 +162,14 @@ export interface NearMeSummary {
  * A category is a claim about the data, not a folder: it lives on the layer
  * definition beside `order`, so the grouping travels with the registry rather
  * than being re-invented by whichever component happens to render a list.
+ *
+ * The four are listed here in the order the panel shows them — ground first,
+ * then what was built on it, then what records, then who acts — but only as a
+ * courtesy to anyone reading the type. Nothing derives the panel order from
+ * this union; `LAYER_CATEGORIES` in the registry is what the panel iterates,
+ * so reordering these names changes documentation and nothing else.
  */
-export type LayerCategoryId = 'surveillance' | 'enforcement' | 'infrastructure' | 'historical';
+export type LayerCategoryId = 'historical' | 'infrastructure' | 'surveillance' | 'enforcement';
 
 export interface LayerCategory {
   id: LayerCategoryId;
@@ -370,6 +380,55 @@ export interface LayerDefinition {
      * ramp colour would make up an answer to a question they do not answer.
      */
     color: string;
+  };
+  /**
+   * How strongly a line layer is painted, 0–1. Omit for the standard weight.
+   *
+   * A layer that is context rather than subject has to be legible without
+   * competing, and one that covers the whole state has a particular problem:
+   * 40,000 road segments at full strength stop being roads and become a
+   * coloured field, which is worst at the zoom where the most of them overlap.
+   * So this is applied on a ramp — quietest across the state, where density
+   * does the shouting on its own, and up to the declared value close in, where
+   * a segment is a single line and has to be followable.
+   *
+   * Setting it does not change what the layer claims. It changes whether the
+   * layers drawn on top of it can still be read, which for a substrate layer is
+   * most of the job.
+   */
+  opacity?: number;
+  /**
+   * Draw a line layer's width from a magnitude in its own data.
+   *
+   * Some line layers carry a quantity that *is* the finding. A road network
+   * drawn at one weight says every road is alike, which for traffic volume is
+   * the one thing the data most clearly refutes: the busiest segment in
+   * Minnesota carries around two hundred thousand vehicles a day and the
+   * quietest carries a few dozen, and a map that draws those the same has
+   * thrown the layer away.
+   *
+   * The curve is declared here rather than computed in the controller because
+   * it is an editorial choice about a specific dataset, not a rendering
+   * detail. Traffic volume is heavily skewed — most segments are small, a few
+   * are enormous — so a linear ramp would leave almost everything at hairline
+   * width. The stops below bend that curve, and bending it is exactly the kind
+   * of decision that belongs next to the data it describes, where a reader
+   * looking at the registry can see what was done.
+   *
+   * Omit it and a line layer draws at a constant width, which is right for any
+   * layer whose lines are not carrying a magnitude.
+   */
+  weightBy?: {
+    /** Attribute holding the magnitude. Missing or null reads as zero. */
+    key: string;
+    /** Accessible name for the encoding, e.g. "Vehicles per day". */
+    label: I18nString;
+    /**
+     * `[value, width multiplier]`, ascending by value. Values between stops
+     * interpolate; values past the last stop clamp to it, so one freakishly
+     * busy segment cannot blow the scale out for everything else.
+     */
+    stops: Array<[number, number]>;
   };
   /**
    * The request a reader can file about one of these records.

@@ -32,6 +32,9 @@ const STEPS = [
   { name: 'corridors', script: 'corridors.mjs' },
   { name: 'detention', script: 'detention.mjs' },
   { name: 'data-centers', script: 'data-centers.mjs' },
+  // Independent of every other layer: MnDOT names the county on each segment,
+  // so this needs the county reference only to resolve a GEOID from that name.
+  { name: 'aadt', script: 'aadt.mjs' },
   { name: 'redlining', script: 'redlining.mjs' },
   { name: 'covenants', script: 'covenants.mjs' },
 ];

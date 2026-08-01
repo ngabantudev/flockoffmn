@@ -4,15 +4,43 @@ import type { LayerCategory, LayerDefinition } from './types';
 /**
  * The sections of the layer panel, in the order they are listed.
  *
- * The order is an argument: what is recording now, who acts on what it sees,
- * what it all runs on, and what drew the lines it sits on top of. Each layer
- * names its own category below, so adding a layer still means editing one
- * entry — this list only changes when a genuinely new kind of subject arrives.
+ * The order is an argument, and it now runs bottom-up: what drew the lines,
+ * what got built on them, what records from what was built, and who acts on
+ * the recording. Read down the panel and each section is a precondition for
+ * the next — a camera needs a pole, power and a road before it needs a policy,
+ * and the road and the redlining grade were both there first.
+ *
+ * It used to run the other way, opening on surveillance. That order put the
+ * alarming thing first and left the reader to work backwards to why it is
+ * where it is; this one costs the cameras their top slot, which is a real
+ * cost, because most people arrive looking for exactly that. It is affordable
+ * only because every section ships closed: the whole panel is four short rows,
+ * so third from the top is one glance rather than a scroll.
+ *
+ * Each layer names its own category below, so adding a layer still means
+ * editing one entry — this list only changes when a genuinely new kind of
+ * subject arrives.
  */
 export const LAYER_CATEGORIES: LayerCategory[] = [
   {
+    id: 'historical',
+    label: { en: 'Historical Policies', es: 'Políticas históricas' },
+    summary: {
+      en: 'The oldest layer, and the one underneath the others: public and private rules that drew the lines the rest of this map sits on.',
+      es: 'La capa más antigua, y la que está debajo de las demás: normas públicas y privadas que trazaron las líneas sobre las que se asienta el resto del mapa.',
+    },
+  },
+  {
+    id: 'infrastructure',
+    label: { en: 'Infrastructure', es: 'Infraestructura' },
+    summary: {
+      en: 'What has to be built and fed before anything can record: the buildings, power and land the rest of it runs on.',
+      es: 'Lo que hay que construir y alimentar antes de que algo pueda grabar: los edificios, la energía y el terreno sobre los que funciona todo lo demás.',
+    },
+  },
+  {
     id: 'surveillance',
-    label: { en: 'Surveillance', es: 'Vigilancia' },
+    label: { en: 'Surveillance Apparatus', es: 'Vigilancia' },
     summary: {
       en: 'What is recording, and how far one ordinary journey is recorded for.',
       es: 'Qué está grabando y durante cuánto trayecto cotidiano se graba.',
@@ -20,26 +48,10 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   },
   {
     id: 'enforcement',
-    label: { en: 'Immigration enforcement', es: 'Control migratorio' },
+    label: { en: 'Immigration Enforcement', es: 'Control migratorio' },
     summary: {
-      en: 'The agencies that have signed up to act, and the places people are held.',
-      es: 'Las agencias que se comprometieron a actuar y los lugares donde se retiene a personas.',
-    },
-  },
-  {
-    id: 'infrastructure',
-    label: { en: 'Infrastructure', es: 'Infraestructura' },
-    summary: {
-      en: 'The buildings, power and land this all runs on.',
-      es: 'Los edificios, la energía y el terreno sobre los que funciona todo esto.',
-    },
-  },
-  {
-    id: 'historical',
-    label: { en: 'Historical policy', es: 'Políticas históricas' },
-    summary: {
-      en: 'Older public and private rules that drew the lines the rest of this map sits on.',
-      es: 'Normas antiguas, públicas y privadas, que trazaron las líneas sobre las que se asienta el resto del mapa.',
+      en: 'What the recording is for: the agencies that have signed up to act, and the places people are held.',
+      es: 'Para qué sirve la grabación: las agencias que se comprometieron a actuar y los lugares donde se retiene a personas.',
     },
   },
 ];
@@ -723,6 +735,133 @@ export const LAYERS: LayerDefinition[] = [
       },
       detail: ['city'],
       linkKey: 'campaignUrl',
+    },
+  },
+
+  {
+    id: 'aadt',
+    slug: 'traffic-volume',
+    category: 'infrastructure',
+    order: 8,
+    label: {
+      en: 'Roadway traffic volume',
+      es: 'Volumen de tráfico vial',
+    },
+    summary: {
+      en: 'How many vehicles cross each stretch of Minnesota road on an average day, counted by the agency that owns the roads.',
+      es: 'Cuántos vehículos cruzan cada tramo de carretera de Minnesota en un día promedio, contados por la agencia propietaria de las vías.',
+    },
+    whatThisMeans: {
+      en: 'Annual Average Daily Traffic is the number of vehicles crossing a point on a road on a typical day, averaged across a whole year. MnDOT counts it because federal reporting requires it and because state-aid money for road maintenance is allocated from it — so this is a layer about budgets and asphalt before it is a layer about anything else. It sits under the cameras rather than beside them, and the distinction is the point of putting it here. A plate reader records the vehicles that pass it. This records how many vehicles pass. One is surveillance; the other is the capacity that surveillance gets mounted on, and reading the second as the first would be a mistake this map should not invite. A busy road is not a watched road: a segment carrying two hundred thousand vehicles a day with no reader on it is not surveilled, and a reader on a gravel county road is not made busy by standing there. What the two layers together can show is a question neither answers alone — whether the roads that carry the most ordinary movement are the roads anyone chose to instrument.',
+      es: 'El Tráfico Promedio Diario Anual es el número de vehículos que cruzan un punto de una vía en un día típico, promediado a lo largo de un año. MnDOT lo cuenta porque los informes federales lo exigen y porque de ahí se asignan los fondos estatales para mantenimiento vial: así que esta es una capa sobre presupuestos y asfalto antes que sobre cualquier otra cosa. Se sitúa debajo de las cámaras y no junto a ellas, y esa distinción es el motivo de incluirla aquí. Un lector de matrículas registra los vehículos que pasan por él. Esto registra cuántos vehículos pasan. Lo uno es vigilancia; lo otro es la capacidad sobre la que se monta esa vigilancia, y leer lo segundo como lo primero sería un error que este mapa no debe inducir. Una vía concurrida no es una vía vigilada: un tramo con doscientos mil vehículos diarios y sin ningún lector no está vigilado, y un lector en un camino rural de grava no se vuelve concurrido por estar allí. Lo que ambas capas sí pueden mostrar juntas es una pregunta que ninguna responde por separado: si las vías que concentran el movimiento cotidiano son las vías que alguien decidió instrumentar.',
+    },
+    limitations: [
+      {
+        en: 'An average, not a measurement of any day. One number stands in for rush hour, holidays, closures and the difference between January and July, and no day of the year necessarily looks like it.',
+        es: 'Un promedio, no la medición de ningún día. Una sola cifra sustituye a la hora punta, los festivos, los cortes y la diferencia entre enero y julio, y ningún día del año se parece necesariamente a ella.',
+      },
+      {
+        en: 'Counts run on a rotating two-to-twelve-year cycle, not annually. Each segment shows the year its own count was taken — they range from 1998 to 2025 — and MnDOT states the figure is "not growth factored", so an older segment is that year\'s number carried forward unchanged rather than an estimate of traffic now.',
+        es: 'Los conteos siguen un ciclo rotativo de dos a doce años, no anual. Cada tramo muestra el año de su propio conteo —van de 1998 a 2025— y MnDOT indica que la cifra "no está ajustada por crecimiento", así que un tramo antiguo es el número de aquel año trasladado sin cambios, no una estimación del tráfico actual.',
+      },
+      {
+        en: 'Only sampled roads appear. A road with no segment here was not counted, which is not the same as a road with no traffic — coverage is thinnest on local streets no state-aid programme requires a count for.',
+        es: 'Solo aparecen las vías muestreadas. Una vía sin tramo aquí no fue contada, lo cual no equivale a una vía sin tráfico: la cobertura es más escasa en calles locales para las que ningún programa de ayuda estatal exige un conteo.',
+      },
+      {
+        en: 'Line width is the volume, on a deliberately bent scale. Traffic is so skewed — a few segments carry a hundred times what most do — that a straight scale would draw nearly every road as a hairline. Width is therefore comparable in rank but not in ratio: a line twice as wide is not carrying twice the traffic, and the figure in the panel is the only exact reading.',
+        es: 'El grosor de la línea es el volumen, en una escala deliberadamente curvada. El tráfico está tan sesgado —unos pocos tramos soportan cien veces más que la mayoría— que una escala lineal dibujaría casi todas las vías como un pelo. Por tanto, el grosor es comparable en orden pero no en proporción: una línea del doble de ancho no soporta el doble de tráfico, y la cifra del panel es la única lectura exacta.',
+      },
+      {
+        en: 'Geometry is generalised by MnDOT\'s server to about six metres and rounded to five decimal places, because the full-precision statewide file is roughly 50 MB. Vertices move by less than the width of a road; it is a drawing convention, not a survey.',
+        es: 'La geometría está generalizada por el servidor de MnDOT a unos seis metros y redondeada a cinco decimales, porque el archivo estatal a precisión completa ocupa unos 50 MB. Los vértices se desplazan menos que el ancho de una vía; es una convención de dibujo, no un levantamiento.',
+      },
+      {
+        en: 'The "data type" code is shown as the raw letter MnDOT publishes. Their metadata says the field categorises how a value was derived but publishes no key to the codes, so a meaning is not invented for them here.',
+        es: 'El código de "tipo de dato" se muestra como la letra sin procesar que publica MnDOT. Sus metadatos dicen que el campo clasifica cómo se obtuvo un valor, pero no publican ninguna clave de los códigos, así que aquí no se les inventa un significado.',
+      },
+      {
+        en: 'This describes roads and vehicles in aggregate. It records no vehicle, no trip and no person, and it never will.',
+        es: 'Esto describe vías y vehículos de forma agregada. No registra ningún vehículo, ningún trayecto ni ninguna persona, y nunca lo hará.',
+      },
+    ],
+    geometry: 'line',
+    // Amber rather than the brighter yellow this started on. It is the one hue
+    // no other layer uses, which matters on a map where colour is how a reader
+    // tells the layers apart, but the substrate should not be the loudest thing
+    // in the frame — and a saturated yellow over 40,000 statewide segments is
+    // exactly that.
+    color: '#c9a227',
+    // Context, not subject: this is the ground the other layers stand on, and
+    // it has to stay legible underneath them rather than through them.
+    opacity: 0.5,
+    // The busiest segment in the state carries about 204,000 vehicles a day and
+    // the median carries a low four figures, so the scale is bent hard at the
+    // bottom: most of the width range is spent below 20,000, where almost every
+    // road actually sits. Past 100,000 it flattens, because the handful of
+    // interstate segments above that are already the widest things on the map
+    // and letting them keep growing would only bury their neighbours.
+    weightBy: {
+      key: 'aadt',
+      label: { en: 'Vehicles per day', es: 'Vehículos por día' },
+      stops: [
+        [0, 0.35],
+        [500, 0.6],
+        [2_000, 0.95],
+        [10_000, 1.5],
+        [30_000, 2.2],
+        [100_000, 3.1],
+        [205_000, 3.6],
+      ],
+    },
+    dataPath: '/data/aadt.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'MnDOT — Annual Average Daily Traffic Segments, Current',
+      sourceUrl: 'https://www.dot.state.mn.us/traffic/data/',
+      license: 'No licence restriction stated; acknowledgement of the publisher requested',
+      licenseUrl: 'https://www.arcgis.com/home/item.html?id=42923bcddafe4909b4eed0a03dea893a',
+      attribution: 'Minnesota Department of Transportation',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [
+      { key: 'roadClass', kind: 'enum', label: { en: 'Road class', es: 'Clase de vía' } },
+      {
+        key: 'jurisdiction',
+        kind: 'enum',
+        label: { en: 'Who owns the road', es: 'Quién es propietario de la vía' },
+      },
+    ],
+    detailFields: [
+      { key: 'aadt', label: { en: 'Vehicles per day (average)', es: 'Vehículos por día (promedio)' } },
+      { key: 'countYear', label: { en: 'Year this was counted', es: 'Año del conteo' } },
+      { key: 'roadClass', label: { en: 'Road class', es: 'Clase de vía' } },
+      { key: 'jurisdiction', label: { en: 'Who owns the road', es: 'Quién es propietario de la vía' } },
+      { key: 'community', label: { en: 'City', es: 'Ciudad' } },
+      { key: 'streetName', label: { en: 'Street name', es: 'Nombre de la calle' } },
+      {
+        key: 'collectionCycle',
+        label: { en: 'Years between counts', es: 'Años entre conteos' },
+      },
+      {
+        key: 'dataType',
+        label: { en: 'Data type code (MnDOT publishes no key)', es: 'Código de tipo de dato (MnDOT no publica clave)' },
+      },
+    ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'Traffic on the road nearest you', es: 'Tráfico en la vía más cercana' },
+      empty: {
+        en: 'No counted road segment is near this point. MnDOT counts a sample of roads, so this means none nearby was counted — not that the roads here are empty.',
+        es: 'No hay ningún tramo contado cerca de este punto. MnDOT cuenta una muestra de vías, así que esto significa que ninguna cercana fue contada, no que estas vías estén vacías.',
+      },
+      detail: ['aadt', 'countYear', 'roadClass'],
+      caveat: {
+        en: 'An annual average from a count taken in the year shown, carried forward unadjusted. It counts vehicles, never who is in them.',
+        es: 'Un promedio anual de un conteo realizado en el año indicado, trasladado sin ajustar. Cuenta vehículos, nunca quién va en ellos.',
+      },
     },
   },
 
