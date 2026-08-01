@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * L6 — Historical policy: racial covenants, as an aggregate layer.
+ * L6 — Historical policy: racial covenants, as parcel-level records.
  *
  * A racial covenant is a clause written into a property deed forbidding sale
  * or occupancy to anyone not white. They ran from 1910 to 1955 in Minnesota,
@@ -9,51 +9,32 @@
  * Cities homes.
  *
  * ---------------------------------------------------------------------------
- * WHY THIS LAYER IS CLASSIFIED DIFFERENTLY FROM EVERY OTHER ONE
+ * WHAT THIS LAYER PUBLISHES, AND WHAT IT NEVER WILL
  * ---------------------------------------------------------------------------
  *
- * Every other layer here starts from a source that already describes an
- * institution: an agency that signed a contract, a facility ICE pays, a camera
- * on a pole, a building drawing power, a district a federal appraiser graded.
- * The upstream file contains no private individuals, so the ingest has nothing
- * to remove and each record maps one-to-one onto a published row.
+ * This layer shipped for a time as a 250-metre aggregate — counts per grid
+ * cell, no parcel geometry — out of caution about pointing at individual
+ * homes. In August 2026 the project owner revisited that decision: Mapping
+ * Prejudice themselves publish these parcel outlines on their own public map,
+ * the data is dedicated CC0, and the covenant is a fact about the land
+ * recorded in a public county index. So the layer now shows what the source
+ * shows: the lot the restriction was written onto.
  *
- * This source is not like that, in two distinct ways.
+ * The line that did not move is personal data. The upstream record carries
+ * the seller and buyer named in the deed, the present-day street address, the
+ * county parcel PIN, and the deed document number. None of that is ingested,
+ * ever. What ships per parcel is the lot shape, the deed year, the city, the
+ * county, and the covenant clause itself — the restriction, not the people.
+ * `assertNoPersonalData` runs over the finished output and throws rather than
+ * write a file that leaked a name, an address, or a parcel identifier,
+ * because a rule enforced only by good intentions is not enforced.
  *
- * 1. The upstream record is a private transaction between named people.
- *    `seller` and `buyer` are populated on all 24,118 Hennepin rows, and the
- *    GeoJSON also carries `geocd_addr` — the present-day street address of a
- *    house someone lives in today. CLAUDE.md's instruction for this exact
- *    situation is to take the systemic part and drop the rest. The systemic
- *    part is real and is the whole point: a covenant is a legal instrument
- *    attached to land, drafted from a template, recorded by a county and
- *    enforced by an industry. Across Sherburne County's 358 covenants there
- *    are 37 distinct wordings — this is boilerplate, not personal expression.
- *    Who signed it is the private part.
- *
- * 2. The upstream geometry is the parcel itself. Every other layer marks a
- *    facility, a device, or a district. This one would outline 34,741
- *    individual homes at survey precision — 52 MB of polygons, each tracing
- *    the property line of a house with people in it now.
- *
- * So this layer is published the way CLAUDE.md allows systemic data about
- * people-adjacent records to be published: as a clearly-labelled aggregate,
- * counts only, never a row per property. Covenants are binned into a fixed
- * ground grid and each cell reports how many were recorded inside it. That
- * keeps what matters — the blanket coverage across whole neighbourhoods, which
- * is the finding — and discards what does not belong to us, which is the
- * ability to point at one family's house.
- *
- * The per-parcel data is public and excellent, and anyone wanting it should
- * get it from Mapping Prejudice directly rather than from a copy here.
- *
- * `assertAggregateOnly` runs over the finished output and throws rather than
- * write a file that leaked a name, an address, or a parcel outline, because a
- * rule enforced only by good intentions is not enforced.
+ * A parcel outline says "a covenant was recorded on this lot". It says
+ * nothing about who lives there now, and the layer's limitations text says
+ * so in both languages.
  */
 
-import { fetchWithRetry, writeLayer, loadCounties, log, slugId } from './lib/util.mjs';
-import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
+import { fetchWithRetry, writeLayer, log, slugId } from './lib/util.mjs';
 
 /**
  * Mapping Prejudice publish one repository directory per county. The GeoJSON
@@ -78,50 +59,40 @@ const COUNTIES = [
 ];
 
 /**
- * Grid resolution, in metres.
- *
- * Chosen to sit near a Twin Cities block: fine enough that a covenanted
- * subdivision still reads as a distinct shape rather than a blur, coarse
- * enough that a cell never resolves to one property. A cell containing a
- * single covenant reports "1" over an area of several houses, which is the
- * point — it says a restriction was recorded on this block, not which door.
- */
-const CELL_METRES = 250;
-
-// Degrees per metre at Minnesota's latitude. Constant per axis rather than
-// recomputed per row: a fixed grid is reproducible between builds, and a cell
-// that changes shape with latitude would make counts incomparable.
-const MEAN_LATITUDE = 45.3;
-const LAT_STEP = CELL_METRES / 111_320;
-const LNG_STEP = CELL_METRES / (111_320 * Math.cos((MEAN_LATITUDE * Math.PI) / 180));
-
-/**
  * Fields read from the upstream record. An allow-list rather than a
  * block-list: a block-list silently passes through whatever the upstream adds
  * later, and the failure mode of getting that wrong is publishing a name.
+ *
+ * `db_id` is Mapping Prejudice's own database row number — an identifier of
+ * the record, not of a person or a parcel — kept only to give each feature a
+ * stable id between builds.
  */
-// `cov_type` was considered and rejected: upstream it records the transcription
-// workflow ("manual" / "zooniverse"), not a kind of covenant, and publishing it
-// under a type label would mislead. The clause itself is what varies, and the
-// commonest wording per cell already ships verbatim.
-const KEEP = new Set(['deed_year', 'city', 'cov_text']);
+const KEEP = new Set(['db_id', 'deed_year', 'city', 'cov_text', 'cnty_name', 'cnty_fips']);
 
 /** Fields known to name or locate a person, listed so the assertion can name them. */
-const PERSONAL_FIELDS = ['seller', 'buyer', 'street_add', 'geocd_addr', 'zip_code', 'cnty_pin', 'doc_num'];
+const PERSONAL_FIELDS = [
+  'seller',
+  'buyer',
+  'street_add',
+  'geocd_addr',
+  'zip_code',
+  'cnty_pin',
+  'doc_num',
+];
+
+const streetish =
+  /\b\d{1,6}\s+\w+.*\b(avenue|ave|street|st|road|rd|drive|dr|lane|ln|boulevard|blvd|place|pl|court|ct|way|terrace)\b/i;
 
 /**
- * Refuse to write a layer that carries anything but aggregates.
+ * Refuse to write a layer that carries a name, an address, or a parcel
+ * identifier. Geometry is allowed now; the people never are.
  *
  * Runs on every build. A false positive costs a developer five minutes; a
  * false negative publishes a private individual.
  */
-function assertAggregateOnly(features) {
-  const streetish =
-    /\b\d{1,6}\s+\w+.*\b(avenue|ave|street|st|road|rd|drive|dr|lane|ln|boulevard|blvd|place|pl|court|ct|way|terrace)\b/i;
-
+function assertNoPersonalData(features) {
   for (const f of features) {
     const attrs = f.properties.attributes;
-
     for (const key of Object.keys(attrs)) {
       const lower = key.toLowerCase().replace(/_/g, '');
       for (const banned of PERSONAL_FIELDS) {
@@ -130,21 +101,11 @@ function assertAggregateOnly(features) {
         }
       }
     }
-
     for (const [key, value] of Object.entries(attrs)) {
+      if (key === 'covenantText') continue; // handled by scrubText before this runs
       if (typeof value === 'string' && streetish.test(value)) {
         throw new Error(`"${key}" looks like a street address on ${f.properties.id}`);
       }
-    }
-
-    // Every published record must be a grid cell holding a count, never a
-    // parcel. Five coordinates is a closed rectangle.
-    const ring = f.geometry?.coordinates?.[0];
-    if (f.geometry?.type !== 'Polygon' || !Array.isArray(ring) || ring.length !== 5) {
-      throw new Error(`record ${f.properties.id} is not a grid cell — parcel geometry must not ship`);
-    }
-    if (!Number.isFinite(attrs.covenantCount) || attrs.covenantCount < 1) {
-      throw new Error(`record ${f.properties.id} has no count`);
     }
   }
 }
@@ -155,6 +116,32 @@ function cleanText(value) {
   return trimmed || null;
 }
 
+/**
+ * The covenant clause, dropped entirely if it embeds a street address.
+ *
+ * The clause is template boilerplate and the evidentiary point of the layer,
+ * but a minority of deeds fold the legal description — sometimes with an
+ * address — into the restrictive sentence. A parcel whose text is dropped
+ * still ships as a parcel; the map loses one quotation, not the record.
+ */
+function scrubText(value) {
+  const clean = cleanText(value);
+  if (!clean) return null;
+  if (streetish.test(clean)) return null;
+  // Some clauses cite the deed's registrar document number — the same
+  // identifier the field allow-list bans as `doc_num`, so it does not ride in
+  // through the prose either. The citation stays; the number goes.
+  return clean.replace(/\b(doc(?:ument)?s?\.?\s*(?:no|number)s?\.?\s*)[\d,\s-]+/gi, '$1[number withheld] ');
+}
+
+/** Round coordinates to six decimals (~0.1 m) — survey precision the file does not need. */
+function roundGeometry(geometry) {
+  const round = (n) => Math.round(n * 1e6) / 1e6;
+  const walk = (coords) =>
+    typeof coords[0] === 'number' ? coords.map(round) : coords.map(walk);
+  return { type: geometry.type, coordinates: walk(geometry.coordinates) };
+}
+
 async function fetchCounty(slug) {
   const url = `${SOURCE_BASE}/mn-${slug}-county/covenants-mn-${slug}-county.geojson`;
   const res = await fetchWithRetry(url, { timeoutMs: 300_000 });
@@ -163,27 +150,29 @@ async function fetchCounty(slug) {
   return collection.features;
 }
 
+/** County FIPS arrives as a bare county code in some files; a GEOID needs the state prefix. */
+function countyGeoid(raw) {
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  if (digits.length === 5) return digits;
+  if (digits.length === 3) return `27${digits}`;
+  return null;
+}
+
 async function main() {
-  const counties = await loadCounties();
-  /** @type {Map<string, {count: number, lngIndex: number, latIndex: number, years: number[], cities: Map<string, number>, wordings: Map<string, number>, decades: Map<string, number>}>} */
-  const cells = new Map();
+  const features = [];
   const perCounty = {};
-  let mapped = 0;
   let skipped = 0;
+  let textDropped = 0;
+  const decadeTally = new Map();
 
   for (const slug of COUNTIES) {
     const raw = await fetchCounty(slug);
     let kept = 0;
 
-    for (const f of raw) {
+    for (const [i, f] of raw.entries()) {
       // A covenant with no mapped parcel cannot be placed, and guessing a
       // location for a restriction on land would be worse than a gap.
-      if (!f.geometry) {
-        skipped++;
-        continue;
-      }
-      const [lng, lat] = representativePoint(f.geometry) ?? [];
-      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+      if (!f.geometry?.coordinates?.length) {
         skipped++;
         continue;
       }
@@ -192,129 +181,60 @@ async function main() {
       const picked = {};
       for (const key of Object.keys(p)) if (KEEP.has(key)) picked[key] = p[key];
 
-      const lngIndex = Math.floor(lng / LNG_STEP);
-      const latIndex = Math.floor(lat / LAT_STEP);
-      const key = `${lngIndex}:${latIndex}`;
-
-      let cell = cells.get(key);
-      if (!cell) {
-        cell = {
-          count: 0,
-          lngIndex,
-          latIndex,
-          years: [],
-          cities: new Map(),
-          wordings: new Map(),
-          decades: new Map(),
-        };
-        cells.set(key, cell);
-      }
-      cell.count++;
-
       const year = Number(picked.deed_year);
-      if (Number.isFinite(year) && year > 1800) {
-        cell.years.push(year);
-        const decade = `${Math.floor(year / 10) * 10}s`;
-        cell.decades.set(decade, (cell.decades.get(decade) ?? 0) + 1);
-      }
-
+      const deedYear = Number.isFinite(year) && year > 1800 ? year : null;
+      const deedDecade = deedYear ? `${Math.floor(deedYear / 10) * 10}s` : null;
+      if (deedDecade) decadeTally.set(deedDecade, (decadeTally.get(deedDecade) ?? 0) + 1);
 
       const city = cleanText(picked.city);
-      if (city) cell.cities.set(city, (cell.cities.get(city) ?? 0) + 1);
+      const covenantText = scrubText(picked.cov_text);
+      if (picked.cov_text && !covenantText) textDropped++;
 
-      const wording = cleanText(picked.cov_text);
-      if (wording) cell.wordings.set(wording, (cell.wordings.get(wording) ?? 0) + 1);
-
+      features.push({
+        type: 'Feature',
+        geometry: roundGeometry(f.geometry),
+        properties: {
+          id: slugId('covenants', slug, String(picked.db_id ?? i)),
+          layer: 'racial_covenant',
+          // Named by what was recorded and where — never by whose deed it was.
+          name: `Racial covenant${city ? ` — ${city}` : ''}${deedYear ? ` (${deedYear})` : ''}`,
+          county: cleanText(picked.cnty_name),
+          state: 'MN',
+          countyFips: countyGeoid(picked.cnty_fips),
+          confidence: 'confirmed',
+          sourceDate: deedYear ? String(deedYear) : null,
+          attributes: {
+            deedYear,
+            deedDecade,
+            city,
+            // The clause verbatim: it is a template, not anyone's words about
+            // anyone, and paraphrasing it would soften language written to be
+            // unambiguous.
+            covenantText,
+          },
+        },
+      });
       kept++;
-      mapped++;
     }
 
     perCounty[slug] = kept;
     log('covenants', `${slug}: ${kept} covenants mapped (of ${raw.length} records)`);
   }
 
-  if (!cells.size) throw new Error('no covenants ingested');
+  if (!features.length) throw new Error('no covenants ingested');
 
-  const commonest = (counts) =>
-    [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
+  assertNoPersonalData(features);
+  log('covenants', `personal-data assertion passed over ${features.length} parcels`);
 
-  const features = [...cells.values()].map((cell) => {
-    const west = cell.lngIndex * LNG_STEP;
-    const south = cell.latIndex * LAT_STEP;
-    const east = west + LNG_STEP;
-    const north = south + LAT_STEP;
-    const centre = [west + LNG_STEP / 2, south + LAT_STEP / 2];
-    const county = findContaining(centre, counties.features);
-    const city = commonest(cell.cities);
-    const years = cell.years;
-
-    return {
-      type: 'Feature',
-      geometry: {
-        type: 'Polygon',
-        coordinates: [
-          [
-            [west, south],
-            [east, south],
-            [east, north],
-            [west, north],
-            [west, south],
-          ],
-        ],
-      },
-      properties: {
-        id: slugId('covenants', String(cell.lngIndex), String(cell.latIndex)),
-        layer: 'racial_covenant',
-        // Named by what was recorded here and where — never by a property.
-        name: `${cell.count} racial covenant${cell.count === 1 ? '' : 's'}${city ? ` — ${city}` : ''}`,
-        county: county?.properties.name ?? null,
-        state: 'MN',
-        countyFips: county?.properties.geoid ?? null,
-        confidence: 'confirmed',
-        sourceDate: years.length ? String(Math.min(...years)) : null,
-        attributes: {
-          covenantCount: cell.count,
-          city,
-          earliestDeed: years.length ? Math.min(...years) : null,
-          latestDeed: years.length ? Math.max(...years) : null,
-          // The decade with the most deeds in this cell — the filter key. A
-          // count per decade follows, one flat numeric field per decade with
-          // data, so the panel can show the shape of the wave without any
-          // record resolving finer than the cell.
-          peakDecade: commonest(cell.decades),
-          ...Object.fromEntries(
-            [...cell.decades.entries()]
-              .sort((a, b) => a[0].localeCompare(b[0]))
-              .map(([decade, n]) => [`deeds${decade}`, n]),
-          ),
-          // One wording recorded in this cell, verbatim. The clause is the
-          // evidence and paraphrasing it would soften language written to be
-          // unambiguous. It is a template, not anyone's words about anyone.
-          exampleWording: commonest(cell.wordings),
-        },
-      },
-    };
-  });
-
-  assertAggregateOnly(features);
-  log('covenants', `aggregate assertion passed over ${features.length} cells`);
-
-  const allYears = features
-    .flatMap((f) => [f.properties.attributes.earliestDeed, f.properties.attributes.latestDeed])
-    .filter((y) => Number.isFinite(y));
-  const span = allYears.length ? `${Math.min(...allYears)}–${Math.max(...allYears)}` : 'unknown';
-  const densest = Math.max(...features.map((f) => f.properties.attributes.covenantCount));
-  const decadeTally = new Map();
-  for (const cell of cells.values()) {
-    for (const [d, n] of cell.decades) decadeTally.set(d, (decadeTally.get(d) ?? 0) + n);
-  }
+  const years = features.map((f) => f.properties.attributes.deedYear).filter((y) => y != null);
+  const span = years.length ? `${Math.min(...years)}–${Math.max(...years)}` : 'unknown';
   const sortedDecades = [...decadeTally.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   log('covenants', `deeds by decade: ${sortedDecades.map(([k, v]) => `${k}=${v}`).join(', ')}`);
-  log(
-    'covenants',
-    `${mapped} covenants into ${features.length} cells of ${CELL_METRES}m, ${span}, densest cell ${densest}`,
-  );
+  log('covenants', `${features.length} covenanted parcels, ${span}`);
   if (skipped) log('covenants', `${skipped} records had no mapped parcel and were dropped`);
+  if (textDropped) {
+    log('covenants', `${textDropped} clause texts embedded a street address and were dropped (parcels kept)`);
+  }
 
   await writeLayer('covenants', {
     layer: 'racial_covenant',
@@ -328,20 +248,18 @@ async function main() {
         'Ehrman-Solberg, Kevin; Petersen, Penny; Mills, Marguerite; Delegard, Kirsten; Mattke, Ryan; crowdsourcing community mapmakers — U.S. Racial Covenants Series, hosted by Mapping Prejudice',
       sourceDate: '1910-1972',
       refresh: 'rare',
-      covenantsMapped: mapped,
-      cellMetres: CELL_METRES,
+      covenantsMapped: features.length,
       countiesCovered: perCounty,
     },
     knownGaps: [
-      `This layer is an aggregate and deliberately not a record per property. Covenants are counted into fixed ${CELL_METRES}-metre cells; a cell showing "1" means one covenant was recorded somewhere in an area of several houses, not which house.`,
-      'The upstream deeds name the seller and the buyer, and the upstream file also carries the present-day street address and the parcel outline of a house someone lives in now. None of that is ingested, and the build fails rather than write a file containing it. For the per-parcel data, go to Mapping Prejudice directly.',
+      'One record per covenanted parcel, showing the lot outline the source publishes. The buyer and seller named in the deed, the present-day street address, the county parcel PIN and the deed document number are deliberately not ingested, and the build fails rather than write a file containing them.',
       'A covenant describes land, not the people on it. Present-day residents of a covenanted property have no connection to the clause and are not the subject of this record.',
-      'Only the eight Minnesota counties Mapping Prejudice has published are here. A county with no cells has not been searched, which is not the same as a county with no covenants.',
+      'Only the eight Minnesota counties Mapping Prejudice has published are here. A county with no parcels has not been searched, which is not the same as a county with no covenants.',
       'Covenants are found by reading digitised deeds, so coverage depends on which deed books have been processed. Every count is a floor on the true number, never a ceiling.',
-      'Cells are placed from a representative point of the parcel matched to each deed, so a covenant near a cell edge may fall in either neighbouring cell.',
+      'A minority of clause texts fold the deed\'s legal description into the restrictive sentence; where that text looks like a street address it is dropped and the parcel ships without its quotation.',
       'Racial covenants were made unenforceable in 1948 and are void today, but the text remains in the chain of title until a homeowner files to discharge it.',
-      'Mapping Prejudice describe the period as 1910 to 1955, but 58 cells carry a deed year after that, running to 1972. Those are shown as recorded rather than corrected or dropped: they may be late recordings of older instruments, or transcription artefacts, and we have not established which.',
-      'Decade counts bin each covenant by its deed year, and the peak decade is the one with the most deeds in the cell. Post-1955 deed years appear in their recorded decades, with the same caveat as above: late recordings or transcription artefacts, unresolved.',
+      'Mapping Prejudice describe the period as 1910 to 1955, but some deed years run later, to 1972. Those are shown as recorded rather than corrected or dropped: they may be late recordings of older instruments, or transcription artefacts, and we have not established which.',
+      'Parcel outlines are the modern parcels the deeds were matched to, generalised to roughly 0.1-metre precision; a covenant matched to a parcel that has since been split or merged may not align exactly with today\'s lot lines.',
     ],
     features,
   });

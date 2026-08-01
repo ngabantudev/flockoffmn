@@ -26,9 +26,10 @@ export type LayerId =
   | 'aadt'
   | 'redlining'
   // The only layer whose upstream source is a transaction between named
-  // private individuals. It is published as a clearly-labelled aggregate —
-  // counts per grid cell, never a record per property — and its ingest strips
-  // and then asserts. See scripts/ingest/covenants.mjs for the full reasoning.
+  // private individuals. It is published parcel by parcel — the lot shape,
+  // the deed year and the clause — with every name, address and parcel
+  // identifier stripped, and its ingest strips and then asserts. See
+  // scripts/ingest/covenants.mjs for the full reasoning and its history.
   | 'racial_covenant'
   // Present-day counterpart to the historical layers: MPCA's cumulative
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
