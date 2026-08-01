@@ -793,15 +793,7 @@ export const LAYERS: LayerDefinition[] = [
     },
     filters: [
       { key: 'operator', kind: 'enum', label: { en: 'Operator', es: 'Operador' } },
-      {
-        key: 'status',
-        kind: 'enum',
-        label: { en: 'Status', es: 'Estado' },
-        // A withdrawn proposal is worth finding — it marks a place where people
-        // organised and the project did not happen — but it is not a building,
-        // and drawing it by default would say there is one.
-        defaultExcluded: ['cancelled', 'withdrawn'],
-      },
+      { key: 'status', kind: 'enum', label: { en: 'Status', es: 'Estado' } },
       { key: 'powerSource', kind: 'enum', label: { en: 'Power source', es: 'Fuente de energía' } },
     ],
     detailFields: [
