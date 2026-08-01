@@ -31,6 +31,14 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
     },
   },
   {
+    id: 'environment',
+    label: { en: 'Environment & Health', es: 'Medio ambiente y salud' },
+    summary: {
+      en: 'The present-day reading of the same ground: which places carry the most environmental and health burdens now, tract by tract.',
+      es: 'La lectura actual del mismo terreno: qué lugares soportan hoy más cargas ambientales y de salud, sección por sección.',
+    },
+  },
+  {
     id: 'infrastructure',
     label: { en: 'Infrastructure', es: 'Infraestructura' },
     summary: {
@@ -1008,6 +1016,142 @@ export const LAYERS: LayerDefinition[] = [
         en: 'A count for an area of several houses, never a record for one property. It describes a restriction on land, not the people who live there now.',
         es: 'Un recuento para un área de varias casas, nunca un registro de una propiedad. Describe una restricción sobre la tierra, no a las personas que viven allí ahora.',
       },
+      wide: true,
+    },
+  },
+
+  {
+    id: 'ej_cumulative',
+    slug: 'ej-cumulative',
+    category: 'environment',
+    order: 9,
+    label: { en: 'Cumulative impacts (MPCA)', es: 'Impactos acumulativos (MPCA)' },
+    summary: {
+      en: 'How many environmental and health stressors burden each census tract today, from MPCA’s draft CI-MAP.',
+      es: 'Cuántos factores de estrés ambientales y de salud cargan hoy cada sección censal, según el borrador CI-MAP de la MPCA.',
+    },
+    whatThisMeans: {
+      en: 'Minnesota’s 2023 cumulative impacts law (Minn. Stat. § 116.065) requires the state to weigh the burdens a community already carries before permitting new ones. CI-MAP is the Pollution Control Agency’s draft implementation: for every census tract it counts stressors — air pollution risk, cleanup sites, impaired waters, traffic, asthma and lead rates, tree cover and more, 26 indicators in all — and compares the count to county and state medians. Laid beside the 1930s redlining grades and the covenant map, it shows where the historical lines and present-day burdens coincide. A tract is an aggregate of thousands of people; nothing here describes a household.',
+      es: 'La ley de impactos acumulativos de Minnesota de 2023 (Minn. Stat. § 116.065) exige al estado sopesar las cargas que una comunidad ya soporta antes de permitir otras nuevas. CI-MAP es la implementación preliminar de la Agencia de Control de la Contaminación: para cada sección censal cuenta factores de estrés — riesgo de contaminación del aire, sitios de limpieza, aguas degradadas, tráfico, tasas de asma y plomo, cobertura arbórea y más, 26 indicadores en total — y compara el recuento con las medianas del condado y del estado. Junto a las calificaciones de redlining de los años 30 y el mapa de convenios, muestra dónde coinciden las líneas históricas y las cargas actuales. Una sección censal agrega a miles de personas; nada aquí describe un hogar.',
+    },
+    limitations: [
+      {
+        en: 'CI-MAP is a public draft first published in December 2025; scores and methodology may change as rulemaking under the statute proceeds.',
+        es: 'CI-MAP es un borrador público publicado en diciembre de 2025; las puntuaciones y la metodología pueden cambiar durante la reglamentación de la ley.',
+      },
+      {
+        en: 'The four burden bands compare a tract to its county median and are this project’s presentation, not MPCA’s determination. The agency’s own adverse-cumulative-stressors finding is shown unmodified in the detail panel.',
+        es: 'Las cuatro bandas de carga comparan una sección con la mediana de su condado y son una presentación de este proyecto, no una determinación de la MPCA. La conclusión propia de la agencia sobre factores acumulativos adversos se muestra sin modificar en el panel de detalle.',
+      },
+      {
+        en: 'A tract average says nothing about any particular block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+      {
+        en: 'No formal licence is published for the service; it is treated as public government data under Minn. Stat. ch. 13 and attributed to MPCA.',
+        es: 'No se publica una licencia formal para el servicio; se trata como datos públicos gubernamentales según Minn. Stat. cap. 13 y se atribuye a la MPCA.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#d95f2b',
+    categoryColors: {
+      key: 'burdenBand',
+      label: { en: 'Burden vs county median', es: 'Carga frente a la mediana del condado' },
+      colors: [
+        { value: 'Fewer stressors', color: '#fde8d7' },
+        { value: 'Near county median', color: '#f5a86b' },
+        { value: 'Elevated', color: '#d95f2b' },
+        { value: 'Most burdened', color: '#8f2d0f' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/ej-cumulative.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Minnesota Pollution Control Agency, Cumulative Impacts Mapping and Analysis Platform (CI-MAP)',
+      sourceUrl: 'https://pca-gis02.pca.state.mn.us/ci-map/',
+      license: 'Public government data (Minn. Stat. ch. 13) — no formal licence published',
+      licenseUrl: null,
+      attribution: 'Minnesota Pollution Control Agency, CI-MAP (draft)',
+      sourceDate: '2025-12',
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [
+      { key: 'burdenBand', kind: 'enum', label: { en: 'Burden band', es: 'Banda de carga' } },
+      {
+        key: 'mpcaAdverse',
+        kind: 'enum',
+        label: {
+          en: 'MPCA adverse-stressors finding',
+          es: 'Conclusión de la MPCA sobre factores adversos',
+        },
+      },
+    ],
+    detailFields: [
+      {
+        key: 'stressorCount',
+        label: { en: 'Stressors present, of 26', es: 'Factores presentes, de 26' },
+      },
+      {
+        key: 'countyMedian',
+        label: { en: 'County median', es: 'Mediana del condado' },
+      },
+      {
+        key: 'stateMedian',
+        label: { en: 'State median', es: 'Mediana estatal' },
+      },
+      {
+        key: 'mpcaAdverse',
+        label: {
+          en: 'MPCA finding: adverse cumulative stressors',
+          es: 'Conclusión de la MPCA: factores acumulativos adversos',
+        },
+      },
+      {
+        key: 'adverseList',
+        label: {
+          en: 'Stressors MPCA marks adverse here',
+          es: 'Factores que la MPCA marca como adversos aquí',
+        },
+      },
+      {
+        key: 'tribeNames',
+        label: { en: 'Tribal nation, where the tract overlaps one', es: 'Nación tribal, cuando la sección se superpone a una' },
+      },
+      {
+        key: 'ejPoverty',
+        label: {
+          en: 'EJ area by income (MPCA threshold)',
+          es: 'Área de justicia ambiental por ingresos (umbral de la MPCA)',
+        },
+      },
+      {
+        key: 'ejPeopleOfColor',
+        label: {
+          en: 'EJ area by race (MPCA threshold)',
+          es: 'Área de justicia ambiental por raza (umbral de la MPCA)',
+        },
+      },
+      {
+        key: 'ejLimitedEnglish',
+        label: {
+          en: 'EJ area by limited English (MPCA threshold)',
+          es: 'Área de justicia ambiental por dominio limitado del inglés (umbral de la MPCA)',
+        },
+      },
+    ],
+    nearMe: {
+      mode: 'contains',
+      title: {
+        en: 'This area’s cumulative burden today',
+        es: 'La carga acumulativa actual de esta zona',
+      },
+      empty: {
+        en: 'This point is not inside a Minnesota census tract with CI-MAP data.',
+        es: 'Este punto no está dentro de una sección censal de Minnesota con datos de CI-MAP.',
+      },
+      detail: ['stressorCount', 'countyMedian', 'mpcaAdverse'],
       wide: true,
     },
   },

@@ -29,7 +29,11 @@ export type LayerId =
   // private individuals. It is published as a clearly-labelled aggregate —
   // counts per grid cell, never a record per property — and its ingest strips
   // and then asserts. See scripts/ingest/covenants.mjs for the full reasoning.
-  | 'racial_covenant';
+  | 'racial_covenant'
+  // Present-day counterpart to the historical layers: MPCA's cumulative
+  // impacts draft under Minn. Stat. § 116.065, one record per census tract.
+  // A tract is an aggregate of thousands of people, never a household.
+  | 'ej_cumulative';
 
 export type Locale = 'en' | 'es';
 
@@ -214,7 +218,12 @@ export interface NearMeSummary {
  * this union; `LAYER_CATEGORIES` in the registry is what the panel iterates,
  * so reordering these names changes documentation and nothing else.
  */
-export type LayerCategoryId = 'historical' | 'infrastructure' | 'surveillance' | 'enforcement';
+export type LayerCategoryId =
+  | 'historical'
+  | 'environment'
+  | 'infrastructure'
+  | 'surveillance'
+  | 'enforcement';
 
 export interface LayerCategory {
   id: LayerCategoryId;
