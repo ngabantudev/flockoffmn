@@ -977,6 +977,9 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'polygon',
     color: '#f472b6',
+    // Densest cell in the current build is 95 deeds; headroom to 120 so a
+    // future county release does not flatten the top of the scale.
+    graduatedDots: { countKey: 'covenantCount', maxCount: 120 },
     dataPath: '/data/covenants.geojson',
     csvPath: null,
     provenance: {
@@ -990,7 +993,10 @@ export const LAYERS: LayerDefinition[] = [
       lastUpdated: null,
       refresh: 'rare',
     },
-    filters: [{ key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } }],
+    filters: [
+      { key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } },
+      { key: 'peakDecade', kind: 'enum', label: { en: 'Peak decade', es: 'Década de mayor registro' } },
+    ],
     detailFields: [
       {
         key: 'covenantCount',
@@ -999,6 +1005,10 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'earliestDeed', label: { en: 'Earliest deed', es: 'Escritura más antigua' } },
       { key: 'latestDeed', label: { en: 'Latest deed', es: 'Escritura más reciente' } },
+      {
+        key: 'peakDecade',
+        label: { en: 'Decade with the most deeds', es: 'Década con más escrituras' },
+      },
       {
         key: 'exampleWording',
         label: { en: 'Example wording recorded here', es: 'Ejemplo de redacción registrada aquí' },
