@@ -898,10 +898,19 @@ const strings = {
     input.addEventListener('change', () => {
       const layerId = input.dataset.filterLayer!;
       const key = input.dataset.filterKey!;
-      const checked = document.querySelectorAll<HTMLInputElement>(
-        `[data-filter-layer="${layerId}"][data-filter-key="${key}"]:checked`,
+      const boxes = document.querySelectorAll<HTMLInputElement>(
+        `[data-filter-layer="${layerId}"][data-filter-key="${key}"]`,
       );
-      controller.setFilter(layerId, key, new Set([...checked].map((c) => c.value)));
+      const checked = [...boxes].filter((c) => c.checked);
+      // Every box ticked is the default, not a filter: pass the empty set so
+      // the controller drops the key. Storing the full list instead would
+      // read as an active narrowing — and would quietly exclude records whose
+      // attribute is null, which no ticked box can name.
+      controller.setFilter(
+        layerId,
+        key,
+        new Set(checked.length === boxes.length ? [] : checked.map((c) => c.value)),
+      );
     });
   });
 

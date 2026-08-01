@@ -1244,10 +1244,17 @@ export class MapController {
   setFilter(layerId: string, key: string, values: Set<string>) {
     if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
     const state = this.filters.get(layerId)!;
+    const prev = state.get(key);
     if (values.size === 0) state.delete(key);
     else state.set(key, values);
     this.refresh(layerId);
-    this.zoomToFiltered(layerId);
+    // Zoom only when this change narrowed the selection: the key is newly
+    // active (no previous set means everything was showing), or a previously
+    // allowed value was removed. Pure broadening — re-ticking a value —
+    // widens what is drawn without asking to be taken anywhere.
+    const narrowed =
+      values.size > 0 && (prev === undefined || [...prev].some((v) => !values.has(v)));
+    if (narrowed) this.zoomToFiltered(layerId);
   }
 
   /**
@@ -1255,10 +1262,11 @@ export class MapController {
    *
    * Picking "Duluth" and then panning around Minneapolis looking for the
    * records is the reader doing work the map already knows how to do. Runs
-   * only while a filter is actively narrowing a visible layer with matches:
-   * un-narrowing (clearing the last value, clearing all filters) moves
-   * nothing, because where the reader is looking is theirs unless they just
-   * asked a question whose answer is somewhere else.
+   * only while a filter is actively narrowing a visible layer with matches;
+   * `setFilter` additionally gates it to changes that narrowed the selection,
+   * so un-narrowing — re-ticking a value, restoring every box, clearing the
+   * filters — moves nothing, because where the reader is looking is theirs
+   * unless they just asked a question whose answer is somewhere else.
    */
   private zoomToFiltered(layerId: string) {
     const state = this.filters.get(layerId);
