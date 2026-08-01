@@ -307,40 +307,30 @@ export interface LayerDefinition {
    */
   filament?: boolean;
   /**
-   * Send a pulse of light travelling along a line layer.
+   * Colour a line layer by the size of the connected network each record is in.
    *
-   * This replaces a slider that grew each link out of its two ends as the
-   * reader dragged it. The slider's motion was doing two jobs: it made the
-   * network legible, and it let the reader pick the radius. The second was
-   * never really a question the reader wanted — the ingest can name one honest
-   * distance and stand behind it — and paying for it cost a re-upload of the
-   * entire layer on every frame of a drag. The pulse keeps the movement and
-   * drops the cost: the geometry never changes, and a frame is a handful of
-   * paint updates that never touch the data.
+   * Doing work a line cannot. Two links that meet at a shared record are one
+   * network and two that do not are two, and no drawn line can say which — so
+   * instead they light up together, and the brighter a strand burns the more
+   * records its network joins.
    *
-   * The animation is decoration in the strict sense — remove it and no fact
-   * leaves the map. That is the test it has to pass, because motion that
-   * carries information is motion that is lost under `prefers-reduced-motion`,
-   * where this stops dead.
+   * This once rode along with an animation config, which meant switching the
+   * animation off silently took the colour encoding with it. They are separate
+   * questions and are separate fields.
    */
-  pulse?: {
+  networkColor?: {
+    /** Attribute holding how many records the feature's network joins. */
+    key: string;
     /**
-     * Attribute holding which band of the animation a record belongs to, as an
-     * integer from zero to `bands - 1`. The ingest assigns it; the map draws
-     * one style layer per band and offsets each band's phase, which is the only
-     * way a per-record phase can be had from a paint property that is one ramp
-     * for the whole layer.
+     * The largest network the ramp spreads across.
+     *
+     * A property of this layer's data rather than of the map, which is why it
+     * lives here: cut it to the range the records actually hold or nearly every
+     * one of them lands on the same dim end of the ramp, and the encoding is
+     * thrown away. Leave a little headroom above the largest so a denser
+     * extract, or another state, does not flatten out at the top.
      */
-    phaseKey: string;
-    /** How many bands the ingest cut the records into. */
-    bands: number;
-    /** How long one pulse takes to run the length of a record. */
-    periodMs: number;
-    /**
-     * Attribute holding how many records the feature's connected network joins,
-     * which is what the line is coloured by.
-     */
-    networkKey: string;
+    maxRecords: number;
   };
   /**
    * The request a reader can file about one of these records.

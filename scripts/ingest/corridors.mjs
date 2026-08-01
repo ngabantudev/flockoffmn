@@ -114,20 +114,6 @@ const LINK_M = STATIC_MILES * MILE;
  */
 const SIMPLIFY_M = 5;
 
-/**
- * How many phase bands the pulse animation is cut into.
- *
- * Links are banded by how far they sit from the middle of their own network, so
- * the pulse leaves the centre of a cluster and travels outwards.
- *
- * Three, and the number matters more than it looks. A band is a style layer,
- * and a `line-gradient` layer re-renders and re-uploads a texture for every
- * tile it covers each time the ramp moves — so the cost of the animation is
- * bands times tiles times frames, and bands is the term this end controls. Six
- * looked slightly better and cost twice this. One would be cheapest and reads
- * as the whole state blinking in unison, which is worse than either.
- */
-const PHASE_BANDS = 3;
 
 /**
  * How much longer than the straight line a route may be before it is refused.
@@ -588,10 +574,8 @@ async function main() {
           siteOffsets: `0.00;${round(result.meters, 2).toFixed(2)}`,
           siteReaders: `${a.readers};${b.readers}`,
           // Filled in by the pass below, once every surviving link is known:
-          // how many reader locations this link's network joins, and which of
-          // the pulse's phase bands it belongs to.
+          // how many reader locations this link's network joins.
           connectedSites: 0,
-          phase: 0,
           operatorCount: operators.length,
           operators: operators.length ? operators.join('; ') : null,
           unattributedReaders: a.unattributed + b.unattributed,
@@ -606,19 +590,12 @@ async function main() {
   if (!features.length) throw new Error('no link could be routed; not writing a layer');
 
   /*
-   * Networks, and the order the pulse travels in.
+   * Networks.
    *
    * Two reader locations are in the same network when a chain of links runs
    * between them. The browser used to work this out on every frame of a slider
    * drag, because which links existed changed as the radius moved; nothing
-   * moves now, so it is settled once, here.
-   *
-   * The phase band is what makes the animation read as a ripple rather than a
-   * blink. Each link is ranked by how far it sits from the middle of its own
-   * network and cut into `PHASE_BANDS` bands, so the pulse leaves the centre of
-   * a cluster and travels out to its edges. It is a drawing order and nothing
-   * more — no claim is made that a network has a centre, or that anything
-   * travels between these readers in this direction or at all.
+   * moves now, so it is settled once, here, and the map reads it as a number.
    */
   const parent = new Map();
   const find = (x) => {
@@ -645,35 +622,17 @@ async function main() {
     if (!members.has(root)) members.set(root, []);
     members.get(root).push(key);
   }
-  const centre = new Map();
-  for (const [root, group] of members) {
-    centre.set(root, [
-      mean(group.map((i) => sites[i].point[0])),
-      mean(group.map((i) => sites[i].point[1])),
-    ]);
-  }
 
-  // Rank within each network, so a two-link pocket bands as fully as the metro
-  // does and the pulse crosses both in the same time.
-  const byNetwork = new Map();
-  endsOf.forEach(([a, b], i) => {
+  const byLink = new Map();
+  endsOf.forEach(([a], i) => {
     const root = find(a);
-    const from = haversineMeters(centre.get(root), [
-      (sites[a].point[0] + sites[b].point[0]) / 2,
-      (sites[a].point[1] + sites[b].point[1]) / 2,
-    ]);
-    if (!byNetwork.has(root)) byNetwork.set(root, []);
-    byNetwork.get(root).push({ i, from });
+    if (!byLink.has(root)) byLink.set(root, []);
+    byLink.get(root).push(i);
   });
-  for (const [root, group] of byNetwork) {
-    group.sort((x, y) => x.from - y.from);
-    group.forEach(({ i }, rank) => {
-      features[i].properties.attributes.connectedSites = members.get(root).length;
-      features[i].properties.attributes.phase = Math.min(
-        PHASE_BANDS - 1,
-        Math.floor((rank / group.length) * PHASE_BANDS),
-      );
-    });
+  for (const [root, group] of members) {
+    for (const i of byLink.get(root) ?? []) {
+      features[i].properties.attributes.connectedSites = group.length;
+    }
   }
 
   const networkSizes = [...members.values()].map((g) => g.length).sort((x, y) => y - x);
@@ -760,7 +719,6 @@ async function main() {
       `The line is the route a car would drive between the two readers, as OSRM reads OpenStreetMap: it honours one-way streets and turn restrictions, but knows nothing of traffic, closures or roadworks, and it is the shortest such route rather than the one a local would pick.`,
       `Nearest neighbour is decided by distance across the map and the line is then measured along the road, so the two can disagree — a reader across a river is near on the map and far to drive. Where driving takes more than ${DETOUR_RATIO} times the straight-line distance the pair is refused, because at that point the line stops describing the pair and starts describing the detour.`,
       `The line drawn is the route simplified to ${SIMPLIFY_M} m, so it departs from the road by up to that much where the road curves. Nothing is added and no corner is cut that a reader could see at any zoom this map offers; the length quoted for a link is the router's own figure for the full route, not the length of the simplified line.`,
-      `The map animates a pulse travelling along the links, outward from the middle of each network. That is a drawing order chosen to make the strands legible and nothing else: it does not say that a network has a centre, that traffic moves this way, or that anything at all travels between these readers. The animation stops for anyone whose system asks for reduced motion, and the map is complete without it.`,
       `This layer records which roads a link follows, from the router's own driving instructions, but not what class of road they are. The router does not report the OpenStreetMap \`highway\` tag, and a road's class is not something to infer from its name, so the field is absent rather than guessed.`,
       `${alone} reader locations have no other reader within ${metersToMiles(LINK_M)} miles and appear in no link. They remain on the camera layer.`,
       `${unsnapped} pairs had an end more than ${SNAP_M} m from any drivable road OpenStreetMap records, so the route would have started somewhere no camera stands. ${noRoute} more could not be routed at all, and ${tooFar} were over ${metersToMiles(LINK_M)} miles by road despite being within that distance across the map.`,

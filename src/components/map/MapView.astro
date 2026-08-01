@@ -46,7 +46,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   filament: d.filament,
-  pulse: d.pulse,
+  networkColor: d.networkColor,
   dataPath: d.dataPath,
   filters: d.filters
     .filter((f) => f.kind === 'enum')
