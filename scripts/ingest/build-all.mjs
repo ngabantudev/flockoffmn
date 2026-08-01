@@ -37,6 +37,7 @@ const STEPS = [
   { name: 'aadt', script: 'aadt.mjs' },
   { name: 'redlining', script: 'redlining.mjs' },
   { name: 'covenants', script: 'covenants.mjs' },
+  { name: 'ej-cumulative', script: 'ej-cumulative.mjs' },
 ];
 
 function run(script) {
