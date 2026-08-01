@@ -761,15 +761,14 @@ export class MapController {
             layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
             paint: {
               'line-color': threadByTier,
-              // The cord's halo is what makes it read as lit rather than ruled,
-              // and it is the half that has to be watched: it is spread over a
-              // line five times as wide and often a hundred times as long as a
-              // mesh link's, so it turns to fog long before the core does. It
-              // gets a little under half the core's strength at either end.
+              // On a cord the halo is not the supporting half, it is the strand.
+              // Almost all of a cord's visible presence is here, in something
+              // with no edge to it, which is why it holds a touch more than the
+              // mesh's halo at state zoom and why the core it wraps is so faint.
               'line-opacity': byZoomAndTier([
-                [5, 0.3, 0.3],
-                [9, 0.3, 0.26],
-                [13, 0.3, 0.13],
+                [5, 0.3, 0.34],
+                [9, 0.3, 0.28],
+                [13, 0.3, 0.14],
               ]),
               /*
                * Blur is paid per pixel covered, and this layer now covers a
@@ -779,8 +778,23 @@ export class MapController {
                * metro block is the difference between a haze and a legible
                * thread anyway — the old figures were tuned when there were
                * fewer lines to pile on top of each other.
+               *
+               * Cords are blurred far harder than the mesh, and that single
+               * number is most of what makes them read as tissue rather than as
+               * a road atlas. A cord follows a highway for tens of miles, and
+               * drawn crisply that is exactly what it looks like — a route
+               * somebody planned, which is the one thing it is not. Spread past
+               * its own width it stops having an edge, and something without an
+               * edge reads as grown rather than drawn. It is also the honest
+               * picture: a cord is the shortest road that happened to connect
+               * two clusters nobody coordinated, and a soft strand claims about
+               * as much precision as that deserves.
                */
-              'line-blur': ['interpolate', ['linear'], ['zoom'], 5, 2, 11, 5, 16, 9],
+              'line-blur': byZoomAndTier([
+                [5, 2, 7],
+                [11, 5, 14],
+                [16, 9, 24],
+              ]),
               // The map opens on the whole state, where the median corridor is
               // under three pixels long. A thread that is also thin there is a
               // thread nobody can find, so the glow starts wide and the line
@@ -809,30 +823,37 @@ export class MapController {
             paint: {
               'line-color': threadByTier,
               /*
-               * A cord is brightest where the whole state is in frame, and
-               * eases back as a city fills the screen.
+               * A cord's core is kept well under the mesh's, and narrow.
                *
-               * The two ends answer different questions. Zoomed out, the
-               * question is whether these cameras are one connected thing, and
-               * the answer — that they are, right across Minnesota — is carried
-               * entirely by the cords, because at that zoom the mesh is a few
-               * pixels of haze. Zoomed in, the question is what lies between
-               * these particular cameras, the mesh is the answer, and a
-               * near-white band five times its width would bury it.
+               * The instinct when a cord is hard to make out is to turn it up,
+               * and that was tried: at full strength the cords are perfectly
+               * visible and the map turns into a road atlas with some cameras
+               * on it. A bright hard line is the most authored mark there is,
+               * and a cord is the least authored thing here — the shortest road
+               * that happens to join two clusters nobody planned together.
                *
-               * No cord's data changes across this ramp. It is emphasis
-               * following the question the zoom is asking; the miles on the
-               * strand and the panel behind it read the same at every zoom.
+               * So the core is a filament inside the glow rather than a line
+               * with a glow around it. Presence comes from width and from the
+               * heavily blurred halo above; this only keeps the strand from
+               * dissolving into pure haze at the centre. It stays under the
+               * mesh at every zoom, because the mesh is the stronger claim and
+               * should always be the brighter mark.
+               *
+               * It does still lift where the whole state is in frame. At that
+               * zoom the mesh is a few pixels of haze and the cords are the
+               * only structure carrying the finding that these cameras are one
+               * connected thing. No cord's data changes across the ramp — the
+               * miles on the strand and the panel read the same at every zoom.
                */
               'line-opacity': byZoomAndTier([
-                [5, 0.55, 0.75],
-                [9, 0.55, 0.64],
-                [13, 0.55, 0.3],
+                [5, 0.55, 0.3],
+                [9, 0.55, 0.24],
+                [13, 0.55, 0.12],
               ]),
               'line-width': byZoomAndTier([
-                [5, 2.6, 4],
-                [11, 3.2, 6.5],
-                [16, 5, 11],
+                [5, 2.6, 2.4],
+                [11, 3.2, 4],
+                [16, 5, 7],
               ]),
             },
           },
