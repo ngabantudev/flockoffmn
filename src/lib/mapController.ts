@@ -38,6 +38,8 @@ export interface ClientLayer {
     colors: Array<{ value: string; color: string }>;
     fallback: string;
   };
+  /** Draw an aggregate polygon layer as one dot per cell, scaled by a count. */
+  graduatedDots?: { countKey: string; maxCount: number };
   /** Draw this line layer as a glowing filament. */
   filament?: boolean;
   /** Colour this line layer by the size of each record's connected network. */
@@ -535,6 +537,40 @@ export class MapController {
 
   private densitySourceId = (layerId: string) => `src-${layerId}-density`;
   private nodeSourceId = (layerId: string) => `src-${layerId}-nodes`;
+  private dotSourceId = (layerId: string) => `src-${layerId}-dots`;
+
+  /**
+   * One centre point per grid cell, carrying only the cell's id and count.
+   *
+   * The centre of the cell's bounding box, not of anything inside it: the dot
+   * must never encode a position finer than the cell it summarises.
+   */
+  private graduatedDotFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
+    const countKey = layer.graduatedDots?.countKey;
+    if (!countKey) return { type: 'FeatureCollection', features: [] };
+    const dots: Feature[] = [];
+    for (const f of features) {
+      if (f.geometry.type !== 'Polygon') continue;
+      const ring = f.geometry.coordinates[0];
+      if (!ring?.length) continue;
+      let west = Infinity,
+        south = Infinity,
+        east = -Infinity,
+        north = -Infinity;
+      for (const [lng, lat] of ring) {
+        if (lng < west) west = lng;
+        if (lng > east) east = lng;
+        if (lat < south) south = lat;
+        if (lat > north) north = lat;
+      }
+      dots.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [(west + east) / 2, (south + north) / 2] },
+        properties: { id: f.properties.id, [countKey]: f.properties.attributes[countKey] },
+      });
+    }
+    return { type: 'FeatureCollection', features: dots };
+  }
 
   /**
    * Reader locations gathered into nodes, as points carrying a camera count.
@@ -770,24 +806,59 @@ export class MapController {
           source: src,
           paint: {
             'fill-color': polygonColor,
-            'fill-opacity': 0.42,
+            // Under graduated dots the cells recede to a faint wash: still
+            // the honest geometry and the click target, no longer the figure.
+            'fill-opacity': layer.graduatedDots ? 0.12 : 0.42,
           },
         },
         under,
       );
-      this.map.addLayer(
-        {
-          id: `${layer.id}-outline`,
-          type: 'line',
-          source: src,
-          paint: {
-            'line-color': polygonColor,
-            'line-width': 1.1,
-            'line-opacity': 0.85,
+      if (!layer.graduatedDots) {
+        this.map.addLayer(
+          {
+            id: `${layer.id}-outline`,
+            type: 'line',
+            source: src,
+            paint: {
+              'line-color': polygonColor,
+              'line-width': 1.1,
+              'line-opacity': 0.85,
+            },
           },
-        },
-        under,
-      );
+          under,
+        );
+      }
+      if (layer.graduatedDots) {
+        const dotSrc = this.dotSourceId(layer.id);
+        this.map.addSource(dotSrc, {
+          type: 'geojson',
+          data: this.graduatedDotFeatures(layer, features),
+        });
+        this.map.addLayer(
+          {
+            id: `${layer.id}-dots`,
+            type: 'circle',
+            source: dotSrc,
+            paint: {
+              'circle-color': layer.color,
+              'circle-opacity': 0.75,
+              'circle-stroke-width': 0,
+              // Area, not radius, carries the count: on the square root a
+              // hundred-deed cell reads as ten times one deed, not a hundred.
+              'circle-radius': [
+                'interpolate',
+                ['linear'],
+                ['sqrt', ['coalesce', ['get', layer.graduatedDots.countKey], 1]],
+                1,
+                2,
+                Math.sqrt(layer.graduatedDots.maxCount),
+                14,
+              ] as unknown as maplibregl.ExpressionSpecification,
+            },
+          },
+          under,
+        );
+      }
       this.bindInteractions(layer, `${layer.id}-fill`);
       return;
     }
@@ -1208,6 +1279,7 @@ export class MapController {
       '-line-hit',
       '-points',
       '-cones',
+      '-dots',
     ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {
@@ -1264,6 +1336,10 @@ export class MapController {
     // filtered node is a smaller body and not a body with a hidden interior.
     const nodes = this.map.getSource(this.nodeSourceId(layerId)) as GeoJSONSource | undefined;
     nodes?.setData(this.nodeFeatures(layer, visible));
+    // Graduated dots are a fourth derived source with the same obligation: a
+    // filtered cell must take its dot with it.
+    const dots = this.map.getSource(this.dotSourceId(layerId)) as GeoJSONSource | undefined;
+    dots?.setData(this.graduatedDotFeatures(layer, visible));
     this.emitCounts();
   }
 
