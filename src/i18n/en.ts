@@ -17,6 +17,20 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
+  // Live aircraft banner. {count} substituted; the breakdown itself is built
+  // client-side from the per-agency labels below, since which agencies are
+  // nonzero changes hour to hour.
+  liveBannerLoading: 'Checking agency aircraft…',
+  liveBannerCount: 'LIVE: {count} agency aircraft in Minnesota',
+  liveBannerCaveat:
+    'Positions refresh hourly from a community flight-tracking network. "ICE Air contractor" means the aircraft is owned by a company under an ICE Air charter contract — not confirmation this is an active flight.',
+  liveBannerUnavailable: 'Live aircraft data is unavailable right now.',
+  agencyLabelStatePatrol: 'State Patrol',
+  agencyLabelDnrEnforcement: 'DNR Enforcement',
+  agencyLabelIceAir: 'ICE Air contractor',
+  agencyLabelBca: 'BCA',
+  agencyLabelCountySheriff: 'County sheriff',
+
   // Map chrome
   layers: 'Layers',
   filters: 'Filters',

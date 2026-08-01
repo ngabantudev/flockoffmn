@@ -1,6 +1,7 @@
 ---
 import '~/styles/global.css';
 import Nav from '~/components/Nav.astro';
+import LiveAircraftBanner from '~/components/LiveAircraftBanner.astro';
 import Footer from '~/components/Footer.astro';
 import { localeFromUrl, useTranslations } from '~/lib/i18n';
 
@@ -45,6 +46,7 @@ const pageDescription = description ?? t('tagline');
 
     <div class={fullBleed ? 'flex h-full flex-col' : 'flex min-h-dvh flex-col'}>
       <Nav locale={locale} />
+      <LiveAircraftBanner locale={locale} />
       <main id="main" class={fullBleed ? 'relative min-h-0 flex-1' : 'flex-1'} tabindex="-1">
         <slot />
       </main>
