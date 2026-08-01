@@ -104,6 +104,24 @@ export const THREAD_STOPS = DENSITY_STOPS.slice(hotEnd()).map(
 );
 
 /**
+ * The colour of a cord — the heavy thread that fuses one body of mesh to the
+ * next.
+ *
+ * Off the thread ramp on purpose, because a cord answers a different question
+ * than the ramp encodes, and out of the same palette anyway so the map still
+ * reads as one system. It is the ramp's own first class, opaque: luminocity's
+ * pale mint fringe, the colour of the sparsest ground there is. That is the
+ * right end of the palette for a strand whose whole job is to cross country
+ * with nothing in it, and against a hot mesh of crimson and gold it cannot be
+ * mistaken for one. Near-white also clears the background by a wide margin,
+ * which the ramp's cool middle does not — see `hotEnd` below.
+ */
+export const CORD_STROKE = DENSITY_STOPS[0][1].replace(
+  /rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/,
+  'rgb($1,$2,$3)',
+);
+
+/**
  * The ramp as a CSS gradient for the legend.
  *
  * The swatch sits on the panel background rather than the map, so the

@@ -34,6 +34,8 @@ export interface ClientLayer {
   filament?: boolean;
   /** Colour this line layer by the size of each record's connected network. */
   networkColor?: { key: string; maxRecords: number };
+  /** A second, heavier tier of line inside the same filament layer. */
+  cordTier?: { key: string; value: string; color: string };
   /** The request a reader can file about one of these records, if any. */
   action?: {
     requestType: string;
@@ -702,14 +704,53 @@ export class MapController {
         ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords)
         : (layer.color as unknown as maplibregl.ExpressionSpecification);
 
-      const widthByZoom = (stops: Array<[number, number]>) =>
-        [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          ...stops.flat(),
-        ] as unknown as maplibregl.ExpressionSpecification;
       if (layer.filament) {
+        /*
+         * Two tiers, where the layer carries two kinds of line.
+         *
+         * The mesh is the fine tissue: short, dense, coloured by the ramp. The
+         * cords are the trunks that fuse one patch of mesh to the next — wide,
+         * pale, one colour, and drawn underneath so the mesh always sits on top
+         * of them.
+         *
+         * `byTier` returns the cord value where a layer declares a cord tier
+         * and the mesh value everywhere else, so a filament layer with only
+         * one kind of line is left exactly as it was.
+         */
+        const cord = layer.cordTier;
+        const byTier = (mesh: unknown, cordValue: unknown) =>
+          (cord
+            ? ['case', ['==', ['get', cord.key], cord.value], cordValue, mesh]
+            : mesh) as unknown as maplibregl.ExpressionSpecification;
+        // Cords stay off the network ramp: it says how many reader locations a
+        // mesh body holds, and a cord belongs to two bodies at once.
+        const threadByTier = cord ? byTier(thread, cord.color) : thread;
+        // Painted first within the layer, so the mesh sits on top of the trunk
+        // rather than the other way round. MapLibre sorts ascending.
+        const sortByTier = byTier(1, 0);
+
+        /*
+         * Both tiers' widths and opacities, as one ramp over zoom.
+         *
+         * The zoom interpolation has to be the outer expression and there may
+         * only be one of them: a `case` picking between two zoom ramps looks
+         * like the obvious way to write this and MapLibre rejects it outright,
+         * taking the whole layer down with it rather than falling back. So the
+         * zoom ramp is on the outside and each of its stops is where the two
+         * tiers differ.
+         *
+         * A stop is `[zoom, mesh, cord]`. With no cord tier declared the inner
+         * choice collapses to the mesh number and this is an ordinary zoom
+         * ramp, which is what every other filament layer gets.
+         */
+        const byZoomAndTier = (stops: Array<[number, number, number]>) =>
+          [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            ...stops.flatMap(([at, mesh, cordValue]) => [at, byTier(mesh, cordValue)]),
+          ] as unknown as maplibregl.ExpressionSpecification;
+
         // A soft halo, wide and heavily blurred, so the thread looks like it is
         // lit from inside rather than drawn on top of the map.
         this.map.addLayer(
@@ -717,10 +758,18 @@ export class MapController {
             id: `${layer.id}-line-casing`,
             type: 'line',
             source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
             paint: {
-              'line-color': thread,
-              'line-opacity': 0.3,
+              'line-color': threadByTier,
+              // On a cord the halo is not the supporting half, it is the strand.
+              // Almost all of a cord's visible presence is here, in something
+              // with no edge to it, which is why it holds a touch more than the
+              // mesh's halo at state zoom and why the core it wraps is so faint.
+              'line-opacity': byZoomAndTier([
+                [5, 0.3, 0.34],
+                [9, 0.3, 0.28],
+                [13, 0.3, 0.14],
+              ]),
               /*
                * Blur is paid per pixel covered, and this layer now covers a
                * great deal more of them: every link is drawn whole where half
@@ -729,16 +778,46 @@ export class MapController {
                * metro block is the difference between a haze and a legible
                * thread anyway — the old figures were tuned when there were
                * fewer lines to pile on top of each other.
+               *
+               * Cords are blurred far harder than the mesh, and that single
+               * number is most of what makes them read as tissue rather than as
+               * a road atlas. A cord follows a highway for tens of miles, and
+               * drawn crisply that is exactly what it looks like — a route
+               * somebody planned, which is the one thing it is not. Spread past
+               * its own width it stops having an edge, and something without an
+               * edge reads as grown rather than drawn. It is also the honest
+               * picture: a cord is the shortest road that happened to connect
+               * two clusters nobody coordinated, and a soft strand claims about
+               * as much precision as that deserves.
+               *
+               * Past zoom 13 the cord's blur comes back down, and this is the
+               * one number in the layer set for the machine rather than for the
+               * reader. Blur is paid per pixel covered and cords are 2,900 miles
+               * of line against the mesh's 600, so at a wide blur they are
+               * something like eight times the mesh's fill cost — while sitting
+               * at a tenth of its opacity, on the one view where the mesh is
+               * densest and the map has the most else to draw. Coming down
+               * costs a cord nothing anybody can see at that zoom and gives the
+               * frame back to the tier being looked at.
                */
-              'line-blur': ['interpolate', ['linear'], ['zoom'], 5, 2, 11, 5, 16, 9],
+              'line-blur': byZoomAndTier([
+                [5, 2, 7],
+                [11, 5, 14],
+                [13, 7, 12],
+                [16, 9, 6],
+              ]),
               // The map opens on the whole state, where the median corridor is
               // under three pixels long. A thread that is also thin there is a
               // thread nobody can find, so the glow starts wide and the line
               // grows into it rather than out of nothing.
-              'line-width': widthByZoom([
-                [5, 6],
-                [11, 9],
-                [16, 16],
+              // The cord's halo narrows past zoom 13 for the same reason its
+              // blur does, and the two together are what keep a metro view
+              // cheap: width and blur both multiply the pixels a cord costs.
+              'line-width': byZoomAndTier([
+                [5, 6, 9],
+                [11, 9, 15],
+                [13, 11, 14],
+                [16, 16, 10],
               ]),
             },
           },
@@ -755,14 +834,42 @@ export class MapController {
             id: `${layer.id}-line`,
             type: 'line',
             source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
             paint: {
-              'line-color': thread,
-              'line-opacity': 0.55,
-              'line-width': widthByZoom([
-                [5, 2.6],
-                [11, 3.2],
-                [16, 5],
+              'line-color': threadByTier,
+              /*
+               * A cord's core is kept well under the mesh's, and narrow.
+               *
+               * The instinct when a cord is hard to make out is to turn it up,
+               * and that was tried: at full strength the cords are perfectly
+               * visible and the map turns into a road atlas with some cameras
+               * on it. A bright hard line is the most authored mark there is,
+               * and a cord is the least authored thing here — the shortest road
+               * that happens to join two clusters nobody planned together.
+               *
+               * So the core is a filament inside the glow rather than a line
+               * with a glow around it. Presence comes from width and from the
+               * heavily blurred halo above; this only keeps the strand from
+               * dissolving into pure haze at the centre. It stays under the
+               * mesh at every zoom, because the mesh is the stronger claim and
+               * should always be the brighter mark.
+               *
+               * It does still lift where the whole state is in frame. At that
+               * zoom the mesh is a few pixels of haze and the cords are the
+               * only structure carrying the finding that these cameras are one
+               * connected thing. No cord's data changes across the ramp — the
+               * miles on the strand and the panel read the same at every zoom.
+               */
+              'line-opacity': byZoomAndTier([
+                [5, 0.55, 0.3],
+                [9, 0.55, 0.24],
+                [13, 0.55, 0.12],
+              ]),
+              'line-width': byZoomAndTier([
+                [5, 2.6, 2.4],
+                [11, 3.2, 4],
+                [13, 3.7, 3.8],
+                [16, 5, 3],
               ]),
             },
           },
