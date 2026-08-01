@@ -11,7 +11,7 @@ geocoding records that arrive without coordinates, joining layers on Census
 county identifiers, and the compiled outputs that result — is released under
 **[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)**.
 
-Attribute it as: *get-flocked contributors*, with a link to this repository.
+Attribute it as: *FlockOff contributors*, with a link to this repository.
 
 ## What we cannot license
 

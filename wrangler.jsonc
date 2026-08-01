@@ -20,7 +20,10 @@
   //   Build output dir:     dist
   //   Node version:         22  (see "engines" in package.json)
 
-  "name": "get-flocked",
+  // The Cloudflare Pages project, which is the Minnesota deployment of FlockOff
+  // and carries the state in its name. The project is FlockOff; this is where
+  // this instance of it is served from, and the two are not the same string.
+  "name": "flockoffmn",
   "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-07-30",
 
