@@ -134,6 +134,16 @@ export interface FilterDefinition {
    */
   kind: 'enum' | 'dateRange';
   /**
+   * A short meaning shown beside an enum value's checkbox.
+   *
+   * For filters whose values are codes — a HOLC grade, a status abbreviation —
+   * the letter alone makes the reader leave the panel to find out what they
+   * are toggling. One line each, and where the code encoded something about
+   * people, the line says so plainly rather than leaving the euphemism to
+   * stand: that is the cultural record the filter is switching.
+   */
+  valueDescriptions?: Record<string, I18nString>;
+  /**
    * `enum` only: values present in the data but unticked on first load.
    *
    * For records that are real and worth finding but would mislead if drawn by

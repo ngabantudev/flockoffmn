@@ -549,7 +549,33 @@ export const LAYERS: LayerDefinition[] = [
       refresh: 'rare',
     },
     filters: [
-      { key: 'grade', kind: 'enum', label: { en: 'HOLC grade', es: 'Calificación HOLC' } },
+      {
+        key: 'grade',
+        kind: 'enum',
+        label: { en: 'HOLC grade', es: 'Calificación HOLC' },
+        valueDescriptions: {
+          A: {
+            en: '“Best.” New and homogeneous — in practice, restricted to white residents.',
+            es: '«Mejor». Nuevo y homogéneo: en la práctica, restringido a residentes blancos.',
+          },
+          B: {
+            en: '“Still Desirable.” Expected to hold value; white neighbourhoods past their newest years.',
+            es: '«Aún deseable». Se esperaba que mantuviera su valor; barrios blancos ya no tan nuevos.',
+          },
+          C: {
+            en: '“Definitely Declining.” Marked down for the arrival of Black, Jewish and immigrant residents.',
+            es: '«En claro declive». Degradado por la llegada de residentes negros, judíos e inmigrantes.',
+          },
+          D: {
+            en: '“Hazardous.” Outlined in red — redlined — with lending withheld on explicitly racial grounds.',
+            es: '«Peligroso». Delineado en rojo — redlined — con el crédito negado por motivos explícitamente raciales.',
+          },
+          E: {
+            en: 'Commercial or industrial land, recorded without a residential grade.',
+            es: 'Suelo comercial o industrial, registrado sin calificación residencial.',
+          },
+        },
+      },
       { key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } },
       {
         key: 'groupsNamed',
