@@ -1241,20 +1241,35 @@ export class MapController {
     this.emitCounts();
   }
 
+  /** Where the reader was before a filter first moved the camera. */
+  private preFilterCamera: { center: maplibregl.LngLat; zoom: number } | null = null;
+
+  private anyActiveFilters(): boolean {
+    for (const state of this.filters.values()) if (state.size > 0) return true;
+    return false;
+  }
+
   setFilter(layerId: string, key: string, values: Set<string>) {
     if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
     const state = this.filters.get(layerId)!;
-    const prev = state.get(key);
+    const activeBefore = this.anyActiveFilters();
     if (values.size === 0) state.delete(key);
     else state.set(key, values);
     this.refresh(layerId);
-    // Zoom only when this change narrowed the selection: the key is newly
-    // active (no previous set means everything was showing), or a previously
-    // allowed value was removed. Pure broadening — re-ticking a value —
-    // widens what is drawn without asking to be taken anywhere.
-    const narrowed =
-      values.size > 0 && (prev === undefined || [...prev].some((v) => !values.has(v)));
-    if (narrowed) this.zoomToFiltered(layerId);
+    // Filtering is a round trip. The moment the first filter comes on, the
+    // camera's position is saved and the view goes to the metro frame; every
+    // further filter change re-frames the same way; and when the last filter
+    // comes off, the reader is put back exactly where they were standing
+    // before the trip began.
+    if (this.anyActiveFilters()) {
+      if (!activeBefore) {
+        this.preFilterCamera = { center: this.map.getCenter(), zoom: this.map.getZoom() };
+      }
+      this.zoomToFiltered(layerId);
+    } else if (activeBefore && this.preFilterCamera) {
+      this.map.easeTo({ ...this.preFilterCamera, duration: REDUCED_MOTION ? 0 : 600 });
+      this.preFilterCamera = null;
+    }
   }
 
   /**
@@ -1262,11 +1277,9 @@ export class MapController {
    *
    * Picking "Duluth" and then panning around Minneapolis looking for the
    * records is the reader doing work the map already knows how to do. Runs
-   * only while a filter is actively narrowing a visible layer with matches;
-   * `setFilter` additionally gates it to changes that narrowed the selection,
-   * so un-narrowing — re-ticking a value, restoring every box, clearing the
-   * filters — moves nothing, because where the reader is looking is theirs
-   * unless they just asked a question whose answer is somewhere else.
+   * whenever a filter change leaves the layer actively narrowed, visible and
+   * with matches; `setFilter` owns the round trip — saving the camera before
+   * the first filter and restoring it after the last.
    */
   private zoomToFiltered(layerId: string) {
     const state = this.filters.get(layerId);
@@ -1312,6 +1325,12 @@ export class MapController {
     if (layerId) this.filters.delete(layerId);
     else this.filters.clear();
     for (const id of layerId ? [layerId] : this.data.keys()) this.refresh(id);
+    // The same round trip as setFilter: clearing the last active filter puts
+    // the reader back where they were before filtering moved them.
+    if (!this.anyActiveFilters() && this.preFilterCamera) {
+      this.map.easeTo({ ...this.preFilterCamera, duration: REDUCED_MOTION ? 0 : 600 });
+      this.preFilterCamera = null;
+    }
   }
 
   /** Features of a layer that pass its current filters. */
