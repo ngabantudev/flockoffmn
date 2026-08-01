@@ -48,6 +48,30 @@ export type Confidence = 'confirmed' | 'reported' | 'probabilistic';
 /** How often the upstream source is expected to change. */
 export type RefreshCadence = 'frequent' | 'periodic' | 'rare';
 
+/**
+ * A source that contributed to a layer without being its spine.
+ *
+ * Most layers have one upstream file and one citation. Some are assembled: a
+ * base dataset plus facts transcribed from several trackers, each of which
+ * asserts something the others do not. Crediting only the base would name the
+ * wrong publisher for half the fields on screen.
+ */
+export interface SourceRef {
+  /** Short key used in the data files to tag which source asserts a fact. */
+  key: string;
+  /** Publisher or project name, as they style it. */
+  name: string;
+  url: string;
+  /**
+   * The terms as they actually are, not as we would like them to be. Several
+   * useful trackers are all-rights-reserved; saying so is part of the citation.
+   */
+  license: string;
+  licenseUrl: string | null;
+  /** What this source contributed, so a reader can weigh it. */
+  contributes: I18nString;
+}
+
 /** Provenance travels with the layer, and is shown anywhere the data is. */
 export interface Provenance {
   /** Human-readable dataset name, e.g. "ICE participating agencies". */
@@ -71,6 +95,11 @@ export interface Provenance {
    */
   lastUpdated: string | null;
   refresh: RefreshCadence;
+  /**
+   * Additional publishers whose facts appear in this layer. Empty for the
+   * common single-source case; the sources page renders each one it finds.
+   */
+  secondarySources?: SourceRef[];
 }
 
 /** One record in a layer. Mirrors the GeoJSON `properties` object on disk. */
@@ -99,6 +128,15 @@ export interface FilterDefinition {
    * `dateRange` renders as a signed-before/after control.
    */
   kind: 'enum' | 'dateRange';
+  /**
+   * `enum` only: values present in the data but unticked on first load.
+   *
+   * For records that are real and worth finding but would mislead if drawn by
+   * default — a data-center proposal that was withdrawn is exactly the record
+   * an organizer wants, and exactly the dot that should not read as a building.
+   * The value still appears in the filter, so nothing is hidden, only unticked.
+   */
+  defaultExcluded?: string[];
 }
 
 /** How to render one attribute in the detail panel (spec F5). */
