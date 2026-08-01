@@ -31,6 +31,17 @@ export const MN_BOUNDS: [[number, number], [number, number]] = [
 
 export const MN_CENTER: [number, number] = [-94.2, 46.3];
 
+/**
+ * The Twin Cities metro: both downtowns and the suburban ring, from Anoka
+ * down past Lakeville, Lake Minnetonka across to Woodbury. The frame a
+ * filter zooms to by default, so successive filters land on a steady view
+ * that always holds Minneapolis and St. Paul together.
+ */
+export const METRO_BOUNDS: [[number, number], [number, number]] = [
+  [-93.75, 44.64],
+  [-92.74, 45.31],
+];
+
 export function baseStyle(): StyleSpecification {
   return {
     version: 8,
