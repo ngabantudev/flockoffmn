@@ -16,23 +16,16 @@ export const en: Record<string, string> = {
   navContribute: 'Contribute',
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
-  skipToMap: 'Skip to map',
 
   // Map chrome
   layers: 'Layers',
-  legend: 'Legend',
   filters: 'Filters',
-  toggleLayer: 'Toggle layer',
-  showLayer: 'Show',
-  hideLayer: 'Hide',
+  layersOn: 'layers switched on',
   clearFilters: 'Clear filters',
   filtersCleared: 'Filters cleared',
-  featuresShown: 'shown',
   ofTotal: 'of',
   loading: 'Loading map data…',
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
-  zoomIn: 'Zoom in',
-  zoomOut: 'Zoom out',
   resetView: 'Reset to Minnesota',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
@@ -138,7 +131,6 @@ export const en: Record<string, string> = {
   limitations: 'Limitations',
   county: 'County',
   viewRecord: 'View the original record',
-  downloadLayer: 'Download this layer',
 
   // Spacing diagram in the detail panel. The summary is the diagram's
   // accessible equivalent, so it carries the same offsets the drawing does.
@@ -156,11 +148,6 @@ export const en: Record<string, string> = {
 
   // Honest-limits banner
   limitsTitle: 'What this is, and what it is not',
-  limitsNotLive: 'Not a live tracker. This shows where infrastructure has been recorded, never where any person is.',
-  limitsNotPeople: 'Never about people. Every record describes an institution, a building, a contract, or a policy.',
-  limitsNotLegal: 'Not legal advice. The action tools are informational.',
-  limitsIncomplete: 'Incomplete by nature. Every layer is dated, partial, or approximate — each one says how.',
-  dismiss: 'Dismiss',
 
   // Footer
   openSource: 'Open source',
