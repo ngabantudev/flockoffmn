@@ -354,11 +354,16 @@ export async function loadCounties() {
   return JSON.parse(await readFile(p, 'utf8'));
 }
 
-/** Normalise "St. Louis County" / "ST LOUIS CO." -> "st louis" for matching. */
+/** Normalise "St. Louis County" / "ST LOUIS CO." / "Saint Louis" -> "st louis". */
 export function normaliseCounty(name) {
   return (name ?? '')
     .toLowerCase()
     .replace(/\bcounty\b|\bco\.?\b|\bparish\b|\bborough\b/g, '')
+    // "Saint" and "St." are the same county spelled two ways, and publishers
+    // disagree: the Census writes "St. Louis", MnDOT writes "Saint Louis". Fold
+    // the long form first or the abbreviation rule below never sees it — that
+    // gap silently cost 2,194 road segments their county on first ingest.
+    .replace(/\bsaint\b/g, 'st')
     .replace(/\bst\.?\b/g, 'st')
     .replace(/[^a-z0-9 ]/g, '')
     .replace(/\s+/g, ' ')
