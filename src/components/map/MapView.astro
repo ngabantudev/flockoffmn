@@ -386,6 +386,21 @@ const strings = {
     >
       {t('resetView')}
     </button>
+
+    {/*
+      On-map keys for colour-coded layers, one bar per visible layer that
+      declares categoryColors, in the manner of the density spectrum swatch.
+      Rebuilt from the layer toggles on every change, so a key can never
+      outlive the layer it explains. aria-hidden because the same table
+      already exists accessibly in the layer panel beside the map — this is
+      the glanceable duplicate, not the record.
+    */}
+    <div
+      id="map-keys"
+      class="pointer-events-none absolute bottom-8 left-2 z-10 flex w-56 max-w-[70vw] flex-col gap-1.5"
+      aria-hidden="true"
+    >
+    </div>
   </div>
 
   {/* --------------------------- Detail panel --------------------------- */}
@@ -773,6 +788,63 @@ const strings = {
    * headings agree with the map afterwards.
    */
   const groupEls = document.querySelectorAll<HTMLDetailsElement>('[data-layer-group]');
+
+  /**
+   * The on-map keys, rebuilt from the toggles' current state.
+   *
+   * Generated from the same categoryColors table as the paint expression and
+   * the panel swatches, so the three cannot disagree. Every value is labelled
+   * beneath its own segment when the values are short enough to fit; a longer
+   * scale labels its two ends, which for an ordered ramp (decades, bands) is
+   * the reading that matters.
+   */
+  const mapKeysEl = document.getElementById('map-keys');
+  function refreshMapKeys() {
+    if (!mapKeysEl) return;
+    mapKeysEl.replaceChildren();
+    for (const layer of layers) {
+      const cc = layer.categoryColors;
+      if (!cc) continue;
+      const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${layer.id}"]`);
+      if (!input?.checked) continue;
+
+      const card = document.createElement('div');
+      card.className = 'rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm';
+
+      const title = document.createElement('p');
+      title.className = 'mb-1 truncate text-[10px] leading-tight text-ink-300';
+      title.textContent = cc.label;
+      card.appendChild(title);
+
+      const bar = document.createElement('div');
+      bar.className = 'flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800';
+      for (const c of cc.colors) {
+        const seg = document.createElement('span');
+        seg.className = 'h-full flex-1';
+        seg.style.background = c.color;
+        bar.appendChild(seg);
+      }
+      card.appendChild(bar);
+
+      const labelEach = cc.colors.every((c) => c.value.length <= 3);
+      const row = document.createElement('p');
+      row.className = 'mt-0.5 flex justify-between gap-1 text-[10px] leading-tight text-ink-400';
+      const values = labelEach
+        ? cc.colors.map((c) => c.value)
+        : [cc.colors[0]?.value ?? '', cc.colors[cc.colors.length - 1]?.value ?? ''];
+      for (const [i, value] of values.entries()) {
+        const span = document.createElement('span');
+        if (labelEach) span.className = 'flex-1 text-center';
+        else span.className = i === 0 ? '' : 'text-right';
+        span.textContent = value;
+        row.appendChild(span);
+      }
+      card.appendChild(row);
+
+      mapKeysEl.appendChild(card);
+    }
+  }
+
   function refreshGroups() {
     groupEls.forEach((group) => {
       const toggles = [...group.querySelectorAll<HTMLInputElement>('[data-layer-toggle]')];
@@ -783,6 +855,7 @@ const strings = {
         dot?.classList.toggle('opacity-25', !toggle.checked);
       }
     });
+    refreshMapKeys();
   }
 
   document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
