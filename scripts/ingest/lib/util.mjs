@@ -315,6 +315,42 @@ export async function writeLayer(slug, { layer, provenance, knownGaps = [], feat
   };
 
   const geojsonPath = path.join(PUBLIC_DATA, `${slug}.geojson`);
+
+  /*
+   * Leave the file alone when only the clock moved.
+   *
+   * `lastUpdated` is stamped on every run, so re-running the ingest always
+   * produced a different file even when the publisher had issued nothing —
+   * and the weekly refresh workflow decides whether to open a pull request by
+   * asking `git diff --quiet -- public/data`, which could therefore never be
+   * quiet. Every week committed a fresh copy of every layer to say that
+   * nothing had changed. That was affordable while the largest file was under
+   * two megabytes; a 20 MB road layer makes it hundreds of megabytes of
+   * history a year, and git history does not get smaller later.
+   *
+   * So the comparison ignores the timestamp. If everything else is byte-for-
+   * byte identical the file is left exactly as it is, `lastUpdated` keeps the
+   * date the data itself last moved, and the workflow's diff stays quiet
+   * because there is genuinely nothing to report.
+   */
+  const withoutClock = (doc) => {
+    const { lastUpdated: _ignored, ...rest } = doc.metadata;
+    return JSON.stringify({ ...doc, metadata: rest });
+  };
+  let unchanged = false;
+  try {
+    const previous = JSON.parse(await readFile(geojsonPath, 'utf8'));
+    unchanged = withoutClock(previous) === withoutClock(collection);
+    if (unchanged) collection.metadata.lastUpdated = previous.metadata.lastUpdated;
+  } catch {
+    // No previous file, or one we cannot parse. Write a fresh one.
+  }
+
+  if (unchanged) {
+    log(slug, `${features.length} features, unchanged since ${collection.metadata.lastUpdated}`);
+    return collection;
+  }
+
   await writeFile(geojsonPath, JSON.stringify(collection));
   log(slug, `wrote ${features.length} features -> public/data/${slug}.geojson`);
 

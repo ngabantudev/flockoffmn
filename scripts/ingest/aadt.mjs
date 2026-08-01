@@ -66,6 +66,19 @@ const ROUTE_CLASSES = [
   ['MSAS', 'Municipal state-aid street'],
 ];
 
+/**
+ * Drop the keys with nothing in them.
+ *
+ * A null attribute still costs its key and six bytes of `":null,"` in the
+ * file, and every consumer here — the filter builder, the detail panel, the
+ * map's own expressions — already treats a missing key and a null one the
+ * same way. On a layer with 40,344 records that is most of a megabyte to say
+ * nothing, which the browser then has to parse before it can draw a road.
+ */
+function without(attributes) {
+  return Object.fromEntries(Object.entries(attributes).filter(([, v]) => v !== null));
+}
+
 function clean(v) {
   const s = (v ?? '').toString().trim();
   // MnDOT writes a bare hyphen where a community does not apply.
@@ -203,15 +216,20 @@ async function main() {
         // estimate from a count taken in CURRENT_YEAR and carried forward
         // un-adjusted. That is a reported figure, not a measured one for today.
         confidence: 'reported',
-        sourceDate: p.CURRENT_YEAR ? `${p.CURRENT_YEAR}-01-01` : null,
-        attributes: {
+        // A year, not a date. This once carried `${year}-01-01`, which put a
+        // January the first on 40,344 records that MnDOT dates only to the
+        // year — a fabricated precision the detail panel then displayed as
+        // though it were the day of the count. The year is in `countYear`,
+        // where it is labelled as what it is.
+        sourceDate: null,
+        attributes: without({
           aadt: volume,
           countYear: p.CURRENT_YEAR ?? null,
           roadClass: roadClass(route),
-          // The route label and the location description are both already in
-          // `name`, and at 40,344 records a duplicated string is megabytes. The
-          // street name is kept only where there is no route label, because
-          // there it is the only identity the segment has.
+          // Only where there is no route label, because there it is the
+          // segment's only identity. Everywhere else the route and the
+          // location are already in `name`, and at 40,344 records a
+          // duplicated string is megabytes.
           streetName: route ? null : street,
           community: clean(p.COMMUNITY),
           jurisdiction: clean(p.JURISDICTION),
@@ -221,7 +239,7 @@ async function main() {
           // spelling them out here would be inventing the meaning.
           dataType: clean(p.DATA_TYPE),
           collectionCycle: clean(p.COLLECTION_CYCLE),
-        },
+        }),
       },
     });
   }

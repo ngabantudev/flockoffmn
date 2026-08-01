@@ -61,7 +61,14 @@ export interface Provenance {
   attribution: string;
   /** Date the upstream data itself was published/effective (ISO 8601). */
   sourceDate: string | null;
-  /** When our ingest last ran (ISO 8601). */
+  /**
+   * When this layer's data last actually changed (ISO 8601).
+   *
+   * Not when the ingest last ran. A weekly re-pull that finds the publisher
+   * has issued nothing leaves the file untouched, timestamp included — so this
+   * answers "how old is what I am looking at", which is the question a reader
+   * has, rather than "when did a cron job last succeed", which is ours.
+   */
   lastUpdated: string | null;
   refresh: RefreshCadence;
 }

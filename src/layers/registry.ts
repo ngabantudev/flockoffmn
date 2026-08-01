@@ -840,7 +840,6 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'roadClass', label: { en: 'Road class', es: 'Clase de vía' } },
       { key: 'jurisdiction', label: { en: 'Who owns the road', es: 'Quién es propietario de la vía' } },
       { key: 'community', label: { en: 'City', es: 'Ciudad' } },
-      { key: 'streetName', label: { en: 'Street name', es: 'Nombre de la calle' } },
       {
         key: 'collectionCycle',
         label: { en: 'Years between counts', es: 'Años entre conteos' },
