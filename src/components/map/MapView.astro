@@ -346,10 +346,7 @@ const strings = {
                                             data-filter-layer={layer.id}
                                             data-filter-key={filter.key}
                                             value={value}
-                                            checked={
-                                              filter.defaultExcluded!.length > 0 &&
-                                              !filter.defaultExcluded!.includes(value)
-                                            }
+                                            checked={!filter.defaultExcluded!.includes(value)}
                                             class="mt-0.5 h-3.5 w-3.5 shrink-0"
                                           />
                                           {/*
@@ -630,9 +627,9 @@ const strings = {
     return wrap;
   }
 
-  function renderDetail(feature: LoadedFeature | null, layer: ClientLayer) {
+  function renderDetail(feature: LoadedFeature | null, layer?: ClientLayer) {
     detailEl.textContent = '';
-    if (!feature) {
+    if (!feature || !layer) {
       detailEl.hidden = true;
       return;
     }
