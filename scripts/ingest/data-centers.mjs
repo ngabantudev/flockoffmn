@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * L4 — Data centres.
+ * L4 — Data centers.
  *
- * FracTracker Alliance compiles data-centre locations from permit records
+ * FracTracker Alliance compiles data-center locations from permit records
  * obtained by FOIA. Their master file is published as an ArcGIS feature
  * service, which we query directly rather than scraping the map viewer.
  *
@@ -249,7 +249,7 @@ async function main() {
 
   const raw = (geo.features ?? []).filter((f) => f.geometry?.coordinates?.length === 2);
   log('data-centers', `${total} facilities nationally; ${raw.length} in scope (${NATIONAL ? 'national' : STATE_USPS})`);
-  if (!raw.length) throw new Error(`no data centres found for ${STATE_USPS}`);
+  if (!raw.length) throw new Error(`no data centers found for ${STATE_USPS}`);
 
   const features = raw.map((f) => {
     const p = f.properties ?? {};
@@ -423,7 +423,7 @@ async function main() {
   await writeLayer('data-centers', {
     layer: 'data_center',
     provenance: {
-      source: 'FracTracker Alliance — data centres identified via FOIA permit requests',
+      source: 'FracTracker Alliance — data centers identified via FOIA permit requests',
       sourceUrl: LANDING,
       datasetUrl: SERVICE,
       license: 'FracTracker Alliance terms — attribution required, non-commercial use',
@@ -434,7 +434,7 @@ async function main() {
       nationalFacilityCount: total,
     },
     knownGaps: [
-      'This is a contextual layer, not a facility register. Data centres appear here because they are the physical substrate the surveillance systems on this map run on, and because they impose local costs — power, water, land, tax abatements — that a resident can raise at a council meeting. Do not cite it as an authoritative inventory.',
+      'This is a contextual layer, not a facility register. Data centers appear here because they are the physical substrate the surveillance systems on this map run on, and because they impose local costs — power, water, land, tax abatements — that a resident can raise at a council meeting. Do not cite it as an authoritative inventory.',
       'The permit records are compiled from FOIA filings. A permit is not proof a facility was built, and a built facility may have changed hands since.',
       'Status, capacity and operator for the larger projects are transcribed from four public trackers, none of which publishes an open licence or an API, and all of which describe themselves as incomplete or provisional.',
       'The trackers contradict each other. Where they disagree about a project’s status, the record is marked disputed, shows the most conservative claim, and prints what each source said rather than resolving it.',

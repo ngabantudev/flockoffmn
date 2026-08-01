@@ -667,7 +667,7 @@ export const LAYERS: LayerDefinition[] = [
     category: 'infrastructure',
     order: 6,
     label: {
-      en: 'Data centres',
+      en: 'Data centers',
       es: 'Centros de datos',
     },
     summary: {
@@ -675,7 +675,7 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Grandes instalaciones de cómputo, sus operadores y fuentes de energía, y dónde las comunidades se organizan contra ellas.',
     },
     whatThisMeans: {
-      en: 'Data centres are the physical substrate the rest of this map runs on: the storage and compute behind plate-reader networks, records systems and the analytics sold to agencies. They also carry immediate local consequences — electricity and water demand, land use, noise, tax abatements, and grid costs borne by other ratepayers. Where a community has organised in response, this layer surfaces the campaign so you can find it rather than start from nothing.',
+      en: 'Data centers are the physical substrate the rest of this map runs on: the storage and compute behind plate-reader networks, records systems and the analytics sold to agencies. They also carry immediate local consequences — electricity and water demand, land use, noise, tax abatements, and grid costs borne by other ratepayers. Where a community has organised in response, this layer surfaces the campaign so you can find it rather than start from nothing.',
       es: 'Los centros de datos son el sustrato físico sobre el que funciona el resto de este mapa: el almacenamiento y el cómputo detrás de las redes de lectores de matrículas, los sistemas de registros y las analíticas vendidas a las agencias. También tienen consecuencias locales inmediatas: demanda de electricidad y agua, uso del suelo, ruido, exenciones fiscales y costos de red que pagan otros usuarios. Donde una comunidad se ha organizado, esta capa muestra la campaña para que pueda encontrarla en lugar de empezar de cero.',
     },
     limitations: [
@@ -711,7 +711,7 @@ export const LAYERS: LayerDefinition[] = [
     dataPath: '/data/data-centers.geojson',
     csvPath: '/data/data-centers.csv',
     provenance: {
-      source: 'FracTracker Alliance — national data centre database',
+      source: 'FracTracker Alliance — national data center database',
       sourceUrl: 'https://www.fractracker.org/data-centers/',
       license: 'CC BY-NC 4.0',
       licenseUrl: 'https://creativecommons.org/licenses/by-nc/4.0/',
@@ -796,9 +796,9 @@ export const LAYERS: LayerDefinition[] = [
     ],
     nearMe: {
       mode: 'nearest',
-      title: { en: 'Nearest data centre', es: 'Centro de datos más cercano' },
+      title: { en: 'Nearest data center', es: 'Centro de datos más cercano' },
       empty: {
-        en: 'No data centre in this dataset is near this point.',
+        en: 'No data center in this dataset is near this point.',
         es: 'Ningún centro de datos de este conjunto de datos está cerca de este punto.',
       },
       detail: ['city'],

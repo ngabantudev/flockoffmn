@@ -2,7 +2,7 @@
 /**
  * Roadway traffic volume — MnDOT Annual Average Daily Traffic.
  *
- * The substrate layer's missing half. Data centres are where the computing
+ * The substrate layer's missing half. Data centers are where the computing
  * sits; this is the ground the recording actually happens on — how much
  * traffic each stretch of Minnesota road carries in an average day, counted by
  * the agency that owns the roads.

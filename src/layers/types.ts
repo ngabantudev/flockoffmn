@@ -132,7 +132,7 @@ export interface FilterDefinition {
    * `enum` only: values present in the data but unticked on first load.
    *
    * For records that are real and worth finding but would mislead if drawn by
-   * default — a data-centre proposal that was withdrawn is exactly the record
+   * default — a data-center proposal that was withdrawn is exactly the record
    * an organizer wants, and exactly the dot that should not read as a building.
    * The value still appears in the filter, so nothing is hidden, only unticked.
    */

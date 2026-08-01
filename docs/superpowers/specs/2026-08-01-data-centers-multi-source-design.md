@@ -1,4 +1,4 @@
-# Data centres — multi-source build-out
+# Data centers — multi-source build-out
 
 **Date:** 2026-08-01
 **Layer:** `data_center` (L4)
@@ -18,7 +18,7 @@ Monticello, and the string of proposals that were withdrawn after people
 organised against them.
 
 This layer is **contextual, not authoritative**. The site's subject is mass
-surveillance infrastructure; data centres appear because they are the physical
+surveillance infrastructure; data centers appear because they are the physical
 substrate that storage, analytics and plate-reader networks run on, and because
 they impose local costs — power, water, land, abatements — that give people a
 reason to show up to a council meeting. The layer is informational. It is not a
@@ -101,7 +101,7 @@ FracTracker ArcGIS query (MN permit records)
 | `LICENSE-DATA.md` | record the four trackers and the transcription rationale |
 
 The two schema additions are generic capabilities available to every layer, not
-data-centre special cases. The sources page can currently render exactly one
+data-center special cases. The sources page can currently render exactly one
 citation per layer, which is why four sources cannot be credited today.
 
 ### Curated entry schema
