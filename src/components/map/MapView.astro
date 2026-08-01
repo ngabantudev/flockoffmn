@@ -401,16 +401,6 @@ const strings = {
         }
       </ul>
     </div>
-
-    {/* Accessible equivalent of the canvas: every drawn record, as a list. */}
-    <div class="border-t border-ink-800 p-3">
-      <h2 class="mb-2 text-xs font-semibold tracking-wider text-ink-400 uppercase">
-        {t('legend')}
-      </h2>
-      <ul id="record-list" class="scroll-slim max-h-72 space-y-0.5 overflow-y-auto text-sm">
-        <li class="text-xs text-ink-400" data-empty>{t('noResults')}</li>
-      </ul>
-    </div>
   </aside>
 
   {/* ------------------------------ Map ------------------------------ */}
@@ -473,7 +463,6 @@ const strings = {
   const mapEl = document.getElementById('map')!;
   const detailEl = document.getElementById('detail-panel')!;
   const statusEl = document.getElementById('map-status')!;
-  const recordList = document.getElementById('record-list')!;
 
   // Keyed by plain string: lookups come from DOM datasets and event payloads,
   // which are untyped by definition.
@@ -492,7 +481,6 @@ const strings = {
         const el = document.querySelector(`[data-count="${id}"]`);
         if (el) el.textContent = String(shown);
       }
-      renderRecordList();
     },
     onLayerReady: (id) => status(`${layerById.get(id)?.label ?? id} ✓`),
     onError: (id, message) =>
@@ -808,49 +796,6 @@ const strings = {
     detailEl.append(header, body);
     detailEl.hidden = false;
     detailEl.scrollTop = 0;
-  }
-
-  /* ---------------------------- Record list ----------------------------- */
-
-  function renderRecordList() {
-    const visible = layers.filter((l) => controller.isVisible(l.id));
-    recordList.textContent = '';
-
-    const entries: { layer: ClientLayer; feature: LoadedFeature }[] = [];
-    for (const layer of visible) {
-      for (const feature of controller.filteredFeatures(layer.id)) entries.push({ layer, feature });
-    }
-
-    if (!entries.length) {
-      recordList.append(el('li', 'text-xs text-ink-400', S.noResults));
-      return;
-    }
-
-    // Cap the rendered list; the map still shows everything. Announced below
-    // so the number is never silently truncated.
-    const CAP = 300;
-    for (const { layer, feature } of entries.slice(0, CAP)) {
-      const li = el('li');
-      const button = el(
-        'button',
-        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-xs text-ink-200 hover:bg-ink-850 hover:text-ink-100',
-      );
-      button.setAttribute('type', 'button');
-      const dot = el('span', 'h-1.5 w-1.5 shrink-0 rounded-full');
-      dot.setAttribute('style', `background:${layer.color}`);
-      const label = el('span', 'min-w-0 truncate', feature.properties.name);
-      button.append(dot, label);
-      button.addEventListener('click', () =>
-        controller.focusFeature(layer.id, feature.properties.id),
-      );
-      li.append(button);
-      recordList.append(li);
-    }
-    if (entries.length > CAP) {
-      recordList.append(
-        el('li', 'px-1.5 pt-1 text-[11px] text-ink-400', `+ ${entries.length - CAP} more on the map`),
-      );
-    }
   }
 
   /* ------------------------------ Controls ------------------------------ */
