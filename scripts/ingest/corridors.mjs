@@ -118,11 +118,16 @@ const SIMPLIFY_M = 5;
  * How many phase bands the pulse animation is cut into.
  *
  * Links are banded by how far they sit from the middle of their own network, so
- * the pulse leaves the centre of a cluster and travels outwards. Six is enough
- * for the movement to read as travelling rather than blinking, and few enough
- * that the browser animates the whole state with six paint updates a frame.
+ * the pulse leaves the centre of a cluster and travels outwards.
+ *
+ * Three, and the number matters more than it looks. A band is a style layer,
+ * and a `line-gradient` layer re-renders and re-uploads a texture for every
+ * tile it covers each time the ramp moves — so the cost of the animation is
+ * bands times tiles times frames, and bands is the term this end controls. Six
+ * looked slightly better and cost twice this. One would be cheapest and reads
+ * as the whole state blinking in unison, which is worse than either.
  */
-const PHASE_BANDS = 6;
+const PHASE_BANDS = 3;
 
 /**
  * How much longer than the straight line a route may be before it is refused.
