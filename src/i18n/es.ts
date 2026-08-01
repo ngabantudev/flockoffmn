@@ -26,6 +26,7 @@ export const es: Record<string, string> = {
   toggleLayer: 'Mostrar u ocultar capa',
   showLayer: 'Mostrar',
   hideLayer: 'Ocultar',
+  layersOn: 'capas activadas',
   clearFilters: 'Borrar filtros',
   filtersCleared: 'Filtros borrados',
   featuresShown: 'mostrados',

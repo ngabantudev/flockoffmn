@@ -1,4 +1,47 @@
-import type { LayerDefinition } from './types';
+import type { LayerCategory, LayerDefinition } from './types';
+
+/**
+ * The sections of the layer panel, in the order they are listed.
+ *
+ * The order is an argument: what is recording now, who acts on what it sees,
+ * what it all runs on, and what drew the lines it sits on top of. Each layer
+ * names its own category below, so adding a layer still means editing one
+ * entry — this list only changes when a genuinely new kind of subject arrives.
+ */
+export const LAYER_CATEGORIES: LayerCategory[] = [
+  {
+    id: 'surveillance',
+    label: { en: 'Surveillance', es: 'Vigilancia' },
+    summary: {
+      en: 'What is recording, and how far one ordinary journey is recorded for.',
+      es: 'Qué está grabando y durante cuánto trayecto cotidiano se graba.',
+    },
+  },
+  {
+    id: 'enforcement',
+    label: { en: 'Immigration enforcement', es: 'Control migratorio' },
+    summary: {
+      en: 'The agencies that have signed up to act, and the places people are held.',
+      es: 'Las agencias que se comprometieron a actuar y los lugares donde se retiene a personas.',
+    },
+  },
+  {
+    id: 'infrastructure',
+    label: { en: 'Infrastructure', es: 'Infraestructura' },
+    summary: {
+      en: 'The buildings, power and land this all runs on.',
+      es: 'Los edificios, la energía y el terreno sobre los que funciona todo esto.',
+    },
+  },
+  {
+    id: 'historical',
+    label: { en: 'Historical policy', es: 'Políticas históricas' },
+    summary: {
+      en: 'Older public and private rules that drew the lines the rest of this map sits on.',
+      es: 'Normas antiguas, públicas y privadas, que trazaron las líneas sobre las que se asienta el resto del mapa.',
+    },
+  },
+];
 
 /**
  * The layer registry — the single source of truth for what the map shows.
@@ -14,6 +57,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'agency_287g',
     slug: '287g',
+    category: 'enforcement',
     order: 1,
     label: {
       en: '287(g) agency agreements',
@@ -101,6 +145,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'alpr',
     slug: 'alpr',
+    category: 'surveillance',
     order: 2,
     label: {
       en: 'ALPR / Flock cameras',
@@ -242,6 +287,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'alpr_corridor',
     slug: 'alpr-corridors',
+    category: 'surveillance',
     order: 3,
     label: {
       en: 'ALPR corridors',
@@ -407,6 +453,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'redlining',
     slug: 'redlining',
+    category: 'historical',
     order: 4,
     label: {
       en: 'Redlining zones (HOLC)',
@@ -525,6 +572,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'detention_facility',
     slug: 'detention',
+    category: 'enforcement',
     order: 5,
     label: {
       en: 'ICE-contract detention facilities',
@@ -601,6 +649,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'data_center',
     slug: 'data-centers',
+    category: 'infrastructure',
     order: 6,
     label: {
       en: 'Data centres',
@@ -677,6 +726,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'racial_covenant',
     slug: 'covenants',
+    category: 'historical',
     order: 7,
     label: {
       en: 'Racial covenants (aggregate)',

@@ -25,6 +25,7 @@ export const en: Record<string, string> = {
   toggleLayer: 'Toggle layer',
   showLayer: 'Show',
   hideLayer: 'Hide',
+  layersOn: 'layers switched on',
   clearFilters: 'Clear filters',
   filtersCleared: 'Filters cleared',
   featuresShown: 'shown',

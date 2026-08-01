@@ -181,6 +181,52 @@
   padding: 0 0.375rem;
 }
 
+/*
+  Collapsible layer sections in the map control panel.
+
+  The native disclosure triangle is replaced by the chevron in the markup,
+  which is the same shape rotated: pointing right when the section is closed,
+  down when it is open. Height is animated where the browser can interpolate
+  to `auto`, and simply snaps where it cannot — nothing is ever hidden behind
+  the transition.
+*/
+.layer-group > summary {
+  list-style: none;
+}
+.layer-group > summary::-webkit-details-marker {
+  display: none;
+}
+.layer-group-chevron {
+  transform: rotate(-90deg);
+  transition: transform 160ms ease;
+}
+.layer-group[open] > summary .layer-group-chevron {
+  transform: rotate(0deg);
+}
+
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+  .layer-group::details-content {
+    block-size: 0;
+    overflow: hidden;
+    transition:
+      block-size 180ms ease,
+      content-visibility 180ms allow-discrete;
+  }
+  .layer-group[open]::details-content {
+    block-size: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layer-group-chevron,
+  .layer-group::details-content {
+    transition: none;
+  }
+}
+
 /* Thin scrollbars inside the side panels. */
 .scroll-slim {
   scrollbar-width: thin;
