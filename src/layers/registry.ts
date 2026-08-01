@@ -31,6 +31,14 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
     },
   },
   {
+    id: 'environment',
+    label: { en: 'Environment & Health', es: 'Medio ambiente y salud' },
+    summary: {
+      en: 'The present-day reading of the same ground: which places carry the most environmental and health burdens now, tract by tract.',
+      es: 'La lectura actual del mismo terreno: qué lugares soportan hoy más cargas ambientales y de salud, sección por sección.',
+    },
+  },
+  {
     id: 'infrastructure',
     label: { en: 'Infrastructure', es: 'Infraestructura' },
     summary: {
@@ -510,13 +518,30 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'polygon',
     color: '#c084fc',
+    categoryColors: {
+      key: 'grade',
+      label: { en: 'HOLC grade', es: 'Calificación HOLC' },
+      // The colours HOLC printed on the original sheets, read from the source
+      // data's own fill values, so the map reads like the document it is.
+      colors: [
+        { value: 'A', color: '#76a865' },
+        { value: 'B', color: '#7cb5bd' },
+        { value: 'C', color: '#ffff00' },
+        { value: 'D', color: '#d9838d' },
+        { value: 'E', color: '#fefefe' },
+      ],
+      fallback: '#9ca3af',
+    },
+    // The identifier HOLC printed on each zone — "A1", "D4" — drawn on the
+    // ground the way the original sheet drew it.
+    labelBy: { key: 'holcId' },
     dataPath: '/data/redlining.geojson',
     csvPath: null,
     provenance: {
       source: 'Mapping Inequality, Digital Scholarship Lab, University of Richmond',
       sourceUrl: 'https://dsl.richmond.edu/panorama/redlining/',
-      license: 'CC BY-NC-SA 4.0',
-      licenseUrl: 'https://creativecommons.org/licenses/by-nc-sa/4.0/',
+      license: 'CC BY-NC 2.5',
+      licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
       attribution:
         'Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality: Redlining in New Deal America"',
       sourceDate: null,
@@ -524,7 +549,33 @@ export const LAYERS: LayerDefinition[] = [
       refresh: 'rare',
     },
     filters: [
-      { key: 'grade', kind: 'enum', label: { en: 'HOLC grade', es: 'Calificación HOLC' } },
+      {
+        key: 'grade',
+        kind: 'enum',
+        label: { en: 'HOLC grade', es: 'Calificación HOLC' },
+        valueDescriptions: {
+          A: {
+            en: '“Best.” New and homogeneous — in practice, restricted to white residents.',
+            es: '«Mejor». Nuevo y homogéneo: en la práctica, restringido a residentes blancos.',
+          },
+          B: {
+            en: '“Still Desirable.” Expected to hold value; white neighbourhoods past their newest years.',
+            es: '«Aún deseable». Se esperaba que mantuviera su valor; barrios blancos ya no tan nuevos.',
+          },
+          C: {
+            en: '“Definitely Declining.” Marked down for the arrival of Black, Jewish and immigrant residents.',
+            es: '«En claro declive». Degradado por la llegada de residentes negros, judíos e inmigrantes.',
+          },
+          D: {
+            en: '“Hazardous.” Outlined in red — redlined — with lending withheld on explicitly racial grounds.',
+            es: '«Peligroso». Delineado en rojo — redlined — con el crédito negado por motivos explícitamente raciales.',
+          },
+          E: {
+            en: 'Commercial or industrial land, recorded without a residential grade.',
+            es: 'Suelo comercial o industrial, registrado sin calificación residencial.',
+          },
+        },
+      },
       { key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } },
       {
         key: 'groupsNamed',
@@ -771,15 +822,7 @@ export const LAYERS: LayerDefinition[] = [
     },
     filters: [
       { key: 'operator', kind: 'enum', label: { en: 'Operator', es: 'Operador' } },
-      {
-        key: 'status',
-        kind: 'enum',
-        label: { en: 'Status', es: 'Estado' },
-        // A withdrawn proposal is worth finding — it marks a place where people
-        // organised and the project did not happen — but it is not a building,
-        // and drawing it by default would say there is one.
-        defaultExcluded: ['cancelled', 'withdrawn'],
-      },
+      { key: 'status', kind: 'enum', label: { en: 'Status', es: 'Estado' } },
       { key: 'powerSource', kind: 'enum', label: { en: 'Power source', es: 'Fuente de energía' } },
     ],
     detailFields: [
@@ -938,37 +981,55 @@ export const LAYERS: LayerDefinition[] = [
     category: 'historical',
     order: 7,
     label: {
-      en: 'Racial covenants (aggregate)',
-      es: 'Convenios raciales (agregado)',
+      en: 'Racial covenants',
+      es: 'Convenios raciales',
     },
     summary: {
-      en: 'Deed clauses that barred non-white families from buying or living on a property, counted by block.',
-      es: 'Cláusulas de escritura que prohibían a familias no blancas comprar o vivir en una propiedad, contadas por manzana.',
+      en: 'Deed clauses that barred non-white families from buying or living on a property, shown on the lots they were written onto.',
+      es: 'Cláusulas de escritura que prohibían a familias no blancas comprar o vivir en una propiedad, mostradas sobre los lotes en que se escribieron.',
     },
     whatThisMeans: {
-      en: 'A racial covenant is a sentence written into a property deed forbidding sale or occupancy to anyone not white. They were drafted from templates, recorded by the county like any other deed, and sold by developers as a feature. Minnesota covenants run from 1910, predating the federal redlining maps by a generation — the private restriction came first, and the federal appraiser later graded the neighbourhoods it had helped produce. Shelley v. Kraemer made them unenforceable in 1948 and they are void today, but the text stays in the chain of title until a homeowner files to remove it. This layer is deliberately an aggregate: each shape is a fixed 250-metre cell reporting how many covenants were recorded inside it, never a record for one property. It describes a restriction on land, not the people who live there now.',
-      es: 'Un convenio racial es una frase escrita en la escritura de una propiedad que prohíbe su venta u ocupación a cualquier persona no blanca. Se redactaban a partir de plantillas, se registraban en el condado como cualquier escritura y los promotores los vendían como una ventaja. Los convenios de Minnesota comienzan en 1910, una generación antes de los mapas federales de redlining: la restricción privada llegó primero, y el tasador federal calificó después los barrios que ella había ayudado a crear. Shelley v. Kraemer los hizo inaplicables en 1948 y hoy son nulos, pero el texto permanece en el historial de titularidad hasta que un propietario solicita eliminarlo. Esta capa es deliberadamente un agregado: cada forma es una celda fija de 250 metros que indica cuántos convenios se registraron dentro, nunca un registro por propiedad. Describe una restricción sobre la tierra, no a las personas que viven allí hoy.',
+      en: 'A racial covenant is a sentence written into a property deed forbidding sale or occupancy to anyone not white. They were drafted from templates, recorded by the county like any other deed, and sold by developers as a feature. Minnesota covenants run from 1910, predating the federal redlining maps by a generation — the private restriction came first, and the federal appraiser later graded the neighbourhoods it had helped produce. Shelley v. Kraemer made them unenforceable in 1948 and they are void today, but the text stays in the chain of title until a homeowner files to remove it. Each shape here is the lot a covenant was written onto, as published by Mapping Prejudice. The record is the restriction on the land — the deed year, the city and the clause itself. The people named in the deed, the present-day address and the parcel number are deliberately not included.',
+      es: 'Un convenio racial es una frase escrita en la escritura de una propiedad que prohíbe su venta u ocupación a cualquier persona no blanca. Se redactaban a partir de plantillas, se registraban en el condado como cualquier escritura y los promotores los vendían como una ventaja. Los convenios de Minnesota comienzan en 1910, una generación antes de los mapas federales de redlining: la restricción privada llegó primero, y el tasador federal calificó después los barrios que ella había ayudado a crear. Shelley v. Kraemer los hizo inaplicables en 1948 y hoy son nulos, pero el texto permanece en el historial de titularidad hasta que un propietario solicita eliminarlo. Cada forma aquí es el lote sobre el que se escribió un convenio, tal como lo publica Mapping Prejudice. El registro es la restricción sobre la tierra: el año de la escritura, la ciudad y la cláusula misma. Las personas nombradas en la escritura, la dirección actual y el número de parcela quedan deliberadamente fuera.',
     },
     limitations: [
       {
-        en: 'This is an aggregate, on purpose. A cell showing "1" means one covenant was recorded somewhere in an area of several houses — not which house. The per-property data is published by Mapping Prejudice and should be got from them, not from a copy here.',
-        es: 'Esto es un agregado, a propósito. Una celda que muestra «1» significa que se registró un convenio en algún lugar de un área de varias casas, no en cuál. Los datos por propiedad los publica Mapping Prejudice y deben obtenerse de ellos, no de una copia aquí.',
-      },
-      {
-        en: 'The original deeds name the seller and the buyer, and the source file also carries the present-day street address and parcel outline of the property. None of that is ingested here, and the build fails rather than write a file containing it.',
-        es: 'Las escrituras originales nombran al vendedor y al comprador, y el archivo de origen también incluye la dirección actual y el contorno de la parcela. Nada de eso se incorpora aquí, y la compilación falla antes que escribir un archivo que lo contenga.',
-      },
-      {
-        en: 'Covenants are found by reading digitised deeds county by county, so every count is a floor on the true number and never a ceiling. Only eight Minnesota counties have been published; a county with no cells has not been searched.',
-        es: 'Los convenios se localizan leyendo escrituras digitalizadas condado por condado, así que cada recuento es un mínimo y nunca un máximo. Solo se han publicado ocho condados de Minnesota; un condado sin celdas no ha sido investigado.',
+        en: 'The deeds name a seller and a buyer, and the source file carries the present-day street address and county parcel number. None of that is ingested here — the build fails rather than write a file containing a name, an address or a parcel identifier. For the full per-property research data, go to Mapping Prejudice directly.',
+        es: 'Las escrituras nombran a un vendedor y un comprador, y el archivo de origen incluye la dirección actual y el número de parcela del condado. Nada de eso se incorpora aquí: la compilación falla antes que escribir un archivo con un nombre, una dirección o un identificador de parcela. Para los datos completos por propiedad, acuda directamente a Mapping Prejudice.',
       },
       {
         en: 'A covenant describes land. Present-day residents of a covenanted property have no connection to the clause and are not the subject of this record.',
         es: 'Un convenio describe la tierra. Los residentes actuales de una propiedad con convenio no tienen relación con la cláusula y no son el sujeto de este registro.',
       },
+      {
+        en: 'Covenants are found by reading digitised deeds county by county, so every count is a floor on the true number and never a ceiling. Only eight Minnesota counties have been published; a county with no parcels has not been searched.',
+        es: 'Los convenios se localizan leyendo escrituras digitalizadas condado por condado, así que cada recuento es un mínimo y nunca un máximo. Solo se han publicado ocho condados de Minnesota; un condado sin parcelas no ha sido investigado.',
+      },
+      {
+        en: 'Lot shapes are the modern parcels the deeds were matched to. A parcel split or merged since the deed was recorded may not align exactly with today’s lot lines.',
+        es: 'Las formas de los lotes son las parcelas modernas a las que se vincularon las escrituras. Una parcela dividida o fusionada desde que se registró la escritura puede no coincidir exactamente con los límites actuales.',
+      },
     ],
     geometry: 'polygon',
-    color: '#f472b6',
+    // Mapping Prejudice draw covenants as red marks on a dark ground; the
+    // layer keeps the source's visual language.
+    color: '#dc2626',
+    categoryColors: {
+      key: 'deedDecade',
+      label: { en: 'Decade the deed was recorded', es: 'Década en que se registró la escritura' },
+      // One hue, light to dark in deed order, so the spread of covenants
+      // across the century reads as a deepening of the same red.
+      colors: [
+        { value: '1910s', color: '#fee2d5' },
+        { value: '1920s', color: '#fcbba1' },
+        { value: '1930s', color: '#fc9272' },
+        { value: '1940s', color: '#f4604d' },
+        { value: '1950s', color: '#de2d26' },
+        { value: '1960s', color: '#a50f15' },
+        { value: '1970s', color: '#67000d' },
+      ],
+      fallback: '#9ca3af',
+    },
     dataPath: '/data/covenants.geojson',
     csvPath: null,
     provenance: {
@@ -982,32 +1043,166 @@ export const LAYERS: LayerDefinition[] = [
       lastUpdated: null,
       refresh: 'rare',
     },
-    filters: [{ key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } }],
+    filters: [
+      { key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } },
+      { key: 'deedDecade', kind: 'enum', label: { en: 'Decade', es: 'Década' } },
+    ],
     detailFields: [
-      {
-        key: 'covenantCount',
-        label: { en: 'Covenants recorded here', es: 'Convenios registrados aquí' },
-      },
+      { key: 'deedYear', label: { en: 'Deed year', es: 'Año de la escritura' } },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
-      { key: 'earliestDeed', label: { en: 'Earliest deed', es: 'Escritura más antigua' } },
-      { key: 'latestDeed', label: { en: 'Latest deed', es: 'Escritura más reciente' } },
       {
-        key: 'exampleWording',
-        label: { en: 'Example wording recorded here', es: 'Ejemplo de redacción registrada aquí' },
+        key: 'covenantText',
+        label: { en: 'The clause, verbatim', es: 'La cláusula, textual' },
       },
     ],
     nearMe: {
       mode: 'contains',
       title: { en: 'Racial covenants recorded here', es: 'Convenios raciales registrados aquí' },
       empty: {
-        en: 'No covenant is recorded in the cell containing this point. Only eight Minnesota counties have been searched, so a blank is not evidence that none was written.',
-        es: 'No hay ningún convenio registrado en la celda que contiene este punto. Solo se han investigado ocho condados de Minnesota, así que un vacío no prueba que no se escribiera ninguno.',
+        en: 'No covenant is recorded on a parcel containing this point. Only eight Minnesota counties have been searched, so a blank is not evidence that none was written.',
+        es: 'No hay ningún convenio registrado en una parcela que contenga este punto. Solo se han investigado ocho condados de Minnesota, así que un vacío no prueba que no se escribiera ninguno.',
       },
-      detail: ['covenantCount', 'earliestDeed', 'latestDeed'],
+      detail: ['deedYear', 'city'],
       caveat: {
-        en: 'A count for an area of several houses, never a record for one property. It describes a restriction on land, not the people who live there now.',
-        es: 'Un recuento para un área de varias casas, nunca un registro de una propiedad. Describe una restricción sobre la tierra, no a las personas que viven allí ahora.',
+        en: 'A covenant describes a restriction on land, not the people who live there now. The deed’s names, the address and the parcel number are not part of this record.',
+        es: 'Un convenio describe una restricción sobre la tierra, no a las personas que viven allí ahora. Los nombres de la escritura, la dirección y el número de parcela no forman parte de este registro.',
       },
+      wide: true,
+    },
+  },
+
+  {
+    id: 'ej_cumulative',
+    slug: 'ej-cumulative',
+    category: 'environment',
+    order: 9,
+    label: { en: 'Cumulative Stressors', es: 'Factores de estrés acumulativos' },
+    summary: {
+      en: 'How many environmental and health stressors burden each census tract today, from MPCA’s draft CI-MAP.',
+      es: 'Cuántos factores de estrés ambientales y de salud cargan hoy cada sección censal, según el borrador CI-MAP de la MPCA.',
+    },
+    whatThisMeans: {
+      en: 'Minnesota’s 2023 cumulative impacts law (Minn. Stat. § 116.065) requires the state to weigh the burdens a community already carries before permitting new ones. CI-MAP is the Pollution Control Agency’s draft implementation: for every census tract it counts stressors — air pollution risk, cleanup sites, impaired waters, traffic, asthma and lead rates, tree cover and more, 26 indicators in all — and compares the count to county and state medians. Laid beside the 1930s redlining grades and the covenant map, it shows where the historical lines and present-day burdens coincide. A tract is an aggregate of thousands of people; nothing here describes a household.',
+      es: 'La ley de impactos acumulativos de Minnesota de 2023 (Minn. Stat. § 116.065) exige al estado sopesar las cargas que una comunidad ya soporta antes de permitir otras nuevas. CI-MAP es la implementación preliminar de la Agencia de Control de la Contaminación: para cada sección censal cuenta factores de estrés — riesgo de contaminación del aire, sitios de limpieza, aguas degradadas, tráfico, tasas de asma y plomo, cobertura arbórea y más, 26 indicadores en total — y compara el recuento con las medianas del condado y del estado. Junto a las calificaciones de redlining de los años 30 y el mapa de convenios, muestra dónde coinciden las líneas históricas y las cargas actuales. Una sección censal agrega a miles de personas; nada aquí describe un hogar.',
+    },
+    limitations: [
+      {
+        en: 'CI-MAP is a public draft first published in December 2025; scores and methodology may change as rulemaking under the statute proceeds.',
+        es: 'CI-MAP es un borrador público publicado en diciembre de 2025; las puntuaciones y la metodología pueden cambiar durante la reglamentación de la ley.',
+      },
+      {
+        en: 'The four burden bands compare a tract to its county median and are this project’s presentation, not MPCA’s determination. The agency’s own adverse-cumulative-stressors finding is shown unmodified in the detail panel.',
+        es: 'Las cuatro bandas de carga comparan una sección con la mediana de su condado y son una presentación de este proyecto, no una determinación de la MPCA. La conclusión propia de la agencia sobre factores acumulativos adversos se muestra sin modificar en el panel de detalle.',
+      },
+      {
+        en: 'A tract average says nothing about any particular block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+      {
+        en: 'No formal licence is published for the service; it is treated as public government data under Minn. Stat. ch. 13 and attributed to MPCA.',
+        es: 'No se publica una licencia formal para el servicio; se trata como datos públicos gubernamentales según Minn. Stat. cap. 13 y se atribuye a la MPCA.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#d95f2b',
+    categoryColors: {
+      key: 'burdenBand',
+      label: { en: 'Burden vs county median', es: 'Carga frente a la mediana del condado' },
+      colors: [
+        { value: 'Fewer stressors', color: '#fde8d7' },
+        { value: 'Near county median', color: '#f5a86b' },
+        { value: 'Elevated', color: '#d95f2b' },
+        { value: 'Most burdened', color: '#8f2d0f' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/ej-cumulative.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Minnesota Pollution Control Agency, Cumulative Impacts Mapping and Analysis Platform (CI-MAP)',
+      sourceUrl: 'https://pca-gis02.pca.state.mn.us/ci-map/',
+      license: 'Public government data (Minn. Stat. ch. 13) — no formal licence published',
+      licenseUrl: null,
+      attribution: 'Minnesota Pollution Control Agency, CI-MAP (draft)',
+      sourceDate: '2025-12',
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [
+      { key: 'burdenBand', kind: 'enum', label: { en: 'Burden band', es: 'Banda de carga' } },
+      {
+        key: 'mpcaAdverse',
+        kind: 'enum',
+        label: {
+          en: 'MPCA adverse-stressors finding',
+          es: 'Conclusión de la MPCA sobre factores adversos',
+        },
+      },
+    ],
+    detailFields: [
+      {
+        key: 'stressorCount',
+        label: { en: 'Stressors present, of 26', es: 'Factores presentes, de 26' },
+      },
+      {
+        key: 'countyMedian',
+        label: { en: 'County median', es: 'Mediana del condado' },
+      },
+      {
+        key: 'stateMedian',
+        label: { en: 'State median', es: 'Mediana estatal' },
+      },
+      {
+        key: 'mpcaAdverse',
+        label: {
+          en: 'MPCA finding: adverse cumulative stressors',
+          es: 'Conclusión de la MPCA: factores acumulativos adversos',
+        },
+      },
+      {
+        key: 'adverseList',
+        label: {
+          en: 'Stressors MPCA marks adverse here',
+          es: 'Factores que la MPCA marca como adversos aquí',
+        },
+      },
+      {
+        key: 'tribeNames',
+        label: { en: 'Tribal nation, where the tract overlaps one', es: 'Nación tribal, cuando la sección se superpone a una' },
+      },
+      {
+        key: 'ejPoverty',
+        label: {
+          en: 'EJ area by income (MPCA threshold)',
+          es: 'Área de justicia ambiental por ingresos (umbral de la MPCA)',
+        },
+      },
+      {
+        key: 'ejPeopleOfColor',
+        label: {
+          en: 'EJ area by race (MPCA threshold)',
+          es: 'Área de justicia ambiental por raza (umbral de la MPCA)',
+        },
+      },
+      {
+        key: 'ejLimitedEnglish',
+        label: {
+          en: 'EJ area by limited English (MPCA threshold)',
+          es: 'Área de justicia ambiental por dominio limitado del inglés (umbral de la MPCA)',
+        },
+      },
+    ],
+    nearMe: {
+      mode: 'contains',
+      title: {
+        en: 'This area’s cumulative burden today',
+        es: 'La carga acumulativa actual de esta zona',
+      },
+      empty: {
+        en: 'This point is not inside a Minnesota census tract with CI-MAP data.',
+        es: 'Este punto no está dentro de una sección censal de Minnesota con datos de CI-MAP.',
+      },
+      detail: ['stressorCount', 'countyMedian', 'mpcaAdverse'],
       wide: true,
     },
   },

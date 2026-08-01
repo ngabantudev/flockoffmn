@@ -1,6 +1,6 @@
 import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
-import { baseStyle, MN_BOUNDS, MN_CENTER } from './mapStyle';
+import { baseStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { THREAD_STOPS, densityColorExpression } from './densityRamp';
 import { groupNodes } from './nodes';
@@ -38,6 +38,8 @@ export interface ClientLayer {
     colors: Array<{ value: string; color: string }>;
     fallback: string;
   };
+  /** Write an attribute's value on each polygon, the way the source document did. */
+  labelBy?: { key: string };
   /** Draw this line layer as a glowing filament. */
   filament?: boolean;
   /** Colour this line layer by the size of each record's connected network. */
@@ -749,15 +751,27 @@ export class MapController {
 
     if (layer.geometry === 'polygon') {
       const under = this.beneathDots();
+      // Polygons colour by declared category where the registry names one, so
+      // the legend swatches and the ground read from the same table. Otherwise
+      // keep the historical-document behaviour: the colour the source printed
+      // on the original sheet where we have it, then the layer's own.
+      const polygonColor = (
+        layer.categoryColors
+          ? [
+              'match',
+              ['get', layer.categoryColors.key],
+              ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+              layer.categoryColors.fallback,
+            ]
+          : ['coalesce', ['get', 'holcFill'], layer.color]
+      ) as unknown as maplibregl.ExpressionSpecification;
       this.map.addLayer(
         {
           id: `${layer.id}-fill`,
           type: 'fill',
           source: src,
           paint: {
-            // Use the grade colour HOLC printed on the original sheet where we
-            // have it, so the map reads like the historical document it is.
-            'fill-color': ['coalesce', ['get', 'holcFill'], layer.color],
+            'fill-color': polygonColor,
             'fill-opacity': 0.42,
           },
         },
@@ -769,13 +783,34 @@ export class MapController {
           type: 'line',
           source: src,
           paint: {
-            'line-color': ['coalesce', ['get', 'holcFill'], layer.color],
+            'line-color': polygonColor,
             'line-width': 1.1,
             'line-opacity': 0.85,
           },
         },
         under,
       );
+      if (layer.labelBy) {
+        // The identifier the source printed on the area, in the area's own
+        // colour over a basemap-dark halo. Null attributes draw nothing, and
+        // colliding labels hide rather than stack as the view pulls back.
+        this.map.addLayer({
+          id: `${layer.id}-labels`,
+          type: 'symbol',
+          source: src,
+          layout: {
+            'text-field': ['to-string', ['coalesce', ['get', layer.labelBy.key], '']],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 14, 18],
+            // The one glyph stack shipped locally — no third-party assets.
+            'text-font': ['Noto Sans Regular'],
+          },
+          paint: {
+            'text-color': polygonColor,
+            'text-halo-color': '#0a0c10',
+            'text-halo-width': 1.4,
+          },
+        });
+      }
       this.bindInteractions(layer, `${layer.id}-fill`);
       return;
     }
@@ -1177,7 +1212,14 @@ export class MapController {
   setLayerVisible(layer: ClientLayer, visible: boolean) {
     if (visible) {
       this.visible.add(layer.id);
-      void this.loadLayer(layer).then(() => this.applyVisibility(layer));
+      void this.loadLayer(layer).then(() => {
+        this.applyVisibility(layer);
+        // The controls are on the page before the data is: a filter ticked
+        // while this layer was still downloading (or still switched off) has
+        // been waiting for this moment. The first paint already drew the
+        // filtered subset; the zoom the tick promised happens now.
+        if ((this.filters.get(layer.id)?.size ?? 0) > 0) this.zoomAfterFilterChange(layer.id);
+      });
     } else {
       this.visible.delete(layer.id);
       this.applyVisibility(layer);
@@ -1196,6 +1238,7 @@ export class MapController {
       '-line-hit',
       '-points',
       '-cones',
+      '-labels',
     ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {
@@ -1205,18 +1248,106 @@ export class MapController {
     this.emitCounts();
   }
 
+  /** Where the reader was before a filter first moved the camera. */
+  private preFilterCamera: { center: maplibregl.LngLat; zoom: number } | null = null;
+
+  private anyActiveFilters(): boolean {
+    for (const state of this.filters.values()) if (state.size > 0) return true;
+    return false;
+  }
+
   setFilter(layerId: string, key: string, values: Set<string>) {
     if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
     const state = this.filters.get(layerId)!;
+    const activeBefore = this.anyActiveFilters();
     if (values.size === 0) state.delete(key);
     else state.set(key, values);
     this.refresh(layerId);
+    // Filtering is a round trip. The moment the first filter comes on, the
+    // camera's position is saved and the view goes to the metro frame; every
+    // further filter change re-frames the same way; and when the last filter
+    // comes off, the reader is put back exactly where they were standing
+    // before the trip began.
+    if (this.anyActiveFilters()) {
+      this.zoomAfterFilterChange(layerId);
+    } else if (activeBefore && this.preFilterCamera) {
+      this.map.easeTo({ ...this.preFilterCamera, duration: REDUCED_MOTION ? 0 : 600 });
+      this.preFilterCamera = null;
+    }
+  }
+
+  /**
+   * The outbound half of the filter round trip, shared by the two moments a
+   * zoom can become due: a filter change on a loaded layer, and a layer
+   * finishing its load with a filter already waiting. Saves the camera once,
+   * the first time filtering moves it.
+   */
+  private zoomAfterFilterChange(layerId: string) {
+    if (!this.preFilterCamera) {
+      this.preFilterCamera = { center: this.map.getCenter(), zoom: this.map.getZoom() };
+    }
+    this.zoomToFiltered(layerId);
+  }
+
+  /**
+   * Carry the view to what a filter just narrowed the layer to.
+   *
+   * Picking "Duluth" and then panning around Minneapolis looking for the
+   * records is the reader doing work the map already knows how to do. Runs
+   * whenever a filter change leaves the layer actively narrowed, visible and
+   * with matches; `setFilter` owns the round trip — saving the camera before
+   * the first filter and restoring it after the last.
+   */
+  private zoomToFiltered(layerId: string) {
+    const state = this.filters.get(layerId);
+    if (!state || state.size === 0) return;
+    if (!this.visible.has(layerId)) return;
+    const matches = this.filteredFeatures(layerId);
+    if (!matches.length) return;
+    let minLng = Infinity;
+    let minLat = Infinity;
+    let maxLng = -Infinity;
+    let maxLat = -Infinity;
+    for (const f of matches) {
+      const [w, s, e, n] = bboxOf(f.geometry);
+      if (w < minLng) minLng = w;
+      if (s < minLat) minLat = s;
+      if (e > maxLng) maxLng = e;
+      if (n > maxLat) maxLat = n;
+    }
+    if (!Number.isFinite(minLng)) return;
+    // The default destination is the metro, not the matches' own bbox: both
+    // downtowns and the suburban ring, framed the same way every time, so
+    // successive filters compare against a steady ground. Only when nothing
+    // that matched is inside that frame does the view chase the records
+    // instead — a reader filtering to Rochester should not be shown an empty
+    // metro.
+    const inMetro =
+      minLng <= METRO_BOUNDS[1][0] &&
+      maxLng >= METRO_BOUNDS[0][0] &&
+      minLat <= METRO_BOUNDS[1][1] &&
+      maxLat >= METRO_BOUNDS[0][1];
+    this.map.fitBounds(
+      inMetro
+        ? METRO_BOUNDS
+        : [
+            [minLng, minLat],
+            [maxLng, maxLat],
+          ],
+      { padding: 48, maxZoom: 13, duration: REDUCED_MOTION ? 0 : 600 },
+    );
   }
 
   clearFilters(layerId?: string) {
     if (layerId) this.filters.delete(layerId);
     else this.filters.clear();
     for (const id of layerId ? [layerId] : this.data.keys()) this.refresh(id);
+    // The same round trip as setFilter: clearing the last active filter puts
+    // the reader back where they were before filtering moved them.
+    if (!this.anyActiveFilters() && this.preFilterCamera) {
+      this.map.easeTo({ ...this.preFilterCamera, duration: REDUCED_MOTION ? 0 : 600 });
+      this.preFilterCamera = null;
+    }
   }
 
   /** Features of a layer that pass its current filters. */
