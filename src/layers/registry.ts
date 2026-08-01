@@ -713,6 +713,88 @@ export const LAYERS: LayerDefinition[] = [
   },
 
   {
+    id: 'agency_aircraft',
+    slug: 'agency-aircraft',
+    category: 'enforcement',
+    order: 10,
+    label: {
+      en: 'Agency aircraft',
+      es: 'Aeronaves de agencias',
+    },
+    summary: {
+      en: 'Publicly-owned law-enforcement and public-safety aircraft, located from an unfiltered community flight-tracking network.',
+      es: 'Aeronaves de agencias de seguridad pública de propiedad pública, ubicadas mediante una red comunitaria de rastreo de vuelos sin filtrar.',
+    },
+    whatThisMeans: {
+      en: 'Each record is an aircraft, not a person: identified by cross-referencing the FAA’s public ownership registry for aircraft registered directly to a Minnesota public-safety agency, then located hourly against adsb.lol, a keyless, volunteer-run ADS-B network that — unlike most flight trackers — does not honor requests to hide an aircraft from public display. Two of the five agency categories we checked (MN State Patrol’s Aviation Section, MN DNR Enforcement Aviation) have aircraft registered in their own name. Three do not: MN BCA and Minnesota county sheriff’s offices have no FAA-registered aircraft under their own name as of this writing, and ICE Air removal flights run on contracted commercial charter operators rather than government-owned aircraft, so ownership records cannot identify them and no publicly exportable list of their current tail numbers exists. Those three stay listed rather than removed, so the gap is visible.',
+      es: 'Cada registro es una aeronave, no una persona: identificada mediante referencia cruzada con el registro público de propiedad de la FAA para aeronaves registradas directamente a nombre de una agencia de seguridad pública de Minnesota, y luego ubicada cada hora mediante adsb.lol, una red ADS-B voluntaria y sin clave que, a diferencia de la mayoría de los rastreadores de vuelos, no atiende solicitudes para ocultar una aeronave de la vista pública. Dos de las cinco categorías de agencias que verificamos (la Sección de Aviación de la Patrulla Estatal de MN, la Aviación de Cumplimiento del DNR de MN) tienen aeronaves registradas a su propio nombre. Tres no: el BCA de MN y las oficinas de alguaciles de los condados de Minnesota no tienen aeronaves registradas en la FAA a su propio nombre hasta la fecha, y los vuelos de remoción de ICE Air operan con transportistas chárter comerciales contratados en lugar de aeronaves propiedad del gobierno, por lo que los registros de propiedad no pueden identificarlos y no existe una lista públicamente exportable de sus números de cola actuales. Esas tres permanecen listadas en lugar de eliminadas, para que la brecha sea visible.',
+    },
+    limitations: [
+      {
+        en: 'Positions reflect each aircraft’s last reported location at ingest time (refreshed hourly), not literal live tracking. An aircraft with no contact in the last hour is omitted rather than shown at a stale position.',
+        es: 'Las posiciones reflejan la última ubicación reportada de cada aeronave al momento de la actualización (cada hora), no un rastreo literalmente en vivo. Una aeronave sin contacto en la última hora se omite en lugar de mostrarse en una posición desactualizada.',
+      },
+      {
+        en: 'An aircraft outside range of every volunteer receiver, with its transponder off, or grounded with ADS-B disabled will not appear even though it exists.',
+        es: 'Una aeronave fuera del alcance de todos los receptores voluntarios, con el transpondedor apagado, o en tierra con el ADS-B desactivado, no aparecerá aunque exista.',
+      },
+      {
+        en: 'MN BCA, county sheriff aviation, and ICE Air currently have zero records — not because they were excluded, but because no sourceable aircraft was found for them. See "what this means" above.',
+        es: 'El BCA de MN, la aviación de los alguaciles de condado y ICE Air actualmente tienen cero registros, no porque hayan sido excluidos, sino porque no se encontró ninguna aeronave identificable para ellos. Vea "qué significa esto" arriba.',
+      },
+    ],
+    geometry: 'point',
+    color: '#eab308',
+    bearingKey: 'track',
+    categoryColors: {
+      key: 'agency',
+      label: { en: 'Agency', es: 'Agencia' },
+      colors: [
+        { value: 'state_patrol', color: '#38bdf8' },
+        { value: 'dnr_enforcement', color: '#4ade80' },
+        { value: 'bca', color: '#a78bfa' },
+        { value: 'county_sheriff', color: '#22d3ee' },
+        { value: 'ice_air', color: '#fb7185' },
+      ],
+      fallback: '#94a3b8',
+    },
+    dataPath: '/data/agency-aircraft.geojson',
+    csvPath: '/data/agency-aircraft.csv',
+    provenance: {
+      source: 'adsb.lol (community ADS-B aggregator)',
+      sourceUrl: 'https://www.adsb.lol/',
+      license: 'ODbL 1.0',
+      licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
+      attribution: '© adsb.lol contributors',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'frequent',
+    },
+    filters: [
+      {
+        key: 'agency',
+        kind: 'enum',
+        label: { en: 'Agency', es: 'Agencia' },
+        valueDescriptions: {
+          state_patrol: { en: 'MN State Patrol / DPS Aviation Section', es: 'Patrulla Estatal de MN / Sección de Aviación del DPS' },
+          dnr_enforcement: { en: 'MN DNR Enforcement Aviation', es: 'Aviación de Cumplimiento del DNR de MN' },
+          bca: { en: 'MN Bureau of Criminal Apprehension', es: 'Oficina de Aprehensión Criminal de MN' },
+          county_sheriff: { en: 'A Minnesota county sheriff’s office', es: 'Una oficina de alguacil de condado de Minnesota' },
+          ice_air: { en: 'ICE Air charter flights', es: 'Vuelos chárter de ICE Air' },
+        },
+      },
+    ],
+    detailFields: [
+      { key: 'ownerName', label: { en: 'Registered owner', es: 'Propietario registrado' } },
+      { key: 'callsign', label: { en: 'Callsign', es: 'Distintivo de llamada' } },
+      { key: 'altitudeFt', label: { en: 'Altitude (ft)', es: 'Altitud (pies)' } },
+      { key: 'groundSpeedKt', label: { en: 'Ground speed (kt)', es: 'Velocidad respecto al suelo (kt)' } },
+      { key: 'track', label: { en: 'Heading', es: 'Rumbo' }, format: 'degrees' },
+      { key: 'lastContactSeconds', label: { en: 'Last contact (seconds ago)', es: 'Último contacto (segundos)' } },
+    ],
+  },
+
+  {
     id: 'data_center',
     slug: 'data-centers',
     category: 'infrastructure',

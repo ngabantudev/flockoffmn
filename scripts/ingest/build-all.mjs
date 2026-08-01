@@ -38,6 +38,10 @@ const STEPS = [
   { name: 'redlining', script: 'redlining.mjs' },
   { name: 'covenants', script: 'covenants.mjs' },
   { name: 'ej-cumulative', script: 'ej-cumulative.mjs' },
+  // Independent of every other layer. Also runs hourly on its own via
+  // refresh-flights.yml; included here too so `npm run data` alone still
+  // rebuilds every layer from a clean clone.
+  { name: 'flights', script: 'flights.mjs' },
 ];
 
 function run(script) {
