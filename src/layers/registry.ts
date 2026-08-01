@@ -537,8 +537,8 @@ export const LAYERS: LayerDefinition[] = [
     provenance: {
       source: 'Mapping Inequality, Digital Scholarship Lab, University of Richmond',
       sourceUrl: 'https://dsl.richmond.edu/panorama/redlining/',
-      license: 'CC BY-NC-SA 4.0',
-      licenseUrl: 'https://creativecommons.org/licenses/by-nc-sa/4.0/',
+      license: 'CC BY-NC 2.5',
+      licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
       attribution:
         'Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality: Redlining in New Deal America"',
       sourceDate: null,
