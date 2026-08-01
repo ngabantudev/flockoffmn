@@ -749,15 +749,27 @@ export class MapController {
 
     if (layer.geometry === 'polygon') {
       const under = this.beneathDots();
+      // Polygons colour by declared category where the registry names one, so
+      // the legend swatches and the ground read from the same table. Otherwise
+      // keep the historical-document behaviour: the colour the source printed
+      // on the original sheet where we have it, then the layer's own.
+      const polygonColor = (
+        layer.categoryColors
+          ? [
+              'match',
+              ['get', layer.categoryColors.key],
+              ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+              layer.categoryColors.fallback,
+            ]
+          : ['coalesce', ['get', 'holcFill'], layer.color]
+      ) as unknown as maplibregl.ExpressionSpecification;
       this.map.addLayer(
         {
           id: `${layer.id}-fill`,
           type: 'fill',
           source: src,
           paint: {
-            // Use the grade colour HOLC printed on the original sheet where we
-            // have it, so the map reads like the historical document it is.
-            'fill-color': ['coalesce', ['get', 'holcFill'], layer.color],
+            'fill-color': polygonColor,
             'fill-opacity': 0.42,
           },
         },
@@ -769,7 +781,7 @@ export class MapController {
           type: 'line',
           source: src,
           paint: {
-            'line-color': ['coalesce', ['get', 'holcFill'], layer.color],
+            'line-color': polygonColor,
             'line-width': 1.1,
             'line-opacity': 0.85,
           },
