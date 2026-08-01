@@ -73,19 +73,22 @@
  * dead ground to fuse one patch to the next, and it is the cords that make
  * scattered patches one colony rather than a scatter of colonies.
  *
- * So this layer has both:
+ * So this layer is built in three passes, in this order:
  *
- *   - `kind: 'link'` — the Gabriel mesh, unchanged, capped at STATIC_MILES.
- *     Fine, dense, and the tier that carries the finding: this is the ordinary
- *     trip logged repeatedly by the same network.
- *   - `kind: 'cord'` — a minimum spanning tree over those mesh bodies, routed
- *     on real roads with no length cap, so every mapped reader in the state
- *     ends up in one connected body. See `cordTier`.
+ *   1. The Gabriel mesh (`kind: 'link'`), unchanged, capped at STATIC_MILES.
+ *      Fine, dense, loops in it already. This is the tier that carries the
+ *      finding: the ordinary trip, logged repeatedly by the same network.
+ *   2. Structural cords (`kind: 'cord'`, `tier: 'Connecting cord'`) — a minimum
+ *      spanning tree over the mesh bodies, routed on real roads with no length
+ *      cap, so every mapped reader in the state ends up in one body.
+ *   3. Fusions (`kind: 'cord'`, `tier: 'Fused cord'`) — anastomosis. A spanning
+ *      tree never fuses, and the loops fusion makes are what let a network
+ *      survive losing a road. See `FUSE_RATIO`.
  *
  * The cords are real routed roads like everything else here — a cord is drawn
  * only where OSRM returns a drivable route between two mapped readers. What a
  * cord is *not* is a claim about a trip. It is the shortest road by which one
- * watched cluster reaches the next, and where that road is ninety miles of
+ * watched cluster reaches the next, and where that road is eighty miles of
  * interstate, the honest reading of the strand is "these two clusters are on
  * the same road network", not "somebody drives this and is read at both ends".
  * The two tiers are drawn differently and labelled differently for exactly that
@@ -998,14 +1001,13 @@ async function main() {
    * one, plus the few that come back unroutable.
    */
   const bodyOf = sites.map((_, i) => (parent.has(i) ? find(i) : i));
-  const bodySize = new Map();
-  sites.forEach((_, i) => bodySize.set(bodyOf[i], (bodySize.get(bodyOf[i]) ?? 0) + 1));
-  log('corridors', `${bodySize.size} mesh bodies to fuse (counting lone readers as a body of one)`);
+  const bodyRoots = new Set(bodyOf);
+  log('corridors', `${bodyRoots.size} mesh bodies to fuse (counting lone readers as a body of one)`);
 
   const cordEdges = cordCandidates(sites, bodyOf);
   log('corridors', `${cordEdges.length} candidate seams between bodies, shortest first`);
 
-  const cordParent = new Map([...bodySize.keys()].map((r) => [r, r]));
+  const cordParent = new Map([...bodyRoots].map((r) => [r, r]));
   const cordFind = (x) => {
     let root = x;
     while (cordParent.get(root) !== root) root = cordParent.get(root);
@@ -1128,8 +1130,6 @@ async function main() {
   };
 
   const cordTries = new Map();
-  /** `[bodyRootA, bodyRootB]` for each drawn cord, for the split pass below. */
-  const cordSeams = [];
   /** `[siteA, siteB]` and length for each cord, for the graph passes below. */
   const cordEnds = [];
   const cordMeters = [];
@@ -1152,7 +1152,6 @@ async function main() {
     if (!accepted) continue;
 
     cordParent.set(ra, rb);
-    cordSeams.push([bodyOf[edge.i], bodyOf[edge.j]]);
     cordEnds.push([edge.i, edge.j]);
     cordMeters.push(accepted.result.meters);
     cordFeatures.push(makeCord(edge, accepted, 'Connecting cord'));
@@ -1160,11 +1159,11 @@ async function main() {
 
   await saveCache(cache);
 
-  const colonies = new Set([...bodySize.keys()].map((r) => cordFind(r)));
+  const colonies = new Set([...bodyRoots].map((r) => cordFind(r)));
   log(
     'corridors',
     `${cordFeatures.length} cords drawn from ${cordRouted} routes; ` +
-      `${bodySize.size} bodies fused into ${colonies.size}`,
+      `${bodyRoots.size} bodies fused into ${colonies.size}`,
   );
   log(
     'corridors',
@@ -1265,7 +1264,10 @@ async function main() {
    * it costs the network nothing. That zero is a finding in itself — it is the
    * redundancy the fusions were added to create.
    */
-  const held = bridgeSplits([...endsOf, ...cordEnds]);
+  // Every strand as a pair of reader locations, mesh first, in the same order
+  // as the features they belong to. Both passes below index into it.
+  const allEdges = [...endsOf, ...cordEnds];
+  const held = bridgeSplits(allEdges);
   features.forEach((feature, i) => {
     feature.properties.attributes.bringsInSites = held.smaller[i];
   });
@@ -1293,8 +1295,9 @@ async function main() {
   // from `alone` above, which counts sites with no *mesh* neighbour: most of
   // those are now the far end of a cord. What is left is the readers no road
   // could be routed to at all.
-  const fusedBodies = new Set(cordSeams.flat());
-  const unconnected = sites.filter((_, i) => !parent.has(i) && !fusedBodies.has(bodyOf[i])).length;
+  const inAStrand = new Set();
+  for (const [a, b] of allEdges) inAStrand.add(a).add(b);
+  const unconnected = sites.length - inAStrand.size;
 
   // Longest first, so the record list opens on the strands that cross open
   // country rather than on a thousand city blocks.

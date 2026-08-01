@@ -789,20 +789,35 @@ export class MapController {
                * picture: a cord is the shortest road that happened to connect
                * two clusters nobody coordinated, and a soft strand claims about
                * as much precision as that deserves.
+               *
+               * Past zoom 13 the cord's blur comes back down, and this is the
+               * one number in the layer set for the machine rather than for the
+               * reader. Blur is paid per pixel covered and cords are 2,900 miles
+               * of line against the mesh's 600, so at a wide blur they are
+               * something like eight times the mesh's fill cost — while sitting
+               * at a tenth of its opacity, on the one view where the mesh is
+               * densest and the map has the most else to draw. Coming down
+               * costs a cord nothing anybody can see at that zoom and gives the
+               * frame back to the tier being looked at.
                */
               'line-blur': byZoomAndTier([
                 [5, 2, 7],
                 [11, 5, 14],
-                [16, 9, 24],
+                [13, 7, 12],
+                [16, 9, 6],
               ]),
               // The map opens on the whole state, where the median corridor is
               // under three pixels long. A thread that is also thin there is a
               // thread nobody can find, so the glow starts wide and the line
               // grows into it rather than out of nothing.
+              // The cord's halo narrows past zoom 13 for the same reason its
+              // blur does, and the two together are what keep a metro view
+              // cheap: width and blur both multiply the pixels a cord costs.
               'line-width': byZoomAndTier([
                 [5, 6, 9],
                 [11, 9, 15],
-                [16, 16, 26],
+                [13, 11, 14],
+                [16, 16, 10],
               ]),
             },
           },
@@ -853,7 +868,8 @@ export class MapController {
               'line-width': byZoomAndTier([
                 [5, 2.6, 2.4],
                 [11, 3.2, 4],
-                [16, 5, 7],
+                [13, 3.7, 3.8],
+                [16, 5, 3],
               ]),
             },
           },
