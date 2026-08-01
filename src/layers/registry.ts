@@ -518,6 +518,20 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'polygon',
     color: '#c084fc',
+    categoryColors: {
+      key: 'grade',
+      label: { en: 'HOLC grade', es: 'Calificación HOLC' },
+      // The colours HOLC printed on the original sheets, read from the source
+      // data's own fill values, so the map reads like the document it is.
+      colors: [
+        { value: 'A', color: '#76a865' },
+        { value: 'B', color: '#7cb5bd' },
+        { value: 'C', color: '#ffff00' },
+        { value: 'D', color: '#d9838d' },
+        { value: 'E', color: '#fefefe' },
+      ],
+      fallback: '#9ca3af',
+    },
     dataPath: '/data/redlining.geojson',
     csvPath: null,
     provenance: {
