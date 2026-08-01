@@ -18,22 +18,15 @@ export const es: Record<string, string> = {
   navContribute: 'Contribuir',
   navAbout: 'Qué es esto',
   skipToContent: 'Saltar al contenido principal',
-  skipToMap: 'Saltar al mapa',
 
   layers: 'Capas',
   filters: 'Filtros',
-  toggleLayer: 'Mostrar u ocultar capa',
-  showLayer: 'Mostrar',
-  hideLayer: 'Ocultar',
   layersOn: 'capas activadas',
   clearFilters: 'Borrar filtros',
   filtersCleared: 'Filtros borrados',
-  featuresShown: 'mostrados',
   ofTotal: 'de',
   loading: 'Cargando datos del mapa…',
   mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
-  zoomIn: 'Acercar',
-  zoomOut: 'Alejar',
   resetView: 'Volver a Minnesota',
   closePanel: 'Cerrar panel',
   noResults: 'Ningún registro coincide con los filtros actuales.',
@@ -71,7 +64,6 @@ export const es: Record<string, string> = {
   limitations: 'Limitaciones',
   county: 'Condado',
   viewRecord: 'Ver el registro original',
-  downloadLayer: 'Descargar esta capa',
 
   // Quién responde aquí
   whoAnswersTitle: 'Quién le debe respuesta aquí',
@@ -138,14 +130,6 @@ export const es: Record<string, string> = {
   confidenceProbabilistic: 'Probabilístico: de origen comunitario; puede haberse movido o retirado.',
 
   limitsTitle: 'Qué es esto y qué no es',
-  limitsNotLive:
-    'No es un rastreador en vivo. Muestra dónde se ha registrado infraestructura, nunca dónde está una persona.',
-  limitsNotPeople:
-    'Nunca sobre personas. Cada registro describe una institución, un edificio, un contrato o una política.',
-  limitsNotLegal: 'No es asesoría legal. Las herramientas de acción son informativas.',
-  limitsIncomplete:
-    'Incompleto por naturaleza. Cada capa está fechada, es parcial o aproximada, y cada una lo explica.',
-  dismiss: 'Descartar',
 
   openSource: 'Código abierto',
   noTrackers: 'Sin rastreadores, sin analíticas, sin cuentas.',
