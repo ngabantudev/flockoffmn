@@ -159,6 +159,25 @@ const PULSE_TAIL = 0.28;
 const PULSE_HEAD = '#f0fdfa';
 
 /**
+ * How often the pulse is allowed to move, and where it is worth moving at all.
+ *
+ * The animation is not free the way a uniform is. MapLibre draws a
+ * `line-gradient` by rendering the ramp to a small canvas and uploading it as a
+ * texture, once per tile the layer covers — so replacing the ramp costs bands ×
+ * tiles canvas renders, and doing that on every animation frame is what made
+ * the first version of this heavy.
+ *
+ * Two limits, each cutting the same product. Thirty-odd frames a second is
+ * indistinguishable from sixty for a glow travelling this slowly and halves the
+ * work outright. The zoom floor removes the rest of it: below `PULSE_FROM_ZOOM`
+ * the median link is around a pixel long, so the pulse is animating something
+ * nobody can resolve — and that is exactly the view the map opens on, which is
+ * the worst possible place to spend a frame budget.
+ */
+const PULSE_FRAME_MS = 32;
+const PULSE_FROM_ZOOM = 9;
+
+/**
  * One frame of the pulse, as a colour ramp along the line.
  *
  * `at` runs from 0 to 1 and wraps, so the pulse leaves one end of a link as it
@@ -792,15 +811,24 @@ export class MapController {
             paint: {
               'line-color': thread,
               'line-opacity': 0.3,
-              'line-blur': ['interpolate', ['linear'], ['zoom'], 5, 3, 11, 9, 16, 18],
+              /*
+               * Blur is paid per pixel covered, and this layer now covers a
+               * great deal more of them: every link is drawn whole where half
+               * of them used to be short stubs, so the same glow costs roughly
+               * twice what it did. Halved here and narrowed, which on a dense
+               * metro block is the difference between a haze and a legible
+               * thread anyway — the old figures were tuned when there were
+               * fewer lines to pile on top of each other.
+               */
+              'line-blur': ['interpolate', ['linear'], ['zoom'], 5, 2, 11, 5, 16, 9],
               // The map opens on the whole state, where the median corridor is
               // under three pixels long. A thread that is also thin there is a
               // thread nobody can find, so the glow starts wide and the line
               // grows into it rather than out of nothing.
               'line-width': widthByZoom([
-                [5, 9],
-                [11, 14],
-                [16, 26],
+                [5, 6],
+                [11, 9],
+                [16, 16],
               ]),
             },
           },
@@ -848,6 +876,13 @@ export class MapController {
               id: `${layer.id}-line-pulse-${band}`,
               type: 'line',
               source: src,
+              // Not drawn at all where it could not be seen. Below this the
+              // median link is about a pixel, so these layers were costing a
+              // gradient texture per tile and a pass of overdraw to render
+              // movement at a scale that cannot hold it — on the very view the
+              // map opens with. The casing and core still draw the network
+              // there; it is the animation that stops.
+              minzoom: PULSE_FROM_ZOOM,
               filter: ['==', ['get', layer.pulse!.phaseKey], band] as unknown as
                 maplibregl.FilterSpecification,
               layout: { 'line-cap': 'butt', 'line-join': 'round' },
@@ -1009,14 +1044,33 @@ export class MapController {
    * layer is switched on, so a reader who never turns corridors on pays nothing
    * for this.
    *
-   * A frame is one `setPaintProperty` per band — six small colour ramps, no
-   * geometry, no tile relaid, nothing sent to the worker. That is the whole
-   * reason the layer underneath it can be static: the movement costs the same
-   * whether the map is drawing eight hundred links or eight thousand.
+   * A frame is one `setPaintProperty` per band, and nothing else: no geometry,
+   * no tile relaid, nothing sent to the worker. That is what lets the layer
+   * underneath be static and several times denser than the slider could carry.
+   * It is still not free — see `PULSE_FRAME_MS` — so the loop does as little as
+   * it can get away with and skips entirely when the movement would not be
+   * seen.
    */
   private startPulse() {
     if (REDUCED_MOTION || this.pulseFrame !== null || !this.pulseLayers.size) return;
     const start = performance.now();
+    let last = 0;
+
+    // Resolved once rather than per band per frame: this used to run a linear
+    // search over every layer on the map sixty times a second to answer a
+    // question whose answer never changes.
+    const bandsOf = new Map<string, { band: number; bands: number; period: number }>();
+    for (const id of this.pulseLayers) {
+      const match = id.match(/^(.*)-line-pulse-(\d+)$/);
+      const owner = this.layers.find((l) => l.id === match?.[1]);
+      if (!match || !owner?.pulse) continue;
+      bandsOf.set(id, {
+        band: Number(match[2]),
+        bands: owner.pulse.bands,
+        period: owner.pulse.periodMs,
+      });
+    }
+
     const tick = (now: number) => {
       const live = [...this.pulseLayers].filter(
         (id) => this.map.getLayer(id) && this.visible.has(id.replace(/-line-pulse-\d+$/, '')),
@@ -1026,16 +1080,30 @@ export class MapController {
         return;
       }
       this.pulseFrame = requestAnimationFrame(tick);
+      if (now - last < PULSE_FRAME_MS) return;
+
+      /*
+       * Yield the frame to the reader.
+       *
+       * A pan or a zoom is the one moment the map is already spending
+       * everything it has, and it is also the moment nobody is watching a glow
+       * travel: they are watching where they are going. Standing down until the
+       * camera settles costs the animation nothing anyone notices and hands the
+       * whole budget back to the interaction.
+       */
+      if (this.map.getZoom() < PULSE_FROM_ZOOM || this.map.isMoving() || this.map.isZooming()) {
+        return;
+      }
+      last = now;
+
       for (const id of live) {
-        const band = Number(id.match(/-line-pulse-(\d+)$/)?.[1] ?? 0);
-        const layer = this.layers.find((l) => id.startsWith(`${l.id}-line-pulse-`));
-        const bands = layer?.pulse?.bands ?? 1;
-        const period = layer?.pulse?.periodMs ?? 2600;
+        const spec = bandsOf.get(id);
+        if (!spec) continue;
         // Bands are staggered a fraction of a period apart, and because the
         // ingest ordered them from the middle of each network outwards, the
         // stagger is what turns a row of independent pulses into one wave
         // leaving the centre of a cluster.
-        const at = ((now - start) / period + band / bands) % 1;
+        const at = ((now - start) / spec.period + spec.band / spec.bands) % 1;
         this.map.setPaintProperty(id, 'line-gradient', pulseRamp(at));
       }
     };

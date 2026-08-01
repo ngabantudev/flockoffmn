@@ -354,8 +354,10 @@ export const LAYERS: LayerDefinition[] = [
       phaseKey: 'phase',
       // Must equal PHASE_BANDS in scripts/ingest/corridors.mjs. Fewer bands
       // here than the ingest wrote would hide every link in the bands past the
-      // end, so the two move together.
-      bands: 6,
+      // end, so the two move together. Each band is a style layer that
+      // re-uploads a gradient texture per tile per frame, which is why this is
+      // as low as it is — the reasoning is beside the ingest constant.
+      bands: 3,
       // A little over two seconds end to end. Slow enough to read as travelling
       // rather than flickering, quick enough that a reader who glances at one
       // cluster sees a whole pass without waiting for it.
