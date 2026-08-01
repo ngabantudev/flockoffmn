@@ -1069,13 +1069,10 @@ const strings = {
 
   /* ------------------------------ Start-up ------------------------------ */
 
-  // Default on: the surveillance layer and the roads that join one camera to
-  // the next, so the first paint already shows the network rather than an
-  // empty basemap. The cameras alone answer "is there one near me" and leave
-  // the shape of the network — the part no single dot can show — switched off
-  // behind a checkbox, so the corridors come on with them. Everything else is
-  // the reader's to add.
-  const DEFAULT_ON = ['alpr', 'alpr_corridor'];
+  // Nothing draws until the reader switches it on — the map opens on the
+  // basemap alone, for now. (The cameras and their corridors used to open
+  // pre-drawn; restore them to this list to bring that back.)
+  const DEFAULT_ON: string[] = [];
 
   // Some filters open already narrowed — a withdrawn data-center proposal is
   // worth finding but should not be drawn as though it were a building. The
