@@ -15,6 +15,14 @@ export interface ClientLayer {
   limitations: string[];
   color: string;
   geometry: 'point' | 'polygon' | 'line';
+  /**
+   * Where this layer's category sits in the draw order, low to high.
+   *
+   * Taken from the position of the category in `LAYER_CATEGORIES` rather than
+   * restated here, so the map stacks in the order the panel lists — and one
+   * list stays the source of both.
+   */
+  stackRank: number;
   /** Attribute holding a compass bearing, if the layer records one. */
   bearingKey?: string;
   /** Offsets of a record's parts along its own length, if it has a length. */
@@ -36,6 +44,10 @@ export interface ClientLayer {
   networkColor?: { key: string; maxRecords: number };
   /** A second, heavier tier of line inside the same filament layer. */
   cordTier?: { key: string; value: string; color: string };
+  /** Scale this line layer's width by a magnitude in its own data. */
+  weightBy?: { key: string; label: string; stops: Array<[number, number]> };
+  /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
+  opacity?: number;
   /** The request a reader can file about one of these records, if any. */
   action?: {
     requestType: string;
@@ -419,13 +431,16 @@ export class MapController {
   /**
    * The lowest of our own dot layers currently on the map, if any.
    *
-   * Layers are added as a reader switches them on, so stacking follows the
-   * order the checkboxes were ticked in. A corridor turned on after the
-   * cameras would otherwise draw over the dots that stand along it — and its
-   * click target, deliberately 20px wide so a line can be tapped, would
-   * swallow every click meant for a camera. Areas and lines therefore insert
-   * beneath the first dot layer already present, and dots stay on top however
-   * a reader gets there.
+   * An arrival point, not the final order. A corridor added over the cameras
+   * would draw across the dots standing along it, and its click target —
+   * deliberately 20px wide so a line can be tapped — would swallow every click
+   * meant for a camera, so areas and lines land beneath the dots already
+   * present rather than on top of them.
+   *
+   * What this cannot do is reason about layers that are not on the map yet,
+   * which is every layer a reader has not ticked. `restack()` settles the
+   * order properly once the layer is complete; this just keeps the moment
+   * before that from looking wrong.
    */
   private beneathDots(): string | undefined {
     const marks = ['-points', '-cones'];
@@ -448,6 +463,67 @@ export class MapController {
       if (match(styleLayer.id)) return styleLayer.id;
     }
     return undefined;
+  }
+
+  /**
+   * Put every style layer we own back into a fixed order, bottom to top.
+   *
+   * The insertion points above get a layer close to the right place as it
+   * arrives, but they can only ever reason about what is already on the map.
+   * Layers arrive as a reader ticks them, so on their own they produce a
+   * stacking that depends on the order the boxes were ticked in — the same two
+   * layers land in one order or the other depending on which was switched on
+   * first, which is not a thing a reader should have to know.
+   *
+   * So after every addition the whole stack is sorted. The order is:
+   *
+   *   1. Surfaces — the density fields and their nodes — beneath everything of
+   *      ours. A surface is an estimate smeared over a radius, and anything
+   *      drawn under one is being read through a haze that is not about it.
+   *   2. Then by category, in the order the layer panel lists them: what drew
+   *      the lines, what was built on them, what records, who acts. The map
+   *      and the panel then say the same thing in two ways, and the layers a
+   *      reader came for sit on top of the context they need to be read
+   *      against rather than under it.
+   *   3. Then by shape within a category: areas, then lines, then dots. A dot
+   *      is one exact position and the smallest target on the map, so nothing
+   *      from its own category is allowed over it.
+   *
+   * `sort` is stable, so each layer's own internal sequence — surface, casing,
+   * core, hit target, cones, dots — survives untouched inside its band.
+   */
+  private restack() {
+    /** Areas first, then lines, then the dots that must stay clickable. */
+    const byShape = { polygon: 0, line: 1, point: 2 };
+
+    const owned = (this.map.getStyle().layers ?? [])
+      .map((styleLayer) => {
+        const layer = this.layers.find((l) => styleLayer.id.startsWith(`${l.id}-`));
+        if (!layer) return null;
+        return {
+          styleId: styleLayer.id,
+          layer,
+          // Kept out of the category bands entirely rather than ranked within
+          // them: a surface belongs under every record on the map, not just
+          // under the records of the layers below its own.
+          surface: styleLayer.id.endsWith('-density') || styleLayer.id.endsWith('-nodes'),
+        };
+      })
+      .filter((o) => o !== null);
+
+    owned.sort(
+      (a, b) =>
+        // `b` first: a surface is the bottom band, and true sorts as 1.
+        Number(b.surface) - Number(a.surface) ||
+        // Surfaces are already beneath everything; ordering them among
+        // themselves by category would be inventing a hierarchy for haze.
+        (a.surface ? 0 : a.layer.stackRank - b.layer.stackRank) ||
+        (a.surface ? 0 : byShape[a.layer.geometry] - byShape[b.layer.geometry]),
+    );
+
+    // Bottom to top, each moved to the top in turn: the last one moved ends up
+    // highest, so walking the desired order forwards produces it exactly.
+    for (const { styleId } of owned) this.map.moveLayer(styleId);
   }
 
   private densitySourceId = (layerId: string) => `src-${layerId}-density`;
@@ -524,6 +600,10 @@ export class MapController {
       // four, and clearing the filter would appear to do nothing because
       // nothing had ever been filtered.
       this.addLayer(layer, this.filteredFeatures(layer.id));
+      // Every geometry returns from its own branch of addLayer, so the sort
+      // goes here — the one place all of them come back to — rather than at
+      // three separate exits where the next new geometry would forget it.
+      this.restack();
       this.events.onLayerReady?.(layer.id, features);
     } catch (err) {
       this.events.onError?.(layer.id, err instanceof Error ? err.message : String(err));
@@ -876,6 +956,60 @@ export class MapController {
           under,
         );
       } else {
+        /*
+         * Width from the data, where the layer says a magnitude drives it.
+         *
+         * `['zoom']` may only appear at the top of an expression, so the zoom
+         * ramp stays outermost and each of its stops multiplies that zoom's
+         * base width by the data ramp. Without a `weightBy` this collapses to
+         * the plain numbers every other line layer has always had.
+         *
+         * A missing or null magnitude reads as zero rather than breaking the
+         * layer: `interpolate` demands a number, and one unrecorded value
+         * taking the whole layer down with it is not a trade worth making.
+         */
+        const weight = layer.weightBy;
+        const at = (base: number) =>
+          (weight
+            ? [
+                '*',
+                base,
+                [
+                  'interpolate',
+                  ['linear'],
+                  ['to-number', ['coalesce', ['get', weight.key], 0]],
+                  ...weight.stops.flat(),
+                ],
+              ]
+            : base) as unknown as maplibregl.ExpressionSpecification;
+
+        /*
+         * Opacity, ramped by zoom where the layer asks to be quieter.
+         *
+         * A statewide layer is densest at the zoom where its lines are
+         * thinnest, so the view that shows the most of it is the view where it
+         * drowns everything else. The ramp spends the low end well under the
+         * declared value and only reaches it close in, where a segment is one
+         * line against open ground and has to be followable.
+         *
+         * A layer that declares nothing keeps the exact constant every plain
+         * line layer has always had, ramp included — which is to say none.
+         */
+        const fade = (fixed: number, declared: number | undefined) =>
+          (declared === undefined
+            ? fixed
+            : [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                6,
+                declared * 0.5,
+                11,
+                declared * 0.78,
+                14,
+                declared,
+              ]) as unknown as maplibregl.ExpressionSpecification;
+
         this.map.addLayer(
           {
             id: `${layer.id}-line-casing`,
@@ -884,8 +1018,11 @@ export class MapController {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
               'line-color': '#0a0c10',
-              'line-opacity': 0.85,
-              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 3.5, 11, 6, 16, 11],
+              // The casing tracks the core rather than staying put: a dark halo
+              // at full strength under a half-strength line reads as a shadow
+              // with nothing casting it.
+              'line-opacity': fade(0.85, layer.opacity && layer.opacity * 0.94),
+              'line-width': ['interpolate', ['linear'], ['zoom'], 6, at(3.5), 11, at(6), 16, at(11)],
             },
           },
           under,
@@ -898,8 +1035,8 @@ export class MapController {
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
               'line-color': layer.color,
-              'line-opacity': 0.9,
-              'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.6, 11, 3, 16, 6],
+              'line-opacity': fade(0.9, layer.opacity),
+              'line-width': ['interpolate', ['linear'], ['zoom'], 6, at(1.6), 11, at(3), 16, at(6)],
             },
           },
           under,
