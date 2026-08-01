@@ -65,6 +65,11 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       label: pick(f.label, locale),
       kind: f.kind,
       values: distinctValues(collection, f.key),
+      valueDescriptions: f.valueDescriptions
+        ? Object.fromEntries(
+            Object.entries(f.valueDescriptions).map(([v, text]) => [v, pick(text, locale)]),
+          )
+        : undefined,
       // Only the excluded values this layer actually has. A registry entry that
       // names a value the data no longer contains must not leave the filter
       // opening pre-ticked against nothing.
@@ -347,7 +352,29 @@ const strings = {
                                             }
                                             class="mt-0.5 h-3.5 w-3.5 shrink-0"
                                           />
-                                          <span class="min-w-0">{value}</span>
+                                          {/*
+                                            Where this filter is the same attribute the map colours
+                                            by, each value carries its ground colour, so the toggle
+                                            and the fill read as one system.
+                                          */}
+                                          {layer.categoryColors?.key === filter.key && (
+                                            <span
+                                              class="mt-1 h-2 w-2 shrink-0 rounded-sm"
+                                              style={`background:${
+                                                layer.categoryColors.colors.find((c) => c.value === value)
+                                                  ?.color ?? layer.categoryColors.fallback
+                                              }`}
+                                              aria-hidden="true"
+                                            />
+                                          )}
+                                          <span class="min-w-0">
+                                            {value}
+                                            {filter.valueDescriptions?.[value] && (
+                                              <span class="block text-[10px] leading-snug text-ink-400">
+                                                {filter.valueDescriptions[value]}
+                                              </span>
+                                            )}
+                                          </span>
                                         </label>
                                       ))}
                                     </div>
