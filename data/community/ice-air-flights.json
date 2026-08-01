@@ -1,0 +1,61 @@
+{
+  "$comment": [
+    "Discrete, volunteer-observed ICE Air flights through MSP airport.",
+    "",
+    "THIS LAYER IS EYEWITNESS-SOURCED, NOT GOVERNMENT-CONFIRMED. No agency",
+    "publishes departure manifests or passenger counts for ICE Air charter",
+    "flights. What exists instead is Minnesota 50501's volunteer observation",
+    "effort at MSP -- covered independently by KSTP and NPR -- logging what",
+    "observers can see from outside the fence: which aircraft, roughly how many",
+    "people boarded, and where the flight was told or reported to be headed.",
+    "",
+    "RULES",
+    "",
+    "1. Every flight cites the source that reported it under `asserts`, keyed",
+    "   the same way as data-center-projects.json. No unattributed field.",
+    "2. Passenger counts and destinations are reported, not verified against",
+    "   any manifest. Say so; never round up to certainty.",
+    "3. Geometry is a single point at MSP -- the observation location -- never",
+    "   a drawn route to the reported destination. We do not have a verified",
+    "   flight path, only a claimed endpoint, and a line would assert precision",
+    "   we don't have.",
+    "4. Refreshed by pull request as new flights are transcribed from the",
+    "   source below, not by a scraper -- the source is a session-authenticated",
+    "   Airtable share view with no stable public API to automate against.",
+    "5. `icao24` is the aircraft's transponder hex address (not asserted by the",
+    "   source above -- looked up once per tail number against the FAA",
+    "   Releasable Aircraft Registry, cited on the record itself). It's what",
+    "   lets scripts/ingest/flights.mjs also track this specific aircraft live,",
+    "   regardless of whether its current registered owner matches one of the",
+    "   named ICE Air contractors."
+  ],
+
+  "sources": {
+    "mn50501-airtable": {
+      "name": "MN50501: MSP ICE Air Flights, compiled by Nick Benson",
+      "url": "https://airtable.com/appXo5spat4J3IQ9K/shrhjlIuy1V64gR4A/tbl4ZyyH4kmbsgDAw/viwrMDP3ciEuh3yXf",
+      "compilerCredit": "Nick Benson, Minnesota 50501",
+      "compilerContact": "nick@ottergoose.com — for corrections/verification reference only, not republished in the generated dataset",
+      "license": "\"These data can be used by anyone; attribution 'Nick Benson, MN50501' is appreciated.\" (stated on the base itself, not a formal license)",
+      "methodology": "Best effort is made to keep the sheet updated within 24 hours of an ICE Air flight arriving/departing MSP. The compiler states the base is believed to include all ICE Air flights through MSP since 2025-10-01.",
+      "supportUrl": "https://mn50501.org/donate"
+    }
+  },
+
+  "flights": [
+    {
+      "date": "2026-07-31",
+      "airport": "MSP",
+      "tailNumber": "N625SW",
+      "icao24": "a82a75",
+      "icao24Source": "FAA Releasable Aircraft Registry (MASTER.txt, MODE S CODE HEX field), looked up 2026-08-01",
+      "reportedPassengerCount": 28,
+      "reportedDestinations": ["Alexandria, LA", "El Paso, TX"],
+      "asserts": {
+        "mn50501-airtable": {
+          "note": "Logged by volunteer observers at MSP."
+        }
+      }
+    }
+  ]
+}
