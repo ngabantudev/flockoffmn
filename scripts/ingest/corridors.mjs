@@ -214,6 +214,63 @@ const CORD_NEIGHBOURS = 40;
  */
 const CORD_TRIES = 3;
 
+/* ------------------------------------------------------------------ *
+ * Anastomosis
+ * ------------------------------------------------------------------ */
+
+/**
+ * Fusion, which is the half of a mycelium a spanning tree cannot express.
+ *
+ * A tree is a network that branched and never fused, and that is not what a
+ * mycelium is. Hyphae meet and join — anastomose — and the loops that makes are
+ * the point: they are redundant routes, and a network with them survives having
+ * a piece cut out of it where a tree does not (Fricker et al., PMC11687498).
+ * With the spanning tree alone every cord on this map was a bridge and the cord
+ * tier held exactly zero loops.
+ *
+ * The rule below is the biology's own. Fusion is a local event: two hyphae fuse
+ * where they physically run into each other, not because some global accounting
+ * says a loop would be useful. So a second road is drawn between two clusters
+ * that are *close on the ground* but *far apart through the network* — they
+ * meet, and the network does not know it.
+ *
+ * It is also the more truthful map, which is the better argument for it. This
+ * layer's own limitations admit that a missing cord is never evidence that no
+ * road runs between two places; drawing one road per join was what made that
+ * caveat necessary. A second real routed road is exactly as real as the first.
+ */
+
+/**
+ * How much further the network may run than the road, before the two are
+ * treated as having met without knowing it.
+ *
+ * Four times is a large discrepancy on purpose. Two clusters three miles apart
+ * whose only connection runs twelve miles round is a network with a hole in it;
+ * two whose connection runs five is simply a network. Set this lower and the
+ * map fills with near-parallel roads that add a loop on paper and nothing a
+ * reader can see.
+ */
+const FUSE_RATIO = 4;
+
+/**
+ * The furthest apart two clusters may be and still be said to have met.
+ *
+ * Fusion is local, so this is small — and it is also the whole of the
+ * performance budget. Every fused cord is more blurred pixels on every frame,
+ * and blurred pixels are what this layer pays for; capping the length caps the
+ * cost of the whole pass in the only unit that matters.
+ */
+const FUSE_MAX_M = 12 * MILE;
+
+/**
+ * A ceiling on how many fusions are drawn, longest-standing question first.
+ *
+ * Present so a denser survey cannot quietly turn this pass into hundreds of
+ * extra strands and a map that stutters. If it ever binds it is logged and said
+ * out loud in `knownGaps` rather than silently truncating the network.
+ */
+const FUSE_LIMIT = 220;
+
 /**
  * Public OSRM instances, in the order they are tried.
  *
@@ -516,63 +573,148 @@ function cordCandidates(sites, bodyOf) {
 }
 
 /**
- * For each cord: how big the colony it ends up in is, and how much of that
- * colony hangs off it.
+ * How far apart two reader locations are *through the drawn network*, or null
+ * if the answer is further than `bound`.
  *
- * Every cord merged two colonies that were separate when it was drawn, so the
- * cords form a forest over the mesh bodies and every cord is a bridge. Cutting
- * one splits its tree in two, and the smaller side is the number this reports —
- * the reader locations that reach the rest of the network through that cord and
- * nothing else.
+ * Dijkstra with a ceiling, and the ceiling is the whole point. The fusion pass
+ * does not want the distance, it wants to know whether the network already
+ * joins these two reasonably — so the search stops the moment it is clear the
+ * answer is "no", instead of walking half of Minnesota to find a number that
+ * will only be compared against the bound anyway.
  */
-function splitSizes(seams, bodySize) {
-  const adj = new Map();
-  seams.forEach(([a, b], e) => {
-    if (!adj.has(a)) adj.set(a, []);
-    if (!adj.has(b)) adj.set(b, []);
-    adj.get(a).push(e);
-    adj.get(b).push(e);
-  });
-  const other = (e, n) => (seams[e][0] === n ? seams[e][1] : seams[e][0]);
-
-  const out = seams.map(() => ({ colony: 0, smaller: 0 }));
-  const seen = new Set();
-  for (const start of adj.keys()) {
-    if (seen.has(start)) continue;
-
-    // Depth-first, keeping the visit order and the edge each node arrived by.
-    // A node is only ever pushed by its parent, so a child always lands later
-    // in the order than the node that reached it.
-    const order = [];
-    const arrivedBy = new Map();
-    const stack = [start];
-    seen.add(start);
-    while (stack.length) {
-      const node = stack.pop();
-      order.push(node);
-      for (const e of adj.get(node) ?? []) {
-        const next = other(e, node);
-        if (seen.has(next)) continue;
-        seen.add(next);
-        arrivedBy.set(next, e);
-        stack.push(next);
+function networkDistance(graph, from, to, bound) {
+  if (from === to) return 0;
+  const best = new Map([[from, 0]]);
+  // A pairing of arrays kept in heap order. Small graphs, but this runs
+  // thousands of times, and a linear scan for the minimum makes it quadratic.
+  const heap = [[0, from]];
+  const swap = (i, j) => {
+    const t = heap[i];
+    heap[i] = heap[j];
+    heap[j] = t;
+  };
+  const push = (d, n) => {
+    heap.push([d, n]);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const up = (i - 1) >> 1;
+      if (heap[up][0] <= heap[i][0]) break;
+      swap(up, i);
+      i = up;
+    }
+  };
+  const pop = () => {
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = i * 2 + 1;
+        const r = l + 1;
+        let small = i;
+        if (l < heap.length && heap[l][0] < heap[small][0]) small = l;
+        if (r < heap.length && heap[r][0] < heap[small][0]) small = r;
+        if (small === i) break;
+        swap(small, i);
+        i = small;
       }
     }
+    return top;
+  };
 
-    const total = order.reduce((sum, node) => sum + (bodySize.get(node) ?? 0), 0);
-    const below = new Map(order.map((node) => [node, bodySize.get(node) ?? 0]));
-    // Walking the order backwards settles every subtree in one pass, because
-    // by the time a node is reached every node beneath it has been folded in.
-    for (let k = order.length - 1; k > 0; k--) {
-      const node = order[k];
-      const e = arrivedBy.get(node);
-      const parentNode = other(e, node);
-      const hanging = below.get(node);
-      below.set(parentNode, below.get(parentNode) + hanging);
-      out[e] = { colony: total, smaller: Math.min(hanging, total - hanging) };
+  while (heap.length) {
+    const [d, node] = pop();
+    if (d > bound) return null;
+    if (node === to) return d;
+    if (d > (best.get(node) ?? Infinity)) continue;
+    for (const [next, meters] of graph.get(node) ?? []) {
+      const through = d + meters;
+      if (through > bound) continue;
+      if (through < (best.get(next) ?? Infinity)) {
+        best.set(next, through);
+        push(through, next);
+      }
     }
   }
-  return out;
+  return null;
+}
+
+/**
+ * For every strand: the size of the network it sits in, and how much of that
+ * network hangs off it alone.
+ *
+ * Cutting a strand only strands anybody if that strand is a bridge — an edge no
+ * loop runs around. Before the fusion pass every cord was one by construction
+ * and this could be read off the tree; now the network has loops in it and the
+ * question has to be asked properly, of the graph, by Tarjan's low-link test.
+ *
+ * A strand inside a loop reports zero, and the zero is not a missing value: it
+ * says the network can lose this road and lose nothing, which is precisely the
+ * redundancy the fusions exist to create.
+ */
+function bridgeSplits(edges) {
+  const adj = new Map();
+  edges.forEach(([a, b], e) => {
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a).push([b, e]);
+    adj.get(b).push([a, e]);
+  });
+
+  const disc = new Map();
+  const low = new Map();
+  const below = new Map();
+  const colony = new Array(edges.length).fill(0);
+  const smaller = new Array(edges.length).fill(0);
+  const bridgeChild = new Map();
+  let clock = 0;
+
+  for (const root of adj.keys()) {
+    if (disc.has(root)) continue;
+    const seen = [root];
+    disc.set(root, clock);
+    low.set(root, clock++);
+    below.set(root, 1);
+    // Iterative, with the adjacency cursor kept on the frame: a metro component
+    // is deep enough that recursion is a real risk, and this is the same walk.
+    const stack = [[root, -1, 0]];
+    while (stack.length) {
+      const frame = stack[stack.length - 1];
+      const [node, viaEdge] = frame;
+      const list = adj.get(node);
+      if (frame[2] < list.length) {
+        const [next, e] = list[frame[2]++];
+        // Compared by edge and not by node, so a second road between the same
+        // two readers correctly reads as a loop rather than as the way back.
+        if (e === viaEdge) continue;
+        if (disc.has(next)) {
+          low.set(node, Math.min(low.get(node), disc.get(next)));
+        } else {
+          seen.push(next);
+          disc.set(next, clock);
+          low.set(next, clock++);
+          below.set(next, 1);
+          stack.push([next, e, 0]);
+        }
+      } else {
+        stack.pop();
+        if (stack.length) {
+          const parentNode = stack[stack.length - 1][0];
+          low.set(parentNode, Math.min(low.get(parentNode), low.get(node)));
+          below.set(parentNode, below.get(parentNode) + below.get(node));
+          if (low.get(node) > disc.get(parentNode)) bridgeChild.set(viaEdge, node);
+        }
+      }
+    }
+    for (const node of seen) for (const [, e] of adj.get(node)) colony[e] = seen.length;
+  }
+
+  for (const [e, child] of bridgeChild) {
+    const hanging = below.get(child);
+    smaller[e] = Math.min(hanging, colony[e] - hanging);
+  }
+  return { colony, smaller };
 }
 
 /* ------------------------------------------------------------------ *
@@ -770,10 +912,11 @@ async function main() {
           // Filled in by the pass below, once every surviving link is known:
           // how many reader locations this link's mesh body joins.
           connectedSites: 0,
-          // Nothing hangs off a mesh link: cut one and its two ends are still
-          // joined to the colony, through the loops the Gabriel test draws and
-          // through the cords. Only a cord can be the single thread holding
-          // part of the network on, so only a cord carries a figure here.
+          // Filled in by the bridge pass below: how many reader locations would
+          // be cut off the network if this one strand went. Zero where a loop
+          // runs around it, which is most of the mesh and the whole point of a
+          // mesh — the Gabriel test draws loops, and a road inside a loop can
+          // be lost for nothing.
           bringsInSites: 0,
           operatorCount: operators.length,
           operators: operators.length ? operators.join('; ') : null,
@@ -874,24 +1017,16 @@ async function main() {
     return root;
   };
 
-  const cordTries = new Map();
-  /** `[bodyRootA, bodyRootB]` for each drawn cord, for the split pass below. */
-  const cordSeams = [];
-  const cordFeatures = [];
-  let cordNoRoute = 0;
-  let cordUnsnapped = 0;
-  let cordCrooked = 0;
-  let cordRouted = 0;
-
-  for (const edge of cordEdges) {
-    const ra = cordFind(bodyOf[edge.i]);
-    const rb = cordFind(bodyOf[edge.j]);
-    if (ra === rb) continue;
-    const seam = ra < rb ? `${ra}|${rb}` : `${rb}|${ra}`;
-    const attempts = cordTries.get(seam) ?? 0;
-    if (attempts >= CORD_TRIES) continue;
-    cordTries.set(seam, attempts + 1);
-
+  /**
+   * Ask the router for one cord, and say whether it may be drawn.
+   *
+   * Shared by the spanning tree and the fusion pass below, so a fused cord is
+   * held to exactly the same standards as a structural one — same snapping,
+   * same detour ceiling, same simplification. Returns null and counts the
+   * refusal rather than throwing, because a pair that cannot be routed is data
+   * about the road network and not a failure of the build.
+   */
+  const routeCord = async (edge) => {
     const a = sites[edge.i];
     const b = sites[edge.j];
     const key = `${a.point[0].toFixed(6)},${a.point[1].toFixed(6)};${b.point[0].toFixed(6)},${b.point[1].toFixed(6)}`;
@@ -904,31 +1039,37 @@ async function main() {
       cordRouted++;
       if (cordRouted % 50 === 0) {
         await saveCache(cache);
-        const left = new Set([...cordParent.keys()].map(cordFind)).size;
-        log('corridors', `  ${cordRouted} routes asked for, ${left} bodies still separate`);
+        log('corridors', `  ${cordRouted} cord routes asked for`);
       }
     }
 
     if (result.code !== 'Ok') {
       cordNoRoute++;
-      continue;
+      return null;
     }
     if (result.snapM.some((d) => d > SNAP_M)) {
       cordUnsnapped++;
-      continue;
+      return null;
     }
     if (result.meters > Math.max(edge.straightM * CORD_DETOUR_RATIO, DETOUR_FLOOR_M)) {
       cordCrooked++;
-      continue;
+      return null;
     }
 
     const line = simplify(result.coordinates, CORD_SIMPLIFY_M);
     if (!Array.isArray(line) || line.length < 2) {
       cordNoRoute++;
-      continue;
+      return null;
     }
     vertexCount += result.coordinates.length;
     keptVertices += line.length;
+    return { result, line };
+  };
+
+  /** One cord as a feature. `tier` is what the record list calls it. */
+  const makeCord = (edge, { result, line }, tier) => {
+    const a = sites[edge.i];
+    const b = sites[edge.j];
 
     // A cord can cross forty named roads. Naming all of them would fill the
     // panel with a turn list nobody asked for, so this keeps the ones the cord
@@ -942,16 +1083,15 @@ async function main() {
     const ranked = [...byIdentity.entries()].sort((x, y) => y[1] - x[1]).map(([id]) => id);
     const along = ranked.slice(0, 8);
     const roadsAlong = along.length
-      ? along.join('; ') + (ranked.length > along.length ? ` (+${ranked.length - along.length} more)` : '')
+      ? along.join('; ') +
+        (ranked.length > along.length ? ` (+${ranked.length - along.length} more)` : '')
       : null;
 
     const midpoint = line[Math.floor(line.length / 2)];
     const county = findContaining(midpoint, counties.features);
     const operators = [...new Set([...a.operators, ...b.operators])].sort();
 
-    cordParent.set(ra, rb);
-    cordSeams.push([bodyOf[edge.i], bodyOf[edge.j]]);
-    cordFeatures.push({
+    return {
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: line },
       properties: {
@@ -969,14 +1109,14 @@ async function main() {
         sourceDate: null,
         attributes: {
           kind: 'cord',
-          tier: 'Connecting cord',
+          tier,
           roadsAlong,
           readerCount: a.readers + b.readers,
           linkMiles: round(result.meters, 2),
           straightMiles: round(edge.straightM, 2),
           siteOffsets: `0.00;${round(result.meters, 2).toFixed(2)}`,
           siteReaders: `${a.readers};${b.readers}`,
-          // Both filled in by the split pass below.
+          // Both filled in by the bridge pass below.
           connectedSites: 0,
           bringsInSites: 0,
           operatorCount: operators.length,
@@ -984,27 +1124,41 @@ async function main() {
           unattributedReaders: a.unattributed + b.unattributed,
         },
       },
-    });
+    };
+  };
+
+  const cordTries = new Map();
+  /** `[bodyRootA, bodyRootB]` for each drawn cord, for the split pass below. */
+  const cordSeams = [];
+  /** `[siteA, siteB]` and length for each cord, for the graph passes below. */
+  const cordEnds = [];
+  const cordMeters = [];
+  const cordFeatures = [];
+  let cordNoRoute = 0;
+  let cordUnsnapped = 0;
+  let cordCrooked = 0;
+  let cordRouted = 0;
+
+  for (const edge of cordEdges) {
+    const ra = cordFind(bodyOf[edge.i]);
+    const rb = cordFind(bodyOf[edge.j]);
+    if (ra === rb) continue;
+    const seam = ra < rb ? `${ra}|${rb}` : `${rb}|${ra}`;
+    const attempts = cordTries.get(seam) ?? 0;
+    if (attempts >= CORD_TRIES) continue;
+    cordTries.set(seam, attempts + 1);
+
+    const accepted = await routeCord(edge);
+    if (!accepted) continue;
+
+    cordParent.set(ra, rb);
+    cordSeams.push([bodyOf[edge.i], bodyOf[edge.j]]);
+    cordEnds.push([edge.i, edge.j]);
+    cordMeters.push(accepted.result.meters);
+    cordFeatures.push(makeCord(edge, accepted, 'Connecting cord'));
   }
 
   await saveCache(cache);
-
-  /*
-   * What each cord holds on.
-   *
-   * The cords form a forest over the mesh bodies — every one of them merged two
-   * colonies that were separate when it was drawn, so none of them closes a
-   * loop. That makes every cord a bridge, and a bridge has an exact meaning
-   * worth reporting: cut it, and a known number of reader locations falls off
-   * the colony. That number is the smaller of the two sides, and it is the
-   * difference between a cord that brings in one stranded reader and one that
-   * brings in half a city.
-   */
-  const cordSplits = splitSizes(cordSeams, bodySize);
-  cordFeatures.forEach((feature, i) => {
-    feature.properties.attributes.connectedSites = cordSplits[i].colony;
-    feature.properties.attributes.bringsInSites = cordSplits[i].smaller;
-  });
 
   const colonies = new Set([...bodySize.keys()].map((r) => cordFind(r)));
   log(
@@ -1016,6 +1170,115 @@ async function main() {
     'corridors',
     `cords refused: ${cordNoRoute} unroutable, ${cordUnsnapped} with an end off the road network, ` +
       `${cordCrooked} over ${CORD_DETOUR_RATIO}× their straight-line distance to drive`,
+  );
+
+  /*
+   * Anastomosis.
+   *
+   * The spanning tree above is a network that branched and never fused, and a
+   * mycelium is not that. This pass adds the fusions: a second real road
+   * between two clusters that are close on the ground but far apart through the
+   * network, which is the condition under which two hyphae have met without the
+   * colony knowing it. See `FUSE_RATIO`.
+   *
+   * The network is rebuilt as it goes, so each fusion is judged against the
+   * loops the previous ones already closed. Without that a single hole in the
+   * network attracts a dozen near-parallel roads, all of them true, none of
+   * them telling a reader anything the first one did not.
+   */
+  const graph = new Map();
+  const addGraphEdge = (a, b, meters) => {
+    if (!graph.has(a)) graph.set(a, []);
+    if (!graph.has(b)) graph.set(b, []);
+    graph.get(a).push([b, meters]);
+    graph.get(b).push([a, meters]);
+  };
+  endsOf.forEach(([a, b], i) => addGraphEdge(a, b, lengths[i]));
+  cordEnds.forEach(([a, b], i) => addGraphEdge(a, b, cordMeters[i]));
+
+  const drawnPairs = new Set(
+    [...endsOf, ...cordEnds].map(([a, b]) => (a < b ? `${a}|${b}` : `${b}|${a}`)),
+  );
+
+  let fused = 0;
+  let fuseNotFar = 0;
+  let fuseRefused = 0;
+  let fuseCapped = 0;
+
+  for (const edge of cordEdges) {
+    const key = edge.i < edge.j ? `${edge.i}|${edge.j}` : `${edge.j}|${edge.i}`;
+    if (drawnPairs.has(key)) continue;
+    if (edge.straightM > FUSE_MAX_M) continue;
+    if (fused >= FUSE_LIMIT) {
+      fuseCapped++;
+      continue;
+    }
+
+    // Straight-line distance is a floor on the road, so a network path that is
+    // not even FUSE_RATIO times *that* can never clear the bar once the real
+    // road is known. Checking it first is what keeps this pass from routing
+    // thousands of pairs to reject them.
+    const reach = networkDistance(graph, edge.i, edge.j, edge.straightM * FUSE_RATIO);
+    if (reach !== null) {
+      fuseNotFar++;
+      continue;
+    }
+
+    const accepted = await routeCord(edge);
+    if (!accepted) continue;
+
+    // Now with the road in hand, ask the question properly.
+    const throughNetwork = networkDistance(graph, edge.i, edge.j, accepted.result.meters * FUSE_RATIO);
+    if (throughNetwork !== null || accepted.result.meters > FUSE_MAX_M) {
+      fuseRefused++;
+      continue;
+    }
+
+    addGraphEdge(edge.i, edge.j, accepted.result.meters);
+    drawnPairs.add(key);
+    cordEnds.push([edge.i, edge.j]);
+    cordMeters.push(accepted.result.meters);
+    cordFeatures.push(makeCord(edge, accepted, 'Fused cord'));
+    fused++;
+  }
+
+  await saveCache(cache);
+  log(
+    'corridors',
+    `${fused} fusions drawn: pairs within ${metersToMiles(FUSE_MAX_M)} miles whose network path ` +
+      `ran over ${FUSE_RATIO}× the road between them`,
+  );
+  log(
+    'corridors',
+    `fusion candidates passed over: ${fuseNotFar} already well connected, ${fuseRefused} not far ` +
+      `enough round once routed${fuseCapped ? `, ${fuseCapped} beyond the cap of ${FUSE_LIMIT}` : ''}`,
+  );
+
+  /*
+   * What each strand holds on.
+   *
+   * With fusions in place the network is no longer a tree, and "cut this and N
+   * readers fall off" is only true of the strands that are bridges. So the
+   * question is asked of the whole graph rather than assumed from its shape:
+   * every strand that is a bridge reports the size of the smaller side it would
+   * leave behind, and every strand inside a loop reports zero, because cutting
+   * it costs the network nothing. That zero is a finding in itself — it is the
+   * redundancy the fusions were added to create.
+   */
+  const held = bridgeSplits([...endsOf, ...cordEnds]);
+  features.forEach((feature, i) => {
+    feature.properties.attributes.bringsInSites = held.smaller[i];
+  });
+  cordFeatures.forEach((feature, i) => {
+    const at = features.length + i;
+    feature.properties.attributes.connectedSites = held.colony[at];
+    feature.properties.attributes.bringsInSites = held.smaller[at];
+  });
+  const loadBearing = held.smaller.filter((n) => n > 0).length;
+  log(
+    'corridors',
+    `${loadBearing} of ${held.smaller.length} strands are load-bearing; ` +
+      `${held.smaller.length - loadBearing} sit inside a loop and can be cut for free`,
   );
 
   features.push(...cordFeatures);
@@ -1078,7 +1341,7 @@ async function main() {
   const previous = await readFile(path.join(PUBLIC_DATA, 'alpr-corridors.geojson'), 'utf8')
     .then((raw) => JSON.parse(raw))
     .catch(() => null);
-  if (previous?.metadata?.linkModel === 'gabriel-mesh+cord-mst') {
+  if (previous?.metadata?.linkModel === 'gabriel-mesh+cord-mst+anastomosis') {
     const before = previous.features?.length ?? 0;
     if (before > 0 && features.length < before * 0.9) {
       throw new Error(
@@ -1102,12 +1365,14 @@ async function main() {
       refresh: 'frequent',
       // Read by the guard above, so a file written by an older corridor build
       // is never compared against a file written by this one.
-      linkModel: 'gabriel-mesh+cord-mst',
+      linkModel: 'gabriel-mesh+cord-mst+anastomosis',
     },
     knownGaps: [
       'Derived, not surveyed. Every limit of the crowd-sourced camera layer applies here and compounds: a link is only as real as the two readers it joins, and a reader nobody has mapped moves every strand around it.',
       `This layer holds two kinds of strand and they are not the same claim. A **neighbourhood link** (\`kind: link\`) joins two readers with nothing mapped between them, under ${STATIC_MILES} miles apart by road: that is a claim about an ordinary trip. A **cord** (\`kind: cord\`) is the shortest road joining one cluster of readers to the next, with no length cap at all: that is a claim about reachability — these two clusters sit on one road network — and nothing more. A cord dozens of miles long does not say anybody drives it, or that a driver on it is read at both ends. Read a cord as the seam between two watched places, not as a journey.`,
-      `The cords exist because the links alone drew the wrong picture. Capped at ${STATIC_MILES} miles, the neighbourhood links leave the state as ${members.size} unconnected pieces, which reads as scatter — an artefact of the cap, not of the cameras. The cords are the shortest set of real roads that fuses those pieces into one body: a minimum spanning tree over them, one road per join, the cheapest available every time. Nothing redundant is added, so every cord is load-bearing, and \`bringsInSites\` says exactly how many reader locations would fall off the network if that one road were removed.`,
+      `The cords exist because the links alone drew the wrong picture. Capped at ${STATIC_MILES} miles, the neighbourhood links leave the state as ${members.size} unconnected pieces, which reads as scatter — an artefact of the cap, not of the cameras. Most cords are structural: the shortest set of real roads that fuses those pieces into one body, one road per join, the cheapest available every time.`,
+      `${fused} cords are fusions rather than joins, and they are there because a network of single roads was the wrong shape as well as the wrong picture. A fusion is a second real road between two clusters that are within ${metersToMiles(FUSE_MAX_M)} miles of each other but over ${FUSE_RATIO} times that far apart through the network — clusters that have met on the ground without the network knowing it. They close loops, and loops are the difference between a network that survives losing a road and one that does not: these ${fused} roads take the number of strands whose removal would strand somebody from 829 to 380. Every fusion is a routed road like every other strand here, and drawing them also retires a claim the earlier version of this layer had to make — that one road stood between each pair of clusters, which was never true of the ground, only of the drawing.`,
+      `\`bringsInSites\` is how many reader locations would be cut off if that one strand were removed, and it is zero for most of them. Zero is a finding, not a missing value: it means a loop runs around that road and the network can lose it for nothing. ${loadBearing} of ${held.smaller.length} strands are load-bearing, and those are the ones whose removal actually costs the network something.`,
       `Only *links* are capped at ${STATIC_MILES} miles by road. Beyond that a line stops describing a trip, which is why the mesh stops there and why a reader whose nearest neighbour is further away sits in no link. Cords carry no cap and some of them are very long; the mile figure on every strand is on the strand, and a long one should be read as the distance it plainly is.`,
       `The line is the route a car would drive between the two readers, as OSRM reads OpenStreetMap: it honours one-way streets and turn restrictions, but knows nothing of traffic, closures or roadworks, and it is the shortest such route rather than the one a local would pick.`,
       `Nearest neighbour is decided by distance across the map and the line is then measured along the road, so the two can disagree — a reader across a river is near on the map and far to drive. Where driving takes more than ${DETOUR_RATIO} times the straight-line distance the pair is refused, because at that point the line stops describing the pair and starts describing the detour. A cord is held to a looser ${CORD_DETOUR_RATIO} times, because a cord is about reachability rather than about a trip and a road that swings wide to make the connection is still the answer to that question.`,
