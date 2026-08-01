@@ -1,0 +1,578 @@
+{
+  "$comment": [
+    "Curated data-centre projects, transcribed from four public trackers.",
+    "",
+    "FracTracker's FOIA permit file is the spine of this layer, but it records",
+    "mostly small enterprise server rooms and carries no status or capacity. The",
+    "hyperscale build-out -- Rosemount, Becker, Chisago, Monticello -- is not in",
+    "it at all. This file holds what four public trackers say about those",
+    "projects, and is refreshed by pull request, not by a scraper.",
+    "",
+    "THIS LAYER IS CONTEXTUAL, NOT AUTHORITATIVE. It exists because data centres",
+    "are the physical substrate the surveillance systems on this map run on, and",
+    "because they impose local costs -- power, water, land, tax abatements --",
+    "that give people a reason to show up to a council meeting. It is not a",
+    "facility registry and must not be cited as one.",
+    "",
+    "RULES",
+    "",
+    "1. Every fact lives under `asserts`, keyed by the source that says it. There",
+    "   is no unattributed field. If no source says it, it is not here.",
+    "2. The sources disagree. That is recorded, not resolved: where they claim",
+    "   different statuses the ingest marks the record disputed, takes the most",
+    "   conservative claim, and the detail panel prints what each source said.",
+    "3. Location is a `city` or a `county` name, never a hand-typed coordinate.",
+    "   The ingest resolves it against the Census jurisdiction index, so the",
+    "   point and the county come from a federal record rather than from us.",
+    "   `coordinates` may be given only where a public record identifies the",
+    "   actual parcel; then set `locationPrecision` to \"site\".",
+    "4. The trackers' own county column is unreliable -- MoreThanJustParks files",
+    "   UnitedHealth Minnetonka under Sherburne and Stream Minneapolis under",
+    "   Carver. We ignore it and derive county from the resolved point.",
+    "5. Entries describe companies, facilities and proposals. Never a person.",
+    "",
+    "Status values: operating, under-construction, proposed, cancelled, withdrawn.",
+    "Conservative ordering for conflicts: proposed < under-construction < operating."
+  ],
+
+  "sources": {
+    "mtjp": {
+      "name": "More Than Just Parks — Data Center Tracker (Minnesota)",
+      "url": "https://morethanjustparks.com/data-center-tracker/state/minnesota"
+    },
+    "cleanview": {
+      "name": "Cleanview — Minnesota data centers",
+      "url": "https://cleanview.co/data-centers/minnesota"
+    },
+    "baxtel": {
+      "name": "Baxtel — Minnesota data centers",
+      "url": "https://baxtel.com/data-center/minnesota"
+    },
+    "poweredbywho": {
+      "name": "PoweredByWho — data centre project map",
+      "url": "https://poweredbywho.com/map"
+    }
+  },
+
+  "statusValues": ["operating", "under-construction", "proposed", "cancelled", "withdrawn"],
+
+  "projects": [
+    {
+      "name": "Meta Rosemount Campus",
+      "city": "Rosemount",
+      "asserts": {
+        "mtjp": { "operator": "Meta Platforms", "status": "under-construction", "capacityMw": 308 },
+        "cleanview": { "operator": "Meta", "status": "operating", "capacityMw": 308 }
+      },
+      "note": "Cleanview splits the campus into two operating buildings of 168 MW and 140 MW; More Than Just Parks lists it once as under construction and again as proposed."
+    },
+    {
+      "name": "Becker Data Center",
+      "city": "Becker",
+      "asserts": {
+        "cleanview": { "operator": "Microsoft", "status": "proposed", "capacityMw": 325, "expected": "2026" },
+        "mtjp": { "operator": "Google", "status": "proposed", "capacityMw": 100 }
+      },
+      "note": "The two trackers name different companies at Becker. More Than Just Parks separately lists a cancelled Google Sherco project and a cancelled Amazon project at the same city; those are recorded below."
+    },
+    {
+      "name": "Cielo Chisago Data Center",
+      "county": "Chisago County",
+      "asserts": {
+        "mtjp": { "operator": "Cielo Digital Infrastructure", "status": "proposed", "capacityMw": 300 },
+        "cleanview": { "operator": "Cielo Digital", "status": "proposed", "capacityMw": 300 }
+      }
+    },
+    {
+      "name": "Geronimo Power Worthington Data Center",
+      "city": "Worthington",
+      "asserts": {
+        "mtjp": { "operator": "Geronimo Power", "status": "cancelled" },
+        "cleanview": { "operator": "Geronimo Power", "status": "proposed", "capacityMw": 400 }
+      },
+      "note": "Cleanview still lists this as the largest planned project in the state; More Than Just Parks records it as cancelled."
+    },
+    {
+      "name": "Carver County technology campus",
+      "county": "Carver County",
+      "asserts": {
+        "mtjp": { "operator": "Scannell Properties", "status": "proposed", "capacityMw": 180 },
+        "cleanview": { "operator": "CloudHQ", "status": "proposed", "capacityMw": 200 }
+      },
+      "note": "The trackers name different developers and different capacities for a Carver County campus. It is not established that they describe the same project."
+    },
+    {
+      "name": "Scannell Monticello Data Center",
+      "city": "Monticello",
+      "asserts": {
+        "mtjp": { "operator": "Scannell Properties", "status": "proposed", "capacityMw": 150 },
+        "cleanview": { "operator": "Scannell Properties", "status": "proposed", "capacityMw": 150, "expected": "2027" }
+      },
+      "note": "More Than Just Parks lists this twice, as \"Scannell Monticello Data Center\" and \"Scannell Technology Park\", both at 150 MW."
+    },
+    {
+      "name": "Archer Faribault Campus",
+      "city": "Faribault",
+      "asserts": {
+        "mtjp": { "operator": "Archer Datacenters", "status": "under-construction", "capacityMw": 120 },
+        "cleanview": { "operator": "Archer Datacenters", "status": "proposed", "capacityMw": 120, "expected": "2026" }
+      }
+    },
+    {
+      "name": "Xcel Energy Prairie Island Data Center",
+      "county": "Goodhue County",
+      "asserts": {
+        "mtjp": { "operator": "Xcel Energy", "status": "proposed", "capacityMw": 100 }
+      },
+      "note": "Prairie Island is not an incorporated place; the point is the county interior point."
+    },
+    {
+      "name": "Google Pine Island Data Center",
+      "city": "Pine Island",
+      "asserts": {
+        "mtjp": { "operator": "Google", "status": "under-construction" }
+      }
+    },
+    {
+      "name": "Google Hermantown Campus",
+      "city": "Hermantown",
+      "asserts": {
+        "mtjp": { "operator": "Google", "status": "proposed" },
+        "cleanview": { "operator": "Google", "status": "proposed" }
+      }
+    },
+    {
+      "name": "Hennepin County Edge Campus",
+      "county": "Hennepin County",
+      "asserts": {
+        "mtjp": { "operator": "Hennepin County", "status": "proposed", "capacityMw": 26 }
+      }
+    },
+    {
+      "name": "Centra MSP1 Eagan",
+      "city": "Eagan",
+      "asserts": {
+        "mtjp": { "operator": "Centra", "status": "under-construction", "capacityMw": 12 },
+        "cleanview": { "operator": "Centra", "status": "proposed", "capacityMw": 12, "expected": "2026" }
+      }
+    },
+    {
+      "name": "Oppidan Minnesota Data Center",
+      "county": "Hennepin County",
+      "asserts": {
+        "cleanview": { "operator": "Oppidan", "status": "proposed", "capacityMw": 5, "expected": "2026" }
+      }
+    },
+    {
+      "name": "QLevr Inver Grove Heights Data Center",
+      "city": "Inver Grove Heights",
+      "asserts": {
+        "mtjp": { "operator": "QLevr", "status": "proposed", "capacityMw": 5 }
+      }
+    },
+    {
+      "name": "Tract Farmington Technology Park",
+      "city": "Farmington",
+      "asserts": { "mtjp": { "operator": "Tract", "status": "proposed" } }
+    },
+    {
+      "name": "Tract Cannon Falls Technology Park",
+      "city": "Cannon Falls",
+      "asserts": { "mtjp": { "operator": "Tract", "status": "proposed" } }
+    },
+    {
+      "name": "Tract Rosemount Campus",
+      "city": "Rosemount",
+      "asserts": { "mtjp": { "operator": "Tract", "status": "proposed" } }
+    },
+    {
+      "name": "Monticello Tech Park (Frattalone)",
+      "city": "Monticello",
+      "asserts": { "mtjp": { "operator": "Frattalone", "status": "proposed" } }
+    },
+
+    {
+      "name": "Amazon Becker Data Center",
+      "city": "Becker",
+      "asserts": { "mtjp": { "operator": "Amazon", "status": "cancelled" } }
+    },
+    {
+      "name": "Google Sherco Becker",
+      "city": "Becker",
+      "asserts": { "mtjp": { "operator": "Google", "status": "cancelled" } }
+    },
+    {
+      "name": "Oppidan / Rockport Apple Valley Technology Park",
+      "city": "Apple Valley",
+      "asserts": { "mtjp": { "operator": "Oppidan / Rockport", "status": "withdrawn" } }
+    },
+    {
+      "name": "Oppidan North Mankato Data Center",
+      "city": "North Mankato",
+      "asserts": { "mtjp": { "operator": "Oppidan", "status": "withdrawn" } }
+    },
+    {
+      "name": "Oppidan Hampton Data Center",
+      "city": "Hampton",
+      "asserts": { "mtjp": { "operator": "Oppidan", "status": "withdrawn" } }
+    },
+
+    {
+      "name": "Cologix MIN1",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Cologix", "status": "operating", "capacityMw": 40 } }
+    },
+    {
+      "name": "Cologix Minneapolis Campus",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Cologix", "status": "operating", "capacityMw": 30 } }
+    },
+    {
+      "name": "Cologix MIN3",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Cologix", "status": "operating", "capacityMw": 1 } }
+    },
+    {
+      "name": "Cologix MIN4",
+      "city": "Minneapolis",
+      "asserts": { "cleanview": { "operator": "Cologix", "status": "operating", "capacityMw": 3, "since": "2020" } }
+    },
+    {
+      "name": "Cologix MIN5",
+      "city": "Minneapolis",
+      "asserts": { "cleanview": { "operator": "Cologix", "status": "operating", "capacityMw": 2, "since": "2023" } }
+    },
+    {
+      "name": "Target Minneapolis Enterprise Data Center",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Target", "status": "operating", "capacityMw": 40 } }
+    },
+    {
+      "name": "Target Corporation Technology Center",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Target", "status": "operating", "capacityMw": 30 } }
+    },
+    {
+      "name": "Target Brooklyn Park Backup Data Center",
+      "city": "Brooklyn Park",
+      "asserts": { "mtjp": { "operator": "Target", "status": "operating", "capacityMw": 14 } }
+    },
+    {
+      "name": "Target Brooklyn Park Distribution Technology Center",
+      "city": "Brooklyn Park",
+      "asserts": { "mtjp": { "operator": "Target", "status": "operating", "capacityMw": 9 } }
+    },
+    {
+      "name": "Target TTC Data Center Elk River",
+      "city": "Elk River",
+      "asserts": { "mtjp": { "operator": "Target", "status": "operating" } }
+    },
+    {
+      "name": "Ark Duluth Data Center",
+      "city": "Duluth",
+      "asserts": { "mtjp": { "operator": "Ark Data Centers", "status": "operating", "capacityMw": 36 } }
+    },
+    {
+      "name": "Ark Data Centers Duluth 2",
+      "city": "Duluth",
+      "asserts": { "mtjp": { "operator": "Ark Data Centers", "status": "operating", "capacityMw": 1 } }
+    },
+    {
+      "name": "Involta Duluth Campus",
+      "city": "Duluth",
+      "asserts": { "mtjp": { "operator": "Involta", "status": "operating", "capacityMw": 1 } }
+    },
+    {
+      "name": "Consolidated Communications Duluth Data Center",
+      "city": "Duluth",
+      "asserts": { "mtjp": { "operator": "Consolidated Communications", "status": "operating" } }
+    },
+    {
+      "name": "DataBank Minneapolis Campus",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "DataBank", "status": "operating", "capacityMw": 35 } }
+    },
+    {
+      "name": "DataBank Minneapolis Data Center",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "DataBank", "status": "operating", "capacityMw": 9 } }
+    },
+    {
+      "name": "DataBank MSP4 Downtown Minneapolis",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "DataBank", "status": "operating", "capacityMw": 1 } }
+    },
+    {
+      "name": "DataBank MSP3 Brooklyn Park",
+      "city": "Brooklyn Park",
+      "asserts": {
+        "mtjp": { "operator": "DataBank", "status": "operating", "capacityMw": 9 },
+        "cleanview": { "operator": "DataBank", "status": "operating", "capacityMw": 14 },
+        "baxtel": { "operator": "DataBank", "status": "operating" }
+      }
+    },
+    {
+      "name": "DataBank MSP2 East Twin Cities (Eagan)",
+      "city": "Eagan",
+      "asserts": {
+        "mtjp": { "operator": "DataBank", "status": "operating", "capacityMw": 20 },
+        "cleanview": { "operator": "DataBank", "status": "operating", "capacityMw": 8 }
+      }
+    },
+    {
+      "name": "DataBank MSP1 Edina",
+      "city": "Edina",
+      "asserts": { "mtjp": { "operator": "DataBank", "status": "operating", "capacityMw": 1 } }
+    },
+    {
+      "name": "Lumen Minneapolis Network Hub",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Lumen", "status": "operating", "capacityMw": 30 } }
+    },
+    {
+      "name": "Lumen Minneapolis Network Center",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Lumen", "status": "operating", "capacityMw": 25 } }
+    },
+    {
+      "name": "Lumen Minneapolis 3",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Lumen", "status": "operating" } }
+    },
+    {
+      "name": "Just For Krypto Brainerd",
+      "city": "Brainerd",
+      "asserts": {
+        "mtjp": { "operator": "Just For Krypto", "status": "operating", "capacityMw": 25 },
+        "baxtel": { "operator": "Just for Krypto", "status": "operating", "capacityMw": 25 }
+      },
+      "note": "Baxtel records this as the largest facility in its Minnesota listing."
+    },
+    {
+      "name": "UnitedHealth Minnetonka IT",
+      "city": "Minnetonka",
+      "asserts": { "mtjp": { "operator": "UnitedHealth", "status": "operating", "capacityMw": 25 } }
+    },
+    {
+      "name": "UnitedHealth Group Minnetonka Data Center",
+      "city": "Minnetonka",
+      "asserts": { "mtjp": { "operator": "UnitedHealth Group", "status": "operating", "capacityMw": 25 } }
+    },
+    {
+      "name": "US Internet Minnetonka Data Center",
+      "city": "Minnetonka",
+      "asserts": { "mtjp": { "operator": "US Internet", "status": "operating" } }
+    },
+    {
+      "name": "Mayo Clinic Rochester Data Center",
+      "city": "Rochester",
+      "asserts": { "mtjp": { "operator": "Mayo Clinic", "status": "operating", "capacityMw": 25 } }
+    },
+    {
+      "name": "Epic / Mayo Data Center",
+      "city": "Rochester",
+      "asserts": { "mtjp": { "operator": "Epic / Mayo", "status": "operating" } }
+    },
+    {
+      "name": "Equinix SP1 St. Paul",
+      "city": "St. Paul",
+      "asserts": { "mtjp": { "operator": "Equinix", "status": "operating", "capacityMw": 20 } }
+    },
+    {
+      "name": "US Signal Saint Paul",
+      "city": "St. Paul",
+      "asserts": { "mtjp": { "operator": "US Signal", "status": "operating" } }
+    },
+    {
+      "name": "Cogent St. Paul",
+      "city": "St. Paul",
+      "asserts": { "mtjp": { "operator": "Cogent", "status": "operating" } }
+    },
+    {
+      "name": "US Bank Energy Park Data Center",
+      "city": "St. Paul",
+      "asserts": { "mtjp": { "operator": "US Bank", "status": "operating", "capacityMw": 5 } },
+      "note": "Energy Park is a district of Saint Paul, not a separate municipality."
+    },
+    {
+      "name": "Revolve Labs Minnesota Mining",
+      "county": "McLeod County",
+      "asserts": {
+        "mtjp": { "operator": "Revolve Labs", "status": "operating", "capacityMw": 20 },
+        "baxtel": { "operator": "Revolve Labs", "status": "operating" }
+      },
+      "note": "The tracker gives no municipality; the point is the county interior point."
+    },
+    {
+      "name": "G42 / Core42 Minneapolis Data Center",
+      "city": "Minneapolis",
+      "asserts": {
+        "mtjp": { "operator": "G42 / Core42", "status": "operating", "capacityMw": 20 },
+        "baxtel": { "operator": "G42 Cloud", "status": "operating" }
+      }
+    },
+    {
+      "name": "IronGate Twin Cities East MSP1",
+      "city": "Woodbury",
+      "asserts": {
+        "mtjp": { "operator": "IronGate Data Centers", "status": "operating", "capacityMw": 16 },
+        "baxtel": { "operator": "IronGate Data Centers", "status": "operating" }
+      }
+    },
+    {
+      "name": "AWS Local Zone Minneapolis",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Amazon Web Services", "status": "operating", "capacityMw": 15 } }
+    },
+    {
+      "name": "AAIM Minnesota 1",
+      "city": "Faribault",
+      "asserts": {
+        "mtjp": { "operator": "AAIM", "status": "operating", "capacityMw": 15 },
+        "baxtel": { "operator": "AAIM", "status": "operating" }
+      },
+      "note": "More Than Just Parks files this under Faribault County; the city of Faribault is in Rice County. The point follows the city."
+    },
+    {
+      "name": "Compass Mining Minnesota 2",
+      "city": "Faribault",
+      "asserts": { "mtjp": { "operator": "Compass Mining", "status": "operating", "capacityMw": 8 } }
+    },
+    {
+      "name": "Stream Data Centers Minneapolis Campus",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Stream Data Centers", "status": "operating", "capacityMw": 11 } }
+    },
+    {
+      "name": "Stream Data Centers Chaska",
+      "city": "Chaska",
+      "asserts": {
+        "mtjp": { "operator": "Stream Data Centers", "status": "operating", "capacityMw": 7 },
+        "cleanview": { "operator": "Stream Data Centers", "status": "operating", "capacityMw": 10, "since": "2014" }
+      },
+      "note": "Cleanview lists two Stream buildings in Carver County, at 10 MW (2014) and 3 MW (2017)."
+    },
+    {
+      "name": "T5@Minneapolis",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "T5 Data Centers", "status": "operating", "capacityMw": 10 } }
+    },
+    {
+      "name": "Flexential Minneapolis North Edge",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Flexential", "status": "operating", "capacityMw": 9 } }
+    },
+    {
+      "name": "Flexential Minneapolis — Chaska",
+      "city": "Chaska",
+      "asserts": { "mtjp": { "operator": "Flexential", "status": "operating", "capacityMw": 9 } }
+    },
+    {
+      "name": "LightEdge Minneapolis I (Chaska)",
+      "city": "Chaska",
+      "asserts": { "mtjp": { "operator": "LightEdge", "status": "operating", "capacityMw": 4 } }
+    },
+    {
+      "name": "US Bank Chaska (Stream DC2)",
+      "city": "Chaska",
+      "asserts": { "mtjp": { "operator": "US Bank", "status": "operating", "capacityMw": 4 } }
+    },
+    {
+      "name": "Digital Realty Minneapolis Campus",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Digital Realty", "status": "operating", "capacityMw": 8 } }
+    },
+    {
+      "name": "Compass Datacenters Shakopee",
+      "city": "Shakopee",
+      "asserts": { "mtjp": { "operator": "Compass Datacenters", "status": "operating", "capacityMw": 6 } },
+      "note": "More Than Just Parks lists two Shakopee entries at 6 MW each; they are recorded here as one."
+    },
+    {
+      "name": "Centersquare MSP1",
+      "county": "Scott County",
+      "asserts": { "cleanview": { "operator": "Centersquare", "status": "operating", "capacityMw": 10 } }
+    },
+    {
+      "name": "Wells Fargo Minneapolis Operations Center",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Wells Fargo", "status": "operating", "capacityMw": 6 } }
+    },
+    {
+      "name": "Vaultas St. Cloud Data Center",
+      "city": "St. Cloud",
+      "asserts": {
+        "mtjp": { "operator": "Vaultas", "status": "operating", "capacityMw": 4 },
+        "baxtel": { "operator": "Vaultas", "status": "operating" }
+      }
+    },
+    {
+      "name": "Vaultas Alexandria Data Center",
+      "city": "Alexandria",
+      "asserts": { "mtjp": { "operator": "Vaultas", "status": "operating" } }
+    },
+    {
+      "name": "EdgeConneX Minneapolis Edge Center",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "EdgeConneX", "status": "operating", "capacityMw": 3 } }
+    },
+    {
+      "name": "Minneapolis Internet Exchange",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Minneapolis Internet Exchange", "status": "operating", "capacityMw": 2 } }
+    },
+    {
+      "name": "Cyxtera Minneapolis Metro Campus",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Cyxtera", "status": "operating", "capacityMw": 2 } }
+    },
+    {
+      "name": "University of Minnesota Supercomputing Institute",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "University of Minnesota", "status": "operating", "capacityMw": 1 } }
+    },
+    {
+      "name": "Cogent 250 Marquette",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Cogent", "status": "operating" } }
+    },
+    {
+      "name": "Verizon 250 Marquette",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Verizon", "status": "operating" } }
+    },
+    {
+      "name": "Verizon 1200 Washington",
+      "city": "Minneapolis",
+      "asserts": { "mtjp": { "operator": "Verizon", "status": "operating" } }
+    },
+    {
+      "name": "Verizon Bloomington Network",
+      "city": "Bloomington",
+      "asserts": { "mtjp": { "operator": "Verizon", "status": "operating" } }
+    },
+    {
+      "name": "PBC Bemidji Data Center",
+      "city": "Bemidji",
+      "asserts": { "mtjp": { "operator": "PBC", "status": "operating" } }
+    },
+    {
+      "name": "Swervo Eagan Data Center",
+      "city": "Eagan",
+      "asserts": { "mtjp": { "operator": "Swervo", "status": "operating" } },
+      "note": "Formerly the Unisys facility."
+    },
+    {
+      "name": "IronGate MSP3",
+      "city": "Minneapolis",
+      "asserts": { "baxtel": { "operator": "IronGate Data Centers", "status": "operating" } },
+      "note": "Baxtel gives no municipality for this site beyond the Twin Cities market; the point is the metro core and is approximate."
+    },
+    {
+      "name": "AAIM Plaza Beta",
+      "county": "Faribault County",
+      "asserts": { "baxtel": { "operator": "AAIM", "status": "operating" } },
+      "note": "Baxtel gives no municipality; the point is the county interior point."
+    }
+  ]
+}

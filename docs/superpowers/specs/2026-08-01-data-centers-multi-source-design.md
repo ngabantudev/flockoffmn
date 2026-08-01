@@ -52,9 +52,19 @@ design records the disagreement rather than resolving it.
 2. **Conflicts are shown, not resolved.** `status` takes the most conservative
    claim; `statusDisputed` marks the disagreement; the detail panel lists what
    each source says with its link.
-3. **Coordinates are hand-entered with a stated precision.** `site` where a
-   public record identifies the parcel, `city` otherwise. No cloud geocoder,
-   per the client constraints.
+3. **Location is a place name, resolved against the Census jurisdiction index.**
+   Curated entries carry a city or county name, not a coordinate; the ingest
+   resolves both the point and the county from `mn-jurisdictions.json`, which
+   the jurisdictions layer already builds. `locationPrecision` records whether
+   the point is a `site`, a `city` interior point, or a `county` one. No cloud
+   geocoder, and no hand-typed coordinates to mistype.
+
+   This also fixes a problem the trackers create: their county column is wrong
+   often enough to be unusable — More Than Just Parks files UnitedHealth's
+   Minnetonka site under Sherburne and Stream's Minneapolis campus under Carver.
+   County is derived from the resolved point instead, so the tracker's error
+   cannot propagate. `coordinates` may still be given explicitly where a public
+   record identifies the parcel.
 4. **Cancelled and withdrawn projects ship**, excluded from the default filter
    state. A withdrawn proposal is where opposition worked; it should be findable
    without reading as live infrastructure.
@@ -122,8 +132,10 @@ Rules, enforced by the ingest rather than by convention:
   with no claim fails the build. This is the no-fabrication rule made mechanical.
 - `statusDisputed` is computed, not authored: set when `claims` holds two
   different values for `status`.
-- `county` is verified against the coordinate by point-in-polygon. A mismatch
-  fails the build, which catches a mistyped coordinate.
+- An unresolvable place name fails the build, as does an unknown source key.
+- A permit record stands for one building, so it can be claimed by at most one
+  curated project, and matching runs against a snapshot of the permit features
+  rather than the growing output array.
 - No individual is named anywhere. Operators are companies; opposition is groups.
 
 **Status values:** `operating`, `under-construction`, `proposed`, `cancelled`,
