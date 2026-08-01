@@ -1,0 +1,56 @@
+name: Refresh agency aircraft positions
+
+# Separate from refresh-data.yml on purpose: every other layer changes slowly
+# enough that a weekly PR-reviewed refresh makes sense, but this one only
+# updates live aircraft positions — the judgment call of which aircraft
+# belong to which agency lives in scripts/ingest/flights.mjs itself, and
+# changes to *that* still go through normal PR review. Position numbers
+# commit straight to main hourly, the same way a cache would.
+
+on:
+  schedule:
+    # Hourly. Frequent enough to be more than a weekly snapshot, infrequent
+    # enough not to hammer adsb.lol's volunteer-run infrastructure or trigger
+    # a Cloudflare Pages build every few minutes.
+    - cron: '0 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Rebuild agency aircraft positions
+        run: npm run data:flights
+
+      - name: Verify the site still builds with the new data
+        run: npm run build
+
+      - name: Commit if positions changed
+        run: |
+          if git diff --quiet -- public/data/agency-aircraft.geojson public/data/agency-aircraft.csv; then
+            echo "No change."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -- public/data/agency-aircraft.geojson
+          # The CSV twin only exists once at least one aircraft has ever been
+          # airborne at ingest time; adding a path that has never existed
+          # would fail `git add` outright.
+          [ -f public/data/agency-aircraft.csv ] && git add -- public/data/agency-aircraft.csv
+          git commit -m "Refresh agency aircraft positions"
+          git push
