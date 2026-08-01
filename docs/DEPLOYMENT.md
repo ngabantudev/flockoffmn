@@ -37,9 +37,20 @@ of being asked to install Node first.
 Useful for a mirror, or if you would rather not connect the repo:
 
 ```bash
-npm run pages:deploy          # builds, then wrangler pages deploy dist
+npm run pages:preview         # builds, deploys to a preview URL
+npm run pages:publish         # builds, deploys to the LIVE domain
 npm run pages:dev             # serve dist/ locally through the Pages runtime
 ```
+
+**The branch is what decides whether a deploy is public.** `main` is the
+project's production branch, so `wrangler pages deploy` without `--branch` — or
+with `--branch=main` — publishes to flockoffmn.org. Any other branch name
+produces a preview URL and touches nothing live.
+
+That distinction used to live in a single `pages:deploy` script that read as
+though it were harmless, which is why there are now two scripts named after what
+they actually do. If you add another, put the branch in it explicitly rather
+than letting wrangler infer one from the checkout.
 
 `npm run pages:dev` is the only way to test `_headers` locally — `astro dev`
 and `astro preview` ignore that file.
