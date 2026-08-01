@@ -56,7 +56,14 @@ export interface ClientLayer {
     fallbackBody?: 'countySheriff' | 'county' | 'name';
   };
   dataPath: string;
-  filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];
+  filters: {
+    key: string;
+    label: string;
+    kind: 'enum' | 'dateRange';
+    values: string[];
+    /** Observed values this layer opens with unticked. See FilterDefinition. */
+    defaultExcluded?: string[];
+  }[];
   detailFields: { key: string; label: string; format?: string }[];
   source: string;
   sourceUrl: string;

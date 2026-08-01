@@ -64,6 +64,12 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       label: pick(f.label, locale),
       kind: f.kind,
       values: distinctValues(collection, f.key),
+      // Only the excluded values this layer actually has. A registry entry that
+      // names a value the data no longer contains must not leave the filter
+      // opening pre-ticked against nothing.
+      defaultExcluded: (f.defaultExcluded ?? []).filter((v) =>
+        distinctValues(collection, f.key).includes(v),
+      ),
     }))
     .filter((f) => f.values.length > 1),
   detailFields: d.detailFields.map((f) => ({
@@ -334,6 +340,10 @@ const strings = {
                                             data-filter-layer={layer.id}
                                             data-filter-key={filter.key}
                                             value={value}
+                                            checked={
+                                              filter.defaultExcluded!.length > 0 &&
+                                              !filter.defaultExcluded!.includes(value)
+                                            }
                                             class="mt-0.5 h-3.5 w-3.5 shrink-0"
                                           />
                                           <span class="min-w-0">{value}</span>
@@ -992,6 +1002,19 @@ const strings = {
   // behind a checkbox, so the corridors come on with them. Everything else is
   // the reader's to add.
   const DEFAULT_ON = ['alpr', 'alpr_corridor'];
+
+  // Some filters open already narrowed — a withdrawn data-centre proposal is
+  // worth finding but should not be drawn as though it were a building. The
+  // checkboxes were rendered pre-ticked; tell the controller the same thing, or
+  // the panel and the map would disagree until the reader touched a box.
+  for (const layer of layers) {
+    for (const filter of layer.filters) {
+      if (!filter.defaultExcluded?.length) continue;
+      const allowed = filter.values.filter((v) => !filter.defaultExcluded!.includes(v));
+      controller.setFilter(layer.id, filter.key, new Set(allowed));
+    }
+  }
+
   status(S.loading, 0);
   controller.map.once('load', () => {
     for (const id of DEFAULT_ON) {

@@ -687,6 +687,14 @@ export const LAYERS: LayerDefinition[] = [
         en: 'Power-source and capacity figures are as reported by the operator or permit filings and are not independently verified.',
         es: 'Las cifras de fuente de energía y capacidad son las reportadas por el operador o en permisos y no están verificadas de forma independiente.',
       },
+      {
+        en: 'The four trackers this layer draws on contradict each other about several projects. Where they do, the record says so and shows what each one claims.',
+        es: 'Los cuatro rastreadores en los que se basa esta capa se contradicen sobre varios proyectos. Cuando ocurre, el registro lo indica y muestra lo que afirma cada uno.',
+      },
+      {
+        en: 'This is contextual background, not a facility register. It is not complete and should not be cited as an inventory.',
+        es: 'Esto es contexto de fondo, no un registro de instalaciones. No está completo y no debe citarse como un inventario.',
+      },
     ],
     geometry: 'point',
     color: '#34d399',
@@ -711,17 +719,77 @@ export const LAYERS: LayerDefinition[] = [
       sourceDate: null,
       lastUpdated: null,
       refresh: 'periodic',
+      // The permit file is the spine, but it carries no status and no capacity
+      // and none of the hyperscale build-out. Those facts come from four public
+      // trackers, so four publishers are named rather than one.
+      secondarySources: [
+        {
+          key: 'mtjp',
+          name: 'More Than Just Parks — Data Center Tracker',
+          url: 'https://morethanjustparks.com/data-center-tracker/state/minnesota',
+          license: 'No reuse licence stated; beta preview, publisher disclaims reliance',
+          licenseUrl: null,
+          contributes: {
+            en: 'Most of the project list, including status and megawatt capacity for the operating, proposed and cancelled build-out.',
+            es: 'La mayor parte de la lista de proyectos, incluidos el estado y la capacidad en megavatios de las instalaciones en operación, propuestas y canceladas.',
+          },
+        },
+        {
+          key: 'cleanview',
+          name: 'Cleanview — Minnesota data centers',
+          url: 'https://cleanview.co/data-centers/minnesota',
+          license: 'Proprietary platform, free web access, no reuse licence stated',
+          licenseUrl: null,
+          contributes: {
+            en: 'Independent status and capacity figures for the large projects, and the disagreements with the other trackers that this layer records rather than resolves.',
+            es: 'Cifras independientes de estado y capacidad de los grandes proyectos, y las discrepancias con los demás rastreadores que esta capa registra en lugar de resolver.',
+          },
+        },
+        {
+          key: 'baxtel',
+          name: 'Baxtel — Minnesota data centers',
+          url: 'https://baxtel.com/data-center/minnesota',
+          license: '© all rights reserved; detailed specifications sold separately',
+          licenseUrl: null,
+          contributes: {
+            en: 'Corroboration that particular operators run particular sites. Its detailed specifications are paywalled and are not reproduced here.',
+            es: 'Corroboración de que ciertos operadores gestionan ciertos sitios. Sus especificaciones detalladas son de pago y no se reproducen aquí.',
+          },
+        },
+        {
+          key: 'poweredbywho',
+          name: 'PoweredByWho',
+          url: 'https://poweredbywho.com/map',
+          license: 'Public-records journalism; no reuse licence stated',
+          licenseUrl: null,
+          contributes: {
+            en: 'Consulted for project context and reporting on local opposition. Its public map yielded no field-level figures we could attribute, so no value in this layer rests on it.',
+            es: 'Consultado para contexto de proyectos e informes sobre la oposición local. Su mapa público no aportó cifras atribuibles, por lo que ningún valor de esta capa depende de él.',
+          },
+        },
+      ],
     },
     filters: [
       { key: 'operator', kind: 'enum', label: { en: 'Operator', es: 'Operador' } },
-      { key: 'status', kind: 'enum', label: { en: 'Status', es: 'Estado' } },
+      {
+        key: 'status',
+        kind: 'enum',
+        label: { en: 'Status', es: 'Estado' },
+        // A withdrawn proposal is worth finding — it marks a place where people
+        // organised and the project did not happen — but it is not a building,
+        // and drawing it by default would say there is one.
+        defaultExcluded: ['cancelled', 'withdrawn'],
+      },
       { key: 'powerSource', kind: 'enum', label: { en: 'Power source', es: 'Fuente de energía' } },
     ],
     detailFields: [
       { key: 'operator', label: { en: 'Operator', es: 'Operador' } },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'status', label: { en: 'Status', es: 'Estado' } },
+      { key: 'capacityMw', label: { en: 'Capacity (MW)', es: 'Capacidad (MW)' } },
+      { key: 'disputedNote', label: { en: 'Sources disagree', es: 'Las fuentes discrepan' } },
       { key: 'powerSource', label: { en: 'Power source', es: 'Fuente de energía' } },
+      { key: 'locationPrecision', label: { en: 'Location precision', es: 'Precisión de ubicación' } },
       { key: 'resistanceStatus', label: { en: 'Community response', es: 'Respuesta comunitaria' } },
       { key: 'campaignUrl', label: { en: 'Local campaign', es: 'Campaña local' }, format: 'link' },
       { key: 'petitionUrl', label: { en: 'Petition', es: 'Petición' }, format: 'link' },

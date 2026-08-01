@@ -26,7 +26,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | 287(g) agreements | `287g.geojson` | Public domain (US federal work) | Free for any use. |
 | Detention facilities | `detention.geojson` | Public domain (US federal work) | Free for any use. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | **Non-commercial and share-alike.** Not usable commercially. |
-| Data centres | `data-centers.geojson` | FracTracker Alliance terms | Attribution required, non-commercial. |
+| Data centres | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
 
 **Combining layers:** the most restrictive term governs the combination. A
@@ -42,8 +42,36 @@ Reproduce these when redistributing the corresponding layer:
 - **Redlining** — Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality:
   Redlining in New Deal America," *American Panorama*, ed. Robert K. Nelson and
   Edward L. Ayers.
-- **Data centres** — FracTracker Alliance.
+- **Data centres** — FracTracker Alliance; More Than Just Parks Data Center
+  Tracker; Cleanview; Baxtel; PoweredByWho.
 - **County, place and jurisdiction geography** — U.S. Census Bureau.
+
+## The data-centre trackers
+
+The data-centre layer is the one place here where a source carries no open
+licence, so the reasoning is written down rather than assumed.
+
+FracTracker's FOIA permit file is the spine of the layer. Status, capacity and
+the whole hyperscale build-out come from four trackers, none of which publishes
+an API or a reuse licence:
+
+| Tracker | Terms as stated | What we take |
+|---|---|---|
+| [More Than Just Parks](https://morethanjustparks.com/data-center-tracker/state/minnesota) | Beta preview; compiled from public records; publisher disclaims reliance | Project names, cities, statuses, megawatt figures |
+| [Cleanview](https://cleanview.co/data-centers/minnesota) | Proprietary platform, free web access, no reuse licence stated | Independent statuses and capacities for the large projects |
+| [Baxtel](https://baxtel.com/data-center/minnesota) | © all rights reserved; detailed specifications sold | Corroboration that an operator runs a site. Nothing paywalled |
+| [PoweredByWho](https://poweredbywho.com/map) | Public-records journalism; explicitly not comprehensive | Context only; no figure in the layer rests on it |
+
+What we reproduce is individual facts — that Meta is building at Rosemount, that
+a tracker puts it at 308 MW — each attributed to the tracker asserting it, in a
+file anyone can read. Facts are not copyrightable; a compilation can be, so we
+do not copy any tracker's compilation, and we do not scrape their pages. Where
+they disagree we publish the disagreement with both attributions rather than
+laundering it into a single confident number.
+
+That reasoning is ours, not legal advice. **If you redistribute this layer
+commercially, the four trackers' terms are yours to resolve, not ours** — the
+non-commercial restriction inherited from FracTracker already bites first.
 
 ## A note on scope
 
