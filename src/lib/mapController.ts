@@ -81,7 +81,7 @@ export interface LoadedFeature {
 type FilterState = Map<string, Set<string>>;
 
 export interface ControllerEvents {
-  onSelect?: (feature: LoadedFeature | null, layer: ClientLayer) => void;
+  onSelect?: (feature: LoadedFeature | null, layer?: ClientLayer) => void;
   onCounts?: (counts: Record<string, { shown: number; total: number }>) => void;
   onLayerReady?: (layerId: string, features: LoadedFeature[]) => void;
   onError?: (layerId: string, message: string) => void;
@@ -290,6 +290,8 @@ export class MapController {
   private popup: maplibregl.Popup | null = null;
   /** Set once the map's `load` event has fired. See ready(). */
   private hasLoaded = false;
+  /** Where the reader was before a tapped record moved the camera to it. */
+  private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -320,6 +322,35 @@ export class MapController {
       this.hasLoaded = true;
       this.map.fitBounds(MN_BOUNDS, { padding: 24, animate: false });
     });
+
+    // A tap that lands on nothing of ours is the reader stepping back out of
+    // a record, the way closing it would be — so it gets the same undo: the
+    // camera returns to where a pin's tap first moved it from, and the detail
+    // panel closes. Queried directly rather than inferred from whether a
+    // per-layer click handler also fired, so this owes nothing to listener
+    // registration order against handlers bound as layers arrive.
+    this.map.on('click', (e) => {
+      const ids = this.interactiveStyleLayerIds();
+      if (!ids.length) return;
+      if (this.map.queryRenderedFeatures(e.point, { layers: ids }).length) return;
+      this.clearSelection();
+    });
+  }
+
+  /** Style layers a tap can select a record on. See bindInteractions. */
+  private interactiveStyleLayerIds(): string[] {
+    return this.layers
+      .flatMap((l) => [`${l.id}-fill`, `${l.id}-line-hit`, `${l.id}-points`])
+      .filter((id) => this.map.getLayer(id));
+  }
+
+  /** Undo a tap-to-select: back to the pre-tap camera, detail panel closed. */
+  private clearSelection() {
+    if (this.preSelectCamera) {
+      this.easeToCamera(this.preSelectCamera, REDUCED_MOTION ? 0 : 500);
+      this.preSelectCamera = null;
+    }
+    this.events.onSelect?.(null);
   }
 
   /**
@@ -1204,8 +1235,16 @@ export class MapController {
       const hit = e.features?.[0];
       if (!hit) return;
       const id = (hit.properties as Record<string, unknown>)?.id as string;
-      const match = this.data.get(layer.id)?.find((f) => f.properties.id === id) ?? null;
-      this.events.onSelect?.(match, layer);
+      // Same move the search results already give a record: centre and zoom
+      // in on it, not just open its detail. A tapped dot is a reader saying
+      // "this one" — the camera should go to it, the way it already does
+      // when the same record is picked from search. Saved once, the first
+      // tap of a run, so tapping a second pin without ever tapping away
+      // still returns to where the reader actually started.
+      if (!this.preSelectCamera) {
+        this.preSelectCamera = this.currentCamera();
+      }
+      this.focusFeature(layer.id, id);
     });
   }
 
@@ -1249,7 +1288,30 @@ export class MapController {
   }
 
   /** Where the reader was before a filter first moved the camera. */
-  private preFilterCamera: { center: maplibregl.LngLat; zoom: number } | null = null;
+  private preFilterCamera: { center: [number, number]; zoom: number } | null = null;
+
+  /** A plain, serialisable snapshot of the camera. */
+  private currentCamera(): { center: [number, number]; zoom: number } {
+    const c = this.map.getCenter();
+    return { center: [c.lng, c.lat], zoom: this.map.getZoom() };
+  }
+
+  /**
+   * Ease to a saved camera, then land exactly on it.
+   *
+   * MapLibre's own `easeTo` doesn't reliably converge on the requested
+   * centre when the eased zoom delta is large — measured here at a couple of
+   * miles off on a two-level zoom-out, confirmed against a straight `jumpTo`
+   * to the same numbers, which lands exactly. Invisible on the whole-state
+   * frame the filter round trip usually returns to; not invisible on the
+   * street-level one a tapped record returns to. The `jumpTo` on `moveend`
+   * corrects it after the motion the reader sees, rather than cutting the
+   * motion short.
+   */
+  private easeToCamera(camera: { center: [number, number]; zoom: number }, duration: number) {
+    this.map.easeTo({ ...camera, duration });
+    if (duration > 0) this.map.once('moveend', () => this.map.jumpTo(camera));
+  }
 
   private anyActiveFilters(): boolean {
     for (const state of this.filters.values()) if (state.size > 0) return true;
@@ -1271,7 +1333,7 @@ export class MapController {
     if (this.anyActiveFilters()) {
       this.zoomAfterFilterChange(layerId);
     } else if (activeBefore && this.preFilterCamera) {
-      this.map.easeTo({ ...this.preFilterCamera, duration: REDUCED_MOTION ? 0 : 600 });
+      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
       this.preFilterCamera = null;
     }
   }
@@ -1284,7 +1346,7 @@ export class MapController {
    */
   private zoomAfterFilterChange(layerId: string) {
     if (!this.preFilterCamera) {
-      this.preFilterCamera = { center: this.map.getCenter(), zoom: this.map.getZoom() };
+      this.preFilterCamera = this.currentCamera();
     }
     this.zoomToFiltered(layerId);
   }
@@ -1345,7 +1407,7 @@ export class MapController {
     // The same round trip as setFilter: clearing the last active filter puts
     // the reader back where they were before filtering moved them.
     if (!this.anyActiveFilters() && this.preFilterCamera) {
-      this.map.easeTo({ ...this.preFilterCamera, duration: REDUCED_MOTION ? 0 : 600 });
+      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
       this.preFilterCamera = null;
     }
   }

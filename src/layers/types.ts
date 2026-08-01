@@ -34,7 +34,12 @@ export type LayerId =
   // Present-day counterpart to the historical layers: MPCA's cumulative
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
   // A tract is an aggregate of thousands of people, never a household.
-  | 'ej_cumulative';
+  | 'ej_cumulative'
+  // Publicly-owned aircraft — an agency's asset, not a person — located by
+  // cross-referencing the FAA's ownership registry against a keyless,
+  // unfiltered community ADS-B feed. See scripts/ingest/flights.mjs for why
+  // three of its five agency categories currently carry zero records.
+  | 'agency_aircraft';
 
 export type Locale = 'en' | 'es';
 
