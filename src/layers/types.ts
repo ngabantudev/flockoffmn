@@ -332,6 +332,22 @@ export interface LayerDefinition {
     fallback: string;
   };
   /**
+   * Write an attribute's value on each polygon, the way the source document
+   * did.
+   *
+   * For layers whose areas carry their own printed identifiers — a HOLC sheet
+   * labels its zones "A1", "D4" — drawing the identifier on the ground is
+   * part of reading the map as the document it reproduces. The text takes the
+   * feature's category colour where the layer declares one, so the label and
+   * the fill agree about what the area is. Features whose attribute is null
+   * simply go unlabelled; MapLibre hides colliding labels at distant zooms
+   * rather than stacking them.
+   */
+  labelBy?: {
+    /** Attribute holding the text to draw. */
+    key: string;
+  };
+  /**
    * The two zooms across which this layer's records emerge from its surface.
    *
    * A point layer answers a different question at every scale. Across a state

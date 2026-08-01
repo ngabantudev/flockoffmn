@@ -532,6 +532,9 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#9ca3af',
     },
+    // The identifier HOLC printed on each zone — "A1", "D4" — drawn on the
+    // ground the way the original sheet drew it.
+    labelBy: { key: 'holcId' },
     dataPath: '/data/redlining.geojson',
     csvPath: null,
     provenance: {
