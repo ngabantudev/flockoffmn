@@ -10,7 +10,6 @@ import type { FeatureProperties, LayerId } from '~/layers/types';
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
 export interface ClientLayer {
   id: LayerId;
-  slug: string;
   label: string;
   summary: string;
   whatThisMeans: string;
@@ -51,7 +50,6 @@ export interface ClientLayer {
     fallbackBody?: 'countySheriff' | 'county' | 'name';
   };
   dataPath: string;
-  csvPath: string | null;
   filters: { key: string; label: string; kind: 'enum' | 'dateRange'; values: string[] }[];
   detailFields: { key: string; label: string; format?: string }[];
   source: string;
@@ -1134,10 +1132,6 @@ export class MapController {
     // layer back on has to wake it.
     if (on) this.startFilament();
     this.emitCounts();
-  }
-
-  isVisible(layerId: string) {
-    return this.visible.has(layerId);
   }
 
   setFilter(layerId: string, key: string, values: Set<string>) {
