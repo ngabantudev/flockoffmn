@@ -32,13 +32,8 @@ export interface ClientLayer {
   };
   /** Draw this line layer as a glowing filament. */
   filament?: boolean;
-  /** Send a pulse of light travelling along this layer's records. */
-  pulse?: {
-    phaseKey: string;
-    bands: number;
-    periodMs: number;
-    networkKey: string;
-  };
+  /** Colour this line layer by the size of each record's connected network. */
+  networkColor?: { key: string; maxRecords: number };
   /** The request a reader can file about one of these records, if any. */
   action?: {
     requestType: string;
@@ -147,79 +142,6 @@ const NODE_WEIGHT = [
 
 
 /**
- * The pulse: a bright head with a tail fading out behind it.
- *
- * Written as `line-gradient` stops against `line-progress`, which is why the
- * source below needs `lineMetrics`. Every stop is a fraction of the way along a
- * line, so one ramp fits every record whatever its length, and moving the pulse
- * is a single paint property away — no geometry is touched, no tile relaid, and
- * the cost of a frame does not grow with the number of records on screen.
- */
-const PULSE_TAIL = 0.28;
-const PULSE_HEAD = '#f0fdfa';
-
-/**
- * How often the pulse is allowed to move, and where it is worth moving at all.
- *
- * The animation is not free the way a uniform is. MapLibre draws a
- * `line-gradient` by rendering the ramp to a small canvas and uploading it as a
- * texture, once per tile the layer covers — so replacing the ramp costs bands ×
- * tiles canvas renders, and doing that on every animation frame is what made
- * the first version of this heavy.
- *
- * Two limits, each cutting the same product. Thirty-odd frames a second is
- * indistinguishable from sixty for a glow travelling this slowly and halves the
- * work outright. The zoom floor removes the rest of it: below `PULSE_FROM_ZOOM`
- * the median link is around a pixel long, so the pulse is animating something
- * nobody can resolve — and that is exactly the view the map opens on, which is
- * the worst possible place to spend a frame budget.
- */
-const PULSE_FRAME_MS = 32;
-const PULSE_FROM_ZOOM = 9;
-
-/**
- * One frame of the pulse, as a colour ramp along the line.
- *
- * `at` runs from 0 to 1 and wraps, so the pulse leaves one end of a link as it
- * arrives at the other. Stops must climb, and MapLibre rejects the whole layer
- * if they do not, so a pulse crossing the seam is drawn as the two pieces it
- * actually is rather than by letting the numbers run past the end.
- */
-function pulseRamp(at: number): maplibregl.ExpressionSpecification {
-  const stops: Array<[number, string]> = [[0, 'rgba(240,253,250,0)']];
-  const clear = 'rgba(240,253,250,0)';
-  // Walk the tail back from the head, drawing whatever part of it falls inside
-  // the line, plus the part that has wrapped around to the far end.
-  for (const head of [at, at + 1]) {
-    const tail = head - PULSE_TAIL;
-    for (const [pos, color] of [
-      [tail, clear],
-      [head - PULSE_TAIL * 0.35, 'rgba(153,246,228,0.55)'],
-      [head, PULSE_HEAD],
-      [head + 0.004, clear],
-    ] as Array<[number, string]>) {
-      if (pos > 0 && pos < 1) stops.push([pos, color]);
-    }
-  }
-  stops.push([1, clear]);
-  stops.sort((a, b) => a[0] - b[0]);
-
-  // Equal stops are rejected too, and two can collide when the head sits almost
-  // exactly on the seam.
-  const out: Array<[number, string]> = [];
-  for (const stop of stops) {
-    if (out.length && stop[0] <= out[out.length - 1][0]) continue;
-    out.push(stop);
-  }
-  return [
-    'interpolate',
-    ['linear'],
-    ['line-progress'],
-    ...out.flat(),
-  ] as unknown as maplibregl.ExpressionSpecification;
-}
-
-/**
  * How brightly a link burns, by the size of the connected network it belongs to.
  *
  * Colour is doing work a line cannot. Two links that meet at a shared reader
@@ -241,9 +163,7 @@ function pulseRamp(at: number): maplibregl.ExpressionSpecification {
  * a fifth in the 101. The curve keeps climbing past the largest so a denser
  * extract, or another state, does not flatten out at the top.
  */
-const NETWORK_MAX_SITES = 120;
-
-const networkColor = (key: string) =>
+const networkColor = (key: string, maxRecords: number) =>
   [
     'interpolate',
     ['linear'],
@@ -254,7 +174,7 @@ const networkColor = (key: string) =>
       // of this ramp is what the reader sees most of and it has to work alone.
       i === 0
         ? 2
-        : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * (NETWORK_MAX_SITES - 2)) + 2,
+        : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * (maxRecords - 2)) + 2,
       color,
     ]),
   ] as unknown as maplibregl.ExpressionSpecification;
@@ -347,9 +267,6 @@ export class MapController {
   private popup: maplibregl.Popup | null = null;
   /** Set once the map's `load` event has fired. See ready(). */
   private hasLoaded = false;
-  /** Pulse layers, and the frame loop that moves the light along them. */
-  private pulseLayers = new Set<string>();
-  private pulseFrame: number | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -739,14 +656,7 @@ export class MapController {
     // Never clustered. The source holds one feature per record at every zoom,
     // which is what lets the record list, the counter and the dots agree
     // without the special-casing a clustered source used to need.
-    this.map.addSource(src, {
-      type: 'geojson',
-      data: this.flatten(features),
-      // `line-gradient` is measured against how far along a line a point sits,
-      // and MapLibre only computes that when asked. Without it the pulse layers
-      // below are rejected by the style spec at runtime.
-      ...(layer.pulse ? { lineMetrics: true } : {}),
-    });
+    this.map.addSource(src, { type: 'geojson', data: this.flatten(features) });
 
     if (layer.geometry === 'polygon') {
       const under = this.beneathDots();
@@ -788,8 +698,8 @@ export class MapController {
       // imply a width the data does not have — a corridor is a stretch of
       // road, not a band of ground.
       // Colour carries the connection where a line cannot be drawn.
-      const thread = layer.pulse
-        ? networkColor(layer.pulse.networkKey)
+      const thread = layer.networkColor
+        ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords)
         : (layer.color as unknown as maplibregl.ExpressionSpecification);
 
       const widthByZoom = (stops: Array<[number, number]>) =>
@@ -834,9 +744,12 @@ export class MapController {
           },
           under,
         );
-        // The core, thin and bright. Drawn solid beneath the pulse so the
-        // corridor never disappears between passes — the movement reads as
-        // something travelling along a thread that is always there.
+        // The core, thin and bright, sitting inside the halo. Two layers is the
+        // whole filament: there was a third that animated a travelling light
+        // along each strand, and it looked good, but it cost a gradient texture
+        // per band per tile on every frame it moved. Colour already carries the
+        // finding the movement was decorating, and it carries it while standing
+        // still.
         this.map.addLayer(
           {
             id: `${layer.id}-line`,
@@ -855,51 +768,6 @@ export class MapController {
           },
           under,
         );
-        /*
-         * One layer per phase band.
-         *
-         * `line-gradient` is a single ramp for a whole layer — it cannot be
-         * driven from a feature's own properties the way a colour or a width
-         * can. So the per-record phase that makes this a ripple rather than a
-         * blink has to come from somewhere else, and the cheapest somewhere is
-         * a handful of layers over the same source, each filtered to one band
-         * and each offset a fraction of a period from the last.
-         *
-         * The cost of that choice is a fixed number of style layers, paid once.
-         * What it buys is a frame that costs `bands` paint updates no matter how
-         * many records are drawn — the reason this can carry a network several
-         * times denser than the one the slider could.
-         */
-        for (let band = 0; band < (layer.pulse?.bands ?? 1); band++) {
-          this.map.addLayer(
-            {
-              id: `${layer.id}-line-pulse-${band}`,
-              type: 'line',
-              source: src,
-              // Not drawn at all where it could not be seen. Below this the
-              // median link is about a pixel, so these layers were costing a
-              // gradient texture per tile and a pass of overdraw to render
-              // movement at a scale that cannot hold it — on the very view the
-              // map opens with. The casing and core still draw the network
-              // there; it is the animation that stops.
-              minzoom: PULSE_FROM_ZOOM,
-              filter: ['==', ['get', layer.pulse!.phaseKey], band] as unknown as
-                maplibregl.FilterSpecification,
-              layout: { 'line-cap': 'butt', 'line-join': 'round' },
-              paint: {
-                'line-opacity': 0.9,
-                'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.4, 11, 2.6, 16, 5],
-                // Under reduced motion this ramp is never replaced, so what a
-                // reader who asked for stillness gets is one soft pass of light
-                // frozen along each strand rather than a flat line.
-                'line-gradient': pulseRamp(band / (layer.pulse?.bands ?? 1)),
-              },
-            },
-            under,
-          );
-          this.pulseLayers.add(`${layer.id}-line-pulse-${band}`);
-        }
-        this.startPulse();
       } else {
         this.map.addLayer(
           {
@@ -1035,81 +903,6 @@ export class MapController {
     this.bindInteractions(layer, `${layer.id}-points`);
   }
 
-  /**
-   * Run the pulse along every visible band.
-   *
-   * Driven by the clock rather than by a frame counter, so the light travels at
-   * the same speed on a 120 Hz display as on a 60 Hz one and at the same speed
-   * again on a machine dropping frames. The loop parks itself whenever no pulse
-   * layer is switched on, so a reader who never turns corridors on pays nothing
-   * for this.
-   *
-   * A frame is one `setPaintProperty` per band, and nothing else: no geometry,
-   * no tile relaid, nothing sent to the worker. That is what lets the layer
-   * underneath be static and several times denser than the slider could carry.
-   * It is still not free — see `PULSE_FRAME_MS` — so the loop does as little as
-   * it can get away with and skips entirely when the movement would not be
-   * seen.
-   */
-  private startPulse() {
-    if (REDUCED_MOTION || this.pulseFrame !== null || !this.pulseLayers.size) return;
-    const start = performance.now();
-    let last = 0;
-
-    // Resolved once rather than per band per frame: this used to run a linear
-    // search over every layer on the map sixty times a second to answer a
-    // question whose answer never changes.
-    const bandsOf = new Map<string, { band: number; bands: number; period: number }>();
-    for (const id of this.pulseLayers) {
-      const match = id.match(/^(.*)-line-pulse-(\d+)$/);
-      const owner = this.layers.find((l) => l.id === match?.[1]);
-      if (!match || !owner?.pulse) continue;
-      bandsOf.set(id, {
-        band: Number(match[2]),
-        bands: owner.pulse.bands,
-        period: owner.pulse.periodMs,
-      });
-    }
-
-    const tick = (now: number) => {
-      const live = [...this.pulseLayers].filter(
-        (id) => this.map.getLayer(id) && this.visible.has(id.replace(/-line-pulse-\d+$/, '')),
-      );
-      if (!live.length) {
-        this.pulseFrame = null;
-        return;
-      }
-      this.pulseFrame = requestAnimationFrame(tick);
-      if (now - last < PULSE_FRAME_MS) return;
-
-      /*
-       * Yield the frame to the reader.
-       *
-       * A pan or a zoom is the one moment the map is already spending
-       * everything it has, and it is also the moment nobody is watching a glow
-       * travel: they are watching where they are going. Standing down until the
-       * camera settles costs the animation nothing anyone notices and hands the
-       * whole budget back to the interaction.
-       */
-      if (this.map.getZoom() < PULSE_FROM_ZOOM || this.map.isMoving() || this.map.isZooming()) {
-        return;
-      }
-      last = now;
-
-      for (const id of live) {
-        const spec = bandsOf.get(id);
-        if (!spec) continue;
-        // Bands are staggered a fraction of a period apart, and because the
-        // ingest ordered them from the middle of each network outwards, the
-        // stagger is what turns a row of independent pulses into one wave
-        // leaving the centre of a cluster.
-        const at = ((now - start) / spec.period + spec.band / spec.bands) % 1;
-        this.map.setPaintProperty(id, 'line-gradient', pulseRamp(at));
-      }
-    };
-    this.pulseFrame = requestAnimationFrame(tick);
-  }
-
   private cursorOn(layerId: string) {
     this.map.on('mouseenter', layerId, () => {
       this.map.getCanvas().style.cursor = 'pointer';
@@ -1152,18 +945,12 @@ export class MapController {
       '-line-hit',
       '-points',
       '-cones',
-      // One per phase band, so switching the layer off stops the pulse dead
-      // rather than leaving a row of lit strands over a hidden layer.
-      ...Array.from({ length: layer.pulse?.bands ?? 0 }, (_, band) => `-line-pulse-${band}`),
     ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {
         this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
       }
     }
-    // The pulse loop parks itself when nothing is on; switching a filament
-    // layer back on has to wake it.
-    if (on) this.startPulse();
     this.emitCounts();
   }
 
@@ -1335,8 +1122,6 @@ export class MapController {
   }
 
   destroy() {
-    if (this.pulseFrame !== null) cancelAnimationFrame(this.pulseFrame);
-    this.pulseFrame = null;
     this.popup?.remove();
     this.map.remove();
   }
