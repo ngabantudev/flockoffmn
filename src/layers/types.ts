@@ -145,10 +145,35 @@ export interface NearMeSummary {
   wide?: boolean;
 }
 
+/**
+ * The shelf a layer sits on in the control panel.
+ *
+ * Seven layers in one flat list is a list nobody reads to the bottom of, and
+ * the reader is left to work out for themselves that the cameras and the
+ * corridors are the same subject seen twice, or that a 1930s mortgage grade
+ * and a deed clause are both answers to "how did this map get drawn this way".
+ * Grouping states that relationship in the panel instead of leaving it
+ * implied.
+ *
+ * A category is a claim about the data, not a folder: it lives on the layer
+ * definition beside `order`, so the grouping travels with the registry rather
+ * than being re-invented by whichever component happens to render a list.
+ */
+export type LayerCategoryId = 'surveillance' | 'enforcement' | 'infrastructure' | 'historical';
+
+export interface LayerCategory {
+  id: LayerCategoryId;
+  label: I18nString;
+  /** One line under the heading, saying what the section is for. */
+  summary: I18nString;
+}
+
 export interface LayerDefinition {
   id: LayerId;
   /** URL-safe identifier used in query strings and file names. */
   slug: string;
+  /** Which section of the layer panel this belongs under. */
+  category: LayerCategoryId;
   label: I18nString;
   /** One line, plain language — shown in the layer toggle list. */
   summary: I18nString;
