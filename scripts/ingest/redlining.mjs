@@ -251,8 +251,10 @@ async function main() {
       datasetUrl: SOURCE,
       descriptionsUrl: DESCRIPTIONS_SOURCE,
       // Note: NOT relicensable as CC BY 4.0 alongside our own compiled data.
-      license: 'CC BY-NC-SA 4.0',
-      licenseUrl: 'https://creativecommons.org/licenses/by-nc-sa/4.0/',
+      // The project moved from CC BY-NC-SA 4.0 to CC BY-NC 2.5 with its 2023
+      // relaunch; the site's terms page states the current licence.
+      license: 'CC BY-NC 2.5',
+      licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
       attribution:
         'Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality: Redlining in New Deal America", American Panorama, ed. Robert K. Nelson and Edward L. Ayers',
       sourceDate: '1935-1940',
@@ -270,9 +272,9 @@ async function main() {
       'Percentages are transcribed verbatim from a hand-filled form and are the appraiser\'s estimate, not a census. Values such as "trace" and "1/5%" appear as written and are deliberately not parsed into numbers.',
       '"Groups named" is derived by keyword-matching the survey prose against the appraisers\' own vocabulary. It records that a word was written about an area — not who actually lived there, and not how many.',
       'The survey text quotes 1930s appraisers directly, including racist language and slurs. It is reproduced unaltered because paraphrasing it conceals how explicit the racial criteria were.',
-      'The transcribed descriptions carry no separate licence statement of their own; they are treated here under the Mapping Inequality project\'s CC BY-NC-SA 4.0 terms.',
+      'The transcribed descriptions carry no separate licence statement of their own; they are treated here under the Mapping Inequality project\'s CC BY-NC 2.5 terms.',
       'Racial covenants are a separate record, mapped by Mapping Prejudice at the University of Minnesota, and are linked rather than duplicated here.',
-      'This layer is CC BY-NC-SA 4.0 and cannot be redistributed under this project\'s own CC BY 4.0 data terms.',
+      'This layer is CC BY-NC 2.5 and cannot be redistributed under this project\'s own CC BY 4.0 data terms.',
     ],
     features,
   });
