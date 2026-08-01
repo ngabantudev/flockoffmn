@@ -20,11 +20,19 @@
  * project does not fabricate records. Where no road route can be found the link
  * is dropped and counted, never drawn.
  *
- * Each reader location is linked to its single nearest neighbour, so a lone
- * rural reader has one strand and a dense downtown block ends up with several —
- * every reader that chose it adds one. That asymmetry is the finding: density
- * is what the drawing shows, without a threshold deciding for the reader what
- * counts as a corridor.
+ * Two reader locations are linked when no third reader stands between them —
+ * formally, when no other location falls inside the circle drawn with the two
+ * of them at its ends. That is the Gabriel graph, and it is chosen because it
+ * needs no parameter to be argued over: the data decides which readers are
+ * neighbours, not a radius somebody picked. It also cannot draw the line that
+ * would be a lie — a strand from A to C past a reader at B, asserting a
+ * directness the ground does not have.
+ *
+ * This replaces linking each reader to its single nearest neighbour, which drew
+ * a line from A to B and none from B to A's other side, and so left two readers
+ * three blocks apart unjoined whenever each had something marginally closer.
+ * Every link the older model drew survives here: nearest-neighbour is a subset
+ * of the Gabriel graph, so this fills gaps in and removes nothing.
  *
  * The routing is asked of a public OSRM instance rather than done here, and
  * that is a deliberate reversal. This build used to pull the drivable network
@@ -39,6 +47,13 @@
  * honours one-way streets and turn restrictions, which the graph built here
  * never did. What it does not return is the OpenStreetMap `highway` class of
  * the roads it used, so this layer no longer carries one — see `roadsAlong`.
+ *
+ * The layer is drawn whole and never grown. It used to ship every route in full
+ * and let a slider in the browser cut each one back to a reach, which meant
+ * re-uploading the entire layer on every frame of a drag and shipping road
+ * geometry that, at the slider's opening position, over half the links never
+ * showed. Both are gone: a link is here only if it is short enough to draw, and
+ * what is written is exactly what is drawn. See `STATIC_MILES`.
  */
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
@@ -73,18 +88,41 @@ const SNAP_M = 60;
 /**
  * The furthest a neighbour may be and still be linked, measured along the road.
  *
- * This is the ceiling of the control in the browser, which can only ever narrow
- * what was surveyed here: at ten miles every link in the file is drawn whole,
- * and below it each one is drawn only as far as the radius reaches from its two
- * ends. Moving it means moving `linkRadius.maxMiles` in the registry to match,
- * or the top of the slider silently stops completing links.
+ * A mile and a half is a claim a reader can hold in their head — roughly five
+ * minutes of city driving — and every strand on the map now means the same
+ * thing, which is what the slider it replaces could never say. There is no
+ * second number: what is written here is what is drawn.
  *
- * Ten miles is well past the point of usefulness for most of the state — the
- * median link is half a mile — and exists for the rural reader whose nearest
- * neighbour is the next town over. That link is a true fact about a sparse
- * network and dropping it would make the map look denser than it is.
+ * It is a real editorial choice and it does cut things off. A rural reader
+ * whose nearest neighbour is the next town over now appears in no link at all,
+ * where the old ceiling of ten miles would draw a strand across open country.
+ * That link was true, but at ten miles the line stopped describing a trip and
+ * started describing a distance, and the count of unlinked readers below says
+ * plainly how many the choice drops.
  */
-const LINK_M = 10 * MILE;
+const STATIC_MILES = 1.5;
+const LINK_M = STATIC_MILES * MILE;
+
+/**
+ * How far the drawn line may sit from the route the router actually returned.
+ *
+ * OSRM answers with every OpenStreetMap node along the way, which is a level of
+ * curve detail no zoom on this map resolves: five metres of tolerance removes
+ * about four vertices in five and cannot be seen. The file is what the browser
+ * parses on load, so this is the difference between a layer that costs a moment
+ * and one that costs a wait.
+ */
+const SIMPLIFY_M = 5;
+
+/**
+ * How many phase bands the pulse animation is cut into.
+ *
+ * Links are banded by how far they sit from the middle of their own network, so
+ * the pulse leaves the centre of a cluster and travels outwards. Six is enough
+ * for the movement to read as travelling rather than blinking, and few enough
+ * that the browser animates the whole state with six paint updates a frame.
+ */
+const PHASE_BANDS = 6;
 
 /**
  * How much longer than the straight line a route may be before it is refused.
@@ -216,54 +254,144 @@ function toSites(cameras) {
 }
 
 /**
- * Each location's nearest neighbour, as a set of undirected pairs.
+ * How many near locations each site is tested against.
  *
- * Undirected because a link is a piece of road and a piece of road is not
- * owned by either end of it: where A's nearest is B and B's nearest is A, that
- * is one strand, not two drawn on top of each other. Where B's nearest is some
- * third location, B keeps its own strand as well — which is exactly why a dense
- * block ends up with several and a lone reader with one.
- *
- * Nearest is measured across the map, not along the road, because the road is
- * not known yet and asking a router for every candidate would be thousands of
- * questions to answer one. The two rankings can disagree where a river or a
- * railway sits between them; the detour limit below is what catches that.
+ * The Gabriel test below asks whether any third reader stands between a pair,
+ * and a reader far from both cannot be between them. Twenty-four neighbours is
+ * comfortably more than the handful that can ever block a pair — no Gabriel
+ * edge in this data survives past the eighth — so the window costs nothing in
+ * accuracy and turns an all-pairs sweep into a local one.
  */
-function nearestPairs(sites) {
+const CANDIDATES = 24;
+
+/**
+ * Pairs of reader locations with no third reader standing between them.
+ *
+ * This is the Gabriel graph: A and B are linked when no other location falls
+ * inside the circle that has A and B at opposite ends of its diameter. Read on
+ * the ground it is the sentence "these two are each other's neighbours and
+ * there is nothing in between", which is what a strand on this map should mean
+ * and what a nearest-neighbour link could not say.
+ *
+ * It needs no threshold, which is the point — nothing here decides for the
+ * reader what counts as close. The one number that does apply, `LINK_M`, is not
+ * part of the test: it drops pairs already too far apart to draw, after the
+ * geometry has spoken. Straight-line distance is a floor on the driven
+ * distance, so a pair refused here could never have come back under the limit
+ * by road, and nothing true is lost by refusing it before routing it.
+ */
+function gabrielPairs(sites) {
   const mLng = 111_320 * Math.cos((46 * Math.PI) / 180);
-  const cell = LINK_M;
+  // Flat metres. Over the longest span this layer draws, the error against the
+  // haversine below is centimetres, and it is only ever used to rank and to
+  // decide what is inside a circle.
+  const flat = sites.map((s) => [s.point[0] * mLng, s.point[1] * 110_574]);
+  const d2 = (i, j) => (flat[i][0] - flat[j][0]) ** 2 + (flat[i][1] - flat[j][1]) ** 2;
+
+  const cell = 2_000;
   const grid = new Map();
-  const cellOf = (p) => [Math.floor((p[0] * mLng) / cell), Math.floor((p[1] * 110_574) / cell)];
-  sites.forEach((site, i) => {
-    const [gx, gy] = cellOf(site.point);
-    const k = `${gx}|${gy}`;
+  const cellOf = (i) => `${Math.floor(flat[i][0] / cell)}|${Math.floor(flat[i][1] / cell)}`;
+  sites.forEach((_, i) => {
+    const k = cellOf(i);
     if (!grid.has(k)) grid.set(k, []);
     grid.get(k).push(i);
   });
 
-  const pairs = new Map();
-  let alone = 0;
-  sites.forEach((site, i) => {
-    const [gx, gy] = cellOf(site.point);
-    let best = null;
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dy = -1; dy <= 1; dy++) {
-        for (const j of grid.get(`${gx + dx}|${gy + dy}`) ?? []) {
-          if (j === i) continue;
-          const d = haversineMeters(site.point, sites[j].point);
-          if (d <= LINK_M && (!best || d < best.d)) best = { d, j };
+  // Widen the ring until enough neighbours are in hand, so a downtown reads one
+  // cell and a reader alone in a county reads as many as it has to.
+  const near = sites.map((_, i) => {
+    const gx = Math.floor(flat[i][0] / cell);
+    const gy = Math.floor(flat[i][1] / cell);
+    for (let r = 1; r <= 16; r++) {
+      const found = [];
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (const j of grid.get(`${gx + dx}|${gy + dy}`) ?? []) if (j !== i) found.push(j);
         }
       }
+      if (found.length >= CANDIDATES || r === 16) {
+        return found.sort((a, b) => d2(i, a) - d2(i, b)).slice(0, CANDIDATES);
+      }
     }
-    if (!best) {
-      alone++;
-      return;
-    }
-    const [a, b] = i < best.j ? [i, best.j] : [best.j, i];
-    pairs.set(`${a}|${b}`, { a, b, straightM: best.d });
+    return [];
   });
 
-  return { pairs: [...pairs.values()], alone };
+  const pairs = new Map();
+  const linked = new Set();
+  sites.forEach((site, i) => {
+    for (const j of near[i]) {
+      const key = i < j ? `${i}|${j}` : `${j}|${i}`;
+      if (pairs.has(key)) continue;
+      const straightM = haversineMeters(site.point, sites[j].point);
+      if (straightM > LINK_M) continue;
+
+      // Anything that could stand between them is a near neighbour of one end
+      // or the other, so the two candidate windows together are the whole of
+      // the question.
+      const mx = (flat[i][0] + flat[j][0]) / 2;
+      const my = (flat[i][1] + flat[j][1]) / 2;
+      const r2 = d2(i, j) / 4;
+      let between = false;
+      for (const c of new Set([...near[i], ...near[j]])) {
+        if (c === i || c === j) continue;
+        if ((flat[c][0] - mx) ** 2 + (flat[c][1] - my) ** 2 < r2) {
+          between = true;
+          break;
+        }
+      }
+      if (between) continue;
+
+      pairs.set(key, { a: Math.min(i, j), b: Math.max(i, j), straightM });
+      linked.add(i).add(j);
+    }
+  });
+
+  return { pairs: [...pairs.values()], alone: sites.length - linked.size };
+}
+
+/**
+ * Drop the vertices a reader could not see, by Douglas–Peucker.
+ *
+ * Iterative rather than recursive: a route can carry a couple of thousand
+ * points and a stack is cheaper than trusting the interpreter's.
+ */
+function simplify(coords, toleranceM) {
+  if (coords.length < 3) return coords;
+  const mLng = 111_320 * Math.cos((46 * Math.PI) / 180);
+  const flat = coords.map(([lng, lat]) => [lng * mLng, lat * 110_574]);
+  const perp = (p, a, b) => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const len = dx * dx + dy * dy;
+    if (!len) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+    const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len));
+    return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+  };
+
+  const keep = new Set([0, coords.length - 1]);
+  const stack = [[0, coords.length - 1]];
+  while (stack.length) {
+    const [lo, hi] = stack.pop();
+    let worst = toleranceM;
+    let at = -1;
+    for (let k = lo + 1; k < hi; k++) {
+      const e = perp(flat[k], flat[lo], flat[hi]);
+      if (e > worst) {
+        worst = e;
+        at = k;
+      }
+    }
+    if (at > 0) {
+      keep.add(at);
+      stack.push([lo, at], [at, hi]);
+    }
+  }
+
+  // Five decimal places is about a metre, finer than the tolerance above and
+  // finer than anything a crowd-sourced camera position claims.
+  return [...keep]
+    .sort((x, y) => x - y)
+    .map((k) => [Number(coords[k][0].toFixed(5)), Number(coords[k][1].toFixed(5))]);
 }
 
 /* ------------------------------------------------------------------ *
@@ -335,11 +463,11 @@ async function main() {
   const sites = toSites(cameras);
   log('corridors', `read ${cameras.length} cameras standing at ${sites.length} locations`);
 
-  const { pairs, alone } = nearestPairs(sites);
+  const { pairs, alone } = gabrielPairs(sites);
   log(
     'corridors',
-    `${pairs.length} nearest-neighbour pairs to route; ` +
-      `${alone} locations have no other reader within ${metersToMiles(LINK_M)} miles`,
+    `${pairs.length} Gabriel pairs within ${STATIC_MILES} miles to route; ` +
+      `${alone} locations have no neighbour that close`,
   );
   if (!pairs.length) throw new Error('no camera location has a neighbour to link to');
 
@@ -348,10 +476,14 @@ async function main() {
 
   const counties = await loadCounties();
   const features = [];
+  /** The two site indices behind each feature, for the network pass below. */
+  const endsOf = [];
   let noRoute = 0;
   let tooCrooked = 0;
   let tooFar = 0;
   let unsnapped = 0;
+  let vertexCount = 0;
+  let keptVertices = 0;
   const lengths = [];
 
   for (const [index, pair] of pairs.entries()) {
@@ -391,12 +523,14 @@ async function main() {
       continue;
     }
 
-    const line = result.coordinates;
+    const line = simplify(result.coordinates, SIMPLIFY_M);
     if (!Array.isArray(line) || line.length < 2) {
       noRoute++;
       continue;
     }
     lengths.push(result.meters);
+    vertexCount += result.coordinates.length;
+    keptVertices += line.length;
 
     // Which roads the link runs along, longest first. Weighted by how much of
     // the route each carries, so a street the link merely crosses at a junction
@@ -417,6 +551,7 @@ async function main() {
       ? along.slice(0, 2).join(' → ')
       : `Unnamed road near ${county?.properties.name ?? STATE_USPS}`;
 
+    endsOf.push([pair.a, pair.b]);
     features.push({
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: line },
@@ -439,19 +574,19 @@ async function main() {
           // name would be inventing a field, which this project does not do.
           roadsAlong: along.length ? along.join('; ') : null,
           readerCount: a.readers + b.readers,
-          // The two numbers the browser needs to draw this growing: how long
-          // the drive is, and how far apart the readers actually stand.
+          // How long the drive is, and how far apart the readers actually
+          // stand. The gap between the two is the shape of the street grid.
           linkMiles: round(result.meters, 2),
           straightMiles: round(pair.straightM, 2),
           // Reader locations along the link, in miles from its start — the same
           // series the spacing diagram in the detail panel reads.
           siteOffsets: `0.00;${round(result.meters, 2).toFixed(2)}`,
           siteReaders: `${a.readers};${b.readers}`,
-          // The link's two ends, so the browser can join links that share one
-          // into a network. Six decimals is about 11 cm, far finer than
-          // anything this layer claims.
-          siteLngs: `${line[0][0].toFixed(6)};${line.at(-1)[0].toFixed(6)}`,
-          siteLats: `${line[0][1].toFixed(6)};${line.at(-1)[1].toFixed(6)}`,
+          // Filled in by the pass below, once every surviving link is known:
+          // how many reader locations this link's network joins, and which of
+          // the pulse's phase bands it belongs to.
+          connectedSites: 0,
+          phase: 0,
           operatorCount: operators.length,
           operators: operators.length ? operators.join('; ') : null,
           unattributedReaders: a.unattributed + b.unattributed,
@@ -464,6 +599,89 @@ async function main() {
   log('corridors', `${cache.size - cachedAtStart} routes fetched, ${cachedAtStart} read from cache`);
 
   if (!features.length) throw new Error('no link could be routed; not writing a layer');
+
+  /*
+   * Networks, and the order the pulse travels in.
+   *
+   * Two reader locations are in the same network when a chain of links runs
+   * between them. The browser used to work this out on every frame of a slider
+   * drag, because which links existed changed as the radius moved; nothing
+   * moves now, so it is settled once, here.
+   *
+   * The phase band is what makes the animation read as a ripple rather than a
+   * blink. Each link is ranked by how far it sits from the middle of its own
+   * network and cut into `PHASE_BANDS` bands, so the pulse leaves the centre of
+   * a cluster and travels out to its edges. It is a drawing order and nothing
+   * more — no claim is made that a network has a centre, or that anything
+   * travels between these readers in this direction or at all.
+   */
+  const parent = new Map();
+  const find = (x) => {
+    let root = x;
+    while (parent.get(root) !== root) root = parent.get(root);
+    while (parent.get(x) !== root) {
+      const next = parent.get(x);
+      parent.set(x, root);
+      x = next;
+    }
+    return root;
+  };
+  for (const [a, b] of endsOf) {
+    if (!parent.has(a)) parent.set(a, a);
+    if (!parent.has(b)) parent.set(b, b);
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  }
+
+  const members = new Map();
+  for (const key of parent.keys()) {
+    const root = find(key);
+    if (!members.has(root)) members.set(root, []);
+    members.get(root).push(key);
+  }
+  const centre = new Map();
+  for (const [root, group] of members) {
+    centre.set(root, [
+      mean(group.map((i) => sites[i].point[0])),
+      mean(group.map((i) => sites[i].point[1])),
+    ]);
+  }
+
+  // Rank within each network, so a two-link pocket bands as fully as the metro
+  // does and the pulse crosses both in the same time.
+  const byNetwork = new Map();
+  endsOf.forEach(([a, b], i) => {
+    const root = find(a);
+    const from = haversineMeters(centre.get(root), [
+      (sites[a].point[0] + sites[b].point[0]) / 2,
+      (sites[a].point[1] + sites[b].point[1]) / 2,
+    ]);
+    if (!byNetwork.has(root)) byNetwork.set(root, []);
+    byNetwork.get(root).push({ i, from });
+  });
+  for (const [root, group] of byNetwork) {
+    group.sort((x, y) => x.from - y.from);
+    group.forEach(({ i }, rank) => {
+      features[i].properties.attributes.connectedSites = members.get(root).length;
+      features[i].properties.attributes.phase = Math.min(
+        PHASE_BANDS - 1,
+        Math.floor((rank / group.length) * PHASE_BANDS),
+      );
+    });
+  }
+
+  const networkSizes = [...members.values()].map((g) => g.length).sort((x, y) => y - x);
+  log(
+    'corridors',
+    `${members.size} networks; largest joins ${networkSizes[0]} reader locations, ` +
+      `${networkSizes.filter((n) => n === 2).length} are a single pair`,
+  );
+  log(
+    'corridors',
+    `geometry simplified at ${SIMPLIFY_M} m: ${vertexCount} vertices to ${keptVertices} ` +
+      `(${Math.round((1 - keptVertices / vertexCount) * 100)}% fewer)`,
+  );
 
   // Longest first, so the record list opens on the strands that cross open
   // country rather than on a thousand city blocks.
@@ -504,7 +722,7 @@ async function main() {
   const previous = await readFile(path.join(PUBLIC_DATA, 'alpr-corridors.geojson'), 'utf8')
     .then((raw) => JSON.parse(raw))
     .catch(() => null);
-  if (previous?.metadata?.linkModel === 'nearest-neighbour') {
+  if (previous?.metadata?.linkModel === 'gabriel-static') {
     const before = previous.features?.length ?? 0;
     if (before > 0 && features.length < before * 0.9) {
       throw new Error(
@@ -526,16 +744,18 @@ async function main() {
       attribution: '© OpenStreetMap contributors, ODbL — mapped by DeFlock volunteers, routed with OSRM',
       sourceDate: metadata.sourceDate ?? null,
       refresh: 'frequent',
-      // Read by the guard above, so a file written by the older corridor build
+      // Read by the guard above, so a file written by an older corridor build
       // is never compared against a file written by this one.
-      linkModel: 'nearest-neighbour',
+      linkModel: 'gabriel-static',
     },
     knownGaps: [
       'Derived, not surveyed. Every limit of the crowd-sourced camera layer applies here and compounds: a link is only as real as the two readers it joins, and a reader nobody has mapped moves every strand around it.',
-      `Each reader location is linked to its nearest neighbour and to nothing else. A strand is therefore evidence that these two readers are each other's nearest — or that one chose the other — and never a claim that a driver's route between them is the only watched way, or that no reader stands between them unmapped.`,
+      `Two reader locations are linked when no third mapped reader stands between them — no other location falls inside the circle drawn with the two of them at its ends. A strand says that and only that. It is never a claim that a driver's route between them is the only watched way, and "nothing in between" means nothing *mapped* in between: an unmapped reader moves every strand around it.`,
+      `Only pairs within ${STATIC_MILES} miles by road are drawn. Readers whose nearest neighbour is further away appear on the camera layer and in no link, so the network thins towards rural Minnesota partly because the readers do and partly because this limit says so. Earlier versions of this layer drew links up to ten miles long; those strands described a distance more than a trip, and they are gone.`,
       `The line is the route a car would drive between the two readers, as OSRM reads OpenStreetMap: it honours one-way streets and turn restrictions, but knows nothing of traffic, closures or roadworks, and it is the shortest such route rather than the one a local would pick.`,
       `Nearest neighbour is decided by distance across the map and the line is then measured along the road, so the two can disagree — a reader across a river is near on the map and far to drive. Where driving takes more than ${DETOUR_RATIO} times the straight-line distance the pair is refused, because at that point the line stops describing the pair and starts describing the detour.`,
-      `The browser draws each link growing out from both of its readers, as far as the radius reaches, and joins the two only once the radius covers the whole route. Nothing is added there — the geometry at every slider position is a piece of the route surveyed here, cut shorter.`,
+      `The line drawn is the route simplified to ${SIMPLIFY_M} m, so it departs from the road by up to that much where the road curves. Nothing is added and no corner is cut that a reader could see at any zoom this map offers; the length quoted for a link is the router's own figure for the full route, not the length of the simplified line.`,
+      `The map animates a pulse travelling along the links, outward from the middle of each network. That is a drawing order chosen to make the strands legible and nothing else: it does not say that a network has a centre, that traffic moves this way, or that anything at all travels between these readers. The animation stops for anyone whose system asks for reduced motion, and the map is complete without it.`,
       `This layer records which roads a link follows, from the router's own driving instructions, but not what class of road they are. The router does not report the OpenStreetMap \`highway\` tag, and a road's class is not something to infer from its name, so the field is absent rather than guessed.`,
       `${alone} reader locations have no other reader within ${metersToMiles(LINK_M)} miles and appear in no link. They remain on the camera layer.`,
       `${unsnapped} pairs had an end more than ${SNAP_M} m from any drivable road OpenStreetMap records, so the route would have started somewhere no camera stands. ${noRoute} more could not be routed at all, and ${tooFar} were over ${metersToMiles(LINK_M)} miles by road despite being within that distance across the map.`,

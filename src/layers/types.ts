@@ -307,40 +307,40 @@ export interface LayerDefinition {
    */
   filament?: boolean;
   /**
-   * Let the reader choose how far each record reaches towards its neighbour.
+   * Send a pulse of light travelling along a line layer.
    *
-   * Some questions do not have one answer, and "which cameras form a corridor"
-   * is one of them, so the control hands the judgement back to the reader and
-   * the drawing grows out of each camera as it moves. `lib/linkGrowth.ts` has
-   * the rule and the reasoning; this is only its wiring.
+   * This replaces a slider that grew each link out of its two ends as the
+   * reader dragged it. The slider's motion was doing two jobs: it made the
+   * network legible, and it let the reader pick the radius. The second was
+   * never really a question the reader wanted — the ingest can name one honest
+   * distance and stand behind it — and paying for it cost a re-upload of the
+   * entire layer on every frame of a drag. The pulse keeps the movement and
+   * drops the cost: the geometry never changes, and a frame is a handful of
+   * paint updates that never touch the data.
    *
-   * The one constraint a layer must honour: the file has to ship a whole route
-   * for every link, routed at the widest radius the control offers, because the
-   * browser can only ever cut those routes shorter — there is no road network
-   * in the page to extend one with.
+   * The animation is decoration in the strict sense — remove it and no fact
+   * leaves the map. That is the test it has to pass, because motion that
+   * carries information is motion that is lost under `prefers-reduced-motion`,
+   * where this stops dead.
    */
-  linkRadius?: {
-    /** Attribute holding the link's two end longitudes, ';'-separated. */
-    lngsKey: string;
-    /** Attribute holding the link's two end latitudes, ';'-separated. */
-    latsKey: string;
-    /** Attribute holding the routed length of the link, in miles. */
-    lengthKey: string;
-    minMiles: number;
-    /** Must equal the longest link the ingest routed. */
-    maxMiles: number;
-    stepMiles: number;
-    defaultMiles: number;
+  pulse?: {
     /**
-     * Attribute the map styles on, and the value the browser writes onto a link
-     * whose two ends have not met yet. A reaching strand is drawn quieter and
-     * does not creep, so a connection never looks made before it is.
+     * Attribute holding which band of the animation a record belongs to, as an
+     * integer from zero to `bands - 1`. The ingest assigns it; the map draws
+     * one style layer per band and offsets each band's phase, which is the only
+     * way a per-record phase can be had from a paint property that is one ramp
+     * for the whole layer.
      */
-    kindKey: string;
-    reachingKind: string;
-    label: I18nString;
-    /** One line under the control saying what moving it does. */
-    help: I18nString;
+    phaseKey: string;
+    /** How many bands the ingest cut the records into. */
+    bands: number;
+    /** How long one pulse takes to run the length of a record. */
+    periodMs: number;
+    /**
+     * Attribute holding how many records the feature's connected network joins,
+     * which is what the line is coloured by.
+     */
+    networkKey: string;
   };
   /**
    * The request a reader can file about one of these records.
