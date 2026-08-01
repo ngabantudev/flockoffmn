@@ -1,6 +1,6 @@
 <div align="center">
 
-# get-flocked
+# FlockOff
 
 **A free, open-source map of the systems watching your neighbourhood — built by the community, for the community. Starting in Minnesota.**
 
@@ -23,7 +23,7 @@ lines drawn around neighbourhoods in the 1930s still shape who lives where.
 agency spreadsheets, permit filings, and university archives — which makes them
 public in theory and invisible in practice.
 
-get-flocked stitches them onto one map, so a resident can stand at their own
+FlockOff stitches them onto one map, so a resident can stand at their own
 address and see the whole system around them. Not a stack of separate stories.
 One connected system.
 
@@ -118,7 +118,7 @@ Open a PR with the campaign, the group, and a public source.
 ### 🐛 Tell us what's wrong
 
 Found a bad location, a misleading label, a dataset we've misread? [**Open an
-issue**](https://github.com/NgabantuDev/get-flocked/issues). Corrections to the
+issue**](https://github.com/ngabantudev/flockoffmn/issues). Corrections to the
 underlying records usually belong upstream (OpenStreetMap for cameras, the
 publishing agency for the rest) and flow here automatically — we'll help you
 work out which is which.

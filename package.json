@@ -1,5 +1,5 @@
 {
-  "name": "get-flocked",
+  "name": "flockoff",
   "type": "module",
   "version": "0.1.0",
   "description": "A free, open-source map making systems of surveillance, enforcement, and historical public policy visible — starting in Minnesota.",
@@ -23,7 +23,7 @@
     "data:datacenters": "node scripts/ingest/data-centers.mjs",
     "data:redlining": "node scripts/ingest/redlining.mjs",
     "pages:dev": "wrangler pages dev dist",
-    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=get-flocked",
+    "pages:deploy": "npm run build && wrangler pages deploy dist --project-name=flockoffmn",
     "data:covenants": "node scripts/ingest/covenants.mjs"
   },
   "dependencies": {
