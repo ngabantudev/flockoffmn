@@ -19,7 +19,7 @@ const meta = (id: string) => mergedProvenance(loaded.find((l) => l.definition.id
 const cameras = count('alpr');
 const agreements = count('agency_287g');
 const facilities = count('detention_facility');
-const dataCentres = count('data_center');
+const dataCenters = count('data_center');
 const redlineAreas = count('redlining');
 const nationalAgreements = meta('agency_287g').nationalAgreementCount ?? null;
 
@@ -103,7 +103,7 @@ const stages = [
   </h1>
   <p class="prose-civic mt-3">
     The layers on this map are usually discussed separately — a camera story here, a sheriff story
-    there, a data-centre zoning fight in the local paper. They are not separate. They are stages of
+    there, a data-center zoning fight in the local paper. They are not separate. They are stages of
     one pipeline, running on ground that was shaped long before any of it was built.
   </p>
 
@@ -149,7 +149,7 @@ const stages = [
         the practice was outlawed.
       </p>
       <p>
-        <strong class="text-ink-100">Data centres</strong> came last. {dataCentres} of them are
+        <strong class="text-ink-100">Data centers</strong> came last. {dataCenters} of them are
         mapped in Minnesota. They are the physical machinery the rest of this runs on — the storage
         behind plate-reader networks, records systems, and the analytics products sold to agencies
         — and they arrive with immediate local consequences of their own: electricity and water

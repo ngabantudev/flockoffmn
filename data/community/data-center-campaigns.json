@@ -1,6 +1,6 @@
 {
   "$comment": [
-    "Community-maintained overlay for the data-centre layer (L4).",
+    "Community-maintained overlay for the data-center layer (L4).",
     "",
     "FracTracker's dataset records the facility. It does not record whether a",
     "community has organised in response — and that is precisely the field an",

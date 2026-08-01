@@ -26,7 +26,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | 287(g) agreements | `287g.geojson` | Public domain (US federal work) | Free for any use. |
 | Detention facilities | `detention.geojson` | Public domain (US federal work) | Free for any use. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) | **Non-commercial and share-alike.** Not usable commercially. |
-| Data centres | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
+| Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
 
 **Combining layers:** the most restrictive term governs the combination. A
@@ -42,13 +42,13 @@ Reproduce these when redistributing the corresponding layer:
 - **Redlining** — Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality:
   Redlining in New Deal America," *American Panorama*, ed. Robert K. Nelson and
   Edward L. Ayers.
-- **Data centres** — FracTracker Alliance; More Than Just Parks Data Center
+- **Data centers** — FracTracker Alliance; More Than Just Parks Data Center
   Tracker; Cleanview; Baxtel; PoweredByWho.
 - **County, place and jurisdiction geography** — U.S. Census Bureau.
 
-## The data-centre trackers
+## The data-center trackers
 
-The data-centre layer is the one place here where a source carries no open
+The data-center layer is the one place here where a source carries no open
 licence, so the reasoning is written down rather than assumed.
 
 FracTracker's FOIA permit file is the spine of the layer. Status, capacity and

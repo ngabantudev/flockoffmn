@@ -16,7 +16,7 @@
 
 Licence-plate cameras are going up on ordinary poles. Sheriffs are quietly
 signing agreements with ICE. County jails are renting beds to federal
-immigration authorities. Data centres are breaking ground next door. And the
+immigration authorities. Data centers are breaking ground next door. And the
 lines drawn around neighbourhoods in the 1930s still shape who lives where.
 
 **Every one of those facts is public record.** They're also scattered across
@@ -59,7 +59,7 @@ This is a public good, not a product.
 | **ALPR corridors** | 744 | Derived: the road from each reader to its nearest neighbour, routed over OSM |
 | **Redlining zones (HOLC)** | 168 | Mapping Inequality, Univ. of Richmond |
 | **ICE-contract detention facilities** | 5 | ICE Over-72-Hour Facility List |
-| **Data centres** | 20 | FracTracker Alliance FOIA records |
+| **Data centers** | 20 | FracTracker Alliance FOIA records |
 | **Racial covenants (aggregate)** | 2,567 cells | Mapping Prejudice, Univ. of Minnesota — 34,741 covenants across 8 counties |
 
 The covenants layer is a deliberate aggregate: each record is a fixed 250-metre
@@ -109,7 +109,7 @@ here without anyone needing to approve it.
 
 ### 📢 Add a community campaign
 
-Organising against a data centre? The upstream data records the *facility* but
+Organising against a data center? The upstream data records the *facility* but
 not whether anyone is *fighting* it — which is often exactly what an organizer
 needs. That field is community-maintained in
 [`data/community/data-center-campaigns.json`](data/community/data-center-campaigns.json).
