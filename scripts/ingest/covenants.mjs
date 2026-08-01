@@ -100,6 +100,10 @@ const LNG_STEP = CELL_METRES / (111_320 * Math.cos((MEAN_LATITUDE * Math.PI) / 1
  * block-list: a block-list silently passes through whatever the upstream adds
  * later, and the failure mode of getting that wrong is publishing a name.
  */
+// `cov_type` was considered and rejected: upstream it records the transcription
+// workflow ("manual" / "zooniverse"), not a kind of covenant, and publishing it
+// under a type label would mislead. The clause itself is what varies, and the
+// commonest wording per cell already ships verbatim.
 const KEEP = new Set(['deed_year', 'city', 'cov_text']);
 
 /** Fields known to name or locate a person, listed so the assertion can name them. */
@@ -161,7 +165,7 @@ async function fetchCounty(slug) {
 
 async function main() {
   const counties = await loadCounties();
-  /** @type {Map<string, {count: number, lngIndex: number, latIndex: number, years: number[], cities: Map<string, number>, wordings: Map<string, number>}>} */
+  /** @type {Map<string, {count: number, lngIndex: number, latIndex: number, years: number[], cities: Map<string, number>, wordings: Map<string, number>, decades: Map<string, number>}>} */
   const cells = new Map();
   const perCounty = {};
   let mapped = 0;
@@ -194,13 +198,26 @@ async function main() {
 
       let cell = cells.get(key);
       if (!cell) {
-        cell = { count: 0, lngIndex, latIndex, years: [], cities: new Map(), wordings: new Map() };
+        cell = {
+          count: 0,
+          lngIndex,
+          latIndex,
+          years: [],
+          cities: new Map(),
+          wordings: new Map(),
+          decades: new Map(),
+        };
         cells.set(key, cell);
       }
       cell.count++;
 
       const year = Number(picked.deed_year);
-      if (Number.isFinite(year) && year > 1800) cell.years.push(year);
+      if (Number.isFinite(year) && year > 1800) {
+        cell.years.push(year);
+        const decade = `${Math.floor(year / 10) * 10}s`;
+        cell.decades.set(decade, (cell.decades.get(decade) ?? 0) + 1);
+      }
+
 
       const city = cleanText(picked.city);
       if (city) cell.cities.set(city, (cell.cities.get(city) ?? 0) + 1);
@@ -260,6 +277,16 @@ async function main() {
           city,
           earliestDeed: years.length ? Math.min(...years) : null,
           latestDeed: years.length ? Math.max(...years) : null,
+          // The decade with the most deeds in this cell — the filter key. A
+          // count per decade follows, one flat numeric field per decade with
+          // data, so the panel can show the shape of the wave without any
+          // record resolving finer than the cell.
+          peakDecade: commonest(cell.decades),
+          ...Object.fromEntries(
+            [...cell.decades.entries()]
+              .sort((a, b) => a[0].localeCompare(b[0]))
+              .map(([decade, n]) => [`deeds${decade}`, n]),
+          ),
           // One wording recorded in this cell, verbatim. The clause is the
           // evidence and paraphrasing it would soften language written to be
           // unambiguous. It is a template, not anyone's words about anyone.
@@ -277,6 +304,12 @@ async function main() {
     .filter((y) => Number.isFinite(y));
   const span = allYears.length ? `${Math.min(...allYears)}–${Math.max(...allYears)}` : 'unknown';
   const densest = Math.max(...features.map((f) => f.properties.attributes.covenantCount));
+  const decadeTally = new Map();
+  for (const cell of cells.values()) {
+    for (const [d, n] of cell.decades) decadeTally.set(d, (decadeTally.get(d) ?? 0) + n);
+  }
+  const sortedDecades = [...decadeTally.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  log('covenants', `deeds by decade: ${sortedDecades.map(([k, v]) => `${k}=${v}`).join(', ')}`);
   log(
     'covenants',
     `${mapped} covenants into ${features.length} cells of ${CELL_METRES}m, ${span}, densest cell ${densest}`,
@@ -308,6 +341,7 @@ async function main() {
       'Cells are placed from a representative point of the parcel matched to each deed, so a covenant near a cell edge may fall in either neighbouring cell.',
       'Racial covenants were made unenforceable in 1948 and are void today, but the text remains in the chain of title until a homeowner files to discharge it.',
       'Mapping Prejudice describe the period as 1910 to 1955, but 58 cells carry a deed year after that, running to 1972. Those are shown as recorded rather than corrected or dropped: they may be late recordings of older instruments, or transcription artefacts, and we have not established which.',
+      'Decade counts bin each covenant by its deed year, and the peak decade is the one with the most deeds in the cell. Post-1955 deed years appear in their recorded decades, with the same caveat as above: late recordings or transcription artefacts, unresolved.',
     ],
     features,
   });
