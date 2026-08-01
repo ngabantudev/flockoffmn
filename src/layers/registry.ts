@@ -1049,7 +1049,7 @@ export const LAYERS: LayerDefinition[] = [
     slug: 'ej-cumulative',
     category: 'environment',
     order: 9,
-    label: { en: 'Cumulative impacts (MPCA)', es: 'Impactos acumulativos (MPCA)' },
+    label: { en: 'Cumulative Stressors', es: 'Factores de estrés acumulativos' },
     summary: {
       en: 'How many environmental and health stressors burden each census tract today, from MPCA’s draft CI-MAP.',
       es: 'Cuántos factores de estrés ambientales y de salud cargan hoy cada sección censal, según el borrador CI-MAP de la MPCA.',
