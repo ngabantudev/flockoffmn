@@ -1212,7 +1212,14 @@ export class MapController {
   setLayerVisible(layer: ClientLayer, visible: boolean) {
     if (visible) {
       this.visible.add(layer.id);
-      void this.loadLayer(layer).then(() => this.applyVisibility(layer));
+      void this.loadLayer(layer).then(() => {
+        this.applyVisibility(layer);
+        // The controls are on the page before the data is: a filter ticked
+        // while this layer was still downloading (or still switched off) has
+        // been waiting for this moment. The first paint already drew the
+        // filtered subset; the zoom the tick promised happens now.
+        if ((this.filters.get(layer.id)?.size ?? 0) > 0) this.zoomAfterFilterChange(layer.id);
+      });
     } else {
       this.visible.delete(layer.id);
       this.applyVisibility(layer);
@@ -1262,14 +1269,24 @@ export class MapController {
     // comes off, the reader is put back exactly where they were standing
     // before the trip began.
     if (this.anyActiveFilters()) {
-      if (!activeBefore) {
-        this.preFilterCamera = { center: this.map.getCenter(), zoom: this.map.getZoom() };
-      }
-      this.zoomToFiltered(layerId);
+      this.zoomAfterFilterChange(layerId);
     } else if (activeBefore && this.preFilterCamera) {
       this.map.easeTo({ ...this.preFilterCamera, duration: REDUCED_MOTION ? 0 : 600 });
       this.preFilterCamera = null;
     }
+  }
+
+  /**
+   * The outbound half of the filter round trip, shared by the two moments a
+   * zoom can become due: a filter change on a loaded layer, and a layer
+   * finishing its load with a filter already waiting. Saves the camera once,
+   * the first time filtering moves it.
+   */
+  private zoomAfterFilterChange(layerId: string) {
+    if (!this.preFilterCamera) {
+      this.preFilterCamera = { center: this.map.getCenter(), zoom: this.map.getZoom() };
+    }
+    this.zoomToFiltered(layerId);
   }
 
   /**
