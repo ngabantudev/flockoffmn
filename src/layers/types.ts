@@ -26,10 +26,15 @@ export type LayerId =
   | 'aadt'
   | 'redlining'
   // The only layer whose upstream source is a transaction between named
-  // private individuals. It is published as a clearly-labelled aggregate —
-  // counts per grid cell, never a record per property — and its ingest strips
-  // and then asserts. See scripts/ingest/covenants.mjs for the full reasoning.
-  | 'racial_covenant';
+  // private individuals. It is published parcel by parcel — the lot shape,
+  // the deed year and the clause — with every name, address and parcel
+  // identifier stripped, and its ingest strips and then asserts. See
+  // scripts/ingest/covenants.mjs for the full reasoning and its history.
+  | 'racial_covenant'
+  // Present-day counterpart to the historical layers: MPCA's cumulative
+  // impacts draft under Minn. Stat. § 116.065, one record per census tract.
+  // A tract is an aggregate of thousands of people, never a household.
+  | 'ej_cumulative';
 
 export type Locale = 'en' | 'es';
 
@@ -129,6 +134,16 @@ export interface FilterDefinition {
    */
   kind: 'enum' | 'dateRange';
   /**
+   * A short meaning shown beside an enum value's checkbox.
+   *
+   * For filters whose values are codes — a HOLC grade, a status abbreviation —
+   * the letter alone makes the reader leave the panel to find out what they
+   * are toggling. One line each, and where the code encoded something about
+   * people, the line says so plainly rather than leaving the euphemism to
+   * stand: that is the cultural record the filter is switching.
+   */
+  valueDescriptions?: Record<string, I18nString>;
+  /**
    * `enum` only: values present in the data but unticked on first load.
    *
    * For records that are real and worth finding but would mislead if drawn by
@@ -214,7 +229,12 @@ export interface NearMeSummary {
  * this union; `LAYER_CATEGORIES` in the registry is what the panel iterates,
  * so reordering these names changes documentation and nothing else.
  */
-export type LayerCategoryId = 'historical' | 'infrastructure' | 'surveillance' | 'enforcement';
+export type LayerCategoryId =
+  | 'historical'
+  | 'environment'
+  | 'infrastructure'
+  | 'surveillance'
+  | 'enforcement';
 
 export interface LayerCategory {
   id: LayerCategoryId;
@@ -320,6 +340,22 @@ export interface LayerDefinition {
     colors: Array<{ value: string; color: string }>;
     /** Colour for any value not named above. */
     fallback: string;
+  };
+  /**
+   * Write an attribute's value on each polygon, the way the source document
+   * did.
+   *
+   * For layers whose areas carry their own printed identifiers — a HOLC sheet
+   * labels its zones "A1", "D4" — drawing the identifier on the ground is
+   * part of reading the map as the document it reproduces. The text takes the
+   * feature's category colour where the layer declares one, so the label and
+   * the fill agree about what the area is. Features whose attribute is null
+   * simply go unlabelled; MapLibre hides colliding labels at distant zooms
+   * rather than stacking them.
+   */
+  labelBy?: {
+    /** Attribute holding the text to draw. */
+    key: string;
   };
   /**
    * The two zooms across which this layer's records emerge from its surface.
