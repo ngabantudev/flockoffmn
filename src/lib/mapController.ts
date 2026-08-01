@@ -38,6 +38,8 @@ export interface ClientLayer {
     colors: Array<{ value: string; color: string }>;
     fallback: string;
   };
+  /** Write an attribute's value on each polygon, the way the source document did. */
+  labelBy?: { key: string };
   /** Draw this line layer as a glowing filament. */
   filament?: boolean;
   /** Colour this line layer by the size of each record's connected network. */
@@ -788,6 +790,27 @@ export class MapController {
         },
         under,
       );
+      if (layer.labelBy) {
+        // The identifier the source printed on the area, in the area's own
+        // colour over a basemap-dark halo. Null attributes draw nothing, and
+        // colliding labels hide rather than stack as the view pulls back.
+        this.map.addLayer({
+          id: `${layer.id}-labels`,
+          type: 'symbol',
+          source: src,
+          layout: {
+            'text-field': ['to-string', ['coalesce', ['get', layer.labelBy.key], '']],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 14, 18],
+            // The one glyph stack shipped locally — no third-party assets.
+            'text-font': ['Noto Sans Regular'],
+          },
+          paint: {
+            'text-color': polygonColor,
+            'text-halo-color': '#0a0c10',
+            'text-halo-width': 1.4,
+          },
+        });
+      }
       this.bindInteractions(layer, `${layer.id}-fill`);
       return;
     }
@@ -1208,6 +1231,7 @@ export class MapController {
       '-line-hit',
       '-points',
       '-cones',
+      '-labels',
     ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {
