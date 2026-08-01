@@ -376,8 +376,8 @@ export const LAYERS: LayerDefinition[] = [
     action: {
       requestType: 'alpr',
       label: {
-        en: 'Ask about this corridor',
-        es: 'Preguntar por este corredor',
+        en: 'Ask about these cameras',
+        es: 'Preguntar por estas cámaras',
       },
       fallbackBody: 'countySheriff',
     },
