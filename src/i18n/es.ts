@@ -19,6 +19,17 @@ export const es: Record<string, string> = {
   navAbout: 'Qué es esto',
   skipToContent: 'Saltar al contenido principal',
 
+  liveBannerLoading: 'Comprobando aeronaves de agencias…',
+  liveBannerCount: 'EN VIVO: {count} aeronaves de agencias en Minnesota',
+  liveBannerCaveat:
+    '"Contratista de ICE Air" significa que la aeronave pertenece a una empresa bajo un contrato chárter de ICE Air, no confirmación de que se trate de un vuelo activo.',
+  liveBannerUnavailable: 'Los datos de aeronaves en vivo no están disponibles en este momento.',
+  agencyLabelStatePatrol: 'Patrulla Estatal',
+  agencyLabelDnrEnforcement: 'Cumplimiento del DNR',
+  agencyLabelIceAir: 'contratista de ICE Air',
+  agencyLabelBca: 'BCA',
+  agencyLabelCountySheriff: 'alguacil de condado',
+
   layers: 'Capas',
   filters: 'Filtros',
   layersOn: 'capas activadas',

@@ -39,7 +39,12 @@ export type LayerId =
   // cross-referencing the FAA's ownership registry against a keyless,
   // unfiltered community ADS-B feed. See scripts/ingest/flights.mjs for why
   // three of its five agency categories currently carry zero records.
-  | 'agency_aircraft';
+  | 'agency_aircraft'
+  // A discrete event log, not a live position: specific ICE Air flights
+  // volunteers have observed at MSP. Eyewitness-sourced, never government-
+  // confirmed — confidence is 'reported' on every record. See
+  // scripts/ingest/ice-air-flights.mjs and data/community/ice-air-flights.json.
+  | 'observed_ice_flight';
 
 export type Locale = 'en' | 'es';
 
