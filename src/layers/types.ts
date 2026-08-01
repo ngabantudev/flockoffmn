@@ -307,40 +307,30 @@ export interface LayerDefinition {
    */
   filament?: boolean;
   /**
-   * Let the reader choose how far each record reaches towards its neighbour.
+   * Colour a line layer by the size of the connected network each record is in.
    *
-   * Some questions do not have one answer, and "which cameras form a corridor"
-   * is one of them, so the control hands the judgement back to the reader and
-   * the drawing grows out of each camera as it moves. `lib/linkGrowth.ts` has
-   * the rule and the reasoning; this is only its wiring.
+   * Doing work a line cannot. Two links that meet at a shared record are one
+   * network and two that do not are two, and no drawn line can say which — so
+   * instead they light up together, and the brighter a strand burns the more
+   * records its network joins.
    *
-   * The one constraint a layer must honour: the file has to ship a whole route
-   * for every link, routed at the widest radius the control offers, because the
-   * browser can only ever cut those routes shorter — there is no road network
-   * in the page to extend one with.
+   * This once rode along with an animation config, which meant switching the
+   * animation off silently took the colour encoding with it. They are separate
+   * questions and are separate fields.
    */
-  linkRadius?: {
-    /** Attribute holding the link's two end longitudes, ';'-separated. */
-    lngsKey: string;
-    /** Attribute holding the link's two end latitudes, ';'-separated. */
-    latsKey: string;
-    /** Attribute holding the routed length of the link, in miles. */
-    lengthKey: string;
-    minMiles: number;
-    /** Must equal the longest link the ingest routed. */
-    maxMiles: number;
-    stepMiles: number;
-    defaultMiles: number;
+  networkColor?: {
+    /** Attribute holding how many records the feature's network joins. */
+    key: string;
     /**
-     * Attribute the map styles on, and the value the browser writes onto a link
-     * whose two ends have not met yet. A reaching strand is drawn quieter and
-     * does not creep, so a connection never looks made before it is.
+     * The largest network the ramp spreads across.
+     *
+     * A property of this layer's data rather than of the map, which is why it
+     * lives here: cut it to the range the records actually hold or nearly every
+     * one of them lands on the same dim end of the ramp, and the encoding is
+     * thrown away. Leave a little headroom above the largest so a denser
+     * extract, or another state, does not flatten out at the top.
      */
-    kindKey: string;
-    reachingKind: string;
-    label: I18nString;
-    /** One line under the control saying what moving it does. */
-    help: I18nString;
+    maxRecords: number;
   };
   /**
    * The request a reader can file about one of these records.

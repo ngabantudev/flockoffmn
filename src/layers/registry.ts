@@ -298,8 +298,8 @@ export const LAYERS: LayerDefinition[] = [
       es: 'La vía que habría que recorrer desde cada lector de matrículas hasta el lector más cercano, dibujada hasta donde alcance su radio.',
     },
     whatThisMeans: {
-      en: 'A map of dots answers a narrow question: is there a camera here. This layer answers a different one: what is between the cameras. Every reader location is joined to its single nearest neighbour by the actual road a car would drive between them — routed over OpenStreetMap, never a line drawn straight across the ground. Then the radius decides how much of that road you see: each strand grows out of both of its cameras at once, and the two halves meet only when the radius covers the whole route between them. Drag it up and the map fills in from the cameras outward, block by block, until the dense places are solid and the sparse ones are still reaching. That asymmetry is the finding. A reader in a downtown is the nearest neighbour of several others, so several strands run into it; a reader on a county road has one strand and it is long. Nothing sets a threshold for what counts as a corridor, because nothing needs to: at half a mile you are looking at the blocks, at ten miles you are looking at the state. Colour carries what a line cannot — everything in one connected network burns at the same brightness, and the brighter it is the more reader locations that network holds. Those networks are small, and that is a property of the question rather than of the state: because each reader reaches only for its nearest neighbour, a network grows only where readers happen to be each other’s nearest in a chain. Widening the radius completes the strands; it does not fuse Minnesota into one body, and a map that showed it doing so would be answering a question nobody asked of it. The operator counts are the other half of the point. Almost none of this was planned as a network: a city police department, the neighbouring city’s, a county sheriff and a hardware store each buy cameras for their own reasons, and what they add up to is what you are looking at.',
-      es: 'Un mapa de puntos responde a una pregunta estrecha: ¿hay una cámara aquí? Esta capa responde a otra: ¿qué hay entre las cámaras? Cada ubicación de lector se une a su vecino más cercano por la vía que un coche recorrería realmente entre ambos, calculada sobre OpenStreetMap y nunca trazada en línea recta sobre el terreno. Después el radio decide cuánto de esa vía se ve: cada hebra crece desde sus dos cámaras a la vez, y las dos mitades se encuentran solo cuando el radio cubre todo el recorrido entre ellas. Amplíelo y el mapa se va rellenando desde las cámaras hacia fuera, manzana a manzana, hasta que las zonas densas quedan macizas y las dispersas siguen tendiéndose. Esa asimetría es el hallazgo. Un lector del centro urbano es el más cercano de varios otros, así que varias hebras llegan hasta él; un lector de una carretera comarcal tiene una sola hebra y es larga. Nada fija un umbral para decidir qué es un corredor, porque no hace falta: a media milla se están viendo las manzanas, a diez millas se está viendo el estado. El color transporta lo que una línea no puede: todo lo que está en una misma red conectada arde con el mismo brillo, y cuanto más brillante, más ubicaciones de lectores tiene esa red. Esas redes son pequeñas, y eso es una propiedad de la pregunta y no del estado: como cada lector solo busca a su vecino más cercano, una red crece únicamente donde varios lectores resultan ser, en cadena, el más cercano el uno del otro. Ampliar el radio completa las hebras; no funde Minnesota en un solo cuerpo, y un mapa que lo mostrara así estaría respondiendo a una pregunta que nadie le ha hecho. El recuento de operadores es la otra mitad del asunto. Casi nada de esto se planificó como una red: la policía de una ciudad, la de la ciudad vecina, el alguacil del condado y una ferretería compran cámaras cada uno por sus propios motivos, y lo que suman es lo que usted está viendo.',
+      en: 'A map of dots answers a narrow question: is there a camera here. This layer answers a different one: what is between the cameras. Two reader locations are joined when no third reader stands between them, and the line drawn is the actual road a car would drive from one to the other — routed over OpenStreetMap, never a line drawn straight across the ground. Nothing here is a threshold somebody picked: the test is a piece of geometry, and it draws a strand exactly where two readers are neighbours with nothing in between. One number does apply, and it is the only one — a link is drawn if the drive between its two readers is under a mile and a half, roughly five minutes of city traffic. Past that the line stops describing a trip and starts describing a distance. Colour carries what a line cannot: everything in one connected network burns at the same brightness, and the brighter it is the more reader locations that network holds. Watch one cluster and the strands running into it are all the same shade: that is one body, and how bright it burns is how much of one. The operator counts are the other half of the point. Almost none of this was planned as a network: a city police department, the neighbouring city’s, a county sheriff and a hardware store each buy cameras for their own reasons, and what they add up to is what you are looking at.',
+      es: 'Un mapa de puntos responde a una pregunta estrecha: ¿hay una cámara aquí? Esta capa responde a otra: ¿qué hay entre las cámaras? Dos ubicaciones de lectores se unen cuando no hay un tercer lector entre ellas, y la línea dibujada es la vía que un coche recorrería realmente de una a otra, calculada sobre OpenStreetMap y nunca trazada en línea recta sobre el terreno. Aquí nada es un umbral elegido por alguien: la prueba es geométrica, y traza una hebra justo donde dos lectores son vecinos sin nada en medio. Se aplica una cifra, y es la única: se dibuja una conexión si el trayecto entre sus dos lectores es de menos de milla y media, unos cinco minutos de tráfico urbano. Más allá, la línea deja de describir un trayecto y pasa a describir una distancia. El color transporta lo que una línea no puede: todo lo que está en una misma red conectada arde con el mismo brillo, y cuanto más brillante, más ubicaciones de lectores tiene esa red. Fíjese en un grupo y verá que todas las hebras que llegan a él tienen el mismo tono: eso es un solo cuerpo, y su brillo indica cuánto abarca. El recuento de operadores es la otra mitad del asunto. Casi nada de esto se planificó como una red: la policía de una ciudad, la de la ciudad vecina, el alguacil del condado y una ferretería compran cámaras cada uno por sus propios motivos, y lo que suman es lo que usted está viendo.',
     },
     limitations: [
       {
@@ -307,28 +307,28 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Derivada de la capa de cámaras de origen comunitario, así que cada vacío de aquella se agrava aquí. Un lector que nadie ha mapeado es un lector al que nada se conecta, y desplaza todas las hebras a su alrededor: el vecino que sus vecinos habrían elegido no está en el cálculo.',
       },
       {
-        en: 'Each reader location is linked to its nearest neighbour and to nothing else. A strand says these two readers are each other’s nearest, or that one of them chose the other. It does not say a driver between them is only read twice, that no unmapped reader stands in between, or that this road is the way anyone actually goes.',
-        es: 'Cada ubicación de lector se conecta con su vecino más cercano y con nada más. Una hebra indica que esos dos lectores son el más cercano el uno del otro, o que uno eligió al otro. No indica que a quien conduzca entre ellos solo se le lea dos veces, ni que no haya lectores sin mapear en medio, ni que esa vía sea el camino que la gente toma.',
+        en: 'Two reader locations are linked when no third mapped reader falls inside the circle drawn with the two of them at its ends. A strand says that and only that. It does not say a driver between them is only read twice, that this road is the way anyone actually goes, or that nothing stands in between — only that nothing *mapped* does, which is a claim about the survey and not about the street.',
+        es: 'Dos ubicaciones de lectores se conectan cuando ningún tercer lector mapeado cae dentro del círculo trazado con ambas en sus extremos. Una hebra indica eso y solo eso. No indica que a quien conduzca entre ellas solo se le lea dos veces, ni que esa vía sea el camino que la gente toma, ni que no haya nada en medio: solo que no hay nada *mapeado*, que es una afirmación sobre el inventario y no sobre la calle.',
       },
       {
         en: 'The line is the route a car would drive between the two readers, over OpenStreetMap roads. It respects one-way streets and turn bans, but it knows nothing of traffic, closures or roadworks, and it is the shortest such route rather than the one a local would pick. Distances are miles of driving, which is always more than the distance across the map. Which roads a link follows is recorded; what class of road they are is not, because the router does not report it and a road’s class is not something to guess from its name.',
         es: 'La línea es la ruta que un coche recorrería entre los dos lectores por vías de OpenStreetMap. Respeta los sentidos únicos y los giros prohibidos, pero no sabe nada del tráfico, los cortes ni las obras, y es la ruta más corta, no la que elegiría alguien de la zona. Las distancias son millas de recorrido, siempre mayores que la distancia sobre el mapa. Se registra qué vías recorre cada conexión, pero no de qué clase son: el enrutador no lo indica y la clase de una vía no es algo que deba deducirse de su nombre.',
       },
       {
-        en: 'The radius is yours to set, and it changes what is drawn: at half a mile about half of these strands have met their neighbour and half are still reaching, and at ten miles every one of them has met. What it does not do is fuse the state into one network. Because each reader reaches only for its nearest neighbour, the connected networks stay small at every setting — at the widest, Minnesota holds 354 of them and the largest is nine reader locations. Any single default would be an editorial judgement published as a finding, which is why the control exists rather than a number nobody can see.',
-        es: 'El radio lo elige usted, y cambia lo que se dibuja: a media milla, aproximadamente la mitad de estas hebras han alcanzado a su vecino y la otra mitad siguen tendiéndose; a diez millas, todas lo han alcanzado. Lo que no hace es fundir el estado en una sola red. Como cada lector solo busca a su vecino más cercano, las redes conectadas siguen siendo pequeñas con cualquier valor: en el más amplio, Minnesota tiene 354 y la mayor es de nueve ubicaciones de lectores. Cualquier valor por defecto sería un criterio editorial publicado como un hallazgo, y por eso existe el control en lugar de una cifra invisible.',
+        en: 'A link is drawn only where the drive between two readers is under a mile and a half. That is an editorial choice and it is the only one in this layer: past that distance the line stops describing a trip between two cameras and starts describing the empty road between two towns. It does cut real links off. A reader whose nearest neighbour is further away than that appears on the camera layer and in no strand here, so the map thins towards rural Minnesota partly because the cameras do and partly because this number says so. The data file counts exactly how many readers the choice drops.',
+        es: 'Solo se dibuja una conexión donde el trayecto entre dos lectores es de menos de milla y media. Es un criterio editorial y es el único de esta capa: más allá de esa distancia, la línea deja de describir un trayecto entre dos cámaras y pasa a describir la carretera vacía entre dos pueblos. Sí que descarta conexiones reales. Un lector cuyo vecino más cercano esté más lejos aparece en la capa de cámaras y en ninguna hebra de aquí, así que el mapa se adelgaza hacia la Minnesota rural en parte porque las cámaras lo hacen y en parte porque lo dice esta cifra. El archivo de datos cuenta exactamente cuántos lectores descarta la decisión.',
       },
       {
-        en: 'A strand drawn only part of the way is a strand whose two readers are further apart than your radius. It is real road, growing from a real camera towards a real neighbour, and nothing more: it is not a claim that surveillance stops where the line stops. Those strands are drawn dimmer and do not join their two ends into one network until they meet.',
-        es: 'Una hebra dibujada solo en parte es una hebra cuyos dos lectores están más separados que su radio. Es vía real, que crece desde una cámara real hacia un vecino real, y nada más: no afirma que la vigilancia se acabe donde se acaba la línea. Esas hebras se dibujan más tenues y no unen sus dos extremos en una misma red hasta que se encuentran.',
+        en: 'Nothing on this map moves. An earlier version animated a light travelling along each strand, and it was removed rather than kept: it was decoration that carried no fact, it cost every reader’s machine real work on every frame, and a map that is heavy to open is a map fewer people read. Everything the animation was making legible is in the lines, the colour and the panel, standing still.',
+        es: 'En este mapa no se mueve nada. Una versión anterior animaba una luz que recorría cada hebra, y se retiró en lugar de conservarla: era decoración que no aportaba ningún dato, exigía trabajo real al equipo de cada lector en cada fotograma, y un mapa pesado de abrir es un mapa que lee menos gente. Todo lo que la animación hacía legible está en las líneas, el color y el panel, sin moverse.',
       },
       {
-        en: 'Colour is the network, not the road. Two strands in the same shade are joined through a chain of completed links; the shade says how many reader locations that chain holds. A strand still reaching is shaded by the larger of the two networks it runs between, because which of them it will join cannot be read off the line.',
-        es: 'El color indica la red, no la vía. Dos hebras del mismo tono están unidas por una cadena de conexiones completas, y el tono indica cuántas ubicaciones de lectores tiene esa cadena. Una hebra que aún se está tendiendo se colorea según la mayor de las dos redes entre las que discurre, porque cuál de ellas acabará uniendo no puede leerse en la línea.',
+        en: 'Colour is the network, not the road. Two strands in the same shade are joined through a chain of links, and the shade says how many reader locations that chain holds. A network is a chain of mapped links under the distance limit above, so it is as much a product of those two choices as of the cameras: one unmapped reader, or one link a hundred yards over the limit, can be the difference between two networks and one.',
+        es: 'El color indica la red, no la vía. Dos hebras del mismo tono están unidas por una cadena de conexiones, y el tono indica cuántas ubicaciones de lectores tiene esa cadena. Una red es una cadena de conexiones mapeadas por debajo del límite de distancia anterior, así que depende tanto de esas dos decisiones como de las cámaras: un lector sin mapear, o una conexión que supere el límite por cien metros, puede ser la diferencia entre dos redes y una.',
       },
       {
-        en: 'Some links are not drawn at all. A reader with no other reader within ten miles has nothing to link to; a pair with no mapped road between them cannot be routed; and a pair whose drive is more than three times the distance across the map — a river, a rail yard, a freeway with no crossing — is refused, because at that point the line stops describing the pair and starts describing the detour. The counts are in the data file’s known gaps, and every one of those readers is still on the camera layer.',
-        es: 'Algunas conexiones no se dibujan. Un lector sin ningún otro lector a menos de diez millas no tiene con qué conectarse; un par sin vías mapeadas entre ambos no puede enrutarse; y un par cuyo recorrido supera el triple de la distancia sobre el mapa —un río, una playa de vías, una autopista sin cruce— se descarta, porque en ese punto la línea deja de describir el par y pasa a describir el rodeo. Los recuentos están en los vacíos conocidos del archivo de datos, y todos esos lectores siguen en la capa de cámaras.',
+        en: 'Some links are not drawn at all. A reader with no neighbour within a mile and a half by road has nothing to link to; a pair with no mapped road between them cannot be routed; and a pair whose drive is more than three times the distance across the map — a river, a rail yard, a freeway with no crossing — is refused, because at that point the line stops describing the pair and starts describing the detour. The counts are in the data file’s known gaps, and every one of those readers is still on the camera layer.',
+        es: 'Algunas conexiones no se dibujan. Un lector sin ningún vecino a menos de milla y media por carretera no tiene con qué conectarse; un par sin vías mapeadas entre ambos no puede enrutarse; y un par cuyo recorrido supera el triple de la distancia sobre el mapa —un río, una playa de vías, una autopista sin cruce— se descarta, porque en ese punto la línea deja de describir el par y pasa a describir el rodeo. Los recuentos están en los vacíos conocidos del archivo de datos, y todos esos lectores siguen en la capa de cámaras.',
       },
       {
         en: 'A reader location is one or more cameras within 75 m of each other, and a camera is placed on the nearest drivable road, which at a crossroads can be decided by a couple of metres. Which way each camera faces is on the camera layer; this layer does not claim that a single trip is read by every camera it passes.',
@@ -350,28 +350,11 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Las dos ubicaciones de lectores que une esta vía',
       },
     },
-    linkRadius: {
-      lngsKey: 'siteLngs',
-      latsKey: 'siteLats',
-      lengthKey: 'linkMiles',
-      minMiles: 0.1,
-      // The ingest routes nothing longer than ten miles, so the control cannot
-      // exceed it: this and LINK_M in scripts/ingest/corridors.mjs move together
-      // or the top of the slider silently stops completing links.
-      maxMiles: 10,
-      stepMiles: 0.05,
-      // Half a mile. Half of all links here are shorter than that and half are
-      // longer, so the map opens on a state that is visibly half-joined and
-      // half-reaching — which is the thing the control is for. A default that
-      // completed everything would hide that there was anything to drag.
-      defaultMiles: 0.5,
-      kindKey: 'kind',
-      reachingKind: 'reaching',
-      label: { en: 'Reach from each camera', es: 'Alcance desde cada cámara' },
-      help: {
-        en: 'How far along the road each camera reaches towards its nearest neighbour. Two cameras join when the radius covers the drive between them; widen it and the half-drawn strands meet, block by block, until every pair has joined up.',
-        es: 'Hasta dónde llega cada cámara por la vía hacia su vecino más cercano. Dos cámaras se unen cuando el radio cubre el trayecto entre ellas; amplíelo y las hebras a medio dibujar se van encontrando, manzana a manzana, hasta que todos los pares quedan unidos.',
-      },
+    networkColor: {
+      key: 'connectedSites',
+      // The largest network in the current Minnesota extract is 101 reader
+      // locations. A little over that, so a denser extract does not clip.
+      maxRecords: 120,
     },
     action: {
       requestType: 'alpr',
@@ -384,7 +367,7 @@ export const LAYERS: LayerDefinition[] = [
     dataPath: '/data/alpr-corridors.geojson',
     csvPath: null,
     provenance: {
-      source: 'Derived from the ALPR layer and OpenStreetMap road geometry (Overpass API)',
+      source: 'Derived from the ALPR layer; roads routed by OSRM over OpenStreetMap',
       sourceUrl: 'https://deflock.me',
       license: 'ODbL 1.0',
       licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
@@ -412,10 +395,6 @@ export const LAYERS: LayerDefinition[] = [
         label: { en: 'Straight-line distance (miles)', es: 'Distancia en línea recta (millas)' },
       },
       {
-        key: 'drawnMiles',
-        label: { en: 'Drawn at this radius (miles)', es: 'Dibujado con este radio (millas)' },
-      },
-      {
         key: 'connectedSites',
         label: {
           en: 'Reader locations in this connected network',
@@ -431,7 +410,6 @@ export const LAYERS: LayerDefinition[] = [
         key: 'unattributedReaders',
         label: { en: 'Readers with no operator recorded', es: 'Lectores sin operador registrado' },
       },
-      { key: 'kind', label: { en: 'Drawn as', es: 'Dibujado como' } },
       { key: 'roadsAlong', label: { en: 'Roads it follows', es: 'Vías que recorre' } },
     ],
     nearMe: {
@@ -443,8 +421,8 @@ export const LAYERS: LayerDefinition[] = [
       },
       detail: ['readerCount', 'linkMiles', 'straightMiles', 'operators'],
       caveat: {
-        en: 'Built from crowd-sourced camera records. This page measures the whole routed road between two readers, however much of it the map is drawing at the radius you have set. Treat it as the shape of the thing, not a measurement.',
-        es: 'Construido a partir de registros comunitarios de cámaras. Esta página mide toda la vía calculada entre dos lectores, dibuje el mapa la parte que dibuje con el radio que usted haya fijado. Considérelo la forma del fenómeno, no una medición.',
+        en: 'Built from crowd-sourced camera records. This page measures the routed road between two readers. Treat it as the shape of the thing, not a measurement.',
+        es: 'Construido a partir de registros comunitarios de cámaras. Esta página mide la vía calculada entre dos lectores. Considérelo la forma del fenómeno, no una medición.',
       },
       wide: true,
     },
