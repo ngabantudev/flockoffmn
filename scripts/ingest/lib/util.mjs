@@ -15,7 +15,7 @@ export const PUBLIC_DATA = path.join(ROOT, 'public/data');
 export const RAW_DIR = path.join(ROOT, 'data/raw');
 
 export const USER_AGENT =
-  'get-flocked-ingest/0.1 (open-source civic transparency project; contact via repository issues)';
+  'flockoff-ingest/0.1 (open-source civic transparency project; contact via repository issues)';
 
 export function log(scope, msg) {
   console.log(`[${scope}] ${msg}`);
@@ -305,7 +305,7 @@ export async function writeLayer(slug, { layer, provenance, knownGaps = [], feat
     type: 'FeatureCollection',
     metadata: {
       layer,
-      schema: 'https://github.com/NgabantuDev/get-flocked/blob/main/src/layers/types.ts',
+      schema: 'https://github.com/ngabantudev/flockoffmn/blob/main/src/layers/types.ts',
       featureCount: features.length,
       knownGaps,
       ...provenance,
