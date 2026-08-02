@@ -2,21 +2,34 @@ import maplibregl from 'maplibre-gl';
 import { representativePoint } from './geo.mjs';
 
 /**
- * A live ADS-B overlay for the main map — deliberately not a registry layer.
+ * A live worldwide ICE Air charter overlay for the main map — deliberately
+ * not a registry layer.
  *
  * Every other layer on the map is a static file fetched once, with a fixed
  * feature count and source date baked in at build time (see
  * src/layers/data.ts). This is a continuously-polled third-party pass-through
- * with none of that: no stable count, no filters, no citation the way a
- * civic dataset has one. Folding it into MapController's layer model would
- * mean teaching that shared class about live data for the sake of the one
- * layer that isn't; keeping it separate keeps every other layer's contract
- * exactly as simple as it already is.
+ * with none of that: no stable count, no citation the way a civic dataset
+ * has one. Folding it into MapController's layer model would mean teaching
+ * that shared class about live data for the sake of the one layer that
+ * isn't; keeping it separate keeps every other layer's contract exactly as
+ * simple as it already is.
  *
- * Lazy by design: nothing here runs until start() is called, matching the
- * "nothing draws until the reader switches it on" rule the rest of the map
- * already follows — so leaving the box unchecked costs nothing, no
- * background polling of a third party on a visitor's behalf.
+ * Polls functions/api/ice-flights.js, which does the actual filtering
+ * server-side: adsb.lol's worldwide feed narrowed down to aircraft
+ * broadcasting a callsign matching known ICE Air charter operators — the
+ * same underlying idea as Otter Goose's MSP ICE Air Flight Tracker
+ * (ottergoose.net/ice-flights-msp/map/), which does this by embedding
+ * adsb.lol's own map with a `filtercallsign` URL flag. There used to be a
+ * second mode here — an unfiltered "any aircraft over Minnesota" feed via
+ * api/aircraft.js, toggled separately — but this project only cares about
+ * the aircraft it can actually identify, so that mode and its route were
+ * removed rather than kept as an unused option.
+ *
+ * On by default (see the `checked` toggle in MapView.astro) rather than
+ * lazy like every registry layer, since it's the one thing on this map with
+ * no "everything" mode to make opting in meaningful — there's nothing to
+ * combine it with. start()/stop() still exist for the reader who wants it
+ * off.
  */
 
 const POLL_MS = 10_000;
@@ -175,6 +188,8 @@ export class LiveFlightsOverlay {
   private airportsLoaded = false;
   private selectedHex: string | null = null;
   private selectedTraceCache = new Map<string, [number, number][]>();
+  /** Set once the first poll with at least one match lands — see poll(). */
+  private hasAutoFit = false;
 
   constructor(map: maplibregl.Map, onStatus: (status: LiveFlightsStatus) => void) {
     this.map = map;
@@ -210,6 +225,7 @@ export class LiveFlightsOverlay {
     this.popup = null;
     this.setVisible(false);
     this.setSelectedTraceCoords([]);
+    this.hasAutoFit = false;
     this.onStatus({ count: 0, ageSeconds: null, error: null });
   }
 
@@ -227,9 +243,11 @@ export class LiveFlightsOverlay {
     }
 
     // Airports first, so they sit under every plane and trail. Fill + outline
-    // for the true boundary (a small patch of colour even zoomed out), plus
-    // a label at each airport's representative point so its own identifier
-    // reads clearly at any zoom the fill has shrunk to a sliver at.
+    // for the true boundary (a small patch of colour even zoomed out) are
+    // always on; the label at each airport's representative point stays
+    // filtered out entirely (matching nothing) until the reader's pointer is
+    // actually over that specific tile, so ~68 identifiers across Minnesota
+    // don't clutter the map at once — only the one someone's asking about.
     this.map.addSource('live-airports', { type: 'geojson', data: EMPTY_FC });
     this.map.addLayer({
       id: 'live-airports-fill',
@@ -248,11 +266,15 @@ export class LiveFlightsOverlay {
       id: 'live-airports-labels',
       type: 'symbol',
       source: 'live-airport-labels',
+      // No feature has an empty icao, so this starts out matching none —
+      // the mousemove/mouseleave handlers below are the only thing that
+      // ever changes it.
+      filter: ['==', ['get', 'icao'], ''],
       layout: {
         'text-field': ['get', 'label'],
         'text-font': ['Noto Sans Regular'],
         'text-size': 12,
-        'text-allow-overlap': false,
+        'text-allow-overlap': true,
         'text-optional': true,
       },
       paint: {
@@ -260,6 +282,24 @@ export class LiveFlightsOverlay {
         'text-halo-color': '#0a0c10',
         'text-halo-width': 1.4,
       },
+    });
+
+    // Reveals exactly one label at a time, keyed on the airport boundary
+    // GeoJSON's own `icao` property — present and unique on every feature
+    // (see scripts/ingest/airports.mjs), unlike `label`, which is only the
+    // short on-map identifier and not guaranteed unique across 68 airports.
+    let hoveredAirportIcao: string | null = null;
+    this.map.on('mousemove', 'live-airports-fill', (e) => {
+      const icao = (e.features?.[0]?.properties as { icao?: string } | undefined)?.icao ?? null;
+      if (icao === hoveredAirportIcao) return;
+      hoveredAirportIcao = icao;
+      this.map.setFilter('live-airports-labels', ['==', ['get', 'icao'], icao ?? '']);
+      this.map.getCanvas().style.cursor = icao ? 'pointer' : '';
+    });
+    this.map.on('mouseleave', 'live-airports-fill', () => {
+      hoveredAirportIcao = null;
+      this.map.setFilter('live-airports-labels', ['==', ['get', 'icao'], '']);
+      this.map.getCanvas().style.cursor = '';
     });
 
     // Ambient trails, the selected aircraft's full trace, the projected path,
@@ -444,7 +484,12 @@ export class LiveFlightsOverlay {
   private async poll() {
     const startedAt = performance.now();
     try {
-      const res = await fetch('/api/aircraft', { cache: 'no-store' });
+      // api/ice-flights.js does the actual filtering, server-side, against
+      // adsb.lol's full worldwide feed — see that file and this class's own
+      // header comment for why a global query, not a Minnesota-scoped one,
+      // is the correct scope for aircraft that spend most of their time far
+      // outside the state.
+      const res = await fetch('/api/ice-flights', { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
       this.lastError = null;
@@ -473,6 +518,23 @@ export class LiveFlightsOverlay {
       if (this.selectedHex && !seenHex.has(this.selectedHex)) {
         this.selectedHex = null;
         this.setSelectedTraceCoords([]);
+      }
+      // Once, the first time this poll actually has something to show:
+      // fly the camera out to fit every currently-matched aircraft. On by
+      // default means the default view has to actually show what's on —
+      // these flights are essentially never near Minnesota, so without
+      // this the map would sit at its ordinary Minnesota-centered start
+      // view looking empty. Not repeated on later polls, so it doesn't yank
+      // the camera away from a reader who has since panned off to look at
+      // an actual civic layer.
+      if (!this.hasAutoFit && this.tracked.size > 0) {
+        this.hasAutoFit = true;
+        const coords: [number, number][] = [...this.tracked.values()].map((e) => [e.to.lng, e.to.lat]);
+        const bounds = coords.reduce(
+          (b, c) => b.extend(c),
+          new maplibregl.LngLatBounds(coords[0], coords[0]),
+        );
+        this.map.fitBounds(bounds, { padding: 64, maxZoom: 6, duration: this.reducedMotion ? 0 : 1200 });
       }
     } catch (err) {
       this.lastError = err instanceof Error ? err.message : String(err);

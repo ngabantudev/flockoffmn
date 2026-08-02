@@ -193,9 +193,15 @@ const liveFlightsStrings = {
       Deliberately styled unlike every card below it — a different border
       colour, a pulsing dot instead of a static one, no source/license line —
       because this isn't a sourced civic-transparency finding the way the
-      layers below it are. It's a live, unfiltered pass-through of general
-      air traffic, shown to prove the underlying feed works. See
-      src/lib/liveFlights.ts for why it isn't a registry layer.
+      layers below it are, and it isn't general air traffic either: it's a
+      live worldwide feed filtered, server-side, to aircraft broadcasting a
+      callsign matching known ICE Air charter operators — the same
+      underlying idea as Otter Goose's MSP ICE Air Flight Tracker
+      (ottergoose.net), done natively instead of embedding a third party.
+      On by default, unlike every other layer here, since it's the one
+      thing on this map with nothing else to combine it with — there's no
+      separate "show everything" mode to opt out of into. See
+      src/lib/liveFlights.ts and functions/api/ice-flights.js.
     */}
     <div class="border-b border-ink-800 p-3">
       <div class="rounded-lg border border-rose-500/40 bg-ink-850">
@@ -203,6 +209,7 @@ const liveFlightsStrings = {
           <input
             type="checkbox"
             id="live-flights-toggle"
+            checked
             class="mt-0.5 h-4 w-4 shrink-0 accent-rose-400"
           />
           <div class="min-w-0 flex-1">
@@ -575,6 +582,13 @@ const liveFlightsStrings = {
     else liveFlights.stop();
     refreshMapKeys();
   });
+
+  // Checked by default in the markup (unlike every registry layer, which
+  // starts unchecked) — this is the one thing on the map worth showing
+  // without making a reader find and flip it first. A `change` event only
+  // fires on user interaction, never for a checkbox's initial `checked`
+  // attribute, so the first start() has to be called explicitly here.
+  if (liveFlightsToggle.checked) liveFlights.start();
 
   /* ----------------------------- Detail panel ---------------------------- */
 

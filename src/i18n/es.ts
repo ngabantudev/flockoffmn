@@ -19,12 +19,12 @@ export const es: Record<string, string> = {
   navAbout: 'Qué es esto',
   skipToContent: 'Saltar al contenido principal',
 
-  liveFlightsToggleLabel: 'Tráfico aéreo en vivo',
+  liveFlightsToggleLabel: 'Vuelos chárter de ICE Air en vivo',
   liveFlightsAboutToggle: 'Acerca de estos datos',
   liveFlightsIntro:
-    'Toda aeronave con transpondedor actualmente sobre Minnesota, según adsb.lol. Tráfico aéreo general, no actividad de control migratorio — se muestra para demostrar que el sistema de rastreo en vivo funciona.',
+    'Aeronaves en cualquier parte del mundo que actualmente emiten un distintivo de llamada que coincide con operadores chárter conocidos de ICE Air, según adsb.lol — el mismo enfoque que usa el "MSP ICE Air Flight Tracker" de Otter Goose (ottergoose.net). Estos chárteres pasan la mayor parte del tiempo lejos de Minnesota, por lo que este es un feed mundial, no limitado al estado como el resto de las capas aquí.',
   liveFlightsCaveat:
-    'Las posiciones entre actualizaciones se estiman interpolando entre dos posiciones reales tomadas con unos 8 segundos de diferencia, no una nueva lectura GPS en cada fotograma. La estela de color detrás de cada aeronave es su trayectoria reciente realmente reportada; al hacer clic en un avión se carga su historial real completo hasta la última vez que dejó tierra. La línea gris discontinua adelante es una proyección en línea recta desde su rumbo y velocidad actuales para los próximos 10 minutos, no su plan de vuelo o ruta real — este feed no ofrece ninguno de los dos. Que aparezca una matrícula o distintivo aquí no implica que la aeronave sea propiedad de, ni opere en nombre de, ninguna agencia gubernamental.',
+    'Una coincidencia de distintivo de llamada no es una confirmación de registro: puede reutilizarse para un vuelo no relacionado, reasignarse, o simplemente no transmitirse, y este filtro no puede distinguir entre esos casos — vea la capa "Aeronaves de agencias" para una identificación basada en el registro de propiedad de la FAA. Las posiciones entre actualizaciones se estiman interpolando entre dos posiciones reales, no una nueva lectura GPS en cada fotograma. La estela de color detrás de cada aeronave es su trayectoria reciente realmente reportada; al hacer clic en un avión se carga su historial real completo hasta la última vez que dejó tierra. La línea gris discontinua adelante es una proyección en línea recta desde el rumbo y la velocidad actuales para los próximos 10 minutos, no un plan de vuelo real — este feed no ofrece ninguno de los dos. El filtrado ocurre en el servidor antes de llegar a su navegador, y esto se actualiza con menos frecuencia que un feed en vivo típico, ya que la consulta mundial subyacente es grande.',
   liveFlightsLegendTitle: 'Coloreado por altitud',
   liveFlightsAltGround: 'En tierra',
   liveFlightsAltLow: 'Menos de 10,000 pies',
@@ -45,6 +45,8 @@ export const es: Record<string, string> = {
   agencyLabelIceAir: 'contratista de ICE Air',
   agencyLabelBca: 'BCA',
   agencyLabelCountySheriff: 'alguacil de condado',
+  agencyLabelCbp: 'CBP',
+  agencyLabelMnArmyNationalGuard: 'Guardia Nacional del Ejército de MN',
 
   layers: 'Capas',
   filters: 'Filtros',

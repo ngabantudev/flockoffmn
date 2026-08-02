@@ -17,16 +17,22 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
-  // Live flights — a toggle on the main map, deliberately not a registry
-  // layer (see src/lib/liveFlights.ts). A raw, unfiltered ADS-B feed of any
-  // aircraft over Minnesota, not the enforcement-linked "Agency aircraft"
-  // layer. {count}, {seconds} substituted client-side as the feed updates.
-  liveFlightsToggleLabel: 'Live air traffic',
+  // Live flights — a toggle on the main map, on by default, deliberately
+  // not a registry layer (see src/lib/liveFlights.ts). Worldwide, filtered
+  // server-side (functions/api/ice-flights.js) to aircraft broadcasting a
+  // callsign matching known ICE Air charter operators — the same
+  // underlying idea as Otter Goose's MSP ICE Air Flight Tracker
+  // (ottergoose.net), done natively instead of embedding a third party.
+  // Not the enforcement-linked "Agency aircraft" registry layer, which
+  // identifies aircraft by FAA ownership on a periodic refresh rather than
+  // by live callsign. {count}, {seconds} substituted client-side as the
+  // feed updates.
+  liveFlightsToggleLabel: 'Live ICE Air charter flights',
   liveFlightsAboutToggle: 'About this data',
   liveFlightsIntro:
-    'Any transponder-equipped aircraft currently over Minnesota, from adsb.lol. General air traffic, not enforcement activity — shown to demonstrate the live-tracking pipeline itself works.',
+    'Aircraft anywhere in the world currently broadcasting a callsign matching known ICE Air charter operators, from adsb.lol — the same approach Otter Goose\'s MSP ICE Air Flight Tracker (ottergoose.net) uses. These charters spend most of their time far outside Minnesota, so this is a worldwide feed, not one scoped to the state like every other layer here.',
   liveFlightsCaveat:
-    'Positions between updates are estimated by interpolating between two real fixes taken about 8 seconds apart — not a new GPS reading every frame. The colored trail behind each aircraft is its actual recent reported track; clicking a plane loads its full real history back to wherever it last left the ground. The dashed gray line ahead is a straight-line projection from its current heading and speed for the next 10 minutes, not its real flight plan or route — this feed provides neither. A registration or callsign shown here does not imply the aircraft is owned by, or operating on behalf of, any government agency.',
+    'A callsign match is not registry confirmation: it can be reused for an unrelated flight, reassigned, or simply not broadcast, and this filter cannot tell the difference — see the "Agency aircraft" layer for FAA-ownership-based identification instead. Positions between updates are estimated by interpolating between two real fixes — not a new GPS reading every frame. The colored trail behind each aircraft is its actual recent reported track; clicking a plane loads its full real history back to wherever it last left the ground. The dashed gray line ahead is a straight-line projection from current heading and speed for the next 10 minutes, not a real flight plan — this feed provides neither. Filtering happens server-side before anything reaches your browser, and this refreshes less often than a typical live feed since the underlying worldwide query is large.',
   liveFlightsLegendTitle: 'Colored by altitude',
   liveFlightsAltGround: 'On the ground',
   liveFlightsAltLow: 'Below 10,000 ft',
@@ -50,6 +56,8 @@ export const en: Record<string, string> = {
   agencyLabelIceAir: 'ICE Air contractor',
   agencyLabelBca: 'BCA',
   agencyLabelCountySheriff: 'County sheriff',
+  agencyLabelCbp: 'CBP',
+  agencyLabelMnArmyNationalGuard: 'MN Army National Guard',
 
   // Map chrome
   layers: 'Layers',
