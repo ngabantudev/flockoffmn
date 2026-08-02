@@ -29,10 +29,41 @@
  * this, either — adsb.lol's /v2/callsign/ route (checked by hand) only does
  * exact matches, not prefixes, and the pattern below needs to catch
  * whatever suffix a charter's callsign carries on a given flight.
+ *
+ * Deliberately does NOT `JSON.parse` the response and `.filter()` the
+ * array — confirmed by hand (replaying a real ~6.4MB/11,700-aircraft
+ * response through both approaches) that doing so costs ~400ms of CPU, an
+ * order of magnitude past what a Cloudflare Function gets per request
+ * before the platform kills it — which is exactly the bare "error code:
+ * 502" this route was producing in production before this fix, with no
+ * error ever reaching this file's own try/catch to explain why. Scanning
+ * the raw text for the handful of matching "flight" fields and parsing only
+ * those small slices does the same job in ~3-6ms on the same payload.
  */
 
 const ADSB_GLOBAL_URL = 'https://api.adsb.lol/v2/point/0/0/10000';
 const ICE_CHARTER_CALLSIGN_PATTERN = /^(TYS|GXA6...|BBQ82..|AWI7...|EAL8...|OAE4...|LYM300|LYM400|LYM500)/;
+
+/**
+ * The fixed, non-wildcard portion of each ICE_CHARTER_CALLSIGN_PATTERN
+ * alternative — e.g. "GXA6" out of "GXA6...". Used to cheaply find
+ * candidate aircraft directly in the raw response text (a plain literal
+ * alternation, no backtracking) before the authoritative check below
+ * confirms a real match on the trimmed value. Derived from the pattern
+ * itself, not hand-duplicated, so the two can never drift apart: a "." in
+ * this JSON text can match a padding space in a callsign shorter than the
+ * pattern expects (adsb.lol pads every callsign to a fixed width), which
+ * is exactly the false-positive this two-stage check exists to catch —
+ * confirmed by hand: matching the wildcard pattern directly against the
+ * raw padded text, unlike matching it against the same value trimmed
+ * first, turned "GXA620  " (not a real match) into one.
+ */
+const CANDIDATE_PREFIXES = ICE_CHARTER_CALLSIGN_PATTERN.source
+  .replace(/^\^\(/, '')
+  .replace(/\)$/, '')
+  .split('|')
+  .map((alt) => alt.replace(/\.+$/, ''));
+
 const CACHE_SECONDS = 45;
 const ERROR_COOLDOWN_SECONDS = 120;
 
@@ -75,19 +106,50 @@ export async function onRequestGet(context) {
     return cachedJson(cache, context, { error: `adsb.lol HTTP ${upstream.status}` }, 502, ERROR_COOLDOWN_SECONDS);
   }
 
-  let body;
+  let text;
   try {
-    body = await upstream.json();
+    text = await upstream.text();
   } catch (err) {
-    return cachedJson(cache, context, { error: `adsb.lol returned unparseable JSON: ${err.message || err}` }, 502, ERROR_COOLDOWN_SECONDS);
+    return cachedJson(cache, context, { error: `adsb.lol response failed to read: ${err.message || err}` }, 502, ERROR_COOLDOWN_SECONDS);
   }
 
-  // The filtering this route exists for: same pattern, same field, as
-  // ICE_CHARTER_CALLSIGN_PATTERN in src/lib/liveFlights.ts. Applied here so
-  // the ~11,000-aircraft response never leaves the edge.
-  const matched = (body.ac ?? []).filter((ac) =>
-    ICE_CHARTER_CALLSIGN_PATTERN.test((ac.flight ?? '').trim().toUpperCase()),
-  );
+  // The filtering this route exists for, done as a text scan rather than
+  // JSON.parse(text).ac.filter(...) — see the header comment for why. Stage
+  // one (candidateRe) cheaply finds every "flight" field starting with one
+  // of the known literal prefixes; stage two re-checks the actual trimmed
+  // value against the real (wildcard) pattern, so a padded callsign that
+  // only coincidentally shares a prefix — "GXA620  " next to a real
+  // "GXA6152 " — gets correctly rejected exactly like the full-parse
+  // approach would. Only aircraft that survive both stages ever get
+  // JSON.parse'd, and only their own small slice of the response, found by
+  // taking the nearest enclosing braces — safe here specifically because
+  // adsb.lol's aircraft records are flat (no nested objects), so the
+  // nearest "{" before and "}" after a match are always that record's own.
+  //
+  // A fresh RegExp per request rather than a shared module-level one: a
+  // global regex's `lastIndex` is mutable state, and while this loop always
+  // runs to exhaustion (which resets it) so reuse would in practice be
+  // fine, a fresh instance costs nothing and removes the need to reason
+  // about that at all.
+  const candidateRe = new RegExp(`"flight":"(${CANDIDATE_PREFIXES.join('|')})`, 'g');
+  const matched = [];
+  let m;
+  while ((m = candidateRe.exec(text))) {
+    const valueStart = m.index + 10; // length of `"flight":"`
+    const closeQuote = text.indexOf('"', valueStart);
+    if (closeQuote === -1) continue;
+    const callsign = text.slice(valueStart, closeQuote).trim().toUpperCase();
+    if (!ICE_CHARTER_CALLSIGN_PATTERN.test(callsign)) continue;
+    const start = text.lastIndexOf('{', m.index);
+    const end = text.indexOf('}', m.index);
+    if (start === -1 || end === -1) continue;
+    try {
+      matched.push(JSON.parse(text.slice(start, end + 1)));
+    } catch {
+      // Shouldn't happen for this API's known shape — skip this one record
+      // rather than fail the whole response over it.
+    }
+  }
 
   const response = new Response(JSON.stringify({ ac: matched }), {
     status: 200,
