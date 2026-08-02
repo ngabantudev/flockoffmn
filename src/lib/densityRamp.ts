@@ -98,10 +98,30 @@ function hotEnd(): number {
   return start;
 }
 
+/** Strip a ramp colour's alpha, so a stroke can carry its own opacity via paint properties instead. */
+function opaque(color: string): string {
+  return color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, 'rgb($1,$2,$3)');
+}
+
 export const THREAD_STOPS = DENSITY_STOPS.slice(hotEnd()).map(
-  ([at, color]) =>
-    [at, color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, 'rgb($1,$2,$3)')] as [number, string],
+  ([at, color]) => [at, opaque(color)] as [number, string],
 );
+
+/**
+ * The full ramp, opaque, for a stroke that wants the surface's whole gradient
+ * rather than just the legible hot end `THREAD_STOPS` keeps.
+ *
+ * Built for the corridor glow: a wide, heavily blurred halo, where reading
+ * the cool end against the background is not the ask the way it is of a thin
+ * core line. Taking the ramp's own alpha along with the hue would be wrong
+ * here regardless — that alpha exists so an *empty* patch of the heatmap
+ * fades to nothing, and the anchor below already puts every corridor's
+ * smallest possible network on this ramp's first stop. Keep that stop's
+ * built-in alpha of zero and every corridor with a small network — most of
+ * them — goes invisible, which is what happens if this is built from
+ * `DENSITY_STOPS` directly instead of through `opaque()`.
+ */
+export const GLOW_STOPS: Array<[number, string]> = DENSITY_STOPS.map(([at, color]) => [at, opaque(color)]);
 
 /**
  * The colour of a cord — the heavy thread that fuses one body of mesh to the
@@ -116,10 +136,7 @@ export const THREAD_STOPS = DENSITY_STOPS.slice(hotEnd()).map(
  * mistaken for one. Near-white also clears the background by a wide margin,
  * which the ramp's cool middle does not — see `hotEnd` below.
  */
-export const CORD_STROKE = DENSITY_STOPS[0][1].replace(
-  /rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/,
-  'rgb($1,$2,$3)',
-);
+export const CORD_STROKE = opaque(DENSITY_STOPS[0][1]);
 
 /**
  * The ramp as a CSS gradient for the legend.

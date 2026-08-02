@@ -2,7 +2,7 @@ import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
 import { baseStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
-import { THREAD_STOPS, densityColorExpression } from './densityRamp';
+import { GLOW_STOPS, THREAD_STOPS, densityColorExpression } from './densityRamp';
 import { groupNodes } from './nodes';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
@@ -186,18 +186,18 @@ const NODE_WEIGHT = [
  * a fifth in the 101. The curve keeps climbing past the largest so a denser
  * extract, or another state, does not flatten out at the top.
  */
-const networkColor = (key: string, maxRecords: number) =>
+const networkColor = (key: string, maxRecords: number, stops: Array<[number, string]> = THREAD_STOPS) =>
   [
     'interpolate',
     ['linear'],
     ['get', key],
-    ...THREAD_STOPS.flatMap(([at, color], i) => [
+    ...stops.flatMap(([at, color], i) => [
       // Anchored so the smallest network lands on the first legible colour
       // rather than on the background. Most networks are small, so the bottom
       // of this ramp is what the reader sees most of and it has to work alone.
       i === 0
         ? 2
-        : Math.round(((at - THREAD_STOPS[0][0]) / (1 - THREAD_STOPS[0][0])) * (maxRecords - 2)) + 2,
+        : Math.round(((at - stops[0][0]) / (1 - stops[0][0])) * (maxRecords - 2)) + 2,
       color,
     ]),
   ] as unknown as maplibregl.ExpressionSpecification;
@@ -856,6 +856,15 @@ export class MapController {
       const thread = layer.networkColor
         ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords)
         : (layer.color as unknown as maplibregl.ExpressionSpecification);
+      // The halo gets the density surface's own ramp, cool end included, so a
+      // corridor reads as the same heat the point heatmap would show over that
+      // same ground — just carried by the street shape instead of a blob over
+      // it. The core below stays on THREAD_STOPS: a halo is a wash, so the low
+      // end's near-zero contrast is fine, but the thin core is the one legible
+      // mark on a mesh body and needs the ramp that clears 3:1 against the map.
+      const glow = layer.networkColor
+        ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords, GLOW_STOPS)
+        : thread;
 
       if (layer.filament) {
         /*
@@ -878,6 +887,7 @@ export class MapController {
         // Cords stay off the network ramp: it says how many reader locations a
         // mesh body holds, and a cord belongs to two bodies at once.
         const threadByTier = cord ? byTier(thread, cord.color) : thread;
+        const glowByTier = cord ? byTier(glow, cord.color) : glow;
         // Painted first within the layer, so the mesh sits on top of the trunk
         // rather than the other way round. MapLibre sorts ascending.
         const sortByTier = byTier(1, 0);
@@ -913,7 +923,7 @@ export class MapController {
             source: src,
             layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
             paint: {
-              'line-color': threadByTier,
+              'line-color': glowByTier,
               // On a cord the halo is not the supporting half, it is the strand.
               // Almost all of a cord's visible presence is here, in something
               // with no edge to it, which is why it holds a touch more than the
