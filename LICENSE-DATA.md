@@ -30,7 +30,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | Cumulative impacts (MPCA) | `ej-cumulative.geojson` | No formal licence published; public government data under [Minn. Stat. ch. 13](https://www.revisor.mn.gov/statutes/cite/13) | Attribute MPCA. Draft data (CI-MAP, December 2025); see the layer's `knownGaps`. |
 | County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
-| Agency aircraft | `agency-aircraft.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) (adsb.lol), plus FAA ownership data, public domain | **Share-alike.** Attribution to adsb.lol contributors required. Aircraft identification is cross-referenced against the FAA Releasable Aircraft Registry, itself public domain; `ice_air` records additionally rely on journalism identifying current ICE Air charter subcontractors (cited in the file itself, not redistributed). |
+| Agency aircraft | `agency-aircraft.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) (adsb.lol), plus FAA ownership data, public domain | **Share-alike.** Attribution to adsb.lol contributors required. Aircraft identification is cross-referenced against the FAA Releasable Aircraft Registry, itself public domain; `ice_air` records additionally rely on journalism identifying current ICE Air charter subcontractors, and the `cbp` record relies on a local spotter reference (Otter Goose, "Twin Cities Helicopters") identifying its tail number (both cited in the file itself, not redistributed). |
 | Observed ICE Air flights | `observed-ice-flights.geojson` | No formal license; the source states "these data can be used by anyone" | Attribution to "Nick Benson, MN50501" appreciated per the source's own terms. Eyewitness-sourced volunteer observation, not a government record — see the layer's `knownGaps` for the full caveat. |
 
 **Combining layers:** the most restrictive term governs the combination. A
@@ -55,7 +55,7 @@ Reproduce these when redistributing the corresponding layer:
 - **Data centers** — FracTracker Alliance; More Than Just Parks Data Center
   Tracker; Cleanview; Baxtel; PoweredByWho.
 - **County, place and jurisdiction geography** — U.S. Census Bureau.
-- **Agency aircraft** — © adsb.lol contributors; aircraft identity cross-referenced against the FAA Releasable Aircraft Registry.
+- **Agency aircraft** — © adsb.lol contributors; aircraft identity cross-referenced against the FAA Releasable Aircraft Registry; the `cbp` record's tail number per Otter Goose, "Twin Cities Helicopters" (cited, not redistributed).
 - **Observed ICE Air flights** — Nick Benson, Minnesota 50501 ("MN50501: MSP ICE Air Flights"), attribution appreciated per the source's own stated terms.
 
 ## The data-center trackers
