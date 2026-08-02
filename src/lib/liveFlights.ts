@@ -2,21 +2,34 @@ import maplibregl from 'maplibre-gl';
 import { representativePoint } from './geo.mjs';
 
 /**
- * A live ADS-B overlay for the main map — deliberately not a registry layer.
+ * A live worldwide ICE Air charter overlay for the main map — deliberately
+ * not a registry layer.
  *
  * Every other layer on the map is a static file fetched once, with a fixed
  * feature count and source date baked in at build time (see
  * src/layers/data.ts). This is a continuously-polled third-party pass-through
- * with none of that: no stable count, no filters, no citation the way a
- * civic dataset has one. Folding it into MapController's layer model would
- * mean teaching that shared class about live data for the sake of the one
- * layer that isn't; keeping it separate keeps every other layer's contract
- * exactly as simple as it already is.
+ * with none of that: no stable count, no citation the way a civic dataset
+ * has one. Folding it into MapController's layer model would mean teaching
+ * that shared class about live data for the sake of the one layer that
+ * isn't; keeping it separate keeps every other layer's contract exactly as
+ * simple as it already is.
  *
- * Lazy by design: nothing here runs until start() is called, matching the
- * "nothing draws until the reader switches it on" rule the rest of the map
- * already follows — so leaving the box unchecked costs nothing, no
- * background polling of a third party on a visitor's behalf.
+ * Polls functions/api/ice-flights.js, which does the actual filtering
+ * server-side: adsb.lol's worldwide feed narrowed down to aircraft
+ * broadcasting a callsign matching known ICE Air charter operators — the
+ * same underlying idea as Otter Goose's MSP ICE Air Flight Tracker
+ * (ottergoose.net/ice-flights-msp/map/), which does this by embedding
+ * adsb.lol's own map with a `filtercallsign` URL flag. There used to be a
+ * second mode here — an unfiltered "any aircraft over Minnesota" feed via
+ * api/aircraft.js, toggled separately — but this project only cares about
+ * the aircraft it can actually identify, so that mode and its route were
+ * removed rather than kept as an unused option.
+ *
+ * On by default (see the `checked` toggle in MapView.astro) rather than
+ * lazy like every registry layer, since it's the one thing on this map with
+ * no "everything" mode to make opting in meaningful — there's nothing to
+ * combine it with. start()/stop() still exist for the reader who wants it
+ * off.
  */
 
 const POLL_MS = 10_000;
@@ -154,22 +167,6 @@ export interface LiveFlightsStatus {
   error: string | null;
 }
 
-/**
- * Broadcast-callsign prefixes for known ICE Air charter operators — the same
- * underlying idea Otter Goose's "MSP ICE Air Flight Tracker" uses to filter
- * adsb.lol's own map down to just these flights via its `filtercallsign` URL
- * parameter (https://ottergoose.net/ice-flights-msp/map/, embedding
- * https://adsb.lol/ directly). Reproduced verbatim from that public source
- * rather than re-derived, since matching it exactly is the only way to make
- * the same claim it does. This is a live filter on the same feed every other
- * aircraft here comes from — not a registry cross-reference the way
- * agency-aircraft.geojson's ice_air/cbp entries are, and it inherits every
- * limitation of matching on callsign: a charter operator's callsign can be
- * reused for a non-ICE flight, reassigned entirely, or simply not
- * broadcast, and this can't tell any of those apart from a real match.
- */
-const ICE_CHARTER_CALLSIGN_PATTERN = /^(TYS|GXA6...|BBQ82..|AWI7...|EAL8...|OAE4...|LYM300|LYM400|LYM500)/;
-
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 const PLANE_LAYER_IDS = ['live-trails-line', 'live-projected-line', 'live-selected-trace-line', 'live-aircraft-points'];
 const AIRPORT_LAYER_IDS = ['live-airports-fill', 'live-airports-outline', 'live-airports-labels'];
@@ -191,7 +188,8 @@ export class LiveFlightsOverlay {
   private airportsLoaded = false;
   private selectedHex: string | null = null;
   private selectedTraceCache = new Map<string, [number, number][]>();
-  private iceOnly = false;
+  /** Set once the first poll with at least one match lands — see poll(). */
+  private hasAutoFit = false;
 
   constructor(map: maplibregl.Map, onStatus: (status: LiveFlightsStatus) => void) {
     this.map = map;
@@ -227,41 +225,8 @@ export class LiveFlightsOverlay {
     this.popup = null;
     this.setVisible(false);
     this.setSelectedTraceCoords([]);
+    this.hasAutoFit = false;
     this.onStatus({ count: 0, ageSeconds: null, error: null });
-  }
-
-  /**
-   * Toggling this never re-fetches — every aircraft stays tracked
-   * regardless, and only which of them get drawn (and counted) changes.
-   * Clears the current selection if it no longer matches, since the popup
-   * and full trace it drove would otherwise reference a plane that just
-   * disappeared from the map.
-   */
-  setIceOnly(enabled: boolean) {
-    this.iceOnly = enabled;
-    if (this.selectedHex) {
-      const selected = this.tracked.get(this.selectedHex);
-      if (!selected || !this.matchesFilter(selected)) {
-        this.selectedHex = null;
-        this.popup?.remove();
-        this.popup = null;
-        this.setSelectedTraceCoords([]);
-      }
-    }
-    // Redraws immediately from whichever feed is already in `tracked` —
-    // right the moment the toggle flips, that's still the old scope, so
-    // this can briefly under- or over-show until the poll below lands and
-    // the seenHex prune in poll() catches up. Triggered here rather than
-    // waiting up to POLL_MS for the next scheduled tick, since switching
-    // feeds is the one moment the wait would actually be noticeable.
-    this.renderFrame();
-    this.emitStatus();
-    if (this.active) void this.poll();
-  }
-
-  private matchesFilter(entry: Ac): boolean {
-    if (!this.iceOnly) return true;
-    return ICE_CHARTER_CALLSIGN_PATTERN.test((entry.flight ?? '').toUpperCase());
   }
 
   private ensureReady(cb: () => void) {
@@ -495,17 +460,12 @@ export class LiveFlightsOverlay {
   private async poll() {
     const startedAt = performance.now();
     try {
-      // Two different scopes behind the same tracked map: the ambient feed
-      // is Minnesota-only (api/aircraft.js's 250nm radius), because that's
-      // the honest scope of "air traffic over Minnesota". The ICE-charter
-      // filter needs the opposite — these aircraft spend most of their time
-      // far from Minnesota — so it switches to api/ice-flights.js, which
-      // queries adsb.lol's full worldwide feed and filters it down
-      // server-side before this ever sees it. Switching endpoints mid-poll
-      // is enough on its own: the seenHex prune below already drops
-      // whatever the new response didn't include, so nothing further needs
-      // clearing when the toggle flips.
-      const res = await fetch(this.iceOnly ? '/api/ice-flights' : '/api/aircraft', { cache: 'no-store' });
+      // api/ice-flights.js does the actual filtering, server-side, against
+      // adsb.lol's full worldwide feed — see that file and this class's own
+      // header comment for why a global query, not a Minnesota-scoped one,
+      // is the correct scope for aircraft that spend most of their time far
+      // outside the state.
+      const res = await fetch('/api/ice-flights', { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
       this.lastError = null;
@@ -535,6 +495,23 @@ export class LiveFlightsOverlay {
         this.selectedHex = null;
         this.setSelectedTraceCoords([]);
       }
+      // Once, the first time this poll actually has something to show:
+      // fly the camera out to fit every currently-matched aircraft. On by
+      // default means the default view has to actually show what's on —
+      // these flights are essentially never near Minnesota, so without
+      // this the map would sit at its ordinary Minnesota-centered start
+      // view looking empty. Not repeated on later polls, so it doesn't yank
+      // the camera away from a reader who has since panned off to look at
+      // an actual civic layer.
+      if (!this.hasAutoFit && this.tracked.size > 0) {
+        this.hasAutoFit = true;
+        const coords: [number, number][] = [...this.tracked.values()].map((e) => [e.to.lng, e.to.lat]);
+        const bounds = coords.reduce(
+          (b, c) => b.extend(c),
+          new maplibregl.LngLatBounds(coords[0], coords[0]),
+        );
+        this.map.fitBounds(bounds, { padding: 64, maxZoom: 6, duration: this.reducedMotion ? 0 : 1200 });
+      }
     } catch (err) {
       this.lastError = err instanceof Error ? err.message : String(err);
     }
@@ -544,9 +521,7 @@ export class LiveFlightsOverlay {
   private emitStatus() {
     if (!this.active) return;
     const ageSeconds = this.lastPollAt ? Math.round((Date.now() - this.lastPollAt) / 1000) : null;
-    let count = 0;
-    for (const e of this.tracked.values()) if (this.matchesFilter(e)) count++;
-    this.onStatus({ count, ageSeconds, error: this.lastError });
+    this.onStatus({ count: this.tracked.size, ageSeconds, error: this.lastError });
   }
 
   private loop = () => {
@@ -569,7 +544,6 @@ export class LiveFlightsOverlay {
     const projections: GeoJSON.Feature[] = [];
 
     for (const [hex, e] of this.tracked) {
-      if (!this.matchesFilter(e)) continue;
       const pos = this.currentInterpolated(e);
       const band = altBandOf(e.alt);
 

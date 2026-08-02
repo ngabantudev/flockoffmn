@@ -1,39 +1,34 @@
 /**
- * Global ICE Air charter callsign filter — a server-side counterpart to
- * api/aircraft.js, and the native version of Otter Goose's MSP ICE Air
- * Flight Tracker (ottergoose.net/ice-flights-msp/map/), which embeds
- * adsb.lol's own map with a `filtercallsign` URL flag to show only aircraft
- * broadcasting one of a handful of known ICE Air charter callsign patterns,
- * wherever in the world they currently are.
+ * Global ICE Air charter callsign filter — this project's only live-flight
+ * route, and the native version of Otter Goose's MSP ICE Air Flight Tracker
+ * (ottergoose.net/ice-flights-msp/map/), which embeds adsb.lol's own map
+ * with a `filtercallsign` URL flag to show only aircraft broadcasting one
+ * of a handful of known ICE Air charter callsign patterns, wherever in the
+ * world they currently are.
  *
- * api/aircraft.js deliberately queries a 250nm radius around Minnesota —
- * fine for "ambient air traffic over the state", useless for this, since
- * these charters spend most of their time nowhere near Minnesota (removal
- * flights routinely run to the Gulf Coast, the border, or out of the
- * country entirely). Matching Otter Goose's approach means querying
- * worldwide instead: a big-enough radius from any point returns adsb.lol's
- * whole current feed — confirmed by hand, radius 10000 from (0,0) tops out
- * at the same ~11,000-aircraft count as radius 20000+ does, so the network
- * has nothing left to add past that point. That response runs several
- * megabytes, so it is filtered down to the small number of matches here,
- * server-side, before anything reaches a browser — the point of this route
- * existing separately from api/aircraft.js rather than adding a "global"
- * mode to it.
+ * Worldwide, not Minnesota-scoped, because these charters spend most of
+ * their time far from Minnesota — removal flights routinely run to the
+ * Gulf Coast, the border, or out of the country entirely. A big-enough
+ * radius from any point returns adsb.lol's whole current feed — confirmed
+ * by hand, radius 10000 from (0,0) tops out at the same ~11,000-aircraft
+ * count as radius 20000+ does, so the network has nothing left to add past
+ * that point. That response runs several megabytes, so it's filtered down
+ * to the small number of matches here, server-side, before anything
+ * reaches a browser.
  *
  * ICE_CHARTER_CALLSIGN_PATTERN is reproduced verbatim from Otter Goose's own
  * filtercallsign value, not re-derived, since matching it exactly is the
- * only way to make the same claim it does — see src/lib/liveFlights.ts's
- * copy of the same constant, which this must be kept identical to.
+ * only way to make the same claim it does. This is the only copy of it —
+ * src/lib/liveFlights.ts just renders whatever this route already filtered,
+ * with no client-side re-matching of its own.
  *
- * A much longer cache than api/aircraft.js's (below) on purpose: this fetch
- * is roughly 13x the payload for a feature nobody has switched on by
- * default (it's a second, nested toggle — see MapView.astro), and confirmed
- * by hand during development to draw a 429 from adsb.lol after only a
- * handful of manual requests in a couple of minutes — a much lower bar than
- * the small Minnesota-radius query in api/aircraft.js ever hit. There's no
- * cheaper way to ask for this: adsb.lol's /v2/callsign/ route (checked by
- * hand) only does exact matches, not prefixes, and the pattern below needs
- * to catch whatever suffix a charter's callsign carries on a given flight.
+ * The cache/cooldown pair below is wider than a small-radius ADS-B query
+ * would need, on purpose: confirmed by hand during development that this
+ * much heavier fetch draws a 429 from adsb.lol after only a handful of
+ * manual requests in a couple of minutes. There's no cheaper way to ask for
+ * this, either — adsb.lol's /v2/callsign/ route (checked by hand) only does
+ * exact matches, not prefixes, and the pattern below needs to catch
+ * whatever suffix a charter's callsign carries on a given flight.
  */
 
 const ADSB_GLOBAL_URL = 'https://api.adsb.lol/v2/point/0/0/10000';

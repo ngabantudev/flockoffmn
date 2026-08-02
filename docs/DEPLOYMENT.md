@@ -82,36 +82,45 @@ you ever need one, revisit those claims first.
 
 ### Live flight proxy (the one exception)
 
-`functions/api/aircraft.js` and `functions/api/trace/[hex].js` are Cloudflare
-Pages Functions — the only server-side code in this project. They back the
-"Live air traffic" toggle on the main map, which shows any transponder-equipped
-aircraft currently over Minnesota (not the enforcement-linked "Agency
-aircraft" layer, which stays a static, hourly-refreshed file like every other
-layer, and lives in the layer registry like every other layer). The toggle is
-deliberately not a registry layer itself — see the header of
-`src/lib/liveFlights.ts` for why.
+`functions/api/ice-flights.js` and `functions/api/trace/[hex].js` are
+Cloudflare Pages Functions — the only server-side code in this project. They
+back the "Live ICE Air charter flights" toggle on the main map, on by
+default, which shows aircraft anywhere in the world currently broadcasting a
+callsign matching known ICE Air charter operators (not the enforcement-linked
+"Agency aircraft" layer, which stays a static, hourly-refreshed file
+identified by FAA ownership like every other layer, and lives in the layer
+registry like every other layer). The toggle is deliberately not a registry
+layer itself — see the header of `src/lib/liveFlights.ts` for why.
 
 They exist for one reason: adsb.lol, the ADS-B network this project reads,
 sends no `Access-Control-Allow-Origin` header, so a browser can never read its
 response directly. Something has to sit between the two and re-serve the data
 same-origin. That is all these routes do:
 
-- `api/aircraft` proxies the live position feed for any aircraft within 250nm
-  of Minnesota, cached at Cloudflare's edge for ~8 seconds — many visitors
-  polling inside the same window share one upstream fetch.
+- `api/ice-flights` queries adsb.lol's entire worldwide feed (a big-enough
+  point/radius query returns everything the network has, confirmed by hand)
+  and filters it down, server-side, to aircraft whose callsign matches a
+  known ICE Air charter operator pattern — the same callsigns Otter Goose's
+  MSP ICE Air Flight Tracker (ottergoose.net) filters for, reproduced
+  verbatim rather than re-derived. Only that small filtered result ever
+  reaches a browser; the multi-megabyte worldwide response never leaves the
+  edge. Cached for ~45 seconds — longer than a small-radius query would
+  need, because this fetch is far larger and drew a 429 from adsb.lol after
+  only a handful of manual requests during development.
 - `api/trace/[hex]` proxies one aircraft's full retained position history,
   fetched only when a visitor clicks that specific plane on the map — never
   ambiently for every aircraft in view. Each trace file runs several hundred
-  KB; fetching it for every one of the 50+ aircraft the overlay might be
-  tracking at once would multiply load on adsb.lol far beyond what the live
-  position feed already costs. Cached at the edge for ~30 seconds.
-- Both routes cache a failed upstream call too, for longer than a success (30s
-  / 60s). This is what stops a burst of traffic from turning a temporary
-  adsb.lol rate-limit or outage into a worse one: instead of every request
-  retrying the upstream, the whole route serves the same cached failure and
-  backs off together until the cooldown passes. Found the need for this by
-  triggering adsb.lol's own 429 during development — from manual testing, not
-  real traffic — so it went in before this shipped rather than after.
+  KB; fetching it for every tracked aircraft at once would multiply load on
+  adsb.lol far beyond what the live position feed already costs. Cached at
+  the edge for ~30 seconds.
+- Both routes cache a failed upstream call too, for longer than a success
+  (120s / 60s). This is what stops a burst of traffic from turning a
+  temporary adsb.lol rate-limit or outage into a worse one: instead of every
+  request retrying the upstream, the whole route serves the same cached
+  failure and backs off together until the cooldown passes. Found the need
+  for this by triggering adsb.lol's own 429 during development — from manual
+  testing, not real traffic — so it went in before this shipped rather than
+  after.
 - No binding, no KV, no D1, no state of any kind. Nothing either route
   handles is ever written anywhere.
 - No access logging beyond whatever Cloudflare retains by default for the

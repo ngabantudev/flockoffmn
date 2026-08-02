@@ -155,7 +155,6 @@ const liveFlightsStrings = {
   updated: t('liveFlightsUpdated'),
   unavailable: t('liveFlightsUnavailable'),
   legendTitle: t('liveFlightsLegendTitle'),
-  iceOnlyLegendTitle: t('liveFlightsIceOnlyLabel'),
   altLabels: {
     ground: t('liveFlightsAltGround'),
     low: t('liveFlightsAltLow'),
@@ -194,9 +193,15 @@ const liveFlightsStrings = {
       Deliberately styled unlike every card below it — a different border
       colour, a pulsing dot instead of a static one, no source/license line —
       because this isn't a sourced civic-transparency finding the way the
-      layers below it are. It's a live, unfiltered pass-through of general
-      air traffic, shown to prove the underlying feed works. See
-      src/lib/liveFlights.ts for why it isn't a registry layer.
+      layers below it are, and it isn't general air traffic either: it's a
+      live worldwide feed filtered, server-side, to aircraft broadcasting a
+      callsign matching known ICE Air charter operators — the same
+      underlying idea as Otter Goose's MSP ICE Air Flight Tracker
+      (ottergoose.net), done natively instead of embedding a third party.
+      On by default, unlike every other layer here, since it's the one
+      thing on this map with nothing else to combine it with — there's no
+      separate "show everything" mode to opt out of into. See
+      src/lib/liveFlights.ts and functions/api/ice-flights.js.
     */}
     <div class="border-b border-ink-800 p-3">
       <div class="rounded-lg border border-rose-500/40 bg-ink-850">
@@ -204,6 +209,7 @@ const liveFlightsStrings = {
           <input
             type="checkbox"
             id="live-flights-toggle"
+            checked
             class="mt-0.5 h-4 w-4 shrink-0 accent-rose-400"
           />
           <div class="min-w-0 flex-1">
@@ -222,27 +228,6 @@ const liveFlightsStrings = {
               </summary>
               <p class="mt-1 text-[11px] leading-relaxed text-warn">{t('liveFlightsCaveat')}</p>
             </details>
-            {/*
-              A live callsign filter on this same feed — the underlying idea
-              behind Otter Goose's MSP ICE Air Flight Tracker (an iframe of
-              adsb.lol's own map with a `filtercallsign` URL flag), done here
-              natively instead of embedding a third party. See
-              src/lib/liveFlights.ts's ICE_CHARTER_CALLSIGN_PATTERN.
-            */}
-            <div class="mt-2 flex items-start gap-2 border-t border-ink-800 pt-2">
-              <input
-                type="checkbox"
-                id="live-flights-ice-toggle"
-                disabled
-                class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-rose-400 disabled:opacity-40"
-              />
-              <div class="min-w-0 flex-1">
-                <label for="live-flights-ice-toggle" class="cursor-pointer text-xs text-ink-200">
-                  {t('liveFlightsIceOnlyLabel')}
-                </label>
-                <p class="mt-0.5 text-[11px] leading-relaxed text-ink-400">{t('liveFlightsIceOnlyCaveat')}</p>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -576,12 +561,10 @@ const liveFlightsStrings = {
     updated: string;
     unavailable: string;
     legendTitle: string;
-    iceOnlyLegendTitle: string;
     altLabels: Record<string, string>;
   };
   const liveFlightsToggle = document.getElementById('live-flights-toggle') as HTMLInputElement;
   const liveFlightsStatusEl = document.getElementById('live-flights-status') as HTMLElement;
-  const liveFlightsIceToggle = document.getElementById('live-flights-ice-toggle') as HTMLInputElement;
 
   const liveFlights = new LiveFlightsOverlay(controller.map, (live) => {
     if (!liveFlightsToggle.checked) {
@@ -597,19 +580,15 @@ const liveFlightsStrings = {
   liveFlightsToggle.addEventListener('change', () => {
     if (liveFlightsToggle.checked) liveFlights.start();
     else liveFlights.stop();
-    // The sub-filter's own checked state survives the main toggle turning
-    // off — stop() already clears every tracked aircraft, so there's
-    // nothing left to filter either way, and re-checking it here would just
-    // discard a preference the reader may want back the moment they turn
-    // the overlay back on.
-    liveFlightsIceToggle.disabled = !liveFlightsToggle.checked;
     refreshMapKeys();
   });
 
-  liveFlightsIceToggle.addEventListener('change', () => {
-    liveFlights.setIceOnly(liveFlightsIceToggle.checked);
-    refreshMapKeys();
-  });
+  // Checked by default in the markup (unlike every registry layer, which
+  // starts unchecked) — this is the one thing on the map worth showing
+  // without making a reader find and flip it first. A `change` event only
+  // fires on user interaction, never for a checkbox's initial `checked`
+  // attribute, so the first start() has to be called explicitly here.
+  if (liveFlightsToggle.checked) liveFlights.start();
 
   /* ----------------------------- Detail panel ---------------------------- */
 
@@ -997,7 +976,7 @@ const liveFlightsStrings = {
       card.setAttribute('class', 'rounded-md border border-rose-500/30 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm');
       const title = document.createElement('p');
       title.setAttribute('class', 'mb-1 truncate text-[10px] leading-tight text-ink-300');
-      title.textContent = liveFlightsIceToggle.checked ? `${LS.legendTitle} · ${LS.iceOnlyLegendTitle}` : LS.legendTitle;
+      title.textContent = LS.legendTitle;
       card.appendChild(title);
       const list = document.createElement('ul');
       list.setAttribute('class', 'space-y-0.5');

@@ -15,10 +15,11 @@
  * adsb.lol far beyond what the live position feed already costs.
  *
  * A rate-limit or outage response is cached for longer than a normal miss —
- * see api/aircraft.js's header for why: this route earned adsb.lol's own 429
- * during development from nothing more than repeated manual testing, and
- * without backing off harder on failure a burst of clicks during exactly
- * that window would have kept retrying the upstream instead of cooling down.
+ * see api/ice-flights.js's header for why: this route earned adsb.lol's own
+ * 429 during development from nothing more than repeated manual testing,
+ * and without backing off harder on failure a burst of clicks during
+ * exactly that window would have kept retrying the upstream instead of
+ * cooling down.
  */
 
 const CACHE_SECONDS = 30;
