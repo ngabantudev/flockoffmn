@@ -34,6 +34,9 @@ export const es: Record<string, string> = {
   liveFlightsCount: '{count} aeronaves rastreadas',
   liveFlightsUpdated: 'actualizado hace {seconds}s',
   liveFlightsUnavailable: 'adsb.lol no responde en este momento.',
+  liveFlightsIceOnlyLabel: 'Mostrar solo vuelos chárter de ICE Air',
+  liveFlightsIceOnlyCaveat:
+    'Filtra esta misma transmisión a las aeronaves que emiten un distintivo de llamada que coincide con operadores chárter conocidos de ICE Air — el mismo enfoque, y los mismos patrones de distintivo de llamada, que el "MSP ICE Air Flight Tracker" de Otter Goose (ottergoose.net). Una coincidencia de distintivo de llamada no es una confirmación de registro: puede reutilizarse para un vuelo no relacionado, reasignarse, o simplemente no transmitirse, y este filtro no puede distinguir entre esos casos.',
 
   liveBannerLoading: 'Comprobando aeronaves de agencias…',
   liveBannerCount: 'EN VIVO: {count} aeronaves de agencias en Minnesota',
