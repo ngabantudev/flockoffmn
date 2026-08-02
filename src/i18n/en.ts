@@ -36,9 +36,9 @@ export const en: Record<string, string> = {
   liveFlightsCount: '{count} aircraft tracked',
   liveFlightsUpdated: 'updated {seconds}s ago',
   liveFlightsUnavailable: 'adsb.lol is not responding right now.',
-  liveFlightsIceOnlyLabel: 'Show only ICE Air charter flights',
+  liveFlightsIceOnlyLabel: 'Show only ICE Air charter flights (worldwide)',
   liveFlightsIceOnlyCaveat:
-    'Filters this same feed to aircraft broadcasting a callsign matching known ICE Air charter operators — the same approach, and the same callsign patterns, as Otter Goose\'s MSP ICE Air Flight Tracker (ottergoose.net). A callsign match is not registry confirmation: it can be reused for an unrelated flight, reassigned, or simply not broadcast, and this filter cannot tell the difference.',
+    'Switches to a worldwide query — these charters spend most of their time far outside Minnesota — filtered to aircraft broadcasting a callsign matching known ICE Air charter operators. Same approach, and the same callsign patterns, as Otter Goose\'s MSP ICE Air Flight Tracker (ottergoose.net). The filtering happens server-side before it reaches your browser, and refreshes a bit less often than the Minnesota view above since the underlying query is far larger. A callsign match is not registry confirmation: it can be reused for an unrelated flight, reassigned, or simply not broadcast, and this filter cannot tell the difference.',
 
   // Live aircraft banner. {count} substituted; the breakdown itself is built
   // client-side from the per-agency labels below, since which agencies are

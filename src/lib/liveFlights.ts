@@ -248,8 +248,15 @@ export class LiveFlightsOverlay {
         this.setSelectedTraceCoords([]);
       }
     }
+    // Redraws immediately from whichever feed is already in `tracked` —
+    // right the moment the toggle flips, that's still the old scope, so
+    // this can briefly under- or over-show until the poll below lands and
+    // the seenHex prune in poll() catches up. Triggered here rather than
+    // waiting up to POLL_MS for the next scheduled tick, since switching
+    // feeds is the one moment the wait would actually be noticeable.
     this.renderFrame();
     this.emitStatus();
+    if (this.active) void this.poll();
   }
 
   private matchesFilter(entry: Ac): boolean {
@@ -488,7 +495,17 @@ export class LiveFlightsOverlay {
   private async poll() {
     const startedAt = performance.now();
     try {
-      const res = await fetch('/api/aircraft', { cache: 'no-store' });
+      // Two different scopes behind the same tracked map: the ambient feed
+      // is Minnesota-only (api/aircraft.js's 250nm radius), because that's
+      // the honest scope of "air traffic over Minnesota". The ICE-charter
+      // filter needs the opposite — these aircraft spend most of their time
+      // far from Minnesota — so it switches to api/ice-flights.js, which
+      // queries adsb.lol's full worldwide feed and filters it down
+      // server-side before this ever sees it. Switching endpoints mid-poll
+      // is enough on its own: the seenHex prune below already drops
+      // whatever the new response didn't include, so nothing further needs
+      // clearing when the toggle flips.
+      const res = await fetch(this.iceOnly ? '/api/ice-flights' : '/api/aircraft', { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
       this.lastError = null;
