@@ -25,16 +25,21 @@
  * only way to make the same claim it does — see src/lib/liveFlights.ts's
  * copy of the same constant, which this must be kept identical to.
  *
- * A longer cache than api/aircraft.js's (below) on purpose: this fetch is
- * roughly 13x the payload for a feature nobody has switched on by default
- * (it's a second, nested toggle — see MapView.astro), so it should hit
- * adsb.lol less often per visitor-second than the ambient feed does.
+ * A much longer cache than api/aircraft.js's (below) on purpose: this fetch
+ * is roughly 13x the payload for a feature nobody has switched on by
+ * default (it's a second, nested toggle — see MapView.astro), and confirmed
+ * by hand during development to draw a 429 from adsb.lol after only a
+ * handful of manual requests in a couple of minutes — a much lower bar than
+ * the small Minnesota-radius query in api/aircraft.js ever hit. There's no
+ * cheaper way to ask for this: adsb.lol's /v2/callsign/ route (checked by
+ * hand) only does exact matches, not prefixes, and the pattern below needs
+ * to catch whatever suffix a charter's callsign carries on a given flight.
  */
 
 const ADSB_GLOBAL_URL = 'https://api.adsb.lol/v2/point/0/0/10000';
 const ICE_CHARTER_CALLSIGN_PATTERN = /^(TYS|GXA6...|BBQ82..|AWI7...|EAL8...|OAE4...|LYM300|LYM400|LYM500)/;
-const CACHE_SECONDS = 15;
-const ERROR_COOLDOWN_SECONDS = 45;
+const CACHE_SECONDS = 45;
+const ERROR_COOLDOWN_SECONDS = 120;
 
 function cachedJson(cache, context, body, status, ttlSeconds) {
   const response = new Response(JSON.stringify(body), {
