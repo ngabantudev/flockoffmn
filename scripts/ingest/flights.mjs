@@ -20,15 +20,25 @@
  *     even when owner-name matching alone wouldn't have caught it.
  *
  * Categories the user asked about but that turned up no sourceable aircraft
- * (BCA, county sheriff offices, ICE Air charters) are recorded in
- * `knownGaps` rather than silently omitted or guessed at — see the
- * AGENCY_MATCHERS list below for why each one is empty. ICE Air specifically:
- * removal flights run on contracted commercial charter operators (Swift Air,
- * World Atlantic, GlobalX), not aircraft registered to ICE or DHS, so FAA
- * ownership records cannot identify them, and no publicly exportable,
- * structured tail-number list was found (checked UWCHR's `ice-air` FOIA
- * dataset — historical passenger records only — and deportationflights.com,
- * a live tracker with no data export).
+ * (BCA, county sheriff offices, ICE Air charters, MN Army National Guard)
+ * are recorded in `knownGaps` rather than silently omitted or guessed at —
+ * see the AGENCY_MATCHERS list below for why each one is empty. ICE Air
+ * specifically: removal flights run on contracted commercial charter
+ * operators (Swift Air, World Atlantic, GlobalX), not aircraft registered to
+ * ICE or DHS, so FAA ownership records cannot identify them, and no publicly
+ * exportable, structured tail-number list was found (checked UWCHR's
+ * `ice-air` FOIA dataset — historical passenger records only — and
+ * deportationflights.com, a live tracker with no data export). MN Army
+ * National Guard: local spotters (Otter Goose, "Twin Cities Helicopters")
+ * place its UH-60s and CH-47 out of STP, but military aircraft fly under
+ * Army serial numbers, not FAA civil N-numbers, so the registry this script
+ * matches against has no record of them at all — and per the same source
+ * they "don't reliably show up on flight trackers" either, so adsb.lol
+ * wouldn't locate them even with a tail number in hand.
+ *
+ * One matcher is keyed on tail number rather than owner name: `cbp`, sourced
+ * from the same spotter page, which ties a specific N-number to a specific
+ * agency and home base more precisely than any owner-name pattern could.
  */
 
 import { readFile } from 'node:fs/promises';
@@ -43,10 +53,13 @@ const ADSB_LOL_BASE = 'https://api.adsb.lol/v2/hex/';
 const STALE_AFTER_SECONDS = 60 * 60;
 
 /**
- * Who counts as which agency, and why. Matched against the FAA registry's
- * NAME and OTHER NAMES(1) columns, trimmed and upper-cased. Deliberately
- * narrow: "STATE OF MINNESOTA" alone would also catch MnDOT and university
- * aircraft, so DNR entries require the DNR marker in one of the two fields.
+ * Who counts as which agency, and why. `test` receives the FAA registry's
+ * NAME and OTHER NAMES(1) columns (trimmed, upper-cased) plus the N-NUMBER
+ * column (trimmed, upper-cased, no leading "N") for the rare matcher that
+ * needs to key on a specific tail number rather than an owner-name pattern.
+ * Deliberately narrow: "STATE OF MINNESOTA" alone would also catch MnDOT and
+ * university aircraft, so DNR entries require the DNR marker in one of the
+ * two name fields.
  */
 const AGENCY_MATCHERS = [
   {
@@ -90,11 +103,40 @@ const AGENCY_MATCHERS = [
       url: 'https://www.cbs8.com/article/news/nation-world/budget-airline-begins-deportation-flights-ice/507-70860f94-6da1-469e-ac06-4bec93a6a0d1',
     },
   },
+  /**
+   * A local spotter's writeup, not FAA ownership, is the entire basis for
+   * this one: "Twin Cities Helicopters" places a specific tail number at a
+   * specific home base flying for a specific federal agency, which is more
+   * precise than owner-name matching could ever be for a DHS component (FAA
+   * registrations for federal law-enforcement aircraft routinely sit under a
+   * holding entity's name, not the agency's). Keyed on N-NUMBER instead of
+   * NAME/OTHER NAMES(1) for exactly that reason. `confidence: 'reported'`
+   * because the agency link is enthusiast-sourced, not government-confirmed
+   * — see the citation and knownGaps below. The source also notes CBP
+   * "do[es] not usually reveal their position with ADS-B tracking", so this
+   * aircraft may rarely or never actually appear even though it's tracked.
+   */
+  {
+    agency: 'cbp',
+    label: 'US Customs and Border Protection',
+    confidence: 'reported',
+    test: (_name, _other1, nNumber) => nNumber === '3949A',
+    citation: {
+      name: 'Otter Goose — "Twin Cities Helicopters" (AS350, based at St. Paul Downtown Airport (STP), white with a dark blue diagonal stripe on the rear fuselage)',
+      url: 'https://ottergoose.net/twin-cities-helicopters/',
+    },
+  },
   // No FAA-registered aircraft found under these names as of the fetch date
   // below — see knownGaps. Left here, matching nothing, so the gap is a
   // documented "we looked and found none" rather than an absent category.
   { agency: 'bca', label: 'MN Bureau of Criminal Apprehension', confidence: 'confirmed', test: () => false },
   { agency: 'county_sheriff', label: 'MN county sheriff aviation units', confidence: 'confirmed', test: () => false },
+  // Genuinely unmatchable, not merely unmatched: MN Army National Guard
+  // rotary-wing aircraft (UH-60, CH-47) fly under military serial numbers,
+  // which never appear in the FAA's civil registry — there is no name or
+  // N-number this matcher could ever key on. See the file header and
+  // knownGaps for the source and the fuller explanation.
+  { agency: 'mn_army_national_guard', label: 'MN Army National Guard aviation', confidence: 'reported', test: () => false },
 ];
 
 /**
@@ -174,10 +216,11 @@ async function identifyRoster() {
   for (const cols of rows) {
     const name = (cols[idx.NAME] ?? '').trim().toUpperCase();
     const other1 = (cols[idx['OTHER NAMES(1)']] ?? '').trim().toUpperCase();
+    const nNumber = (cols[idx['N-NUMBER']] ?? '').trim().toUpperCase();
     const hex = (cols[idx['MODE S CODE HEX']] ?? '').trim().toLowerCase();
     if (!hex) continue;
     allByHex.set(hex, cols);
-    const match = AGENCY_MATCHERS.find((m) => m.test(name, other1));
+    const match = AGENCY_MATCHERS.find((m) => m.test(name, other1, nNumber));
     if (!match) continue;
     roster.push({
       agency: match.agency,
@@ -326,6 +369,17 @@ async function main() {
             es: 'Identifica a GlobalX y Eastern Air Express como las aerolíneas actualmente contratadas para la mayoría de los vuelos chárter de ICE Air, base de la coincidencia de agencia ice_air a continuación.',
           },
         },
+        {
+          key: 'ottergoose-tc-helicopters',
+          name: 'Otter Goose — "Twin Cities Helicopters" (local spotter reference on Twin Cities rotary-wing traffic)',
+          url: 'https://ottergoose.net/twin-cities-helicopters/',
+          license: 'All rights reserved (cited as journalism/reference, not redistributed)',
+          licenseUrl: null,
+          contributes: {
+            en: 'Ties tail number N3949A to a CBP AS350 based at St. Paul Downtown Airport (STP) — the basis for the cbp agency match below — and documents that MN Army National Guard UH-60/CH-47 helicopters fly out of the same airport, which FAA civil-registry matching cannot independently confirm (see knownGaps).',
+            es: 'Vincula el número de cola N3949A a un AS350 de CBP con base en el Aeropuerto St. Paul Downtown (STP) — base de la coincidencia de agencia cbp a continuación — y documenta que helicópteros UH-60/CH-47 de la Guardia Nacional del Ejército de Minnesota operan desde el mismo aeropuerto, algo que el cruce con el registro civil de la FAA no puede confirmar de forma independiente (ver knownGaps).',
+          },
+        },
       ],
     },
     knownGaps: [
@@ -333,6 +387,8 @@ async function main() {
       'An aircraft outside range of every volunteer ADS-B receiver, with its transponder off, or grounded with ADS-B disabled will not appear even though it exists.',
       `No FAA-registered aircraft was found under the MN Bureau of Criminal Apprehension's name as of ${today}; it does not appear to operate its own registered aircraft.`,
       `No FAA-registered aircraft was found under any Minnesota county sheriff's office name as of ${today}.`,
+      'cbp identifies one specific aircraft (tail N3949A, a CBP AS350 based at STP) by tail number, per a local spotter reference, not FAA owner-name matching — CBP\'s FAA registrations do not reliably say "CBP" in the owner field. The same source states CBP "do[es] not usually reveal their position with ADS-B tracking," so this aircraft is expected to be absent from this layer most of the time even though it exists and flies regularly.',
+      `mn_army_national_guard matches nothing as of ${today} and never will under this script's method: a local spotter reference places MN Army National Guard UH-60/CH-47 helicopters at STP, but military aircraft carry Army serial numbers, not FAA civil N-numbers, so they cannot appear in the FAA registry this script matches against — and the same source says they "don't reliably show up on flight trackers" like adsb.lol either. Readers wanting to track this traffic should look to dedicated military-air spotting accounts (e.g. MilAirMSP), not this layer.`,
       'ice_air records identify aircraft owned by companies currently reported to hold ICE Air charter subcontracts (Eastern Air Express, GlobalX) — this is NOT a claim that any specific flight shown is an active ICE mission; these are charter airlines that also fly unrelated commercial work. See the layer description for the full caveat.',
       'FAA ownership matching under-counts these fleets: most charter capacity is leased rather than owned outright by the operating brand, so aircraft flying real ICE Air missions may be registered to a lessor with no name resembling either company and will not appear here.',
       'inMinnesota is computed against real Minnesota county geometry, the same reference every other layer resolves a location against — not a padded display bounding box. county/countyFips are populated only when the aircraft is actually inside a Minnesota county at ingest time; both stay null otherwise, including for ice_air aircraft flying elsewhere in the country, which is most of the time.',

@@ -50,6 +50,8 @@ export const en: Record<string, string> = {
   agencyLabelIceAir: 'ICE Air contractor',
   agencyLabelBca: 'BCA',
   agencyLabelCountySheriff: 'County sheriff',
+  agencyLabelCbp: 'CBP',
+  agencyLabelMnArmyNationalGuard: 'MN Army National Guard',
 
   // Map chrome
   layers: 'Layers',

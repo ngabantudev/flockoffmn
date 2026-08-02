@@ -45,6 +45,8 @@ export const es: Record<string, string> = {
   agencyLabelIceAir: 'contratista de ICE Air',
   agencyLabelBca: 'BCA',
   agencyLabelCountySheriff: 'alguacil de condado',
+  agencyLabelCbp: 'CBP',
+  agencyLabelMnArmyNationalGuard: 'Guardia Nacional del Ejército de MN',
 
   layers: 'Capas',
   filters: 'Filtros',
