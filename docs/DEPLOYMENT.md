@@ -2,11 +2,15 @@
 
 The site builds to static files. `npm run build` produces `dist/`, which can be
 served by anything — object storage, a CDN, a static host, or a plain web
-server. There is no runtime, no database, and no server-side state.
+server. There is no database and no server-side state. There is exactly one
+small server-side route — see "Live flight proxy" below — and every other page
+on the site works identically without it.
 
 Nothing here is Cloudflare-specific. Pages is what this project uses, but the
 output is plain files and the project should stay portable — that is the point
-of the static architecture, not a side effect of it.
+of the static architecture, not a side effect of it. A host that cannot run
+Cloudflare Pages Functions can still serve the entire static site; only
+`/live-flights` degrades.
 
 ## Cloudflare Pages
 
@@ -75,6 +79,53 @@ not an omission: with no server-side store, there is nowhere for a visitor's
 address lookup to be recorded, which is what makes the claim on `/about`
 truthful. Adding a binding means adding somewhere data could accumulate — if
 you ever need one, revisit those claims first.
+
+### Live flight proxy (the one exception)
+
+`functions/api/aircraft.js` and `functions/api/trace/[hex].js` are Cloudflare
+Pages Functions — the only server-side code in this project. They back the
+"Live air traffic" toggle on the main map, which shows any transponder-equipped
+aircraft currently over Minnesota (not the enforcement-linked "Agency
+aircraft" layer, which stays a static, hourly-refreshed file like every other
+layer, and lives in the layer registry like every other layer). The toggle is
+deliberately not a registry layer itself — see the header of
+`src/lib/liveFlights.ts` for why.
+
+They exist for one reason: adsb.lol, the ADS-B network this project reads,
+sends no `Access-Control-Allow-Origin` header, so a browser can never read its
+response directly. Something has to sit between the two and re-serve the data
+same-origin. That is all these routes do:
+
+- `api/aircraft` proxies the live position feed for any aircraft within 250nm
+  of Minnesota, cached at Cloudflare's edge for ~8 seconds — many visitors
+  polling inside the same window share one upstream fetch.
+- `api/trace/[hex]` proxies one aircraft's full retained position history,
+  fetched only when a visitor clicks that specific plane on the map — never
+  ambiently for every aircraft in view. Each trace file runs several hundred
+  KB; fetching it for every one of the 50+ aircraft the overlay might be
+  tracking at once would multiply load on adsb.lol far beyond what the live
+  position feed already costs. Cached at the edge for ~30 seconds.
+- Both routes cache a failed upstream call too, for longer than a success (30s
+  / 60s). This is what stops a burst of traffic from turning a temporary
+  adsb.lol rate-limit or outage into a worse one: instead of every request
+  retrying the upstream, the whole route serves the same cached failure and
+  backs off together until the cooldown passes. Found the need for this by
+  triggering adsb.lol's own 429 during development — from manual testing, not
+  real traffic — so it went in before this shipped rather than after.
+- No binding, no KV, no D1, no state of any kind. Nothing either route
+  handles is ever written anywhere.
+- No access logging beyond whatever Cloudflare retains by default for the
+  whole zone; these routes add nothing on top of that.
+- If either is ever removed, disabled, or fails, every other page — and the
+  rest of the main map — keeps working exactly as a plain static mirror; only
+  the live toggle degrades.
+
+This is a deliberate, narrow exception to the "no backend" posture above, made
+because there was no other way to show a live third-party feed at all. It is
+not a precedent for adding a general-purpose API — a new server-side route
+should be able to make the same case these two do (no state, no bindings, a
+concrete reason the data cannot be static or client-fetched, fetched no more
+often or broadly than the feature actually needs) before it's added.
 
 ## Base map tiles
 

@@ -45,6 +45,9 @@ const STEPS = [
   // Reads data/community/ice-air-flights.json, not a live fetch — see that
   // file's own header for why this layer can't be scraped like the others.
   { name: 'ice-air-flights', script: 'ice-air-flights.mjs' },
+  // Reference data for the live-flights map overlay, not a registry layer —
+  // see the script's own header. Independent of everything above it.
+  { name: 'airports', script: 'airports.mjs' },
 ];
 
 function run(script) {
