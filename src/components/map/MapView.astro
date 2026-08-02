@@ -146,6 +146,23 @@ const strings = {
   actionPickBody: t('actionPickBody'),
   filtersCleared: t('filtersCleared'),
 };
+
+// Kept separate from `strings`/`clientLayers` above on purpose — this isn't a
+// registry layer (see src/lib/liveFlights.ts for why) and shouldn't have to
+// pretend to be one just to get its text translated.
+const liveFlightsStrings = {
+  count: t('liveFlightsCount'),
+  updated: t('liveFlightsUpdated'),
+  unavailable: t('liveFlightsUnavailable'),
+  legendTitle: t('liveFlightsLegendTitle'),
+  altLabels: {
+    ground: t('liveFlightsAltGround'),
+    low: t('liveFlightsAltLow'),
+    mid: t('liveFlightsAltMid'),
+    high: t('liveFlightsAltHigh'),
+    veryhigh: t('liveFlightsAltVeryHigh'),
+  },
+};
 ---
 
 <div class="relative flex h-full min-h-0 flex-col lg:flex-row">
@@ -170,6 +187,43 @@ const strings = {
         role="listbox"
       >
       </ul>
+    </div>
+
+    {/*
+      Deliberately styled unlike every card below it — a different border
+      colour, a pulsing dot instead of a static one, no source/license line —
+      because this isn't a sourced civic-transparency finding the way the
+      layers below it are. It's a live, unfiltered pass-through of general
+      air traffic, shown to prove the underlying feed works. See
+      src/lib/liveFlights.ts for why it isn't a registry layer.
+    */}
+    <div class="border-b border-ink-800 p-3">
+      <div class="rounded-lg border border-rose-500/40 bg-ink-850">
+        <div class="flex items-start gap-2.5 p-2.5">
+          <input
+            type="checkbox"
+            id="live-flights-toggle"
+            class="mt-0.5 h-4 w-4 shrink-0 accent-rose-400"
+          />
+          <div class="min-w-0 flex-1">
+            <label
+              for="live-flights-toggle"
+              class="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink-100"
+            >
+              <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-rose-400" aria-hidden="true" />
+              <span class="min-w-0">{t('liveFlightsToggleLabel')}</span>
+            </label>
+            <p class="mt-1 text-xs leading-snug text-ink-400">{t('liveFlightsIntro')}</p>
+            <p id="live-flights-status" class="mt-1 hidden font-mono text-[11px] text-ink-400"></p>
+            <details class="mt-1.5">
+              <summary class="cursor-pointer text-[10px] text-ink-400 hover:text-ink-100">
+                {t('liveFlightsAboutToggle')}
+              </summary>
+              <p class="mt-1 text-[11px] leading-relaxed text-warn">{t('liveFlightsCaveat')}</p>
+            </details>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="p-3">
@@ -441,9 +495,11 @@ const strings = {
 <script is:inline type="application/json" id="layer-config" set:html={JSON.stringify(clientLayers)} />
 <script is:inline type="application/json" id="ui-strings" set:html={JSON.stringify(strings)} />
 <script is:inline type="application/json" id="act-path" set:html={JSON.stringify(localePath(locale, '/act'))} />
+<script is:inline type="application/json" id="live-flights-strings" set:html={JSON.stringify(liveFlightsStrings)} />
 
 <script>
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
+  import { LiveFlightsOverlay, ALT_BANDS } from '~/lib/liveFlights';
   import { compassLabel } from '~/lib/geo.mjs';
   import { displayName } from '~/lib/authority.mjs';
 
@@ -489,6 +545,35 @@ const strings = {
     onLayerReady: (id) => status(`${layerById.get(id)?.label ?? id} ✓`),
     onError: (id, message) =>
       status(`${layerById.get(id)?.label ?? id}: ${message}`, 6000),
+  });
+
+  /* ----------------------------- Live flights ----------------------------- */
+
+  const LS = JSON.parse(document.getElementById('live-flights-strings')!.textContent!) as {
+    count: string;
+    updated: string;
+    unavailable: string;
+    legendTitle: string;
+    altLabels: Record<string, string>;
+  };
+  const liveFlightsToggle = document.getElementById('live-flights-toggle') as HTMLInputElement;
+  const liveFlightsStatusEl = document.getElementById('live-flights-status') as HTMLElement;
+
+  const liveFlights = new LiveFlightsOverlay(controller.map, (live) => {
+    if (!liveFlightsToggle.checked) {
+      liveFlightsStatusEl.hidden = true;
+      return;
+    }
+    liveFlightsStatusEl.hidden = false;
+    liveFlightsStatusEl.textContent = live.error
+      ? LS.unavailable
+      : `${LS.count.replace('{count}', String(live.count))} · ${LS.updated.replace('{seconds}', String(live.ageSeconds ?? 0))}`;
+  });
+
+  liveFlightsToggle.addEventListener('change', () => {
+    if (liveFlightsToggle.checked) liveFlights.start();
+    else liveFlights.stop();
+    refreshMapKeys();
   });
 
   /* ----------------------------- Detail panel ---------------------------- */
@@ -866,6 +951,33 @@ const strings = {
       }
       card.appendChild(row);
 
+      mapKeysEl.appendChild(card);
+    }
+
+    // Live flights isn't in `layers` (see src/lib/liveFlights.ts for why),
+    // so its legend is built from ALT_BANDS directly rather than from a
+    // registry layer's categoryColors.
+    if (liveFlightsToggle?.checked) {
+      const card = document.createElement('div');
+      card.setAttribute('class', 'rounded-md border border-rose-500/30 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm');
+      const title = document.createElement('p');
+      title.setAttribute('class', 'mb-1 truncate text-[10px] leading-tight text-ink-300');
+      title.textContent = LS.legendTitle;
+      card.appendChild(title);
+      const list = document.createElement('ul');
+      list.setAttribute('class', 'space-y-0.5');
+      for (const band of ALT_BANDS) {
+        const li = document.createElement('li');
+        li.setAttribute('class', 'flex items-center gap-1.5 text-[10px] text-ink-300');
+        const dot = document.createElement('span');
+        dot.setAttribute('class', 'h-2 w-2 shrink-0 rounded-full');
+        dot.style.background = band.color;
+        const label = document.createElement('span');
+        label.textContent = LS.altLabels[band.id] ?? band.id;
+        li.append(dot, label);
+        list.appendChild(li);
+      }
+      card.appendChild(list);
       mapKeysEl.appendChild(card);
     }
   }
