@@ -27,6 +27,9 @@ pnpm-debug.log*
 # jetbrains setting folder
 .idea/
 
+# wrangler's local dev-server cache (created by `wrangler pages dev`)
+.wrangler/
+
 # NOTE: public/data/ is intentionally committed. The generated GeoJSON and CSV
 # files are the published open datasets — they are the product, they make the
 # repository reproducible without a network round trip, and committing them is

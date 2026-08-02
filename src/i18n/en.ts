@@ -17,6 +17,26 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
+  // Live flights — a toggle on the main map, deliberately not a registry
+  // layer (see src/lib/liveFlights.ts). A raw, unfiltered ADS-B feed of any
+  // aircraft over Minnesota, not the enforcement-linked "Agency aircraft"
+  // layer. {count}, {seconds} substituted client-side as the feed updates.
+  liveFlightsToggleLabel: 'Live air traffic',
+  liveFlightsAboutToggle: 'About this data',
+  liveFlightsIntro:
+    'Any transponder-equipped aircraft currently over Minnesota, from adsb.lol. General air traffic, not enforcement activity — shown to demonstrate the live-tracking pipeline itself works.',
+  liveFlightsCaveat:
+    'Positions between updates are estimated by interpolating between two real fixes taken about 8 seconds apart — not a new GPS reading every frame. The colored trail behind each aircraft is its actual recent reported track; clicking a plane loads its full real history back to wherever it last left the ground. The dashed gray line ahead is a straight-line projection from its current heading and speed for the next 10 minutes, not its real flight plan or route — this feed provides neither. A registration or callsign shown here does not imply the aircraft is owned by, or operating on behalf of, any government agency.',
+  liveFlightsLegendTitle: 'Colored by altitude',
+  liveFlightsAltGround: 'On the ground',
+  liveFlightsAltLow: 'Below 10,000 ft',
+  liveFlightsAltMid: '10,000–25,000 ft',
+  liveFlightsAltHigh: '25,000–35,000 ft',
+  liveFlightsAltVeryHigh: 'Above 35,000 ft',
+  liveFlightsCount: '{count} aircraft tracked',
+  liveFlightsUpdated: 'updated {seconds}s ago',
+  liveFlightsUnavailable: 'adsb.lol is not responding right now.',
+
   // Live aircraft banner. {count} substituted; the breakdown itself is built
   // client-side from the per-agency labels below, since which agencies are
   // nonzero changes hour to hour.

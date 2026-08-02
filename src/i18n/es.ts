@@ -19,6 +19,22 @@ export const es: Record<string, string> = {
   navAbout: 'Qué es esto',
   skipToContent: 'Saltar al contenido principal',
 
+  liveFlightsToggleLabel: 'Tráfico aéreo en vivo',
+  liveFlightsAboutToggle: 'Acerca de estos datos',
+  liveFlightsIntro:
+    'Toda aeronave con transpondedor actualmente sobre Minnesota, según adsb.lol. Tráfico aéreo general, no actividad de control migratorio — se muestra para demostrar que el sistema de rastreo en vivo funciona.',
+  liveFlightsCaveat:
+    'Las posiciones entre actualizaciones se estiman interpolando entre dos posiciones reales tomadas con unos 8 segundos de diferencia, no una nueva lectura GPS en cada fotograma. La estela de color detrás de cada aeronave es su trayectoria reciente realmente reportada; al hacer clic en un avión se carga su historial real completo hasta la última vez que dejó tierra. La línea gris discontinua adelante es una proyección en línea recta desde su rumbo y velocidad actuales para los próximos 10 minutos, no su plan de vuelo o ruta real — este feed no ofrece ninguno de los dos. Que aparezca una matrícula o distintivo aquí no implica que la aeronave sea propiedad de, ni opere en nombre de, ninguna agencia gubernamental.',
+  liveFlightsLegendTitle: 'Coloreado por altitud',
+  liveFlightsAltGround: 'En tierra',
+  liveFlightsAltLow: 'Menos de 10,000 pies',
+  liveFlightsAltMid: '10,000–25,000 pies',
+  liveFlightsAltHigh: '25,000–35,000 pies',
+  liveFlightsAltVeryHigh: 'Más de 35,000 pies',
+  liveFlightsCount: '{count} aeronaves rastreadas',
+  liveFlightsUpdated: 'actualizado hace {seconds}s',
+  liveFlightsUnavailable: 'adsb.lol no responde en este momento.',
+
   liveBannerLoading: 'Comprobando aeronaves de agencias…',
   liveBannerCount: 'EN VIVO: {count} aeronaves de agencias en Minnesota',
   liveBannerCaveat:
