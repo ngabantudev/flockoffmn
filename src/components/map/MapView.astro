@@ -155,6 +155,7 @@ const liveFlightsStrings = {
   updated: t('liveFlightsUpdated'),
   unavailable: t('liveFlightsUnavailable'),
   legendTitle: t('liveFlightsLegendTitle'),
+  iceOnlyLegendTitle: t('liveFlightsIceOnlyLabel'),
   altLabels: {
     ground: t('liveFlightsAltGround'),
     low: t('liveFlightsAltLow'),
@@ -221,6 +222,27 @@ const liveFlightsStrings = {
               </summary>
               <p class="mt-1 text-[11px] leading-relaxed text-warn">{t('liveFlightsCaveat')}</p>
             </details>
+            {/*
+              A live callsign filter on this same feed — the underlying idea
+              behind Otter Goose's MSP ICE Air Flight Tracker (an iframe of
+              adsb.lol's own map with a `filtercallsign` URL flag), done here
+              natively instead of embedding a third party. See
+              src/lib/liveFlights.ts's ICE_CHARTER_CALLSIGN_PATTERN.
+            */}
+            <div class="mt-2 flex items-start gap-2 border-t border-ink-800 pt-2">
+              <input
+                type="checkbox"
+                id="live-flights-ice-toggle"
+                disabled
+                class="mt-0.5 h-3.5 w-3.5 shrink-0 accent-rose-400 disabled:opacity-40"
+              />
+              <div class="min-w-0 flex-1">
+                <label for="live-flights-ice-toggle" class="cursor-pointer text-xs text-ink-200">
+                  {t('liveFlightsIceOnlyLabel')}
+                </label>
+                <p class="mt-0.5 text-[11px] leading-relaxed text-ink-400">{t('liveFlightsIceOnlyCaveat')}</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -554,10 +576,12 @@ const liveFlightsStrings = {
     updated: string;
     unavailable: string;
     legendTitle: string;
+    iceOnlyLegendTitle: string;
     altLabels: Record<string, string>;
   };
   const liveFlightsToggle = document.getElementById('live-flights-toggle') as HTMLInputElement;
   const liveFlightsStatusEl = document.getElementById('live-flights-status') as HTMLElement;
+  const liveFlightsIceToggle = document.getElementById('live-flights-ice-toggle') as HTMLInputElement;
 
   const liveFlights = new LiveFlightsOverlay(controller.map, (live) => {
     if (!liveFlightsToggle.checked) {
@@ -573,6 +597,17 @@ const liveFlightsStrings = {
   liveFlightsToggle.addEventListener('change', () => {
     if (liveFlightsToggle.checked) liveFlights.start();
     else liveFlights.stop();
+    // The sub-filter's own checked state survives the main toggle turning
+    // off — stop() already clears every tracked aircraft, so there's
+    // nothing left to filter either way, and re-checking it here would just
+    // discard a preference the reader may want back the moment they turn
+    // the overlay back on.
+    liveFlightsIceToggle.disabled = !liveFlightsToggle.checked;
+    refreshMapKeys();
+  });
+
+  liveFlightsIceToggle.addEventListener('change', () => {
+    liveFlights.setIceOnly(liveFlightsIceToggle.checked);
     refreshMapKeys();
   });
 
@@ -962,7 +997,7 @@ const liveFlightsStrings = {
       card.setAttribute('class', 'rounded-md border border-rose-500/30 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm');
       const title = document.createElement('p');
       title.setAttribute('class', 'mb-1 truncate text-[10px] leading-tight text-ink-300');
-      title.textContent = LS.legendTitle;
+      title.textContent = liveFlightsIceToggle.checked ? `${LS.legendTitle} · ${LS.iceOnlyLegendTitle}` : LS.legendTitle;
       card.appendChild(title);
       const list = document.createElement('ul');
       list.setAttribute('class', 'space-y-0.5');

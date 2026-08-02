@@ -154,6 +154,22 @@ export interface LiveFlightsStatus {
   error: string | null;
 }
 
+/**
+ * Broadcast-callsign prefixes for known ICE Air charter operators — the same
+ * underlying idea Otter Goose's "MSP ICE Air Flight Tracker" uses to filter
+ * adsb.lol's own map down to just these flights via its `filtercallsign` URL
+ * parameter (https://ottergoose.net/ice-flights-msp/map/, embedding
+ * https://adsb.lol/ directly). Reproduced verbatim from that public source
+ * rather than re-derived, since matching it exactly is the only way to make
+ * the same claim it does. This is a live filter on the same feed every other
+ * aircraft here comes from — not a registry cross-reference the way
+ * agency-aircraft.geojson's ice_air/cbp entries are, and it inherits every
+ * limitation of matching on callsign: a charter operator's callsign can be
+ * reused for a non-ICE flight, reassigned entirely, or simply not
+ * broadcast, and this can't tell any of those apart from a real match.
+ */
+const ICE_CHARTER_CALLSIGN_PATTERN = /^(TYS|GXA6...|BBQ82..|AWI7...|EAL8...|OAE4...|LYM300|LYM400|LYM500)/;
+
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 const PLANE_LAYER_IDS = ['live-trails-line', 'live-projected-line', 'live-selected-trace-line', 'live-aircraft-points'];
 const AIRPORT_LAYER_IDS = ['live-airports-fill', 'live-airports-outline', 'live-airports-labels'];
@@ -175,6 +191,7 @@ export class LiveFlightsOverlay {
   private airportsLoaded = false;
   private selectedHex: string | null = null;
   private selectedTraceCache = new Map<string, [number, number][]>();
+  private iceOnly = false;
 
   constructor(map: maplibregl.Map, onStatus: (status: LiveFlightsStatus) => void) {
     this.map = map;
@@ -211,6 +228,33 @@ export class LiveFlightsOverlay {
     this.setVisible(false);
     this.setSelectedTraceCoords([]);
     this.onStatus({ count: 0, ageSeconds: null, error: null });
+  }
+
+  /**
+   * Toggling this never re-fetches — every aircraft stays tracked
+   * regardless, and only which of them get drawn (and counted) changes.
+   * Clears the current selection if it no longer matches, since the popup
+   * and full trace it drove would otherwise reference a plane that just
+   * disappeared from the map.
+   */
+  setIceOnly(enabled: boolean) {
+    this.iceOnly = enabled;
+    if (this.selectedHex) {
+      const selected = this.tracked.get(this.selectedHex);
+      if (!selected || !this.matchesFilter(selected)) {
+        this.selectedHex = null;
+        this.popup?.remove();
+        this.popup = null;
+        this.setSelectedTraceCoords([]);
+      }
+    }
+    this.renderFrame();
+    this.emitStatus();
+  }
+
+  private matchesFilter(entry: Ac): boolean {
+    if (!this.iceOnly) return true;
+    return ICE_CHARTER_CALLSIGN_PATTERN.test((entry.flight ?? '').toUpperCase());
   }
 
   private ensureReady(cb: () => void) {
@@ -483,7 +527,9 @@ export class LiveFlightsOverlay {
   private emitStatus() {
     if (!this.active) return;
     const ageSeconds = this.lastPollAt ? Math.round((Date.now() - this.lastPollAt) / 1000) : null;
-    this.onStatus({ count: this.tracked.size, ageSeconds, error: this.lastError });
+    let count = 0;
+    for (const e of this.tracked.values()) if (this.matchesFilter(e)) count++;
+    this.onStatus({ count, ageSeconds, error: this.lastError });
   }
 
   private loop = () => {
@@ -506,6 +552,7 @@ export class LiveFlightsOverlay {
     const projections: GeoJSON.Feature[] = [];
 
     for (const [hex, e] of this.tracked) {
+      if (!this.matchesFilter(e)) continue;
       const pos = this.currentInterpolated(e);
       const band = altBandOf(e.alt);
 
