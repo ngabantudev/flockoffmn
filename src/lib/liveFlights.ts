@@ -243,9 +243,11 @@ export class LiveFlightsOverlay {
     }
 
     // Airports first, so they sit under every plane and trail. Fill + outline
-    // for the true boundary (a small patch of colour even zoomed out), plus
-    // a label at each airport's representative point so its own identifier
-    // reads clearly at any zoom the fill has shrunk to a sliver at.
+    // for the true boundary (a small patch of colour even zoomed out) are
+    // always on; the label at each airport's representative point stays
+    // filtered out entirely (matching nothing) until the reader's pointer is
+    // actually over that specific tile, so ~68 identifiers across Minnesota
+    // don't clutter the map at once — only the one someone's asking about.
     this.map.addSource('live-airports', { type: 'geojson', data: EMPTY_FC });
     this.map.addLayer({
       id: 'live-airports-fill',
@@ -264,11 +266,15 @@ export class LiveFlightsOverlay {
       id: 'live-airports-labels',
       type: 'symbol',
       source: 'live-airport-labels',
+      // No feature has an empty icao, so this starts out matching none —
+      // the mousemove/mouseleave handlers below are the only thing that
+      // ever changes it.
+      filter: ['==', ['get', 'icao'], ''],
       layout: {
         'text-field': ['get', 'label'],
         'text-font': ['Noto Sans Regular'],
         'text-size': 12,
-        'text-allow-overlap': false,
+        'text-allow-overlap': true,
         'text-optional': true,
       },
       paint: {
@@ -276,6 +282,24 @@ export class LiveFlightsOverlay {
         'text-halo-color': '#0a0c10',
         'text-halo-width': 1.4,
       },
+    });
+
+    // Reveals exactly one label at a time, keyed on the airport boundary
+    // GeoJSON's own `icao` property — present and unique on every feature
+    // (see scripts/ingest/airports.mjs), unlike `label`, which is only the
+    // short on-map identifier and not guaranteed unique across 68 airports.
+    let hoveredAirportIcao: string | null = null;
+    this.map.on('mousemove', 'live-airports-fill', (e) => {
+      const icao = (e.features?.[0]?.properties as { icao?: string } | undefined)?.icao ?? null;
+      if (icao === hoveredAirportIcao) return;
+      hoveredAirportIcao = icao;
+      this.map.setFilter('live-airports-labels', ['==', ['get', 'icao'], icao ?? '']);
+      this.map.getCanvas().style.cursor = icao ? 'pointer' : '';
+    });
+    this.map.on('mouseleave', 'live-airports-fill', () => {
+      hoveredAirportIcao = null;
+      this.map.setFilter('live-airports-labels', ['==', ['get', 'icao'], '']);
+      this.map.getCanvas().style.cursor = '';
     });
 
     // Ambient trails, the selected aircraft's full trace, the projected path,
