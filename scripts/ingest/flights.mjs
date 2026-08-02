@@ -305,7 +305,15 @@ async function main() {
         id: slugId('aircraft', entry.icao24),
         layer: 'agency_aircraft',
         county: county?.properties.name ?? null,
-        state: 'MN',
+        // Real position, not an assumption: these are specific tracked
+        // aircraft (agency planes, ICE Air charter jets, CBP) that routinely
+        // fly outside Minnesota — GlobalX and Eastern Air Express in
+        // particular run removal flights to destinations well outside the
+        // US. 'MN' asserted unconditionally here would be wrong for exactly
+        // the aircraft this layer most needs to track accurately, and would
+        // land unqualified in the raw CSV export with no county gate to
+        // catch it. See knownGaps below and FeatureProperties.state.
+        state: county ? 'MN' : null,
         countyFips: county?.properties.geoid ?? null,
         name: entry.tailNumber,
         confidence: entry.confidence,
@@ -391,7 +399,7 @@ async function main() {
       `mn_army_national_guard matches nothing as of ${today} and never will under this script's method: a local spotter reference places MN Army National Guard UH-60/CH-47 helicopters at STP, but military aircraft carry Army serial numbers, not FAA civil N-numbers, so they cannot appear in the FAA registry this script matches against — and the same source says they "don't reliably show up on flight trackers" like adsb.lol either. Readers wanting to track this traffic should look to dedicated military-air spotting accounts (e.g. MilAirMSP), not this layer.`,
       'ice_air records identify aircraft owned by companies currently reported to hold ICE Air charter subcontracts (Eastern Air Express, GlobalX) — this is NOT a claim that any specific flight shown is an active ICE mission; these are charter airlines that also fly unrelated commercial work. See the layer description for the full caveat.',
       'FAA ownership matching under-counts these fleets: most charter capacity is leased rather than owned outright by the operating brand, so aircraft flying real ICE Air missions may be registered to a lessor with no name resembling either company and will not appear here.',
-      'inMinnesota is computed against real Minnesota county geometry, the same reference every other layer resolves a location against — not a padded display bounding box. county/countyFips are populated only when the aircraft is actually inside a Minnesota county at ingest time; both stay null otherwise, including for ice_air aircraft flying elsewhere in the country, which is most of the time.',
+      'inMinnesota is computed against real Minnesota county geometry, the same reference every other layer resolves a location against — not a padded display bounding box. county, countyFips, and state are populated only when the aircraft is actually inside a Minnesota county at ingest time; all three stay null otherwise, including for ice_air aircraft flying elsewhere in the country — or outside it — which is most of the time. Positions themselves are never restricted to Minnesota or the US: these are specific tracked aircraft, and this layer follows each one worldwide via adsb.lol, wherever it currently is.',
       'observedFlightDates links an aircraft to the "Observed ICE Air flights" layer when a volunteer has directly logged it. A small number of tail numbers are tracked live on that basis alone, independent of the owner-name matchers above — see data/community/ice-air-flights.json.',
     ],
     features,
