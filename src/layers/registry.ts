@@ -751,6 +751,10 @@ export const LAYERS: LayerDefinition[] = [
         es: 'El BCA de MN y la aviación de los alguaciles de condado actualmente tienen cero registros, no porque hayan sido excluidos, sino porque no se encontró ninguna aeronave registrada en la FAA bajo ninguno de los dos nombres.',
       },
       {
+        en: 'Positions are tracked worldwide, not clipped to Minnesota or the US — these are specific real aircraft, and ICE Air charter flights in particular routinely leave the country. county, countyFips, and state are populated only when an aircraft is actually inside a Minnesota county at ingest time and stay null otherwise, rather than asserting a Minnesota location a record isn’t actually at.',
+        es: 'Las posiciones se rastrean en todo el mundo, no limitadas a Minnesota ni a EE. UU. — son aeronaves reales específicas, y los vuelos chárter de ICE Air en particular salen del país con frecuencia. county, countyFips y state solo se completan cuando una aeronave está realmente dentro de un condado de Minnesota al momento de la actualización, y quedan nulos en caso contrario, en lugar de asignar una ubicación en Minnesota que el registro no tiene en realidad.',
+      },
+      {
         en: 'cbp identifies a single tail number (N3949A) from a local spotter reference, not from an FAA owner-name match — and the same source reports CBP aircraft don’t usually reveal their position via ADS-B, so this record is expected to be missing from live positions most of the time even though the aircraft exists and flies regularly.',
         es: 'cbp identifica un único número de cola (N3949A) a partir de una referencia de un aficionado local, no mediante coincidencia de nombre de propietario en la FAA — y la misma fuente informa que las aeronaves de CBP normalmente no revelan su posición vía ADS-B, por lo que se espera que este registro falte de las posiciones en vivo la mayor parte del tiempo aunque la aeronave exista y vuele con regularidad.',
       },
