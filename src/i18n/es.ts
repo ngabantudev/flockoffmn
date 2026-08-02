@@ -34,9 +34,9 @@ export const es: Record<string, string> = {
   liveFlightsCount: '{count} aeronaves rastreadas',
   liveFlightsUpdated: 'actualizado hace {seconds}s',
   liveFlightsUnavailable: 'adsb.lol no responde en este momento.',
-  liveFlightsIceOnlyLabel: 'Mostrar solo vuelos chárter de ICE Air',
+  liveFlightsIceOnlyLabel: 'Mostrar solo vuelos chárter de ICE Air (en todo el mundo)',
   liveFlightsIceOnlyCaveat:
-    'Filtra esta misma transmisión a las aeronaves que emiten un distintivo de llamada que coincide con operadores chárter conocidos de ICE Air — el mismo enfoque, y los mismos patrones de distintivo de llamada, que el "MSP ICE Air Flight Tracker" de Otter Goose (ottergoose.net). Una coincidencia de distintivo de llamada no es una confirmación de registro: puede reutilizarse para un vuelo no relacionado, reasignarse, o simplemente no transmitirse, y este filtro no puede distinguir entre esos casos.',
+    'Cambia a una consulta mundial — estos chárteres pasan la mayor parte del tiempo lejos de Minnesota — filtrada a las aeronaves que emiten un distintivo de llamada que coincide con operadores chárter conocidos de ICE Air. Mismo enfoque, y los mismos patrones de distintivo de llamada, que el "MSP ICE Air Flight Tracker" de Otter Goose (ottergoose.net). El filtrado ocurre en el servidor antes de llegar a su navegador, y se actualiza un poco menos seguido que la vista de Minnesota de arriba, ya que la consulta subyacente es mucho más grande. Una coincidencia de distintivo de llamada no es una confirmación de registro: puede reutilizarse para un vuelo no relacionado, reasignarse, o simplemente no transmitirse, y este filtro no puede distinguir entre esos casos.',
 
   liveBannerLoading: 'Comprobando aeronaves de agencias…',
   liveBannerCount: 'EN VIVO: {count} aeronaves de agencias en Minnesota',
