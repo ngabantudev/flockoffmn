@@ -9,12 +9,13 @@
   // here, something has gone wrong: v1 has no backend by design (see
   // docs/DEPLOYMENT.md).
   //
-  // The one narrow exception is `functions/api/aircraft.js` — a Cloudflare
-  // Pages Function (not a Worker `main`, and needs none of the config below to
-  // run). It exists only because adsb.lol sends no CORS headers, so something
-  // server-side has to relay its response; it holds no state, no binding, and
-  // nothing written anywhere. See "Live flight proxy" in docs/DEPLOYMENT.md
-  // for the full rationale and what it deliberately does not do.
+  // The one narrow exception is `functions/api/` (ice-flights.js and
+  // trace/[hex].js) — Cloudflare Pages Functions (not a Worker `main`, and
+  // need none of the config below to run). They exist only because adsb.lol
+  // sends no CORS headers, so something server-side has to relay its
+  // response; they hold no state, no binding, and nothing written anywhere.
+  // See "Live flight proxy" in docs/DEPLOYMENT.md for the full rationale and
+  // what they deliberately do not do.
   //
   // Deployment is via Pages' Git integration, so Cloudflare runs the build
   // itself. That is chosen over a deploy workflow specifically because it

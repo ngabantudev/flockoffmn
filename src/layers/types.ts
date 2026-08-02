@@ -123,8 +123,16 @@ export interface FeatureProperties {
   layer: LayerId;
   name: string;
   county: string | null;
-  /** Two-letter USPS code. */
-  state: string;
+  /**
+   * Two-letter USPS code, or null. Every layer except agency_aircraft
+   * describes something physically fixed in Minnesota, so this is always
+   * 'MN' for them. agency_aircraft tracks specific real aircraft that can
+   * and do leave the state — even leave the country, for ICE Air charter
+   * flights — so it is null whenever the aircraft's last known position
+   * isn't inside Minnesota, rather than asserting 'MN' regardless of where
+   * the aircraft actually is.
+   */
+  state: string | null;
   /** Census GEOID of the containing county, when known. Enables joins. */
   countyFips: string | null;
   /** Layer-specific fields. Rendered via the layer's `detailFields`. */
