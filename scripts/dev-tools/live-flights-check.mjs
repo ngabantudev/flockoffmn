@@ -1,24 +1,39 @@
 #!/usr/bin/env node
 /**
- * Live flight liveness check — a manual, local-only diagnostic.
+ * Live ICE-charter feed check — a manual, local-only diagnostic.
  *
  * Not part of the site. Not wired into `npm run data` or the build, not in
  * the layer registry, never deployed. It exists to answer one question by
- * eye: "is adsb.lol actually returning live, moving aircraft right now, or
- * is something in the pipeline stuck?" — independent of the agency_aircraft
- * layer's narrow 5-category roster, which can legitimately show zero
- * aircraft for hours at a time and so can't answer that question on its own.
+ * eye: "is adsb.lol actually returning real matches for the ICE Air charter
+ * callsign filter right now, worldwide, or is something in the pipeline
+ * stuck?" — the same question functions/api/ice-flights.js answers in
+ * production, run here standalone since `astro dev` has no idea Cloudflare
+ * Pages Functions exist and won't serve that route at all.
  *
  * adsb.lol sends no CORS headers (checked directly: a browser fetch to
  * api.adsb.lol gets a 200 with no Access-Control-Allow-Origin, which the
  * browser then refuses to hand to script). This project is also a static
- * site with no backend by design (see astro.config.mjs). So this run this
+ * site with no backend by design (see astro.config.mjs). So run this
  * yourself, locally: a plain Node process makes the actual request — Node
  * has no CORS to enforce — and hands the browser tab a same-origin JSON
  * endpoint and, since the browser also can't be pointed at a third-party map
  * tile or script host either without a network round trip of its own, a
  * locally-served copy of the maplibre-gl bundle already sitting in
  * node_modules.
+ *
+ * Queries adsb.lol's full worldwide feed, same as production — a
+ * point/radius query large enough from any centre returns everything the
+ * network currently has (confirmed by hand: radius 10000 from (0,0) tops
+ * out at the same aircraft count as radius 20000+ does) — then filters it
+ * down with the same ICE_CHARTER_CALLSIGN_PATTERN functions/api/ice-flights.js
+ * uses, reproduced verbatim here for the same reason it's verbatim there:
+ * matching Otter Goose's own filter exactly is the only way to make the
+ * same claim it does. Polled every 20s rather than the production route's
+ * 10s client / 45s edge-cache pair — no shared cache to absorb repeat
+ * requests here, and this fetch is the same several-megabyte worldwide pull
+ * that drew a 429 from adsb.lol after only a handful of rapid manual
+ * requests during development, so this errs slower even for one person
+ * running it by hand.
  *
  * Usage:
  *   node scripts/dev-tools/live-flights-check.mjs
@@ -36,21 +51,29 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const MAPLIBRE_DIR = path.join(ROOT, 'node_modules/maplibre-gl/dist');
 
 const PORT = Number(process.env.PORT) || 8799;
+const POLL_MS = 20_000;
 
 /**
- * Centred on Minnesota, radius 250nm (adsb.lol's max) — comfortably covers
- * the whole state from one query, plus enough of the neighbours that a
- * near-border flight doesn't wink in and out as it drifts a few miles.
+ * Worldwide, not Minnesota-scoped — see functions/api/ice-flights.js's own
+ * header for the fuller rationale (these charters spend most of their time
+ * far from Minnesota) and the radius-plateau confirmation.
  */
-const ADSB_URL = 'https://api.adsb.lol/v2/point/46.3/-94.2/250';
+const ADSB_GLOBAL_URL = 'https://api.adsb.lol/v2/point/0/0/10000';
 
-async function fetchAircraft() {
-  const res = await fetch(ADSB_URL, {
-    signal: AbortSignal.timeout(10_000),
+/** Kept identical to functions/api/ice-flights.js's copy — see that file. */
+const ICE_CHARTER_CALLSIGN_PATTERN = /^(TYS|GXA6...|BBQ82..|AWI7...|EAL8...|OAE4...|LYM300|LYM400|LYM500)/;
+
+async function fetchIceCharterFlights() {
+  const res = await fetch(ADSB_GLOBAL_URL, {
+    signal: AbortSignal.timeout(15_000),
     headers: { 'User-Agent': 'flockoff-live-flights-check/manual-diagnostic' },
   });
   if (!res.ok) throw new Error(`adsb.lol HTTP ${res.status}`);
-  return res.json();
+  const body = await res.json();
+  const matched = (body.ac ?? []).filter((ac) =>
+    ICE_CHARTER_CALLSIGN_PATTERN.test((ac.flight ?? '').trim().toUpperCase()),
+  );
+  return { ac: matched, totalWorldwide: (body.ac ?? []).length };
 }
 
 const HTML = `<!doctype html>
@@ -59,7 +82,7 @@ const HTML = `<!doctype html>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
-<title>Live flight check (internal diagnostic)</title>
+<title>ICE charter flight check (internal diagnostic)</title>
 <link rel="stylesheet" href="/maplibre-gl.css" />
 <style>
   :root { color-scheme: dark; }
@@ -83,7 +106,7 @@ const HTML = `<!doctype html>
 </style>
 </head>
 <body>
-  <div id="banner"><strong>Internal diagnostic — not part of the public site.</strong> Polls adsb.lol directly, every 10s, for any transponder-equipped aircraft over Minnesota. Proves whether the live feed itself is working, independent of the agency roster.</div>
+  <div id="banner"><strong>Internal diagnostic — not part of the public site.</strong> Polls adsb.lol's full worldwide feed every 20s, filtered down to the same ICE Air charter callsign pattern functions/api/ice-flights.js uses in production. Proves whether the live feed and the filter are both actually finding real matches right now, independent of the agency-aircraft roster's periodic FAA-ownership refresh.</div>
   <div id="layout">
     <div id="map"></div>
     <div id="side">
@@ -93,7 +116,7 @@ const HTML = `<!doctype html>
   </div>
 <script src="/maplibre-gl.js"></script>
 <script>
-  const POLL_MS = 10000;
+  const POLL_MS = ${POLL_MS};
 
   // Lucide's "plane" icon path, verbatim — a single closed outline, so it
   // reads fine filled solid at map-marker size even though the source draws
@@ -123,6 +146,10 @@ const HTML = `<!doctype html>
     return ctx.getImageData(0, 0, px, px);
   }
 
+  // Centred on nothing in particular, zoomed out enough to start with most
+  // of the world in frame — unlike the production overlay, this has no
+  // fitBounds-on-first-match behaviour, since the point of this tool is
+  // watching the raw feed, not reproducing the shipped UI.
   const map = new maplibregl.Map({
     container: 'map',
     style: {
@@ -138,8 +165,8 @@ const HTML = `<!doctype html>
       },
       layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
     },
-    center: [-94.2, 46.3],
-    zoom: 6,
+    center: [-40, 25],
+    zoom: 1.6,
     attributionControl: { compact: true },
   });
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -185,7 +212,7 @@ const HTML = `<!doctype html>
    *          poll that produced the "to" position) }
    *
    * Positions are linearly interpolated between the last two real fixes over
-   * the polling interval — plain smoothing over a 10s hop, not a claim about
+   * the polling interval — plain smoothing over a 20s hop, not a claim about
    * anything the aircraft did in between. Dropped entirely (not frozen at a
    * last position) the moment a poll no longer reports it, same principle as
    * the production layer's own "omit rather than draw stale" rule.
@@ -195,15 +222,17 @@ const HTML = `<!doctype html>
   const rowsEl = document.getElementById('rows');
   let lastPollAt = 0;
   let lastError = null;
+  let lastTotalWorldwide = null;
 
   async function poll() {
     const startedAt = performance.now();
     try {
-      const res = await fetch('/api/aircraft', { cache: 'no-store' });
+      const res = await fetch('/api/ice-flights', { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const body = await res.json();
       lastError = null;
       lastPollAt = Date.now();
+      lastTotalWorldwide = body.totalWorldwide ?? null;
       const seenHex = new Set();
       for (const ac of body.ac ?? []) {
         if (typeof ac.lat !== 'number' || typeof ac.lon !== 'number') continue;
@@ -238,9 +267,10 @@ const HTML = `<!doctype html>
 
   function renderStatus() {
     const ageS = lastPollAt ? Math.round((Date.now() - lastPollAt) / 1000) : null;
+    const worldwideNote = lastTotalWorldwide != null ? \` (of \${lastTotalWorldwide} tracked worldwide)\` : '';
     statusEl.innerHTML = lastError
       ? \`<span class="err">adsb.lol unreachable: \${lastError}</span>\`
-      : \`<span class="count">\${tracked.size}</span> aircraft over Minnesota · updated \${ageS}s ago\`;
+      : \`<span class="count">\${tracked.size}</span> ICE charter match(es)\${worldwideNote} · updated \${ageS}s ago\`;
   }
 
   function renderFrame() {
@@ -316,9 +346,9 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (url.pathname === '/api/aircraft') {
+  if (url.pathname === '/api/ice-flights') {
     try {
-      const data = await fetchAircraft();
+      const data = await fetchIceCharterFlights();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(data));
     } catch (err) {
