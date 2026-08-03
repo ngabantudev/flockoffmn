@@ -63,49 +63,6 @@ const convergence = [...agreementCounties]
   }))
   .sort((a, b) => b.cameras - a.cameras);
 
-/**
- * Four places this reaches into an ordinary life, each anchored to a case,
- * a study, or an audit rather than an assertion. Colour keeps the same job
- * it does everywhere else on this site: a way to tell the cards apart at a
- * glance, not a claim on its own.
- */
-const spheres = [
-  {
-    icon: '🚗',
-    title: 'Movement & routine',
-    color: '#38bdf8',
-    body: 'The Supreme Court has twice grappled with what happens once public movements are strung together. In Carpenter v. United States, it held that pulling days of cell-tower records is a search requiring a warrant, because aggregation produces a "detailed, encyclopedic" record that no single data point does. A network built from individually public plate reads raises the same question.',
-    citation: 'Carpenter v. United States, 585 U.S. 296 (2018)',
-    citationUrl: 'https://www.supremecourt.gov/opinions/17pdf/16-402_h315.pdf',
-  },
-  {
-    icon: '🛂',
-    title: 'Immigration status',
-    color: '#f43f5e',
-    body: 'This is not hypothetical. A public-records request to the Danville, Illinois police turned up more than 4,000 lookups against a nationwide plate-reader network in which officers gave "immigration," "ICE," or "ICE WARRANT" as the reason — despite state law and the vendor’s own policy prohibiting it. Minnesota law requires a warrant before a reader is used to track someone; how many queries against Minnesota cameras actually clear that bar is not public information.',
-    citation: '404 Media (2025)',
-    citationUrl: 'https://www.404media.co/ice-taps-into-nationwide-ai-enabled-camera-network-data-shows/',
-    citation2: 'Minn. Stat. § 13.824',
-    citation2Url: 'https://www.revisor.mn.gov/statutes/cite/13.824',
-  },
-  {
-    icon: '🗣️',
-    title: 'Association & speech',
-    color: '#a78bfa',
-    body: 'Knowing you might be watched changes behaviour even when you have broken no law. After the 2013 NSA surveillance revelations became public, traffic to sensitive Wikipedia topics fell nearly 30 percent — a drop researchers linked to awareness of monitoring, not any change in the underlying law.',
-    citation: 'Penney, "Chilling Effects: Online Surveillance and Wikipedia Use," 31 Berkeley Tech. L.J. 117 (2016)',
-    citationUrl: 'https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2769645',
-  },
-  {
-    icon: '🏘️',
-    title: 'Finance & housing',
-    color: '#c084fc',
-    body: 'Where this kind of infrastructure clusters is not disconnected from where lending was denied in the 1930s. This page’s own numbers, computed from the shipped data above, show where those two lines actually overlap in Minnesota today — not asserted, counted.',
-    citation: 'See "The substrate underneath," above',
-    citationUrl: '#substrate',
-  },
-];
-
 const stages = [
   {
     n: '01',
@@ -176,7 +133,7 @@ const stages = [
     }
   </ol>
 
-  <section id="substrate" class="mt-4 rounded-lg border border-ink-800 bg-ink-900 p-5">
+  <section class="mt-4 rounded-lg border border-ink-800 bg-ink-900 p-5">
     <h2 class="text-lg font-semibold text-ink-100">The substrate underneath</h2>
     <div class="prose-civic mt-2">
       <p>
@@ -268,54 +225,6 @@ const stages = [
       <p>
         <a href={localePath(locale, '/near-me')}>See what this looks like around a specific place →</a>
       </p>
-    </div>
-  </section>
-
-  <section class="mt-8">
-    <h2 class="text-lg font-semibold text-ink-100">What this actually touches</h2>
-    <p class="prose-civic mt-2">
-      Not an abstraction. Four places a network like this reaches into an ordinary life, each
-      anchored to a case, a study, or an audit — not a guess.
-    </p>
-    <div class="mt-4 grid gap-4 sm:grid-cols-2">
-      {
-        spheres.map((s) => (
-          <div
-            class="rounded-lg border border-ink-800 bg-ink-900 p-4"
-            style={`border-left:3px solid ${s.color}`}
-          >
-            <h3 class="flex items-center gap-2 text-base font-semibold">
-              <span aria-hidden="true">{s.icon}</span>
-              <span style={`color:${s.color}`}>{s.title}</span>
-            </h3>
-            <p class="prose-civic mt-2 text-sm">{s.body}</p>
-            <p class="mt-2 text-xs text-ink-400">
-              Source:{' '}
-              <a
-                href={s.citationUrl}
-                target={s.citationUrl.startsWith('#') ? undefined : '_blank'}
-                rel={s.citationUrl.startsWith('#') ? undefined : 'noopener noreferrer'}
-                class="text-accent underline underline-offset-2"
-              >
-                {s.citation}
-              </a>
-              {s.citation2 && (
-                <>
-                  {' · '}
-                  <a
-                    href={s.citation2Url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-accent underline underline-offset-2"
-                  >
-                    {s.citation2}
-                  </a>
-                </>
-              )}
-            </p>
-          </div>
-        ))
-      }
     </div>
   </section>
 

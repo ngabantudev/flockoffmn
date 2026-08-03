@@ -368,6 +368,57 @@ export const LAYERS: LayerDefinition[] = [
         es: 'El operador solo consta en una minoría de los lectores, así que las agencias nombradas en una conexión son un mínimo y nunca la lista completa. Nombrar a un operador indica quién figura como responsable de un lector, no quién puede consultar lo que recopila, que es una cuestión distinta sobre la que esta capa no tiene datos.',
       },
     ],
+    impactSpheres: [
+      {
+        icon: 'Route',
+        color: '#38bdf8',
+        title: { en: 'Movement & routine', es: 'Movimiento y rutina' },
+        body: {
+          en: 'The Supreme Court has twice grappled with what happens once public movements are strung together. In Carpenter v. United States, it held that pulling days of cell-tower records is a search requiring a warrant, because aggregation produces a "detailed, encyclopedic" record that no single data point does. A network built from individually public plate reads raises the same question.',
+          es: 'El Tribunal Supremo se ha enfrentado dos veces a lo que ocurre cuando se encadenan movimientos públicos. En Carpenter v. United States, resolvió que obtener varios días de registros de antenas de telefonía es una pesquisa que exige una orden judicial, porque la acumulación produce un registro «detallado y enciclopédico» que ningún dato aislado ofrece. Una red construida a partir de lecturas de matrícula individualmente públicas plantea la misma pregunta.',
+        },
+        citation: 'Carpenter v. United States, 585 U.S. 296 (2018)',
+        citationUrl: 'https://www.supremecourt.gov/opinions/17pdf/16-402_h315.pdf',
+      },
+      {
+        icon: 'Fingerprint',
+        color: '#f43f5e',
+        title: { en: 'Immigration status', es: 'Estatus migratorio' },
+        body: {
+          en: 'This is not hypothetical. A public-records request to the Danville, Illinois police turned up more than 4,000 lookups against a nationwide plate-reader network in which officers gave "immigration," "ICE," or "ICE WARRANT" as the reason — despite state law and the vendor’s own policy prohibiting it. Minnesota law requires a warrant before a reader is used to track someone; how many queries against Minnesota cameras actually clear that bar is not public information.',
+          es: 'Esto no es hipotético. Una solicitud de registros públicos a la policía de Danville, Illinois, reveló más de 4.000 consultas contra una red nacional de lectores de matrícula en las que los agentes indicaron «immigration», «ICE» o «ICE WARRANT» como motivo, pese a que la ley estatal y la propia política del proveedor lo prohíben. La ley de Minnesota exige una orden judicial antes de usar un lector para rastrear a alguien; cuántas consultas contra cámaras de Minnesota realmente cumplen ese requisito no es información pública.',
+        },
+        citation: '404 Media (2025)',
+        citationUrl:
+          'https://www.404media.co/ice-taps-into-nationwide-ai-enabled-camera-network-data-shows/',
+        citation2: 'Minn. Stat. § 13.824',
+        citation2Url: 'https://www.revisor.mn.gov/statutes/cite/13.824',
+      },
+      {
+        icon: 'Speech',
+        color: '#a78bfa',
+        title: { en: 'Association & speech', es: 'Asociación y expresión' },
+        body: {
+          en: 'Knowing you might be watched changes behaviour even when you have broken no law. After the 2013 NSA surveillance revelations became public, traffic to sensitive Wikipedia topics fell nearly 30 percent — a drop researchers linked to awareness of monitoring, not any change in the underlying law.',
+          es: 'Saber que podría estar siendo observado cambia el comportamiento incluso sin haber infringido ninguna ley. Tras hacerse públicas las revelaciones de vigilancia de la NSA en 2013, el tráfico hacia temas sensibles de Wikipedia cayó casi un 30 %, una caída que los investigadores vincularon a la conciencia de estar siendo vigilado, no a ningún cambio en la ley.',
+        },
+        citation: 'Penney, "Chilling Effects: Online Surveillance and Wikipedia Use," 31 Berkeley Tech. L.J. 117 (2016)',
+        citationUrl: 'https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2769645',
+      },
+      {
+        icon: 'Landmark',
+        color: '#c084fc',
+        title: { en: 'Finance & housing', es: 'Finanzas y vivienda' },
+        body: {
+          en: 'Where this kind of infrastructure clusters today is not disconnected from where lending was denied in the 1930s. This map’s own Redlining layer, drawn from the same historical HOLC survey data, traces where those two patterns still overlap in Minnesota.',
+          es: 'Dónde se concentra este tipo de infraestructura hoy no está desconectado de dónde se negó el crédito en los años 30. La capa de Redlining de este mismo mapa, elaborada a partir de los mismos registros históricos de HOLC, traza dónde esos dos patrones todavía se superponen en Minnesota.',
+        },
+        citation: 'Sources — Redlining (HOLC), this site',
+        // Resolved to the locale-specific /sources path at render time — see
+        // MapView.astro, which is the only place that knows the locale.
+        citationUrl: 'internal:sources',
+      },
+    ],
     geometry: 'line',
     color: '#818cf8',
     filament: true,
