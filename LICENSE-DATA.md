@@ -30,6 +30,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | Cumulative impacts (MPCA) | `ej-cumulative.geojson` | No formal licence published; public government data under [Minn. Stat. ch. 13](https://www.revisor.mn.gov/statutes/cite/13) | Attribute MPCA. Draft data (CI-MAP, December 2025); see the layer's `knownGaps`. |
 | County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
+| Flight sighting log | D1 table `flight_sightings` (via `functions/api/flight-log/*`) | **adsb.lol terms — NOT YET VETTED** | Unknown pending review — see below. Not a static file in `public/data/`, so it is not covered by the CC BY 4.0 grant above either. |
 
 **Combining layers:** the most restrictive term governs the combination. A
 product mixing the camera layer with the redlining layer inherits both ODbL
@@ -105,6 +106,32 @@ So `covenants.geojson` is still not a copy of the upstream dataset and should
 not be used as one. **If you want the full per-property research data, get it
 from Mapping Prejudice directly** — it is public, better maintained, and
 theirs.
+
+## The flight sighting log
+
+**adsb.lol's terms have not been vetted for this use, and that is a real
+prerequisite before this data is publicly relied upon — not a formality.**
+
+`functions/api/ice-flights.js` and `functions/api/trace/[hex].js` already
+read from adsb.lol as an ephemeral pass-through, re-serving whatever the
+current poll returns with nothing kept afterward. `workers/flight-sightings-cron/`
+is different: it persists derived facts (aircraft hex, callsign,
+ground-arrival/departure timestamps) into Cloudflare D1, indefinitely.
+
+What's confirmed today, from the existing comments in `ice-flights.js` and
+`trace/[hex].js`: adsb.lol sends no CORS header (confirmed by hand — a
+browser fetch gets a 200 with no `Access-Control-Allow-Origin`), and it
+rate-limits hard enough that manual testing drew a 429 within a handful of
+requests. Neither of those is a statement about redistribution or
+persistence rights.
+
+What has NOT been checked: whether adsb.lol's terms of use permit storing
+derived facts from their feed beyond the immediate request/response, or
+republishing that derived data through this project's own API. Until that
+review happens, treat this table's provenance as unresolved rather than
+assume the same "public ADS-B broadcast, no one has a cognizable privacy
+interest in it" reasoning that applies to the data's *content* also settles
+the *redistribution* question — it doesn't necessarily.
 
 ## A note on scope
 
