@@ -14,6 +14,17 @@ export interface ClientLayer {
   summary: string;
   whatThisMeans: string;
   limitations: string[];
+  /** Concrete, cited stakes shown inside "What this means", if the layer names any. */
+  impactSpheres?: {
+    icon: string;
+    title: string;
+    color: string;
+    body: string;
+    citation: string;
+    citationUrl: string;
+    citation2?: string;
+    citation2Url?: string;
+  }[];
   color: string;
   geometry: 'point' | 'polygon' | 'line';
   /**

@@ -23,6 +23,19 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   summary: pick(d.summary, locale),
   whatThisMeans: pick(d.whatThisMeans, locale),
   limitations: d.limitations.map((l) => pick(l, locale)),
+  impactSpheres: d.impactSpheres?.map((s) => ({
+    icon: s.icon,
+    title: pick(s.title, locale),
+    color: s.color,
+    body: pick(s.body, locale),
+    citation: s.citation,
+    // The registry cannot know the locale, so an internal citation is written
+    // as a sentinel there and resolved to a real, locale-correct path here —
+    // the one place in the pipeline that has both.
+    citationUrl: s.citationUrl === 'internal:sources' ? localePath(locale, '/sources') : s.citationUrl,
+    citation2: s.citation2,
+    citation2Url: s.citation2Url,
+  })),
   color: d.color,
   geometry: d.geometry,
   // The panel's order is the draw order. Reading it off LAYER_CATEGORIES here
@@ -508,6 +521,13 @@ const liveFlightsStrings = {
   import { LiveFlightsOverlay, ALT_BANDS } from '~/lib/liveFlights';
   import { compassLabel } from '~/lib/geo.mjs';
   import { displayName } from '~/lib/authority.mjs';
+  import { createElement, Route, Fingerprint, Speech, Landmark, type IconNode } from 'lucide';
+
+  /**
+   * Every icon an `impactSpheres` entry can name, by the string the registry
+   * writes. Never emoji — see the type's own comment in layers/types.ts.
+   */
+  const IMPACT_SPHERE_ICONS: Record<string, IconNode> = { Route, Fingerprint, Speech, Landmark };
 
   type Jurisdiction = {
     geoid: string;
@@ -588,6 +608,60 @@ const liveFlightsStrings = {
     if (className) node.className = className;
     if (text != null) node.textContent = text;
     return node;
+  }
+
+  const isExternalUrl = (url: string) => /^https?:\/\//.test(url);
+
+  function citationLink(text: string, url: string) {
+    const a = el('a', 'text-accent underline underline-offset-2', text);
+    a.setAttribute('href', url);
+    if (isExternalUrl(url)) {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+    }
+    return a;
+  }
+
+  /**
+   * Concrete, cited stakes for one layer — Carpenter v. United States for
+   * movement, a documented ICE-lookup audit for immigration status, and so
+   * on. Anchored to a case, a study or an audit rather than asserted, which
+   * is the whole reason each card carries a linked source rather than a bare
+   * claim.
+   */
+  function impactSpheresBlock(spheres: NonNullable<ClientLayer['impactSpheres']>) {
+    const wrap = el('div', 'mt-3 space-y-3 border-t border-ink-800 pt-3');
+    for (const sphere of spheres) {
+      const card = el('div', 'border-l-2 pl-2.5');
+      card.style.borderLeftColor = sphere.color;
+
+      const heading = el('div', 'flex items-center gap-1.5');
+      const iconNode = IMPACT_SPHERE_ICONS[sphere.icon];
+      if (iconNode) {
+        const icon = createElement(iconNode) as unknown as SVGElement;
+        icon.setAttribute('aria-hidden', 'true');
+        icon.setAttribute('width', '14');
+        icon.setAttribute('height', '14');
+        (icon as unknown as HTMLElement).style.color = sphere.color;
+        (icon as unknown as HTMLElement).style.flexShrink = '0';
+        heading.append(icon);
+      }
+      const title = el('span', 'text-xs font-semibold', sphere.title);
+      title.style.color = sphere.color;
+      heading.append(title);
+
+      const bodyP = el('p', 'mt-1 text-xs leading-relaxed text-ink-300', sphere.body);
+
+      const cite = el('p', 'mt-1 text-[11px] text-ink-400');
+      cite.append(document.createTextNode(`${S.source}: `), citationLink(sphere.citation, sphere.citationUrl));
+      if (sphere.citation2 && sphere.citation2Url) {
+        cite.append(' · ', citationLink(sphere.citation2, sphere.citation2Url));
+      }
+
+      card.append(heading, bodyP, cite);
+      wrap.append(card);
+    }
+    return wrap;
   }
 
   function formatValue(value: unknown, format?: string): string | null {
@@ -770,6 +844,7 @@ const liveFlightsStrings = {
       el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.whatThisMeans),
       el('p', 'text-xs leading-relaxed text-ink-200', layer.whatThisMeans),
     );
+    if (layer.impactSpheres?.length) means.append(impactSpheresBlock(layer.impactSpheres));
     body.append(means);
 
     /*
