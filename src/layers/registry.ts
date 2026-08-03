@@ -311,8 +311,8 @@ export const LAYERS: LayerDefinition[] = [
     category: 'surveillance',
     order: 3,
     label: {
-      en: 'ALPR corridors',
-      es: 'Corredores de ALPR',
+      en: 'ALPR paths',
+      es: 'Rutas de ALPR',
     },
     summary: {
       en: 'The roads between the plate readers — the streets joining neighbouring cameras, and the long roads joining one watched cluster to the next.',
@@ -348,8 +348,8 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Los cordones siguen siendo un conjunto reducido de vías, y la ausencia de un cordón nunca prueba que no haya carretera entre dos lugares. La mayoría de los cordones dibujan una vía por unión. Solo se dibuja una segunda donde la red está muy plegada —dos grupos a menos de doce millas sobre el terreno pero a más del cuádruple de esa distancia a través de la red— y nunca una tercera. Donde cuatro vías reales unen dos grupos, este mapa muestra una, o dos. Qué vía gana lo decide la distancia en línea recta entre los lectores más cercanos de ambos grupos, y luego se calcula la ruta; algunas uniones faltan del todo porque no se obtuvo ninguna ruta transitable, y el archivo de datos las cuenta.',
       },
       {
-        en: 'Nothing on this map moves. An earlier version animated a light travelling along each strand, and it was removed rather than kept: it was decoration that carried no fact, it cost every reader’s machine real work on every frame, and a map that is heavy to open is a map fewer people read. Everything the animation was making legible is in the lines, the colour and the panel, standing still.',
-        es: 'En este mapa no se mueve nada. Una versión anterior animaba una luz que recorría cada hebra, y se retiró en lugar de conservarla: era decoración que no aportaba ningún dato, exigía trabajo real al equipo de cada lector en cada fotograma, y un mapa pesado de abrir es un mapa que lee menos gente. Todo lo que la animación hacía legible está en las líneas, el color y el panel, sin moverse.',
+        en: 'Every mesh link — never the cords — occasionally sends a slow spark along its own length, the way the axon this layer is named for fires and rests rather than carrying something continuously. An earlier version animated every strand this way, all the time and unthrottled, and it was removed rather than kept: it cost every reader’s machine real work on every frame, and a map that is heavy to open is a map fewer people read. This version is narrower and cheaper on purpose — the cords never animate at all, a given link is quiet most of the time and only carries a spark for a few seconds when it does, positions update a few times a second rather than every frame, and it turns off entirely if your system asks for reduced motion. The spark carries no fact of its own; it dramatises what the colour and width already say, standing still would say the same thing, just quieter.',
+        es: 'Cada conexión de la malla —nunca los cordones— envía de vez en cuando una chispa lenta a lo largo de su propio trazado, tal como el axón que da nombre a esta capa se dispara y descansa en lugar de transportar algo de forma continua. Una versión anterior animaba así cada hebra, todo el tiempo y sin límite de frecuencia, y se retiró en lugar de conservarla: exigía trabajo real al equipo de cada lector en cada fotograma, y un mapa pesado de abrir es un mapa que lee menos gente. Esta versión es más limitada y más económica a propósito: los cordones nunca se animan, una conexión dada permanece quieta la mayor parte del tiempo y solo lleva una chispa durante unos segundos cuando se dispara, las posiciones se actualizan solo unas pocas veces por segundo en lugar de en cada fotograma, y se desactiva por completo si el sistema pide movimiento reducido. La chispa no aporta ningún dato propio; dramatiza lo que el color y el grosor ya dicen, y quedarse quieto diría lo mismo, solo que más callado.',
       },
       {
         en: 'Colour is the body of mesh, not the road, and it counts thin strands only. Two thin strands in the same shade are joined through a chain of neighbourhood links, and the shade says how many reader locations that chain holds — cords are excluded from the count, or every strand in Minnesota would be the same shade and the encoding would say nothing. A body of mesh is a chain of mapped links under the distance limit above, so it is as much a product of those two choices as of the cameras: one unmapped reader, or one link a hundred yards over the limit, can be the difference between two bodies and one.',
@@ -390,6 +390,12 @@ export const LAYERS: LayerDefinition[] = [
       value: 'cord',
       color: CORD_STROKE,
     },
+    // 0 rather than a real threshold: every mesh link carries a
+    // connectedSites of at least 2 (a link joins two reader locations at
+    // minimum), so this includes the whole mesh tier. Cords still never
+    // pulse — that exclusion is in setupPulse itself, keyed on cordTier,
+    // not on this number.
+    pulse: { minConnectedSites: 0 },
     action: {
       requestType: 'alpr',
       label: {

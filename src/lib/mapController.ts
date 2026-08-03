@@ -46,6 +46,8 @@ export interface ClientLayer {
   networkColor?: { key: string; maxRecords: number };
   /** A second, heavier tier of line inside the same filament layer. */
   cordTier?: { key: string; value: string; color: string };
+  /** Fire a brief travelling spark along filament mesh links at or above this network size. */
+  pulse?: { minConnectedSites: number };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -90,6 +92,28 @@ export interface ControllerEvents {
 const REDUCED_MOTION =
   typeof window !== 'undefined' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+/** Below this, a filament's own links are a couple of pixels of haze — nothing to spend a pulse on. */
+const PULSE_MIN_ZOOM = 7;
+/** How often the pulse positions actually update, not how often a frame is requested — see setupPulse's own comment. */
+const PULSE_TICK_MS = 90;
+/**
+ * How often a given link fires a pulse, start to end, before going quiet.
+ *
+ * A link is not a river with something always flowing down it; it fires and
+ * rests, the way the axon it's named after does. Most of the period is
+ * silence — only PULSE_TRAVEL_MS of it is a visible spark — so at any given
+ * moment only a fraction of eligible links are showing one at all, and each
+ * feature's own stable per-path offset (below) keeps firings scattered in
+ * time rather than every link lighting up in lockstep.
+ */
+const PULSE_PERIOD_MS = 8000;
+/** Time for one pulse to cross its own link once it fires — a slow, followable crawl. */
+const PULSE_TRAVEL_MS = 2400;
+/** A near-white spark — the pulse dramatises the strand's own colour, so it stays neutral rather than picking a hue of its own. */
+const PULSE_COLOR = '#f4fbf2';
 
 
 
@@ -928,10 +952,15 @@ export class MapController {
               // Almost all of a cord's visible presence is here, in something
               // with no edge to it, which is why it holds a touch more than the
               // mesh's halo at state zoom and why the core it wraps is so faint.
+              // Cord component lifted a step brighter than it first shipped at —
+              // still well short of the mesh's own halo, and blur and width
+              // below are untouched, so a cord still reads as grown rather
+              // than drawn. This is illumination, not the crispness that was
+              // tried and rejected (see the core layer's own comment below).
               'line-opacity': byZoomAndTier([
-                [5, 0.3, 0.34],
-                [9, 0.3, 0.28],
-                [13, 0.3, 0.14],
+                [5, 0.3, 0.42],
+                [9, 0.3, 0.35],
+                [13, 0.3, 0.2],
               ]),
               /*
                * Blur is paid per pixel covered, and this layer now covers a
@@ -1023,10 +1052,15 @@ export class MapController {
                * connected thing. No cord's data changes across the ramp — the
                * miles on the strand and the panel read the same at every zoom.
                */
+              // Lifted a step from where this first shipped, same reasoning as
+              // the halo above: still capped well under the mesh's 0.55 at
+              // every zoom, and blur/width are untouched, so this stays the
+              // soft filament inside the glow rather than the hard line that
+              // was tried and rejected — just a brighter one.
               'line-opacity': byZoomAndTier([
-                [5, 0.55, 0.3],
-                [9, 0.55, 0.24],
-                [13, 0.55, 0.12],
+                [5, 0.55, 0.38],
+                [9, 0.55, 0.3],
+                [13, 0.55, 0.16],
               ]),
               'line-width': byZoomAndTier([
                 [5, 2.6, 2.4],
@@ -1038,6 +1072,10 @@ export class MapController {
           },
           under,
         );
+
+        if (layer.pulse && !REDUCED_MOTION) {
+          this.setupPulse(layer, features);
+        }
       } else {
         /*
          * Width from the data, where the layer says a magnitude drives it.
@@ -1153,8 +1191,14 @@ export class MapController {
         id: `${layer.id}-cones`,
         type: 'symbol',
         source: coneSrc,
-        // A cone annotates a record, so it cannot arrive before one.
-        minzoom: tier.pointsFrom,
+        // A cone annotates a record, so it cannot arrive before one — a dot
+        // is already on the map, faintly, from emergeFrom (see scaleOf's own
+        // comment), and the cone starts fading in there too. Past that
+        // shared start, this deliberately outpaces the dot's own fade: a
+        // reader asked for cones legible from higher up, not just present,
+        // so this ramp is fully resolved a couple of zooms before pointsFrom
+        // (the dots' own solid point) rather than exactly matching it.
+        minzoom: tier.emergeFrom,
         layout: {
           'icon-image': ['get', CONE_PROP],
           'icon-rotate': ['get', BEARING_PROP],
@@ -1165,7 +1209,23 @@ export class MapController {
           // would misrepresent how many are there.
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
-          'icon-size': ['interpolate', ['linear'], ['zoom'], tier.pointsFrom, 0.78, 18, 1.3],
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            tier.emergeFrom, 0.75,
+            tier.pointsFrom - 2, 1.05,
+            18, 1.3,
+          ],
+        },
+        paint: {
+          'icon-opacity': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            tier.emergeFrom, 0.4,
+            tier.pointsFrom - 2, 0.95,
+          ] as unknown as maplibregl.ExpressionSpecification,
         },
       });
     }
@@ -1230,6 +1290,143 @@ export class MapController {
     this.bindInteractions(layer, `${layer.id}-points`);
   }
 
+  /**
+   * The travelling spark `layer.pulse` asks for — each eligible mesh link
+   * fires a slow spark on its own period and rests for the remainder of it,
+   * on a shared throttled clock rather than a MapLibre paint-property
+   * animation.
+   *
+   * Deliberately not `line-dasharray` or `line-gradient` driven by a ticking
+   * paint property: both force MapLibre to rebuild a texture every time they
+   * change, which is the exact per-tile, per-frame cost the layer's own
+   * limitations text says this map paid once already and stopped paying. A
+   * plain GeoJSON point source, replaced a few times a second on one shared
+   * timer, is the cheap side of that trade — no texture, no per-tile work,
+   * and the cost is bounded by the eligible-feature count below rather than
+   * by zoom or tile count. The fire/rest duty cycle then cuts that cost
+   * again: most ticks, most eligible links contribute no feature at all.
+   */
+  private setupPulse(layer: ClientLayer, features: LoadedFeature[]) {
+    const pulse = layer.pulse;
+    const cord = layer.cordTier;
+    if (!pulse) return;
+
+    type Path = { coords: [number, number][]; cumulative: number[]; length: number; offset: number };
+    const paths: Path[] = [];
+    for (const f of features) {
+      if (f.geometry.type !== 'LineString') continue;
+      // Cords never pulse, regardless of their connectedSites value — they
+      // don't carry one (see cordTier's own comment), and a pulse crawling
+      // tens of miles of interstate is the "road atlas" look this layer's
+      // colour ramp deliberately stays away from.
+      if (cord && f.properties.attributes[cord.key] === cord.value) continue;
+      const key = layer.networkColor?.key;
+      const size = key ? Number(f.properties.attributes[key]) : NaN;
+      if (!(size >= pulse.minConnectedSites)) continue;
+
+      const coords = f.geometry.coordinates as [number, number][];
+      if (coords.length < 2) continue;
+      const cumulative = [0];
+      for (let i = 1; i < coords.length; i++) {
+        const [x1, y1] = coords[i - 1];
+        const [x2, y2] = coords[i];
+        cumulative.push(cumulative[i - 1] + Math.hypot(x2 - x1, y2 - y1));
+      }
+      const length = cumulative[cumulative.length - 1];
+      if (length <= 0) continue;
+      // A stable phase per feature, not a random one — reruns of the same
+      // page load should not visibly desync from one another, and a hash of
+      // the feature's own id costs nothing to recompute.
+      let hash = 0;
+      const id = String(f.properties.id ?? '');
+      for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+      paths.push({ coords, cumulative, length, offset: (hash % 1000) / 1000 });
+    }
+    // No silent cap today — 501 of this layer's current 982 mesh links clear
+    // the median threshold above, well inside what one throttled setData
+    // call handles, but the number is worth a comment given it drives a
+    // running JS loop: if it's ever near the low thousands, cap paths.length
+    // here rather than let the per-tick work grow unbounded.
+
+    if (paths.length === 0) return;
+
+    const pulseSrc = `src-${layer.id}-pulse`;
+    this.map.addSource(pulseSrc, { type: 'geojson', data: EMPTY_FC });
+    this.map.addLayer({
+      id: `${layer.id}-pulse-glow`,
+      type: 'circle',
+      source: pulseSrc,
+      minzoom: PULSE_MIN_ZOOM,
+      paint: {
+        'circle-color': PULSE_COLOR,
+        'circle-blur': 1.2,
+        'circle-opacity': 0.5,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], PULSE_MIN_ZOOM, 5, 14, 11, 16, 16],
+      },
+    });
+    this.map.addLayer({
+      id: `${layer.id}-pulse`,
+      type: 'circle',
+      source: pulseSrc,
+      minzoom: PULSE_MIN_ZOOM,
+      paint: {
+        'circle-color': PULSE_COLOR,
+        'circle-blur': 0.3,
+        'circle-opacity': 0.9,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], PULSE_MIN_ZOOM, 2, 14, 3.5, 16, 5],
+      },
+    });
+
+    const pointAt = (path: Path, t: number): [number, number] => {
+      const target = t * path.length;
+      let i = 1;
+      while (i < path.cumulative.length - 1 && path.cumulative[i] < target) i++;
+      const segStart = path.cumulative[i - 1];
+      const segLen = path.cumulative[i] - segStart || 1;
+      const segT = (target - segStart) / segLen;
+      const [x1, y1] = path.coords[i - 1];
+      const [x2, y2] = path.coords[i];
+      return [x1 + (x2 - x1) * segT, y1 + (y2 - y1) * segT];
+    };
+
+    let lastTick = 0;
+    let startedAt: number | null = null;
+    const tick = (now: number) => {
+      if (!this.visible.has(layer.id)) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      if (startedAt === null) startedAt = now;
+      // Throttled to a fraction of screen refresh rate on purpose — an
+      // "electrical pulse" reads as continuous well under 60fps, and this is
+      // the whole point of the cost fix: the old animation's expense was
+      // paying for a redraw every frame, not for having one at all.
+      if (now - lastTick >= PULSE_TICK_MS && this.map.getZoom() >= PULSE_MIN_ZOOM) {
+        lastTick = now;
+        const elapsed = now - startedAt;
+        const travelFraction = PULSE_TRAVEL_MS / PULSE_PERIOD_MS;
+        const features: Feature[] = [];
+        for (const path of paths) {
+          const phase = (elapsed / PULSE_PERIOD_MS + path.offset) % 1;
+          // Most of the period is rest, not travel — only draw a feature for
+          // a link that is actually mid-fire this tick, so the map shows a
+          // few sparse, slow sparks rather than every eligible link glowing
+          // at once.
+          if (phase >= travelFraction) continue;
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: pointAt(path, phase / travelFraction) },
+            properties: {},
+          });
+        }
+        const fc: FeatureCollection = { type: 'FeatureCollection', features };
+        (this.map.getSource(pulseSrc) as GeoJSONSource | undefined)?.setData(fc);
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   private cursorOn(layerId: string) {
     this.map.on('mouseenter', layerId, () => {
       this.map.getCanvas().style.cursor = 'pointer';
@@ -1288,6 +1485,8 @@ export class MapController {
       '-points',
       '-cones',
       '-labels',
+      '-pulse-glow',
+      '-pulse',
     ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {

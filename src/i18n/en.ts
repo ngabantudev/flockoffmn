@@ -17,8 +17,9 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
-  // Live flights — a toggle on the main map, on by default, deliberately
-  // not a registry layer (see src/lib/liveFlights.ts). Worldwide, filtered
+  // Live flights — always on in the main map's sidebar (no checkbox to
+  // disable it), deliberately not a registry layer (see
+  // src/lib/liveFlights.ts). Worldwide, filtered
   // server-side (functions/api/ice-flights.js) to aircraft broadcasting a
   // callsign matching known ICE Air charter operators — the same
   // underlying idea as Otter Goose's MSP ICE Air Flight Tracker
