@@ -41,6 +41,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     ? { weightKey: d.density.weightKey, label: pick(d.density.label, locale) }
     : undefined,
   scale: d.scale,
+  blockAggregate: d.blockAggregate,
   categoryColors: d.categoryColors
     ? {
         key: d.categoryColors.key,
