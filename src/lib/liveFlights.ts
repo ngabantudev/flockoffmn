@@ -181,6 +181,7 @@ export class LiveFlightsOverlay {
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
   private rafId: number | null = null;
+  private onVisibilityChange: (() => void) | null = null;
   private layersAdded = false;
   private active = false;
   private reducedMotion: boolean;
@@ -205,8 +206,21 @@ export class LiveFlightsOverlay {
       this.setVisible(true);
       void this.loadAirportsOnce();
       void this.poll();
-      this.pollTimer = setInterval(() => void this.poll(), POLL_MS);
+      // Skipped while the tab is backgrounded, rather than paused via
+      // clearInterval/setInterval — a background tab left open for hours
+      // would otherwise keep polling at full rate for no one, multiplying
+      // Function invocations and load on adsb.lol (which rate-limits hard,
+      // see api/ice-flights.js) across every idle tab out there.
+      this.pollTimer = setInterval(() => {
+        if (!document.hidden) void this.poll();
+      }, POLL_MS);
       this.statusTimer = setInterval(() => this.emitStatus(), 1000);
+      // Catches up immediately on return, so the overlay isn't showing
+      // minutes-stale positions for up to one full POLL_MS after refocus.
+      this.onVisibilityChange = () => {
+        if (this.active && !document.hidden) void this.poll();
+      };
+      document.addEventListener('visibilitychange', this.onVisibilityChange);
       this.loop();
     });
   }
@@ -216,9 +230,11 @@ export class LiveFlightsOverlay {
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.statusTimer) clearInterval(this.statusTimer);
     if (this.rafId !== null) cancelAnimationFrame(this.rafId);
+    if (this.onVisibilityChange) document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.pollTimer = null;
     this.statusTimer = null;
     this.rafId = null;
+    this.onVisibilityChange = null;
     this.tracked.clear();
     this.selectedHex = null;
     this.popup?.remove();
