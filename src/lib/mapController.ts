@@ -4,6 +4,7 @@ import { baseStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { GLOW_STOPS, THREAD_STOPS, densityColorExpression } from './densityRamp';
 import { groupNodes } from './nodes';
+import { groupBlocks } from './blocks';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -31,6 +32,8 @@ export interface ClientLayer {
   density?: { weightKey?: string; label: string };
   /** The zooms across which this layer's records emerge from its surface. */
   scale?: { emergeFrom: number; pointsFrom: number };
+  /** The zooms across which a polygon layer coarsens into grid cells at distance. */
+  blockAggregate?: { cellMeters: number; blocksUntil: number; detailFrom: number };
   /** Colour records by a category once they are drawn individually. */
   categoryColors?: {
     key: string;
@@ -157,6 +160,9 @@ const DENSITY_COLOR = densityColorExpression() as unknown as maplibregl.Expressi
 
 /** Written onto derived nodes by us; not an upstream field. */
 const NODE_CAMERAS_PROP = '__nodeCameras';
+
+/** Written onto derived grid blocks by us; not an upstream field. */
+const BLOCK_COUNT_PROP = '__blockCount';
 
 /**
  * How heavily a node burns, by the number of cameras standing in it.
@@ -592,6 +598,7 @@ export class MapController {
 
   private densitySourceId = (layerId: string) => `src-${layerId}-density`;
   private nodeSourceId = (layerId: string) => `src-${layerId}-nodes`;
+  private blockSourceId = (layerId: string) => `src-${layerId}-blocks`;
 
   /**
    * Reader locations gathered into nodes, as points carrying a camera count.
@@ -620,6 +627,49 @@ export class MapController {
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [node.lng, node.lat] },
         properties: { [NODE_CAMERAS_PROP]: node.cameras },
+      })) as Feature[],
+    };
+  }
+
+  /**
+   * Parcels gathered into a grid cell, as squares carrying a count and the
+   * commonest category inside them.
+   *
+   * Derived in the browser, from whichever parcels the active filters leave
+   * standing, for the same reason `nodeFeatures` is: a decade filter that
+   * hides most of a cell's covenants has to shrink or empty that cell, not
+   * leave a block claiming parcels the map no longer shows underneath it.
+   */
+  private blockFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
+    if (!layer.blockAggregate) return EMPTY_FC;
+    const categoryKey = layer.categoryColors?.key;
+    const sites = features
+      .filter((f) => f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
+      .map((f) => {
+        const [lng, lat] = representativePoint(f.geometry);
+        const category = categoryKey ? (f.properties.attributes[categoryKey] as string | null) : null;
+        return { lng, lat, category: category ?? null };
+      });
+    return {
+      type: 'FeatureCollection',
+      features: groupBlocks(sites, layer.blockAggregate.cellMeters).map((block) => ({
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [block.west, block.south],
+              [block.east, block.south],
+              [block.east, block.north],
+              [block.west, block.north],
+              [block.west, block.south],
+            ],
+          ],
+        },
+        properties: {
+          [BLOCK_COUNT_PROP]: block.count,
+          ...(categoryKey ? { [categoryKey]: block.category } : {}),
+        },
       })) as Feature[],
     };
   }
@@ -820,6 +870,73 @@ export class MapController {
             ]
           : ['coalesce', ['get', 'holcFill'], layer.color]
       ) as unknown as maplibregl.ExpressionSpecification;
+
+      // The grid stands under the parcels and fades out exactly as they fade
+      // in, so the two are never both at full strength over the same ground.
+      // Added first: each later addLayer(..., under) inserts closer to the
+      // dots than the one before it, so the grid ends up bottom-most of the
+      // pair and the parcels draw over it.
+      if (layer.blockAggregate) {
+        const { blocksUntil, detailFrom } = layer.blockAggregate;
+        const blockSrc = this.blockSourceId(layer.id);
+        this.map.addSource(blockSrc, { type: 'geojson', data: this.blockFeatures(layer, features) });
+        this.map.addLayer(
+          {
+            id: `${layer.id}-blocks-fill`,
+            type: 'fill',
+            source: blockSrc,
+            // Never drawn once parcels are fully resolved — a real perf
+            // saving, not just a faded-out one, unlike the parcels below.
+            maxzoom: detailFrom,
+            paint: {
+              'fill-color': polygonColor,
+              // A zoom-and-property function: the outer interpolate's stop
+              // outputs are themselves an interpolate on the count, rather
+              // than multiplying two independent zoom/property expressions —
+              // MapLibre only allows `["zoom"]` as the direct input to a
+              // top-level `step`/`interpolate`, never composed inside another
+              // expression. A cell with one covenant is a thinner claim than
+              // a cell with forty; held well under full strength either way,
+              // see the density surface's own comment on the same caution.
+              'fill-opacity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                blocksUntil,
+                ['interpolate', ['linear'], ['get', BLOCK_COUNT_PROP], 1, 0.3, 10, 0.48, 50, 0.62],
+                detailFrom,
+                0,
+              ] as unknown as maplibregl.ExpressionSpecification,
+            },
+          },
+          under,
+        );
+        this.map.addLayer(
+          {
+            id: `${layer.id}-blocks-outline`,
+            type: 'line',
+            source: blockSrc,
+            maxzoom: detailFrom,
+            paint: {
+              'line-color': polygonColor,
+              'line-width': 1,
+              'line-opacity': [
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                blocksUntil,
+                0.75,
+                detailFrom,
+                0,
+              ] as unknown as maplibregl.ExpressionSpecification,
+            },
+          },
+          under,
+        );
+        // Not bound to click or search: see groupBlocks's own comment. The
+        // parcel below is the record; this is a shape drawn over several.
+      }
+
       this.map.addLayer(
         {
           id: `${layer.id}-fill`,
@@ -827,7 +944,22 @@ export class MapController {
           source: src,
           paint: {
             'fill-color': polygonColor,
-            'fill-opacity': 0.42,
+            // Never removed by zoom, only faded — same reason the ALPR dots
+            // are never cut by a minzoom either (see scaleOf's own comment):
+            // the accessible record list reads every parcel at every zoom, so
+            // the parcel itself has to still be there to fade back in, not
+            // be swapped out for the grid and reinstated later.
+            'fill-opacity': layer.blockAggregate
+              ? ([
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  layer.blockAggregate.blocksUntil,
+                  0,
+                  layer.blockAggregate.detailFrom,
+                  0.42,
+                ] as unknown as maplibregl.ExpressionSpecification)
+              : 0.42,
           },
         },
         under,
@@ -840,7 +972,17 @@ export class MapController {
           paint: {
             'line-color': polygonColor,
             'line-width': 1.1,
-            'line-opacity': 0.85,
+            'line-opacity': layer.blockAggregate
+              ? ([
+                  'interpolate',
+                  ['linear'],
+                  ['zoom'],
+                  layer.blockAggregate.blocksUntil,
+                  0,
+                  layer.blockAggregate.detailFrom,
+                  0.85,
+                ] as unknown as maplibregl.ExpressionSpecification)
+              : 0.85,
           },
         },
         under,
@@ -1654,6 +1796,11 @@ export class MapController {
     // filtered node is a smaller body and not a body with a hidden interior.
     const nodes = this.map.getSource(this.nodeSourceId(layerId)) as GeoJSONSource | undefined;
     nodes?.setData(this.nodeFeatures(layer, visible));
+    // The grid regroups from the surviving parcels rather than dimming, same
+    // reasoning as nodes above: a filtered-down cell is a smaller claim, not
+    // a claim over parcels the map no longer shows.
+    const blocks = this.map.getSource(this.blockSourceId(layerId)) as GeoJSONSource | undefined;
+    blocks?.setData(this.blockFeatures(layer, visible));
     this.emitCounts();
   }
 

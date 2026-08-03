@@ -1015,6 +1015,10 @@ export const LAYERS: LayerDefinition[] = [
         en: 'Lot shapes are the modern parcels the deeds were matched to. A parcel split or merged since the deed was recorded may not align exactly with today’s lot lines.',
         es: 'Las formas de los lotes son las parcelas modernas a las que se vincularon las escrituras. Una parcela dividida o fusionada desde que se registró la escritura puede no coincidir exactamente con los límites actuales.',
       },
+      {
+        en: 'Zoomed out past a city, individual lots are drawn as a shaded grid cell instead — a count and a commonest decade standing in for parcels too small to tell apart at that distance. The cell is a drawing convenience, not a record: it is not searchable, not clickable, and disappears as soon as the view is close enough to show the real lots underneath it.',
+        es: 'Alejado más allá de una ciudad, los lotes individuales se dibujan como una celda de cuadrícula sombreada: un recuento y la década más común representan parcelas demasiado pequeñas para distinguirlas a esa distancia. La celda es un recurso de dibujo, no un registro: no se puede buscar, no se puede pulsar, y desaparece en cuanto la vista está lo bastante cerca para mostrar los lotes reales debajo de ella.',
+      },
     ],
     geometry: 'polygon',
     // Mapping Prejudice draw covenants as red marks on a dark ground; the
@@ -1036,6 +1040,10 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#9ca3af',
     },
+    // Same window ALPR uses for its own emerge/resolve pair, shifted up: a
+    // parcel is metres wide rather than a fixed-size camera icon, so it needs
+    // to be much closer before it reads as its own shape rather than noise.
+    blockAggregate: { cellMeters: 300, blocksUntil: 12, detailFrom: 15 },
     dataPath: '/data/covenants.geojson',
     csvPath: null,
     provenance: {
