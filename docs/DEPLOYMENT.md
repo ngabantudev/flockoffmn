@@ -72,13 +72,20 @@ and `astro preview` ignore that file.
   to tighten these to your specific tile host, do it — just remember to update
   the file whenever `PUBLIC_TILE_URL` changes.
 
-### No bindings, and keep it that way
+### One binding, narrowly scoped
 
-The Pages project has no KV, D1, R2, or queues. That is the privacy posture,
-not an omission: with no server-side store, there is nowhere for a visitor's
-address lookup to be recorded, which is what makes the claim on `/about`
-truthful. Adding a binding means adding somewhere data could accumulate — if
-you ever need one, revisit those claims first.
+The Pages project carries exactly one binding: `FLIGHT_SIGHTINGS_DB`, a
+Cloudflare D1 database, read-only in application code. It backs only
+`functions/api/flight-log/[hex].js` and `functions/api/flight-log/index.js`
+— both `SELECT`-only, never `INSERT`/`UPDATE` — and holds aircraft-level
+facts (hex, callsign, ground-arrival/departure timestamps), never anything
+about a visitor. See "Flight sighting log (the second exception)" below.
+
+Beyond that: no KV, no R2, no queues. That is still the privacy posture, not
+an omission: with no other server-side store, there is nowhere for a
+visitor's address lookup to be recorded, which is what makes the claim on
+`/about` truthful. Adding another binding means adding somewhere data could
+accumulate — if you ever need one, revisit those claims first.
 
 ### Live flight proxy (the one exception)
 
@@ -128,11 +135,71 @@ same-origin. That is all these routes do:
   the live toggle degrades.
 
 This is a deliberate, narrow exception to the "no backend" posture above, made
-because there was no other way to show a live third-party feed at all. It is
-not a precedent for adding a general-purpose API — a new server-side route
-should be able to make the same case these two do (no state, no bindings, a
-concrete reason the data cannot be static or client-fetched, fetched no more
-often or broadly than the feature actually needs) before it's added.
+because there was no other way to show a live third-party feed at all. It was
+not, on its own, a precedent for adding a general-purpose API.
+
+### Flight sighting log (the second exception)
+
+The live overlay above is real-time only: nothing about a ground arrival or
+departure survives past the current poll, so there was no durable record a
+lawyer could cite after the fact. `functions/api/flight-log/[hex].js` and
+`functions/api/flight-log/index.js` close that gap by reading a persisted
+history from Cloudflare D1 (`FLIGHT_SIGHTINGS_DB` — see
+`migrations/0001_flight_sightings.sql` for the schema).
+
+The concrete reason this can't be static or client-fetched, the same case the
+live-flight-proxy section above demands of any new server-side route:
+**durability past the live feed's in-memory window.** A visitor's browser tab
+holds the live overlay's state only as long as it's open; a habeas filing
+needs a ground/departure timestamp that still exists days or weeks later,
+independent of whether anyone was watching the map at the time.
+
+What's different about this exception, and worth stating plainly:
+
+- **There is a real write path, but it does not live in this Pages
+  project.** Cloudflare Pages Functions only run on an inbound HTTP request
+  — there's no background invocation — so writes can't live in a route a
+  visitor's browser happens to trigger. The actual writer is
+  `workers/flight-sightings-cron/`, a separate, standalone Cloudflare Worker
+  deployable with its own `wrangler.jsonc` and its own D1 write binding, on a
+  once-a-minute Cron Trigger. It polls adsb.lol independently of any visitor
+  and is the ONLY place in the whole project a D1 write binding exists. See
+  its `index.mjs` header for the full mechanics (diffing ground status per
+  aircraft, one row per state transition, never one row per poll).
+- **`functions/api/flight-log/*` is read-only**, `SELECT` only, enforced by
+  review rather than a platform-level read-only D1 binding mode (D1 has no
+  such mode today).
+- **Retention is indefinite for `flight_sightings`.** This is citable
+  evidentiary aircraft data — hex, callsign, timestamp, best-effort airport —
+  the same category as every other layer this project already keeps with no
+  retention clock. That is a deliberate, different rule from the one right
+  below it.
+- **No query logging, full stop.** This is NOT the same thing as the
+  indefinite retention above — it's a stricter, separate rule about visitor
+  metadata. Nobody's IP, User-Agent, or request identifier is logged against
+  which tail number or date range they looked up. No new logging middleware
+  was added for these routes; they add nothing on top of whatever Cloudflare
+  retains by default for the whole zone.
+- **Rate limiting is dashboard config, not app code.** A Cloudflare
+  dashboard-level Rate Limiting Rule on `/api/flight-log/*` (roughly 30
+  req/min/IP, Managed Challenge) is a manual one-time step: Workers & Pages →
+  your project → Security → WAF → Rate limiting rules. This is deliberately
+  NOT an app-level limiter, because any app-level limiter needs its own
+  per-IP counting state — exactly the kind of visitor-tied store this
+  project's whole architecture avoids building. Pushing the limit to the
+  dashboard keeps that state out of the codebase entirely.
+- **adsb.lol's terms have not yet been vetted** for persisting or
+  redistributing derived data — see `LICENSE-DATA.md`. That review is a real
+  prerequisite before this data should be relied on publicly, not a
+  formality.
+
+There are now two narrow, deliberate exceptions to the "no backend" posture:
+the live flight proxy above, and this persisted log. Neither is a precedent
+for a general-purpose API on its own — any new server-side route should be
+able to make the same case both of these do (a concrete reason the data
+can't be static or client-fetched, state kept no broader than the feature
+needs, and — if it writes anything — a write path that's isolated,
+reviewed, and narrow) before it's added.
 
 ## Base map tiles
 
