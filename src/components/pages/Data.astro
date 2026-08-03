@@ -93,6 +93,35 @@ const loaded = await loadAllLayers();
         </div>
       </div>
     </div>
+
+    <div class="rounded-lg border border-ink-800 bg-ink-900 p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 class="text-base font-semibold text-ink-100">Flight sighting log (bulk export)</h2>
+          <p class="mt-1 text-sm text-ink-400">
+            Not a Minnesota-fixed registry layer, so it isn't listed with the others above — a
+            persisted, searchable history of ground-arrival/departure sightings, worldwide.
+            ODbL 1.0, from adsb.lol. Attribution required.
+          </p>
+        </div>
+        <div class="flex shrink-0 gap-2">
+          <a
+            href="/api/flight-log/export?format=csv"
+            download
+            class="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-accent hover:text-accent"
+          >
+            CSV
+          </a>
+          <a
+            href="/api/flight-log/export?format=json"
+            download
+            class="rounded-md border border-ink-700 px-3 py-1.5 text-xs font-medium text-ink-100 hover:border-accent hover:text-accent"
+          >
+            JSON
+          </a>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ------------------------------ Licensing ----------------------------- -->
@@ -124,6 +153,10 @@ const loaded = await loadAllLayers();
         <li>
           <strong>287(g), detention facilities, Census geography</strong> — US federal government
           works, public domain.
+        </li>
+        <li>
+          <strong>Flight sighting log</strong> — ODbL 1.0, from adsb.lol. Attribution required;
+          likely share-alike/offer-back for this persisted table — see the bulk export above.
         </li>
       </ul>
       <p>

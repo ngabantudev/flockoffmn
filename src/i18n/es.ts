@@ -167,6 +167,8 @@ export const es: Record<string, string> = {
     'Esto no es asesoría legal. Si usted está involucrado en un asunto de hábeas corpus, consulte a un abogado — esta página es un punto de partida para investigar, no un sustituto de representación legal.',
   flightLogDraftNotice:
     'Borrador — pendiente de revisión por un abogado. Esta sección todavía no ha sido revisada por un abogado y no debe usarse como base para ninguna decisión hasta que lo sea.',
+  flightLogPermalink: 'Ver registro permanente',
+  flightLogDownloadCsv: 'Descargar CSV (esta búsqueda)',
 
   openSource: 'Código abierto',
   noTrackers: 'Sin rastreadores, sin analíticas, sin cuentas.',
