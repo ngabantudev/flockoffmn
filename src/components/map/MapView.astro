@@ -53,6 +53,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   filament: d.filament,
   networkColor: d.networkColor,
   cordTier: d.cordTier,
+  pulse: d.pulse,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
     : undefined,
@@ -198,34 +199,30 @@ const liveFlightsStrings = {
       callsign matching known ICE Air charter operators — the same
       underlying idea as Otter Goose's MSP ICE Air Flight Tracker
       (ottergoose.net), done natively instead of embedding a third party.
-      On by default, unlike every other layer here, since it's the one
-      thing on this map with nothing else to combine it with — there's no
-      separate "show everything" mode to opt out of into. See
-      src/lib/liveFlights.ts and functions/api/ice-flights.js.
+      Always on, unlike every other layer here and unlike this card's own
+      earlier version — there is no checkbox and no client-side way to turn
+      it off, since it's the one thing on this map with nothing else to
+      combine it with (no separate "show everything" mode to opt out of
+      into) and the feed itself is cheap: server-side filtering runs a few
+      ms of CPU behind a 45s edge cache (see functions/api/ice-flights.js).
+      The description and caveats live behind the "About this data"
+      disclosure below so the card itself stays a single slim row. See
+      src/lib/liveFlights.ts for the overlay itself.
     */}
     <div class="border-b border-ink-800 p-3">
       <div class="rounded-lg border border-rose-500/40 bg-ink-850">
         <div class="flex items-start gap-2.5 p-2.5">
-          <input
-            type="checkbox"
-            id="live-flights-toggle"
-            checked
-            class="mt-0.5 h-4 w-4 shrink-0 accent-rose-400"
-          />
+          <span class="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-rose-400" aria-hidden="true" />
           <div class="min-w-0 flex-1">
-            <label
-              for="live-flights-toggle"
-              class="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink-100"
-            >
-              <span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-rose-400" aria-hidden="true" />
+            <p class="flex min-w-0 items-center text-sm font-medium text-ink-100">
               <span class="min-w-0">{t('liveFlightsToggleLabel')}</span>
-            </label>
-            <p class="mt-1 text-xs leading-snug text-ink-400">{t('liveFlightsIntro')}</p>
+            </p>
             <p id="live-flights-status" class="mt-1 hidden font-mono text-[11px] text-ink-400"></p>
             <details class="mt-1.5">
               <summary class="cursor-pointer text-[10px] text-ink-400 hover:text-ink-100">
                 {t('liveFlightsAboutToggle')}
               </summary>
+              <p class="mt-1 text-[11px] leading-relaxed text-ink-400">{t('liveFlightsIntro')}</p>
               <p class="mt-1 text-[11px] leading-relaxed text-warn">{t('liveFlightsCaveat')}</p>
             </details>
           </div>
@@ -564,32 +561,18 @@ const liveFlightsStrings = {
     legendTitle: string;
     altLabels: Record<string, string>;
   };
-  const liveFlightsToggle = document.getElementById('live-flights-toggle') as HTMLInputElement;
   const liveFlightsStatusEl = document.getElementById('live-flights-status') as HTMLElement;
 
   const liveFlights = new LiveFlightsOverlay(controller.map, (live) => {
-    if (!liveFlightsToggle.checked) {
-      liveFlightsStatusEl.hidden = true;
-      return;
-    }
     liveFlightsStatusEl.hidden = false;
     liveFlightsStatusEl.textContent = live.error
       ? LS.unavailable
       : `${LS.count.replace('{count}', String(live.count))} · ${LS.updated.replace('{seconds}', String(live.ageSeconds ?? 0))}`;
   });
 
-  liveFlightsToggle.addEventListener('change', () => {
-    if (liveFlightsToggle.checked) liveFlights.start();
-    else liveFlights.stop();
-    refreshMapKeys();
-  });
-
-  // Checked by default in the markup (unlike every registry layer, which
-  // starts unchecked) — this is the one thing on the map worth showing
-  // without making a reader find and flip it first. A `change` event only
-  // fires on user interaction, never for a checkbox's initial `checked`
-  // attribute, so the first start() has to be called explicitly here.
-  if (liveFlightsToggle.checked) liveFlights.start();
+  // Always on — there is no checkbox for this one (see the comment above
+  // its card in the markup), so start() just runs unconditionally.
+  liveFlights.start();
 
   /* ----------------------------- Detail panel ---------------------------- */
 
@@ -971,30 +954,29 @@ const liveFlightsStrings = {
 
     // Live flights isn't in `layers` (see src/lib/liveFlights.ts for why),
     // so its legend is built from ALT_BANDS directly rather than from a
-    // registry layer's categoryColors.
-    if (liveFlightsToggle?.checked) {
-      const card = document.createElement('div');
-      card.setAttribute('class', 'rounded-md border border-rose-500/30 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm');
-      const title = document.createElement('p');
-      title.setAttribute('class', 'mb-1 truncate text-[10px] leading-tight text-ink-300');
-      title.textContent = LS.legendTitle;
-      card.appendChild(title);
-      const list = document.createElement('ul');
-      list.setAttribute('class', 'space-y-0.5');
-      for (const band of ALT_BANDS) {
-        const li = document.createElement('li');
-        li.setAttribute('class', 'flex items-center gap-1.5 text-[10px] text-ink-300');
-        const dot = document.createElement('span');
-        dot.setAttribute('class', 'h-2 w-2 shrink-0 rounded-full');
-        dot.style.background = band.color;
-        const label = document.createElement('span');
-        label.textContent = LS.altLabels[band.id] ?? band.id;
-        li.append(dot, label);
-        list.appendChild(li);
-      }
-      card.appendChild(list);
-      mapKeysEl.appendChild(card);
+    // registry layer's categoryColors. Always included — there's no
+    // checkbox to gate it on anymore.
+    const card = document.createElement('div');
+    card.setAttribute('class', 'rounded-md border border-rose-500/30 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm');
+    const title = document.createElement('p');
+    title.setAttribute('class', 'mb-1 truncate text-[10px] leading-tight text-ink-300');
+    title.textContent = LS.legendTitle;
+    card.appendChild(title);
+    const list = document.createElement('ul');
+    list.setAttribute('class', 'space-y-0.5');
+    for (const band of ALT_BANDS) {
+      const li = document.createElement('li');
+      li.setAttribute('class', 'flex items-center gap-1.5 text-[10px] text-ink-300');
+      const dot = document.createElement('span');
+      dot.setAttribute('class', 'h-2 w-2 shrink-0 rounded-full');
+      dot.style.background = band.color;
+      const label = document.createElement('span');
+      label.textContent = LS.altLabels[band.id] ?? band.id;
+      li.append(dot, label);
+      list.appendChild(li);
     }
+    card.appendChild(list);
+    mapKeysEl.appendChild(card);
   }
 
   function refreshGroups() {

@@ -25,11 +25,12 @@ import { representativePoint } from './geo.mjs';
  * the aircraft it can actually identify, so that mode and its route were
  * removed rather than kept as an unused option.
  *
- * On by default (see the `checked` toggle in MapView.astro) rather than
- * lazy like every registry layer, since it's the one thing on this map with
- * no "everything" mode to make opting in meaningful — there's nothing to
- * combine it with. start()/stop() still exist for the reader who wants it
- * off.
+ * Always on (MapView.astro calls start() unconditionally, with no checkbox
+ * to turn it off) rather than lazy like every registry layer, since it's
+ * the one thing on this map with no "everything" mode to make opting in
+ * meaningful — there's nothing to combine it with, and the feed itself is
+ * cheap enough server-side (see functions/api/ice-flights.js) that there's
+ * no cost reason to let it be disabled either.
  */
 
 const POLL_MS = 10_000;
@@ -178,10 +179,6 @@ export class LiveFlightsOverlay {
   private lastPollAt = 0;
   private lastError: string | null = null;
   private popup: maplibregl.Popup | null = null;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
-  private statusTimer: ReturnType<typeof setInterval> | null = null;
-  private rafId: number | null = null;
-  private onVisibilityChange: (() => void) | null = null;
   private layersAdded = false;
   private active = false;
   private reducedMotion: boolean;
@@ -211,38 +208,17 @@ export class LiveFlightsOverlay {
       // would otherwise keep polling at full rate for no one, multiplying
       // Function invocations and load on adsb.lol (which rate-limits hard,
       // see api/ice-flights.js) across every idle tab out there.
-      this.pollTimer = setInterval(() => {
+      setInterval(() => {
         if (!document.hidden) void this.poll();
       }, POLL_MS);
-      this.statusTimer = setInterval(() => this.emitStatus(), 1000);
+      setInterval(() => this.emitStatus(), 1000);
       // Catches up immediately on return, so the overlay isn't showing
       // minutes-stale positions for up to one full POLL_MS after refocus.
-      this.onVisibilityChange = () => {
+      document.addEventListener('visibilitychange', () => {
         if (this.active && !document.hidden) void this.poll();
-      };
-      document.addEventListener('visibilitychange', this.onVisibilityChange);
+      });
       this.loop();
     });
-  }
-
-  stop() {
-    this.active = false;
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    if (this.statusTimer) clearInterval(this.statusTimer);
-    if (this.rafId !== null) cancelAnimationFrame(this.rafId);
-    if (this.onVisibilityChange) document.removeEventListener('visibilitychange', this.onVisibilityChange);
-    this.pollTimer = null;
-    this.statusTimer = null;
-    this.rafId = null;
-    this.onVisibilityChange = null;
-    this.tracked.clear();
-    this.selectedHex = null;
-    this.popup?.remove();
-    this.popup = null;
-    this.setVisible(false);
-    this.setSelectedTraceCoords([]);
-    this.hasAutoFit = false;
-    this.onStatus({ count: 0, ageSeconds: null, error: null });
   }
 
   private ensureReady(cb: () => void) {
@@ -574,8 +550,8 @@ export class LiveFlightsOverlay {
     // means that window is one frame wide instead of up to one poll interval.
     this.bringToFront();
     this.renderFrame();
-    if (!this.reducedMotion) this.rafId = requestAnimationFrame(this.loop);
-    else this.rafId = window.setTimeout(this.loop, POLL_MS) as unknown as number;
+    if (!this.reducedMotion) requestAnimationFrame(this.loop);
+    else window.setTimeout(this.loop, POLL_MS);
   };
 
   private renderFrame() {
