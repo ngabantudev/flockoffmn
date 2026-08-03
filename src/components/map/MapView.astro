@@ -757,13 +757,29 @@ const liveFlightsStrings = {
     const body = el('div', 'space-y-4 p-3');
 
     /*
+      Meaning before data.
+
+      A reader who just clicked a dot doesn't yet know what a "cord" or a
+      "reader location" is — the raw fields and the action button are both
+      unreadable without this first. It used to sit below both, which meant
+      scrolling past a button and a table of jargon to find out what any of
+      it meant.
+    */
+    const means = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
+    means.append(
+      el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.whatThisMeans),
+      el('p', 'text-xs leading-relaxed text-ink-200', layer.whatThisMeans),
+    );
+    body.append(means);
+
+    /*
       The way out of the panel.
 
-      Sits above the fields rather than under the provenance at the bottom,
-      because a reader who has decided to act has already decided — making them
-      scroll past the licence to find the button is how a dead end gets
-      rebuilt. The panel is narrow and scrolls; anything below the fold on a
-      phone may as well not exist.
+      Sits above the raw fields rather than under the provenance at the
+      bottom, because a reader who has decided to act has already decided —
+      making them scroll past the licence to find the button is how a dead
+      end gets rebuilt. The panel is narrow and scrolls; anything below the
+      fold on a phone may as well not exist.
 
       What it carries is the whole point: the request template for this kind of
       record, the body to address, and where the record is, so the Take Action
@@ -842,14 +858,6 @@ const liveFlightsStrings = {
     // Spacing, where the record has a length to space things along.
     const positions = positionsBlock(layer, attrs);
     if (positions) body.append(positions);
-
-    // Plain-language explanation (spec F5).
-    const means = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
-    means.append(
-      el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.whatThisMeans),
-      el('p', 'text-xs leading-relaxed text-ink-200', layer.whatThisMeans),
-    );
-    body.append(means);
 
     // Confidence and limitations (spec F8).
     const conf = el('div');
