@@ -30,7 +30,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | Cumulative impacts (MPCA) | `ej-cumulative.geojson` | No formal licence published; public government data under [Minn. Stat. ch. 13](https://www.revisor.mn.gov/statutes/cite/13) | Attribute MPCA. Draft data (CI-MAP, December 2025); see the layer's `knownGaps`. |
 | County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
-| Flight sighting log | D1 table `flight_sightings` (via `functions/api/flight-log/*`) | **adsb.lol terms — NOT YET VETTED** | Unknown pending review — see below. Not a static file in `public/data/`, so it is not covered by the CC BY 4.0 grant above either. |
+| Flight sighting log | D1 table `flight_sightings` (via `functions/api/flight-log/*`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike, likely.** Attribution to adsb.lol required always. If this persisted table counts as a Derivative Database (plausible — see below), ODbL's offer-back clause applies. Not a static file in `public/data/`, so it is not covered by the CC BY 4.0 grant above either. |
 
 **Combining layers:** the most restrictive term governs the combination. A
 product mixing the camera layer with the redlining layer inherits both ODbL
@@ -54,6 +54,9 @@ Reproduce these when redistributing the corresponding layer:
 - **Data centers** — FracTracker Alliance; More Than Just Parks Data Center
   Tracker; Cleanview; Baxtel; PoweredByWho.
 - **County, place and jurisdiction geography** — U.S. Census Bureau.
+- **Flight sighting log** — © adsb.lol contributors, ODbL 1.0. Model notice
+  text per the license: "Contains information from adsb.lol, which is made
+  available here under the Open Database License (ODbL)."
 
 ## The data-center trackers
 
@@ -109,29 +112,32 @@ theirs.
 
 ## The flight sighting log
 
-**adsb.lol's terms have not been vetted for this use, and that is a real
-prerequisite before this data is publicly relied upon — not a formality.**
+**Vetted.** adsb.lol licenses both its live API and its historical trace
+data under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/),
+stated on their own docs (`adsb.lol/docs/open-data/api/`,
+`adsb.lol/docs/open-data/historical/`) and in the `globe_history` repo's
+`LICENSE-ODbL.txt`. This is the same license this project already handles
+for the ALPR/OpenStreetMap layers above, so the same obligations apply:
 
-`functions/api/ice-flights.js` and `functions/api/trace/[hex].js` already
-read from adsb.lol as an ephemeral pass-through, re-serving whatever the
-current poll returns with nothing kept afterward. `workers/flight-sightings-cron/`
-is different: it persists derived facts (aircraft hex, callsign,
-ground-arrival/departure timestamps) into Cloudflare D1, indefinitely.
+- **Extraction** (ODbL's term for storing/persisting Contents into another
+  medium) and **Re-utilisation** (redistributing/republishing them) are both
+  explicitly permitted, including commercially, indefinitely.
+- **Attribution is required, always** — see "Required attributions" below.
+- **Share-alike likely applies.** ODbL distinguishes a "Produced Work" (only
+  needs attribution) from a "Derivative Database" (must itself be ODbL-licensed,
+  keep notices intact, and — per §4.6 — offer recipients a free, machine-readable
+  copy if distributed online). A systematically stored, queryable
+  hex/callsign/timestamp history reads more like the latter than the former.
+  Treating it that way is the safer call, matching how this project already
+  treats the ALPR layer's ODbL obligations.
+- **Practical follow-up this implies:** add a bulk CSV/JSON export of the
+  `flight_sightings` table (satisfies the §4.6 offer-back obligation, and is
+  independently useful to legal teams doing bulk analysis rather than
+  one-record-at-a-time lookups).
 
-What's confirmed today, from the existing comments in `ice-flights.js` and
-`trace/[hex].js`: adsb.lol sends no CORS header (confirmed by hand — a
-browser fetch gets a 200 with no `Access-Control-Allow-Origin`), and it
-rate-limits hard enough that manual testing drew a 429 within a handful of
-requests. Neither of those is a statement about redistribution or
-persistence rights.
-
-What has NOT been checked: whether adsb.lol's terms of use permit storing
-derived facts from their feed beyond the immediate request/response, or
-republishing that derived data through this project's own API. Until that
-review happens, treat this table's provenance as unresolved rather than
-assume the same "public ADS-B broadcast, no one has a cognizable privacy
-interest in it" reasoning that applies to the data's *content* also settles
-the *redistribution* question — it doesn't necessarily.
+adsb.lol's data license does not depend on or inherit ADS-B Exchange's terms
+— it is a separate project (github.com/adsblol) with its own ODbL grant, not
+merely a "drop-in API-compatible" alias of ADSBX's own policies.
 
 ## A note on scope
 
