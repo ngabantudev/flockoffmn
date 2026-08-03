@@ -388,7 +388,7 @@ export interface LayerDefinition {
   };
   /**
    * Draw a line layer as a living filament: a blurred glow beneath a bright
-   * core, with the dash pattern creeping along its length.
+   * core.
    *
    * Not decoration for its own sake. A corridor is not a route anyone drew — it
    * is what independent purchases add up to, and it accumulates the way a root
@@ -396,10 +396,41 @@ export interface LayerDefinition {
    * line implies an author. A filament does not, which is the more truthful
    * picture of how this infrastructure actually arrived.
    *
-   * The creep stops dead under `prefers-reduced-motion`; the glow and core
-   * carry the look without it.
+   * Standing still by default — see `pulse` below for the one, narrowly gated,
+   * exception.
    */
   filament?: boolean;
+  /**
+   * Fire a brief travelling spark along filament links whose network meets
+   * this size, excluding the cord tier entirely.
+   *
+   * A filament layer once animated a light along every strand, continuously
+   * and unthrottled, and it was pulled for real cost with no fact behind it
+   * (see the removed limitation this replaced, and the controller's own
+   * comment on the two static line layers). This is a narrower claim on
+   * purpose in two ways at once: gated to mesh links at or above
+   * `minConnectedSites` — roughly the denser half, so the sparse rural mesh
+   * and the wide, long cords never animate — and, per eligible link, quiet
+   * most of the time rather than always in motion. A link fires a slow spark
+   * on its own period and rests for the rest of it, the way the axon it's
+   * named for does, so at any instant only a fraction of eligible links are
+   * visibly sparking. Positions update on a throttled interval rather than
+   * every frame, and the whole thing is skipped outright under
+   * `prefers-reduced-motion`. It still carries no fact of its own; colour and
+   * width already say which links matter, and this only dramatises what they
+   * already say.
+   */
+  pulse?: {
+    /**
+     * The `networkColor.key` value a mesh link needs to animate.
+     *
+     * Not a fraction or a percentile computed at runtime — a plain threshold
+     * against the same attribute `networkColor` already ramps by, so the two
+     * stay legible against each other: a strand bright enough to animate is
+     * always at least as bright-coloured as one that is not.
+     */
+    minConnectedSites: number;
+  };
   /**
    * Colour a line layer by the size of the connected network each record is in.
    *
