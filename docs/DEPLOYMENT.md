@@ -86,11 +86,9 @@ you ever need one, revisit those claims first.
 Cloudflare Pages Functions — the only server-side code in this project. They
 back the "Live ICE Air charter flights" toggle on the main map, on by
 default, which shows aircraft anywhere in the world currently broadcasting a
-callsign matching known ICE Air charter operators (not the enforcement-linked
-"Agency aircraft" layer, which stays a static, hourly-refreshed file
-identified by FAA ownership like every other layer, and lives in the layer
-registry like every other layer). The toggle is deliberately not a registry
-layer itself — see the header of `src/lib/liveFlights.ts` for why.
+callsign matching known ICE Air charter operators. The toggle is deliberately
+not a registry layer itself — see the header of `src/lib/liveFlights.ts` for
+why.
 
 They exist for one reason: adsb.lol, the ADS-B network this project reads,
 sends no `Access-Control-Allow-Origin` header, so a browser can never read its

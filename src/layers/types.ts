@@ -34,17 +34,7 @@ export type LayerId =
   // Present-day counterpart to the historical layers: MPCA's cumulative
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
   // A tract is an aggregate of thousands of people, never a household.
-  | 'ej_cumulative'
-  // Publicly-owned aircraft — an agency's asset, not a person — located by
-  // cross-referencing the FAA's ownership registry against a keyless,
-  // unfiltered community ADS-B feed. See scripts/ingest/flights.mjs for why
-  // three of its five agency categories currently carry zero records.
-  | 'agency_aircraft'
-  // A discrete event log, not a live position: specific ICE Air flights
-  // volunteers have observed at MSP. Eyewitness-sourced, never government-
-  // confirmed — confidence is 'reported' on every record. See
-  // scripts/ingest/ice-air-flights.mjs and data/community/ice-air-flights.json.
-  | 'observed_ice_flight';
+  | 'ej_cumulative';
 
 export type Locale = 'en' | 'es';
 
@@ -124,13 +114,8 @@ export interface FeatureProperties {
   name: string;
   county: string | null;
   /**
-   * Two-letter USPS code, or null. Every layer except agency_aircraft
-   * describes something physically fixed in Minnesota, so this is always
-   * 'MN' for them. agency_aircraft tracks specific real aircraft that can
-   * and do leave the state — even leave the country, for ICE Air charter
-   * flights — so it is null whenever the aircraft's last known position
-   * isn't inside Minnesota, rather than asserting 'MN' regardless of where
-   * the aircraft actually is.
+   * Two-letter USPS code, or null. Every layer describes something
+   * physically fixed in Minnesota, so this is always 'MN'.
    */
   state: string | null;
   /** Census GEOID of the containing county, when known. Enables joins. */
