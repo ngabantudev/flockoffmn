@@ -106,7 +106,7 @@ const HTML = `<!doctype html>
 </style>
 </head>
 <body>
-  <div id="banner"><strong>Internal diagnostic — not part of the public site.</strong> Polls adsb.lol's full worldwide feed every 20s, filtered down to the same ICE Air charter callsign pattern functions/api/ice-flights.js uses in production. Proves whether the live feed and the filter are both actually finding real matches right now, independent of the agency-aircraft roster's periodic FAA-ownership refresh.</div>
+  <div id="banner"><strong>Internal diagnostic — not part of the public site.</strong> Polls adsb.lol's full worldwide feed every 20s, filtered down to the same ICE Air charter callsign pattern functions/api/ice-flights.js uses in production. Proves whether the live feed and the filter are both actually finding real matches right now.</div>
   <div id="layout">
     <div id="map"></div>
     <div id="side">
