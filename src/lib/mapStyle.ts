@@ -32,6 +32,21 @@ if (import.meta.env.PROD && !import.meta.env.PUBLIC_TILE_URL) {
   );
 }
 
+// Same class of gap as the TILE_URL fallback above, but a licence risk rather
+// than a network one: the generic OSM text is correct when TILE_URL is also
+// unset (falling back to OSM's own tiles), but wrong the moment someone
+// configures a real vendor (MapTiler, Stadia, self-hosted...) and forgets to
+// also set the attribution — most vendors require crediting them by name as
+// a licence condition, and a silently-missing credit is the kind of thing
+// that gets a key revoked without warning.
+if (import.meta.env.PROD && import.meta.env.PUBLIC_TILE_URL && !import.meta.env.PUBLIC_TILE_ATTRIBUTION) {
+  console.warn(
+    '[mapStyle] PUBLIC_TILE_URL is set but PUBLIC_TILE_ATTRIBUTION is not — the map is ' +
+      "showing generic OpenStreetMap attribution, which likely doesn't satisfy your tile " +
+      'provider\'s licence terms. See docs/DEPLOYMENT.md § Base map tiles.',
+  );
+}
+
 const TILE_ATTRIBUTION =
   import.meta.env.PUBLIC_TILE_ATTRIBUTION ||
   '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
