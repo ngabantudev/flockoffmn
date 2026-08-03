@@ -387,6 +387,31 @@ export interface LayerDefinition {
     pointsFrom: number;
   };
   /**
+   * Coarsen a polygon layer into fixed grid cells at distance, resolving into
+   * its true parcels up close — the polygon equivalent of `scale` above.
+   *
+   * A parcel is drawn at survey precision because that is what the record is,
+   * but tens of thousands of them across a state read as noise, not shape,
+   * until the view is close enough to resolve one lot from the next. Between
+   * the two zooms named here a plain grid cell — coloured and counted from
+   * the parcels inside it, nothing more — stands in for the detail the view
+   * cannot yet show, and fades as the real parcels fade in under it. It is
+   * computed in the browser from the same records already on the map, the way
+   * `density`/nodes stand in for ALPR points (see `src/lib/nodes.ts`), and for
+   * the same reason it is not a record of its own: not clickable, not
+   * searchable, not in the accessible list. The parcels themselves are never
+   * removed by zoom, only faded, so that list stays exactly what it always
+   * was regardless of how close the view is.
+   */
+  blockAggregate?: {
+    /** Grid cell size, in metres, used to bucket parcel centroids into blocks. */
+    cellMeters: number;
+    /** Zoom at/below which the grid is fully opaque and parcels are hidden. */
+    blocksUntil: number;
+    /** Zoom at/above which parcels are fully opaque and the grid is gone. */
+    detailFrom: number;
+  };
+  /**
    * Draw a line layer as a living filament: a blurred glow beneath a bright
    * core.
    *
