@@ -111,20 +111,21 @@ const strings = {
 
 <script>
   type Sighting = {
+    id: number;
     hex: string;
     callsign: string | null;
-    aircraft_type: string | null;
-    airport_icao: string | null;
+    aircraftType: string | null;
+    airportIcao: string | null;
     event: 'ground_arrival' | 'ground_departure';
-    event_at_utc: string;
+    eventAtUtc: string;
     lat: number | null;
     lon: number | null;
-    ground_duration_s: number | null;
+    groundDurationS: number | null;
     source: string;
   };
 
   type FlightLogResponse = {
-    caveats?: string[] | string;
+    caveats?: Record<string, string> | null;
     sightings?: Sighting[];
     results?: Sighting[];
   };
@@ -143,8 +144,8 @@ const strings = {
 
   const HEX_PATTERN = /^[0-9a-f]{6}$/i;
 
-  function formatDuration(seconds: number | null): string {
-    if (seconds === null || seconds < 0) return '—';
+  function formatDuration(seconds: number | null | undefined): string {
+    if (seconds == null || seconds < 0) return '—';
     const h = Math.floor(seconds / 3600);
     const m = Math.round((seconds % 3600) / 60);
     if (h > 0) return `${h}h ${m}m`;
@@ -157,8 +158,7 @@ const strings = {
       caveatsEl.textContent = '';
       return;
     }
-    const text = Array.isArray(caveats) ? caveats.join(' ') : caveats;
-    caveatsEl.textContent = text;
+    caveatsEl.textContent = Object.values(caveats).join(' ');
     caveatsEl.classList.remove('hidden');
   }
 
@@ -184,10 +184,10 @@ const strings = {
 
       const rows: [string, string][] = [
         ['Event', s.event === 'ground_arrival' ? 'Ground arrival' : 'Ground departure'],
-        ['When (UTC)', s.event_at_utc],
-        ['Airport', s.airport_icao ?? 'Unknown (best-effort, MN-only)'],
-        ['Aircraft type', s.aircraft_type ?? '—'],
-        ['Ground duration', formatDuration(s.ground_duration_s)],
+        ['When (UTC)', s.eventAtUtc],
+        ['Airport', s.airportIcao ?? 'Unknown (best-effort, MN-only)'],
+        ['Aircraft type', s.aircraftType ?? '—'],
+        ['Ground duration', formatDuration(s.groundDurationS)],
         ['Source', s.source],
       ];
       for (const [label, value] of rows) {
