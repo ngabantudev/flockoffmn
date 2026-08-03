@@ -8,35 +8,12 @@
  * (D1 binding, no query-param logging, single-writer-Worker architecture).
  */
 
+import { CAVEATS, toExport, toCsv, CSV_COLUMNS, SECURITY_HEADERS } from '../../lib/flight-log-shared.mjs';
+
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/;
 const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 100;
 const CACHE_SECONDS = 60;
-
-const CAVEATS = {
-  pollingGranularity:
-    'Ground-arrival and ground-departure timestamps are only as precise as the cron poll that observed them: this log is checked once per minute, not continuously.',
-  airportLabeling:
-    'Nearest-airport labeling is best-effort and Minnesota-only. Sightings elsewhere in the world will have a null airport field even when the aircraft is plainly on the ground somewhere.',
-  callsignMatch:
-    'A matching callsign is not registry confirmation of an ICE Air charter flight or its passengers — it means an aircraft broadcast a callsign matching a known charter pattern at the time of the sighting.',
-};
-
-function toExport(row) {
-  return {
-    id: row.id,
-    hex: row.hex,
-    callsign: row.callsign,
-    aircraftType: row.aircraft_type,
-    airportIcao: row.airport_icao,
-    event: row.event,
-    eventAtUtc: row.event_at_utc,
-    lat: row.lat,
-    lon: row.lon,
-    groundDurationS: row.ground_duration_s,
-    source: row.source,
-  };
-}
 
 export async function onRequestGet(context) {
   const url = new URL(context.request.url);
@@ -44,6 +21,10 @@ export async function onRequestGet(context) {
   const from = url.searchParams.get('from');
   const to = url.searchParams.get('to');
   const rawLimit = url.searchParams.get('limit');
+  const format = url.searchParams.get('format') ?? 'json';
+  if (format !== 'json' && format !== 'csv') {
+    return Response.json({ error: 'invalid format' }, { status: 400 });
+  }
 
   if (from && !ISO_DATE_PATTERN.test(from)) {
     return Response.json({ error: 'invalid from date' }, { status: 400 });
@@ -87,9 +68,26 @@ export async function onRequestGet(context) {
     return Response.json({ error: `database error: ${err.message || err}` }, { status: 500 });
   }
 
+  const sightings = (result.results ?? []).map(toExport);
+
+  if (format === 'csv') {
+    const date = new Date().toISOString().slice(0, 10);
+    const rawSearchTerm = (callsign ? callsign.trim().toUpperCase() : null) || 'search';
+    const searchTerm = rawSearchTerm.replace(/[^A-Za-z0-9_-]/g, '_');
+    return new Response(toCsv(sightings, CSV_COLUMNS), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="flight-sightings-${searchTerm}-${date}.csv"`,
+        'Cache-Control': `public, max-age=${CACHE_SECONDS}`,
+        ...SECURITY_HEADERS,
+      },
+    });
+  }
+
   return new Response(
     JSON.stringify({
-      sightings: (result.results ?? []).map(toExport),
+      sightings,
       caveats: CAVEATS,
     }),
     {
@@ -97,6 +95,7 @@ export async function onRequestGet(context) {
       headers: {
         'Content-Type': 'application/json',
         'Cache-Control': `public, max-age=${CACHE_SECONDS}`,
+        ...SECURITY_HEADERS,
       },
     },
   );

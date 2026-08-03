@@ -192,6 +192,8 @@ export const en: Record<string, string> = {
     'This is not legal advice. If you are involved in a habeas corpus matter, consult an attorney — this page is a starting point for research, not a substitute for counsel.',
   flightLogDraftNotice:
     'Draft — pending attorney review. This section has not yet been reviewed by a lawyer and should not be relied upon until it has been.',
+  flightLogPermalink: 'View permanent record',
+  flightLogDownloadCsv: 'Download CSV (this search)',
 
   // Footer
   openSource: 'Open source',
