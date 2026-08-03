@@ -19,6 +19,19 @@ import type { StyleSpecification } from 'maplibre-gl';
 const TILE_URL =
   import.meta.env.PUBLIC_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
+// A silent fallback here is how this shipped to production once already:
+// OSM's standard tile servers rate-limit or block traffic that violates their
+// usage policy, so the map just breaks with no error in the UI. Surface it
+// loudly in the one place a maintainer would look — see docs/DEPLOYMENT.md
+// "Base map tiles" for how to set PUBLIC_TILE_URL.
+if (import.meta.env.PROD && !import.meta.env.PUBLIC_TILE_URL) {
+  console.warn(
+    '[mapStyle] PUBLIC_TILE_URL is unset in a production build — falling back to ' +
+      "tile.openstreetmap.org, which OSM's usage policy prohibits for production traffic " +
+      'and will rate-limit or block. See docs/DEPLOYMENT.md § Base map tiles.',
+  );
+}
+
 const TILE_ATTRIBUTION =
   import.meta.env.PUBLIC_TILE_ATTRIBUTION ||
   '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
