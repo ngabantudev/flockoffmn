@@ -152,9 +152,37 @@ Options, roughly in order of independence:
 
 1. **Self-host raster tiles.** Most control, no third party who can cut you off.
 2. **A tile provider** (Protomaps, MapTiler, Stadia…). Simple, but introduces a
-   vendor who sees your users' tile requests and can revoke access.
+   vendor who sees your users' tile requests and can revoke access. Note
+   Protomaps' hosted API is vector-only (MVT) — it does not fit this project's
+   raster-only `mapStyle.ts` without also rewriting the style and self-hosting
+   glyphs for label layers (the CSP's `font-src 'self'` blocks their glyph
+   server on purpose). MapTiler and Stadia both serve raster PNG tiles
+   directly, so they're the simpler drop-in fits for `PUBLIC_TILE_URL` today.
 3. **Bundle vector tiles as PMTiles** on your own origin. Single-file, range-
    requested, no tile server needed. Good middle ground if bandwidth allows.
+
+### MapTiler quick start
+
+1. Create an account at [maptiler.com](https://www.maptiler.com/) and copy an
+   API key from the dashboard.
+2. Set:
+
+   ```bash
+   PUBLIC_TILE_URL="https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY"
+   PUBLIC_TILE_ATTRIBUTION='© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+   ```
+
+   `basic-v2` is a light style — that's fine, the `osm` raster layer's paint
+   properties in `mapStyle.ts` already desaturate and dim whatever light
+   tileset comes back, the same way they do for `tile.openstreetmap.org`
+   today. Any other MapTiler raster style id works the same way; swap
+   `basic-v2` for it.
+3. Set both as environment variables in the Cloudflare Pages dashboard
+   (Settings → Environment variables) for the `production` environment —
+   not in `wrangler.jsonc`, so the key doesn't sit in git history. Redeploy.
+4. MapTiler's free tier is metered (100k tile loads/month as of this
+   writing) — watch usage after a traffic spike like the one that broke the
+   OSM fallback.
 
 Whatever you pick, keep the attribution string accurate — it is a licence
 condition for OSM-derived tiles, not a courtesy.
