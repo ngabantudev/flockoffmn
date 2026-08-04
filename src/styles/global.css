@@ -286,8 +286,7 @@
  * theme" popover. Built with hand-written classes rather than
  * .maplibregl-ctrl-icon's convention (a class MapLibre expects on a
  * *descendant* of the button, for a background-image icon) because this
- * button's icon is an inline Lucide SVG child instead — same dark/light
- * invert treatment as the other map control icons, just addressed directly.
+ * button's icon is an inline Lucide SVG child instead.
  */
 .theme-control {
   position: relative;
@@ -303,17 +302,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-}
-.theme-control-button svg {
-  filter: invert(1) brightness(1.6);
-}
-:root[data-theme='light'] .theme-control-button svg {
-  filter: none;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .theme-control-button svg {
-    filter: none;
-  }
+  /*
+   * Lucide icons render with stroke="currentColor" and fill="none" (see
+   * node_modules/lucide/dist/esm/defaultAttributes.mjs) — a direct `color`
+   * follows the ink ramp automatically in both themes, same as any text.
+   * The other map control icons (MapLibre's own, e.g. zoom +/-) are
+   * background-image sprites with no `currentColor` to hook into, which is
+   * why *they* need the filter: invert(...) trick in the block above this
+   * one — that trick doesn't belong here, and inverting this icon's actual
+   * color produced a dim, muddy result instead of a clean white.
+   */
+  color: var(--color-ink-100);
 }
 .theme-control-panel {
   position: absolute;
