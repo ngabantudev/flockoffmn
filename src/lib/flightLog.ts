@@ -58,7 +58,7 @@ export const FLIGHT_LOG_CAVEATS: FlightLogCaveats = {
 export const FLIGHT_LOG_PROVENANCE: Provenance = {
   source: 'adsb.lol via flockoffmn flight-sightings-cron',
   sourceUrl: 'https://adsb.lol/',
-  license: 'adsb.lol terms — NOT YET VETTED for persisted/redistributed derived data (see LICENSE-DATA.md)',
+  license: 'ODbL 1.0 (adsb.lol) — attribution required; see LICENSE-DATA.md',
   licenseUrl: null,
   attribution: 'ADS-B data via adsb.lol; ICE Air charter callsign pattern via Otter Goose (ottergoose.net)',
   sourceDate: null,
