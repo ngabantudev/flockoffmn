@@ -13,9 +13,9 @@ import type { StyleSpecification } from 'maplibre-gl';
  * before this sees real traffic — see docs/DEPLOYMENT.md.
  */
 // `||` rather than `??` on purpose: an unset variable arrives as undefined,
-// but one declared-and-empty (as in wrangler.jsonc, or a .env copied from
-// .env.example) arrives as "". `??` would keep that empty string and hand
-// MapLibre a blank tile URL, producing a map with no basemap and no error.
+// but one declared-and-empty (as in a .env copied from .env.example) arrives
+// as "". `??` would keep that empty string and hand MapLibre a blank tile
+// URL, producing a map with no basemap and no error.
 const TILE_URL =
   import.meta.env.PUBLIC_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
