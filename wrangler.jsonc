@@ -41,10 +41,11 @@
   "compatibility_date": "2026-07-30",
 
   // One binding, narrowly scoped: FLIGHT_SIGHTINGS_DB, a Cloudflare D1
-  // database. It is read-only in application code — it backs only
-  // functions/api/flight-log/[hex].js and functions/api/flight-log/index.js,
-  // both SELECT-only, never INSERT/UPDATE. It holds aircraft-level facts
-  // (hex, callsign, ground-arrival/departure timestamps — see
+  // database. It is read-only in application code — it backs
+  // functions/api/flight-log/{index,[hex],export}.js and
+  // functions/flight-log/record/{[id],[id]/pdf}.js, all SELECT-only, never
+  // INSERT/UPDATE. It holds aircraft-level facts (hex, callsign,
+  // ground-arrival/departure timestamps — see
   // migrations/0001_flight_sightings.sql) and nothing about a visitor: no
   // query is logged, no IP or request identifier is stored anywhere.
   //
@@ -57,6 +58,13 @@
   // Still no KV, no R2, no queues, no secrets here. Adding another binding
   // means adding another place data could accumulate; do not do it without
   // revisiting the privacy claims on /about and this file's own reasoning.
+  //
+  // This top-level copy is inherited by nothing deployed — see the `env`
+  // block below: declaring env.preview/env.production at all makes bindings
+  // non-inheritable, so both keep their own identical copy. This one only
+  // matters for `wrangler pages dev` and a manual `wrangler pages deploy`.
+  // Rotating database_id means editing three places, not one; there's no
+  // build-time check that they stay in sync.
   "d1_databases": [
     {
       "binding": "FLIGHT_SIGHTINGS_DB",
@@ -65,15 +73,94 @@
     }
   ],
 
-  "vars": {
-    // Base map tiles. The default in code points at OpenStreetMap's standard
-    // tile servers, which is fine for development but NOT for production —
-    // they are volunteer-funded and their usage policy asks apps not to lean
-    // on them at scale. Set a real value before announcing the site.
-    //
-    // NOTE: if you change the tile host, update the CSP in public/_headers to
-    // match, or the map will silently fail to load tiles.
-    "PUBLIC_TILE_URL": "",
-    "PUBLIC_TILE_ATTRIBUTION": ""
+  // Base map tiles. The default in code points at OpenStreetMap's standard
+  // tile servers, which is fine for development but NOT for production —
+  // they are volunteer-funded and their usage policy asks apps not to lean
+  // on them at scale.
+  //
+  // This file is the source of truth for this Pages project (Cloudflare
+  // disables the dashboard's plain-text "Environment variables" editor once
+  // a wrangler config exists — it only leaves Secrets manageable there), and
+  // PUBLIC_TILE_URL is read via `import.meta.env` at Vite BUILD time, not at
+  // Pages Functions runtime. That combination rules out Pages secrets
+  // entirely for this value: a secret (dashboard or `wrangler pages secret
+  // put`) is invisible to Cloudflare's own Git-integration build, so the
+  // build silently re-inlines the tile.openstreetmap.org fallback — this
+  // shipped to production twice already before that was understood. It has
+  // to be a real committed `vars` value instead, scoped per environment
+  // below since `vars`/bindings are non-inheritable in Wrangler config.
+  //
+  // The MapTiler key ending up in git is a knowing tradeoff, not an
+  // oversight: it's already fully exposed in the public JS bundle to every
+  // visitor (view-source finds it in seconds), so keeping it out of git
+  // bought no real secrecy — only slightly less convenient scraping. The
+  // real control is a dedicated, origin-restricted key (this is
+  // `flockoffmn-production`, created 2026-08-04 specifically because
+  // MapTiler's auto-generated "Default key" cannot be restricted — do not
+  // swap this for that one). Allowed HTTP origins: flockoffmn.org,
+  // *.flockoffmn.pages.dev. Verified with curl directly against MapTiler:
+  // matching Origin → 200, foreign Origin → 403, matching Referer with no
+  // Origin → 200, foreign Referer with no Origin → 403.
+  //
+  // curl with NEITHER header present → 403, which raised a real concern
+  // given this site's `Referrer-Policy: no-referrer` (public/_headers): if
+  // MapLibre's tile requests didn't carry a CORS Origin header either, real
+  // visitors would get this same 403. Checked with an actual headless
+  // browser against a preview build, not just curl: MapLibre's tile `<img>`
+  // requests do send `Origin: https://<deploy>.flockoffmn.pages.dev` (empty
+  // Referer, as expected) — Origin isn't governed by Referrer-Policy, only
+  // Referer is. All 30 tile requests on that run returned 200 and the map
+  // rendered correctly with MapTiler attribution visible. If this ever
+  // needs re-checking (e.g. after a MapLibre upgrade changes how it loads
+  // tile images), add the `?` placeholder to Allowed HTTP origins in the
+  // MapTiler dashboard as a stopgap — it explicitly permits no-origin
+  // requests, at the cost of also letting other headerless requests through.
+  //
+  // NOTE: if you change the tile host, update the CSP in public/_headers to
+  // match, or the map will silently fail to load tiles.
+  "vars": {},
+  "env": {
+    // Declaring `env` at all makes every binding non-inheritable, including
+    // ones this section doesn't mention — Cloudflare stops falling back to
+    // the top-level `d1_databases` the moment `env.preview` exists, even
+    // though preview always had that binding before this file had an `env`
+    // block. Confirmed live: earlier PR previews (#46, #48) served
+    // /api/flight-log/ fine; a preview built from a first draft of this
+    // change that omitted d1_databases here returned a 500 ("Cannot read
+    // properties of undefined (reading 'prepare')"). Keep this in sync with
+    // the top-level and env.production copies below — see that block's
+    // comment for what the binding is for.
+    "preview": {
+      "d1_databases": [
+        {
+          "binding": "FLIGHT_SIGHTINGS_DB",
+          "database_name": "flockoffmn-flight-sightings",
+          "database_id": "90f43a8b-be4e-437c-ae31-097f1fc88a2b"
+        }
+      ],
+      // Same tile config as production: preview deploys are served from
+      // *.flockoffmn.pages.dev, which is (meant to be — see the key comment
+      // above) in the key's allowed-origins list, so there's no separate
+      // exposure from reusing it here. Without this, every PR preview
+      // inherits the OSM-fallback 403s too — see docs/DEPLOYMENT.md § Base
+      // map tiles.
+      "vars": {
+        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
+        "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+      }
+    },
+    "production": {
+      "d1_databases": [
+        {
+          "binding": "FLIGHT_SIGHTINGS_DB",
+          "database_name": "flockoffmn-flight-sightings",
+          "database_id": "90f43a8b-be4e-437c-ae31-097f1fc88a2b"
+        }
+      ],
+      "vars": {
+        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
+        "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+      }
+    }
   }
 }

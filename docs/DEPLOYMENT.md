@@ -26,9 +26,17 @@ and deliberately **no `main` entrypoint**: this is a static site, not a Worker.
    - Build command: `npm run build`
    - Build output directory: `dist`
 3. Environment variables → set `NODE_VERSION` to `22`. The ingest scripts and
-   the build both expect it (see `engines` in `package.json`).
-4. Set `PUBLIC_TILE_URL` and `PUBLIC_TILE_ATTRIBUTION` for production — see
-   below.
+   the build both expect it (see `engines` in `package.json`). **Caveat, not
+   yet independently confirmed:** once a repo's `wrangler.jsonc` exists (this
+   one already does), Cloudflare appears to treat it as the source of truth
+   for the project and disables this same dashboard editor for plain-text
+   `vars` — see "Base map tiles" below, confirmed the hard way for
+   `PUBLIC_TILE_URL`. If `NODE_VERSION` turns out to be similarly locked,
+   it isn't currently expressible in `wrangler.jsonc` either; check
+   Cloudflare's current docs rather than assuming this step still works.
+4. `PUBLIC_TILE_URL` and `PUBLIC_TILE_ATTRIBUTION` are already committed in
+   `wrangler.jsonc` for this repo (see "Base map tiles" below) — nothing to
+   set here for production. A fork needs its own key; see that section.
 
 Git integration is worth choosing over a deploy workflow for one specific
 reason: **Pages builds a preview URL for every pull request.** For a project
@@ -241,23 +249,100 @@ Options, roughly in order of independence:
 
 ### MapTiler quick start
 
-1. Create an account at [maptiler.com](https://www.maptiler.com/) and copy an
-   API key from the dashboard.
-2. Set:
+1. Create an account at [maptiler.com](https://www.maptiler.com/) and create
+   a **new** key — MapTiler's auto-generated "Default key" cannot be
+   restricted (there's no Allowed HTTP origins field on it), which is why
+   the key committed here is a separate one named `flockoffmn-production`.
+   In its **Allowed HTTP origins** field, add:
+   ```
+   flockoffmn.org
+   *.flockoffmn.pages.dev
+   ```
+   Leave **Allowed user-agent header** blank — that field is for non-browser
+   clients (mobile apps, desktop GIS software); a public website is hit by
+   every browser's own user-agent string, so restricting by it would block
+   real visitors.
 
-   ```bash
-   PUBLIC_TILE_URL="https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY"
-   PUBLIC_TILE_ATTRIBUTION='© <a href="https://www.maptiler.com/copyright/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+   Verified directly against MapTiler with curl: a request with a matching
+   `Origin` returns `200`, a foreign `Origin` returns `403`, and the same
+   for `Referer` when no `Origin` is present. A request with *neither*
+   header also returns `403`, which raised a real concern given this site's
+   `Referrer-Policy: no-referrer` (`public/_headers`) — if MapLibre's tile
+   requests didn't carry a CORS `Origin` header either, real visitors would
+   hit that same `403`. Checked with an actual headless browser against a
+   preview build, not just curl: MapLibre's tile `<img>` requests do send
+   `Origin: https://<deploy>.flockoffmn.pages.dev` (empty `Referer`, as
+   expected — `Origin` isn't governed by `Referrer-Policy`, only `Referer`
+   is). All 30 tile requests on that run returned `200` and the map
+   rendered correctly with MapTiler attribution visible. If a future
+   MapLibre upgrade changes how it loads tile images, re-check this the
+   same way; the `?` placeholder in Allowed HTTP origins is the stopgap if
+   it ever regresses (permits no-origin requests, at the cost of also
+   letting other headerless requests through).
+2. Put the key straight into `wrangler.jsonc`, under **both**
+   `env.production` and `env.preview` — each needs its own `vars` *and* its
+   own `d1_databases` (see step below on non-inheritance):
+
+   ```jsonc
+   "env": {
+     "preview": {
+       "d1_databases": [ /* repeat the top-level d1_databases entry here too */ ],
+       "vars": {
+         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
+         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+       }
+     },
+     "production": {
+       "d1_databases": [ /* repeat the top-level d1_databases entry here too */ ],
+       "vars": {
+         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
+         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+       }
+     }
+   }
    ```
 
-   `basic-v2` is a light style — that's fine, the `osm` raster layer's paint
+   This is not the obvious choice, and it took a live outage (twice) to find
+   the right one — record of why, so it isn't relitigated:
+   - `PUBLIC_TILE_URL` is inlined into the client bundle by Vite at **build**
+     time (`import.meta.env` in `mapStyle.ts`), not read at request time.
+   - Once a project has a `wrangler.jsonc`/`.toml`, Cloudflare treats it as
+     the **source of truth** and disables the dashboard's plain-text
+     "Environment variables" editor for it — the dashboard is left able to
+     manage only Secrets from then on. Pages secrets (dashboard or
+     `wrangler pages secret put`) are visible to Pages *Functions* at
+     request time only — never to Cloudflare's own Git-integration build
+     step. A value that only exists as a secret is invisible to the build
+     and it silently re-inlines the `tile.openstreetmap.org` fallback —
+     this shipped to production **twice** before that combination was
+     understood, including once from a manual `wrangler pages deploy` that
+     looked correct right up until the next unrelated PR merged and
+     triggered a real rebuild.
+   - So the value has to be a real, committed `vars` entry — there is no
+     dashboard-only or secret-only path that survives a Git-triggered build
+     for this project. It also doesn't reach a *local* `wrangler pages
+     deploy` build — Vite only reads `.env`/shell env locally, never
+     `wrangler.jsonc`'s `vars` — so a manual deploy still needs
+     `PUBLIC_TILE_URL` set in your local `.env`.
+   - `vars` (and every binding, including `d1_databases`) is **non-inheritable**
+     in Wrangler config: declaring an `env.*` section at all means
+     Cloudflare stops inheriting the top-level `d1_databases` for that
+     environment, so it must be repeated inside **both** `env.production`
+     *and* `env.preview` or the flight-log D1 binding silently disappears —
+     confirmed live for preview: `/api/flight-log/` on a preview build that
+     first omitted this returned a 500 (`Cannot read properties of
+     undefined (reading 'prepare')`), where the same route on prior PR
+     previews (before this file had an `env` block) returned 200.
+   - The key ending up in git is a knowing tradeoff, not an oversight: it's
+     already fully exposed in the public JS bundle to every visitor
+     (view-source finds it in seconds), so keeping it out of git bought no
+     real secrecy, only slightly less convenient scraping. The real control
+     is step 1's origin restriction — apply it, don't just plan to.
+3. `basic-v2` is a light style — that's fine, the `osm` raster layer's paint
    properties in `mapStyle.ts` already desaturate and dim whatever light
    tileset comes back, the same way they do for `tile.openstreetmap.org`
    today. Any other MapTiler raster style id works the same way; swap
    `basic-v2` for it.
-3. Set both as environment variables in the Cloudflare Pages dashboard
-   (Settings → Environment variables) for the `production` environment —
-   not in `wrangler.jsonc`, so the key doesn't sit in git history. Redeploy.
 4. MapTiler's free tier is metered (100k tile loads/month as of this
    writing) — watch usage after a traffic spike like the one that broke the
    OSM fallback.
