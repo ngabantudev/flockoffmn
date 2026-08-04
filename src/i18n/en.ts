@@ -18,6 +18,13 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
+  // Theme toggle, in the header cluster next to the language switcher.
+  themeToggleGroupLabel: 'Colour theme',
+  themeLight: 'Light',
+  themeDark: 'Dark',
+  themeSwitchToLight: 'Switch to light theme',
+  themeSwitchToDark: 'Switch to dark theme',
+
   // Live flights — always on in the main map's sidebar (no checkbox to
   // disable it), deliberately not a registry layer (see
   // src/lib/liveFlights.ts). Worldwide, filtered

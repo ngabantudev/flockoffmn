@@ -20,6 +20,13 @@ export const es: Record<string, string> = {
   navAbout: 'Qué es esto',
   skipToContent: 'Saltar al contenido principal',
 
+  // Selector de tema, en el grupo del encabezado junto al selector de idioma.
+  themeToggleGroupLabel: 'Tema de color',
+  themeLight: 'Claro',
+  themeDark: 'Oscuro',
+  themeSwitchToLight: 'Cambiar a tema claro',
+  themeSwitchToDark: 'Cambiar a tema oscuro',
+
   liveFlightsToggleLabel: 'Vuelos chárter de ICE Air en vivo',
   liveFlightsAboutToggle: 'Acerca de estos datos',
   liveFlightsIntro:
