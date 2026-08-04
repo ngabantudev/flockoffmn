@@ -73,7 +73,7 @@ export type MapStyleId = 'streets-dark' | 'muted-dark' | 'streets-light' | 'mini
 export const MAP_STYLES: Record<MapStyleId, { label: string; maptilerId: string; dark: boolean }> = {
   'streets-dark': { label: 'Streets (Dark)', maptilerId: 'streets-v4-dark', dark: true },
   'muted-dark': { label: 'Muted (Dark)', maptilerId: 'basic-v2-dark', dark: true },
-  'streets-light': { label: 'Streets (Light)', maptilerId: 'streets-v4-pastel', dark: false },
+  'streets-light': { label: 'Streets (Light)', maptilerId: 'streets-v4', dark: false },
   'minimal-light': { label: 'Minimal (Light)', maptilerId: 'dataviz-v4-light', dark: false },
 };
 

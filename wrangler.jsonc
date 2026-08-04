@@ -155,7 +155,7 @@
       // map tiles.
       "vars": {
         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/streets-v4-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_URL_LIGHT": "https://api.maptiler.com/maps/streets-v4-pastel/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
+        "PUBLIC_TILE_URL_LIGHT": "https://api.maptiler.com/maps/streets-v4/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
         "PUBLIC_TILE_KEY": "79D0bmZHNKT9buPdLFvN",
         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
       }
@@ -170,7 +170,7 @@
       ],
       "vars": {
         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/streets-v4-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_URL_LIGHT": "https://api.maptiler.com/maps/streets-v4-pastel/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
+        "PUBLIC_TILE_URL_LIGHT": "https://api.maptiler.com/maps/streets-v4/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
         "PUBLIC_TILE_KEY": "79D0bmZHNKT9buPdLFvN",
         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
       }
