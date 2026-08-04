@@ -48,10 +48,19 @@ export function densityColorExpression(): unknown[] {
   return ['interpolate', ['linear'], ['heatmap-density'], ...DENSITY_STOPS.flat()];
 }
 
-/** The map background the ramp is read against, from `mapStyle.ts`. */
-const BACKGROUND = '#0a0c10';
+/**
+ * The two basemap backgrounds the ramp is ever read against — see
+ * `mapStyle.ts`'s `basemapPaint()`. Every consumer below (`THREAD_STOPS_*`,
+ * `GLOW_STOPS`, `CORD_STROKE_*`) is a *stroke* colour stripped of its own
+ * alpha via `opaque()`, painted with its own separate `line-opacity`, so
+ * "legible" always means "legible once fully opaque" — never the ramp's own
+ * built-in alpha blended in, which is a different question entirely (see
+ * `densityColorExpression`'s doc comment for where that alpha matters).
+ */
+const DARK_BACKGROUND = '#0a0c10';
+const LIGHT_BACKGROUND = '#ffffff';
 
-/** WCAG relative luminance of an `rgb(...)`/`rgba(...)`/`#rrggbb` colour. */
+/** WCAG relative luminance of an opaque `rgb(...)`/`rgba(...)`/`#rrggbb` colour — alpha is ignored on purpose, per the comment above. */
 function luminance(color: string): number {
   const [r, g, b] = color.startsWith('#')
     ? [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16))
@@ -63,19 +72,19 @@ function luminance(color: string): number {
   return 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
 }
 
-/** Contrast ratio between a ramp colour and the map background. */
-function contrast(color: string): number {
-  const [hi, lo] = [luminance(color), luminance(BACKGROUND)].sort((a, b) => b - a);
+/** Contrast ratio between a ramp colour, rendered opaque, and a given background. */
+function contrast(color: string, background: string): number {
+  const [hi, lo] = [luminance(color), luminance(background)].sort((a, b) => b - a);
   return (hi + 0.05) / (lo + 0.05);
 }
 
 /**
- * The part of the palette a line can be drawn in.
+ * The part of the palette a line can be drawn in, against a given background.
  *
  * The surface's ramp is built to be looked *through*: its low end is deliberately
  * near-invisible, and its middle — the deep blues and purples that carry
  * luminocity's densest inner-city classes — clears only 1.8:1 to 2.4:1 against
- * this map's background. That is fine for a filled surface, where a whole region
+ * the dark basemap. That is fine for a filled surface, where a whole region
  * of it is on screen at once. It is wrong for a thread a few pixels wide, and it
  * is how a map with 25 corridors on it once came to look like it had none.
  *
@@ -88,14 +97,46 @@ function contrast(color: string): number {
  * written down anywhere. Taking an unbroken run from the top means every colour a
  * thread can be, including the ones interpolated between stops, has been checked.
  *
- * It leaves the two reading as one system — a thread is coloured out of the same
- * palette as the surface it crosses, and heat still means more — while the ramp's
- * darkest reaches stay where they work, on the surface.
+ * "The top" is a preference, not an assumption, which matters once there is a
+ * second background to check: gold and near-white are both *light* colours, so
+ * against a light basemap neither ramp extreme clears the floor at all — the
+ * ramp's legible middle (the same blues, indigos and reds the dark case's floor
+ * excluded) has to carry it instead. This walks from the hot end first, exactly
+ * as it always has, and only falls back to scanning the whole ramp for its
+ * longest legible run when the hot end fails outright — which is precisely the
+ * light-background case, and never the dark one (verified: for `#0a0c10` this
+ * still returns the same run it always has).
  */
-function hotEnd(): number {
-  let start = DENSITY_STOPS.length - 1;
-  while (start > 0 && contrast(DENSITY_STOPS[start - 1][1]) >= 3) start--;
-  return start;
+function legibleRun(background: string): [start: number, end: number] {
+  const clears = (i: number) => contrast(DENSITY_STOPS[i][1], background) >= 3;
+  const last = DENSITY_STOPS.length - 1;
+
+  if (clears(last)) {
+    let start = last;
+    while (start > 0 && clears(start - 1)) start--;
+    return [start, last];
+  }
+
+  // The hot end doesn't work against this background at all — find the
+  // longest contiguous legible run anywhere in the ramp instead.
+  let bestStart = -1;
+  let bestLen = 0;
+  let curStart = -1;
+  for (let i = 0; i <= last; i++) {
+    if (clears(i)) {
+      if (curStart === -1) curStart = i;
+      if (i - curStart + 1 > bestLen) {
+        bestLen = i - curStart + 1;
+        bestStart = curStart;
+      }
+    } else {
+      curStart = -1;
+    }
+  }
+  if (bestLen === 0) {
+    throw new Error(`densityRamp: no stop in DENSITY_STOPS clears 3:1 against ${background}`);
+  }
+  return [bestStart, bestStart + bestLen - 1];
 }
 
 /** Strip a ramp colour's alpha, so a stroke can carry its own opacity via paint properties instead. */
@@ -103,22 +144,28 @@ function opaque(color: string): string {
   return color.replace(/rgba\(([^,]+),([^,]+),([^,]+),[^)]+\)/, 'rgb($1,$2,$3)');
 }
 
-export const THREAD_STOPS = DENSITY_STOPS.slice(hotEnd()).map(
-  ([at, color]) => [at, opaque(color)] as [number, string],
-);
+function threadStopsFor(background: string): Array<[number, string]> {
+  const [start, end] = legibleRun(background);
+  return DENSITY_STOPS.slice(start, end + 1).map(([at, color]) => [at, opaque(color)] as [number, string]);
+}
+
+export const THREAD_STOPS_DARK = threadStopsFor(DARK_BACKGROUND);
+export const THREAD_STOPS_LIGHT = threadStopsFor(LIGHT_BACKGROUND);
 
 /**
  * The full ramp, opaque, for a stroke that wants the surface's whole gradient
- * rather than just the legible hot end `THREAD_STOPS` keeps.
+ * rather than just the legible run `THREAD_STOPS_DARK`/`THREAD_STOPS_LIGHT` keep.
  *
  * Built for the corridor glow: a wide, heavily blurred halo, where reading
- * the cool end against the background is not the ask the way it is of a thin
- * core line. Taking the ramp's own alpha along with the hue would be wrong
- * here regardless — that alpha exists so an *empty* patch of the heatmap
- * fades to nothing, and the anchor below already puts every corridor's
- * smallest possible network on this ramp's first stop. Keep that stop's
- * built-in alpha of zero and every corridor with a small network — most of
- * them — goes invisible, which is what happens if this is built from
+ * each individual stop against the background is not the ask the way it is
+ * of a thin core line — a wash reads as "a soft light" against either
+ * basemap using the same hues, so unlike the thread stops this one genuinely
+ * doesn't need a light/dark split. Taking the ramp's own alpha along with the
+ * hue would be wrong here regardless — that alpha exists so an *empty* patch
+ * of the heatmap fades to nothing, and the anchor below already puts every
+ * corridor's smallest possible network on this ramp's first stop. Keep that
+ * stop's built-in alpha of zero and every corridor with a small network —
+ * most of them — goes invisible, which is what happens if this is built from
  * `DENSITY_STOPS` directly instead of through `opaque()`.
  */
 export const GLOW_STOPS: Array<[number, string]> = DENSITY_STOPS.map(([at, color]) => [at, opaque(color)]);
@@ -129,14 +176,29 @@ export const GLOW_STOPS: Array<[number, string]> = DENSITY_STOPS.map(([at, color
  *
  * Off the thread ramp on purpose, because a cord answers a different question
  * than the ramp encodes, and out of the same palette anyway so the map still
- * reads as one system. It is the ramp's own first class, opaque: luminocity's
- * pale mint fringe, the colour of the sparsest ground there is. That is the
- * right end of the palette for a strand whose whole job is to cross country
- * with nothing in it, and against a hot mesh of crimson and gold it cannot be
- * mistaken for one. Near-white also clears the background by a wide margin,
- * which the ramp's cool middle does not — see `hotEnd` below.
+ * reads as one system.
+ *
+ * On dark it is the ramp's own first class, opaque: luminocity's pale mint
+ * fringe, the colour of the sparsest ground there is. That is the right end
+ * of the palette for a strand whose whole job is to cross country with
+ * nothing in it, and against a hot mesh of crimson and gold it cannot be
+ * mistaken for one — near-white clears a dark background by a wide margin,
+ * which the ramp's cool middle does not (see `legibleRun`).
+ *
+ * Light has no equivalent free stop. `THREAD_STOPS_LIGHT`'s legible run
+ * already spans nearly the whole ramp (gold and near-white are both *light*
+ * colours, so neither extreme clears a white background — see
+ * `legibleRun`'s comment) — there is no "outside the mesh run" position left
+ * that also clears 3:1 against white. This uses that run's own coolest edge,
+ * the same colour a corridor with the smallest possible network would get
+ * for its mesh — a real overlap, not a rounding error. Accepted rather than
+ * fixed: a cord is rendered far more blurred and at lower opacity than the
+ * mesh at every zoom (see the `-line-casing`/`-line` paint below), so in
+ * practice a wide soft trunk and a thin sharp thread read as different marks
+ * even sharing a hue.
  */
-export const CORD_STROKE = opaque(DENSITY_STOPS[0][1]);
+export const CORD_STROKE_DARK = opaque(DENSITY_STOPS[0][1]);
+export const CORD_STROKE_LIGHT = THREAD_STOPS_LIGHT[0][1];
 
 /**
  * The ramp as a CSS gradient for the legend.
@@ -146,7 +208,7 @@ export const CORD_STROKE = opaque(DENSITY_STOPS[0][1]);
  * cameras". Compositing over the map's own background colour keeps the swatch
  * showing what the reader actually sees on the map.
  */
-export function densityGradientCss(over = BACKGROUND): string {
+export function densityGradientCss(over = DARK_BACKGROUND): string {
   const stops = DENSITY_STOPS.map(([at, color]) => `${color} ${Math.round(at * 100)}%`).join(', ');
   return `linear-gradient(to right, ${stops}), ${over}`;
 }

@@ -292,6 +292,16 @@ export interface LayerDefinition {
   /** Hex colour used for the map symbol and the legend swatch. */
   color: string;
   /**
+   * `color`'s counterpart for a light site theme / light basemap, where one
+   * is needed. Optional because not every colour needs it: `color` itself
+   * already clears WCAG 3:1 against white for some layers, and duplicating
+   * an identical value here would just be another place for the two to
+   * drift apart. Omit it and callers fall back to `color` for both themes.
+   * Where it's set, it's the same hue at a Tailwind ~600/700-ish step
+   * darker — same identity, legible on white instead of only on `#0a0c10`.
+   */
+  colorLight?: string;
+  /**
    * Attribute holding a compass bearing in degrees, if the layer has one.
    *
    * Set it and the map draws a small arrow at each record showing which way
