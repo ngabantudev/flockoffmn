@@ -70,13 +70,55 @@
   // they are volunteer-funded and their usage policy asks apps not to lean
   // on them at scale.
   //
-  // PUBLIC_TILE_URL and PUBLIC_TILE_ATTRIBUTION are set as Pages secrets
-  // (`wrangler pages secret put`), not here as `vars` — the URL carries a
-  // tile-provider API key, so it doesn't sit in git history. Declaring them
-  // here too, even as empty strings, collides with the secret binding of
-  // the same name and fails deployment ("Binding name ... already in use").
+  // This file is the source of truth for this Pages project (Cloudflare
+  // disables the dashboard's plain-text "Environment variables" editor once
+  // a wrangler config exists — it only leaves Secrets manageable there), and
+  // PUBLIC_TILE_URL is read via `import.meta.env` at Vite BUILD time, not at
+  // Pages Functions runtime. That combination rules out Pages secrets
+  // entirely for this value: a secret (dashboard or `wrangler pages secret
+  // put`) is invisible to Cloudflare's own Git-integration build, so the
+  // build silently re-inlines the tile.openstreetmap.org fallback — this
+  // shipped to production twice already before that was understood. It has
+  // to be a real committed `vars` value instead, scoped per environment
+  // below since `vars`/bindings are non-inheritable in Wrangler config.
+  //
+  // The MapTiler key ending up in git is a knowing tradeoff, not an
+  // oversight: it's already fully exposed in the public JS bundle to every
+  // visitor (view-source finds it in seconds), so keeping it out of git
+  // bought no real secrecy — only slightly less convenient scraping. The
+  // actual control is restricting the key to this project's origins
+  // (flockoffmn.org, *.flockoffmn.pages.dev) in the MapTiler dashboard, so a
+  // copied key can't be reused elsewhere against the metered free tier.
   //
   // NOTE: if you change the tile host, update the CSP in public/_headers to
   // match, or the map will silently fail to load tiles.
-  "vars": {}
+  "vars": {},
+  "env": {
+    // Same tile config as production: preview deploys are served from
+    // *.flockoffmn.pages.dev, which is already in the key's allowed-origins
+    // list above, so there's no separate exposure from reusing it here.
+    // Without this, every PR preview inherits the OSM-fallback 403s too —
+    // see docs/DEPLOYMENT.md § Base map tiles.
+    "preview": {
+      "vars": {
+        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=At16tqLmre80ovPJ0iNL",
+        "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+      }
+    },
+    "production": {
+      // d1_databases is non-inheritable too, so it must be repeated here —
+      // see the top-level binding's comment above for what it's for.
+      "d1_databases": [
+        {
+          "binding": "FLIGHT_SIGHTINGS_DB",
+          "database_name": "flockoffmn-flight-sightings",
+          "database_id": "90f43a8b-be4e-437c-ae31-097f1fc88a2b"
+        }
+      ],
+      "vars": {
+        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=At16tqLmre80ovPJ0iNL",
+        "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+      }
+    }
+  }
 }
