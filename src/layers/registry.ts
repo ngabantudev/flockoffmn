@@ -319,8 +319,8 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Las vías entre los lectores de matrículas: las calles que unen cámaras vecinas y las carreteras largas que unen un grupo vigilado con el siguiente.',
     },
     whatThisMeans: {
-      en: 'A map of dots answers a narrow question: is there a camera here. This layer answers a different one: what is between the cameras. Two reader locations are joined when no third reader stands between them, and the line drawn is the actual road a car would drive from one to the other — routed over OpenStreetMap, never a line drawn straight across the ground. Nothing here is a threshold somebody picked: the test is a piece of geometry, and it draws a strand exactly where two readers are neighbours with nothing in between. One number does apply to these — a link is drawn if the drive between its two readers is under a mile and a half, roughly five minutes of city traffic. Past that the line stops describing a trip and starts describing a distance. But that cap on its own left Minnesota as 150 unconnected pieces, and scatter is not what is on the ground: Duluth’s cameras and St Cloud’s are not unrelated, they are simply further apart than five minutes of driving. So there is a second, heavier kind of strand. A cord is the shortest real road joining one cluster of readers to the next, drawn with no length cap at all, until every mapped reader in the state is part of one connected body. The two are drawn differently because they are different claims, and the difference matters more than the picture. A thin bright strand says an ordinary trip between two cameras is logged twice. A wide pale cord says only that two watched places sit on one road network — not that anybody drives it, not that a driver on it is read at either end. Some cords are fusions rather than joins: a second road drawn where two clusters nearly touch on the ground but run a long way round through the network. Those close loops, and a loop is the difference between a network that survives losing a road and one that does not — sixty-seven of them take the count of strands whose removal would strand somebody from 829 down to 380. The panel says, for any strand, how many reader locations it alone holds on; where that is zero a loop runs around it and the network can lose it for nothing. Colour carries what a line cannot: every thin strand in one body of mesh burns at the same brightness, and the brighter it is the more reader locations that body holds. Watch one cluster and the strands running into it are all the same shade: that is one body, and how bright it burns is how much of one. Cords stay off that ramp and stay pale, because a cord belongs to two bodies at once and colouring it for either would be inventing an answer. The operator counts are the other half of the point. Almost none of this was planned as a network: a city police department, the neighbouring city’s, a county sheriff and a hardware store each buy cameras for their own reasons, and what they add up to is what you are looking at.',
-      es: 'Un mapa de puntos responde a una pregunta estrecha: ¿hay una cámara aquí? Esta capa responde a otra: ¿qué hay entre las cámaras? Dos ubicaciones de lectores se unen cuando no hay un tercer lector entre ellas, y la línea dibujada es la vía que un coche recorrería realmente de una a otra, calculada sobre OpenStreetMap y nunca trazada en línea recta sobre el terreno. Aquí nada es un umbral elegido por alguien: la prueba es geométrica, y traza una hebra justo donde dos lectores son vecinos sin nada en medio. A estas se les aplica una cifra: se dibuja una conexión si el trayecto entre sus dos lectores es de menos de milla y media, unos cinco minutos de tráfico urbano. Más allá, la línea deja de describir un trayecto y pasa a describir una distancia. Pero ese límite, por sí solo, dejaba Minnesota en 150 piezas inconexas, y esa dispersión no es lo que hay sobre el terreno: las cámaras de Duluth y las de St Cloud no son ajenas entre sí, simplemente están a más de cinco minutos de conducción. Por eso existe un segundo tipo de hebra, más gruesa. Un cordón es la vía real más corta que une un grupo de lectores con el siguiente, dibujada sin ningún límite de longitud, hasta que cada lector mapeado del estado forma parte de un solo cuerpo conectado. Ambos se dibujan de forma distinta porque son afirmaciones distintas, y esa diferencia importa más que la imagen. Una hebra fina y brillante dice que un trayecto cotidiano entre dos cámaras queda registrado dos veces. Un cordón ancho y pálido solo dice que dos lugares vigilados están en una misma red viaria: no que alguien lo recorra, ni que a quien lo recorra se le lea en algún extremo. Algunos cordones son fusiones y no uniones: una segunda vía trazada donde dos grupos casi se tocan sobre el terreno pero dan un gran rodeo a través de la red. Esas cierran bucles, y un bucle es la diferencia entre una red que sobrevive a la pérdida de una vía y otra que no: sesenta y siete de ellas reducen de 829 a 380 el número de hebras cuya eliminación dejaría a alguien aislado. El panel indica, para cualquier hebra, cuántas ubicaciones de lectores sostiene ella sola; donde eso es cero, un bucle la rodea y la red puede perderla sin coste. El color transporta lo que una línea no puede: todas las hebras finas de un mismo cuerpo de malla arden con el mismo brillo, y cuanto más brillante, más ubicaciones de lectores tiene ese cuerpo. Fíjese en un grupo y verá que todas las hebras que llegan a él tienen el mismo tono: eso es un solo cuerpo, y su brillo indica cuánto abarca. Los cordones quedan fuera de esa escala y se mantienen pálidos, porque un cordón pertenece a dos cuerpos a la vez y colorearlo por cualquiera de ellos sería inventarse una respuesta. El recuento de operadores es la otra mitad del asunto. Casi nada de esto se planificó como una red: la policía de una ciudad, la de la ciudad vecina, el alguacil del condado y una ferretería compran cámaras cada uno por sus propios motivos, y lo que suman es lo que usted está viendo.',
+      en: 'A map of dots answers one question: is there a camera here. This layer answers another: what connects them. A short, bright line means an everyday drive between two cameras — a few minutes down a city street — gets logged twice. A long, pale line means two watched clusters sit on the same road network, nothing more; it is not a route anyone was seen driving. Follow enough of these lines and separated dots resolve into a handful of networks, some stretching across whole counties. Almost none of it was built that way on purpose: a city police department, a county sheriff, and a private business each bought their own cameras. This layer shows what results when nobody coordinates. The methodology behind every line — what counts as a neighbour, why cords have no length limit, what the colours track — is in "Limitations" below.',
+      es: 'Un mapa de puntos responde a una sola pregunta: ¿hay una cámara aquí? Esta capa responde a otra: ¿qué las conecta? Una línea corta y brillante indica un trayecto cotidiano entre dos cámaras —unos minutos por una calle de la ciudad— que queda registrado dos veces. Una línea larga y pálida indica que dos grupos vigilados comparten la misma red viaria, nada más; no es una ruta que se haya visto recorrer a nadie. Siga suficientes líneas y los puntos aislados se convierten en un puñado de redes, algunas que atraviesan condados enteros. Casi nada de esto se construyó así a propósito: la policía de una ciudad, el alguacil de un condado y una empresa privada compraron sus cámaras por separado. Esta capa muestra lo que resulta cuando nadie coordina. La metodología detrás de cada línea —qué cuenta como vecino, por qué los cordones no tienen límite de longitud, qué rastrean los colores— está en «Limitaciones», más abajo.',
     },
     limitations: [
       {
@@ -366,6 +366,57 @@ export const LAYERS: LayerDefinition[] = [
       {
         en: 'Operator is recorded for only a minority of readers, so the agencies named on a link are a floor and never the full list. Naming an operator says who is recorded as running a reader — not who can search what it collects, which is a separate question this layer holds no data on.',
         es: 'El operador solo consta en una minoría de los lectores, así que las agencias nombradas en una conexión son un mínimo y nunca la lista completa. Nombrar a un operador indica quién figura como responsable de un lector, no quién puede consultar lo que recopila, que es una cuestión distinta sobre la que esta capa no tiene datos.',
+      },
+    ],
+    impactSpheres: [
+      {
+        icon: 'Route',
+        color: '#38bdf8',
+        title: { en: 'Movement & routine', es: 'Movimiento y rutina' },
+        body: {
+          en: 'The Supreme Court has twice grappled with what happens once public movements are strung together. In Carpenter v. United States, it held that pulling days of cell-tower records is a search requiring a warrant, because aggregation produces a "detailed, encyclopedic" record that no single data point does. A network built from individually public plate reads raises the same question.',
+          es: 'El Tribunal Supremo se ha enfrentado dos veces a lo que ocurre cuando se encadenan movimientos públicos. En Carpenter v. United States, resolvió que obtener varios días de registros de antenas de telefonía es una pesquisa que exige una orden judicial, porque la acumulación produce un registro «detallado y enciclopédico» que ningún dato aislado ofrece. Una red construida a partir de lecturas de matrícula individualmente públicas plantea la misma pregunta.',
+        },
+        citation: 'Carpenter v. United States, 585 U.S. 296 (2018)',
+        citationUrl: 'https://www.supremecourt.gov/opinions/17pdf/16-402_h315.pdf',
+      },
+      {
+        icon: 'Fingerprint',
+        color: '#f43f5e',
+        title: { en: 'Immigration status', es: 'Estatus migratorio' },
+        body: {
+          en: 'This is not hypothetical. A public-records request to the Danville, Illinois police turned up more than 4,000 lookups against a nationwide plate-reader network in which officers gave "immigration," "ICE," or "ICE WARRANT" as the reason — despite state law and the vendor’s own policy prohibiting it. Minnesota law requires a warrant before a reader is used to track someone; how many queries against Minnesota cameras actually clear that bar is not public information.',
+          es: 'Esto no es hipotético. Una solicitud de registros públicos a la policía de Danville, Illinois, reveló más de 4.000 consultas contra una red nacional de lectores de matrícula en las que los agentes indicaron «immigration», «ICE» o «ICE WARRANT» como motivo, pese a que la ley estatal y la propia política del proveedor lo prohíben. La ley de Minnesota exige una orden judicial antes de usar un lector para rastrear a alguien; cuántas consultas contra cámaras de Minnesota realmente cumplen ese requisito no es información pública.',
+        },
+        citation: '404 Media (2025)',
+        citationUrl:
+          'https://www.404media.co/ice-taps-into-nationwide-ai-enabled-camera-network-data-shows/',
+        citation2: 'Minn. Stat. § 13.824',
+        citation2Url: 'https://www.revisor.mn.gov/statutes/cite/13.824',
+      },
+      {
+        icon: 'Speech',
+        color: '#a78bfa',
+        title: { en: 'Association & speech', es: 'Asociación y expresión' },
+        body: {
+          en: 'Knowing you might be watched changes behaviour even when you have broken no law. After the 2013 NSA surveillance revelations became public, traffic to sensitive Wikipedia topics fell nearly 30 percent — a drop researchers linked to awareness of monitoring, not any change in the underlying law.',
+          es: 'Saber que podría estar siendo observado cambia el comportamiento incluso sin haber infringido ninguna ley. Tras hacerse públicas las revelaciones de vigilancia de la NSA en 2013, el tráfico hacia temas sensibles de Wikipedia cayó casi un 30 %, una caída que los investigadores vincularon a la conciencia de estar siendo vigilado, no a ningún cambio en la ley.',
+        },
+        citation: 'Penney, "Chilling Effects: Online Surveillance and Wikipedia Use," 31 Berkeley Tech. L.J. 117 (2016)',
+        citationUrl: 'https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2769645',
+      },
+      {
+        icon: 'Landmark',
+        color: '#c084fc',
+        title: { en: 'Finance & housing', es: 'Finanzas y vivienda' },
+        body: {
+          en: 'Where this kind of infrastructure clusters today is not disconnected from where lending was denied in the 1930s. This map’s own Redlining layer, drawn from the same historical HOLC survey data, traces where those two patterns still overlap in Minnesota.',
+          es: 'Dónde se concentra este tipo de infraestructura hoy no está desconectado de dónde se negó el crédito en los años 30. La capa de Redlining de este mismo mapa, elaborada a partir de los mismos registros históricos de HOLC, traza dónde esos dos patrones todavía se superponen en Minnesota.',
+        },
+        citation: 'Sources — Redlining (HOLC), this site',
+        // Resolved to the locale-specific /sources path at render time — see
+        // MapView.astro, which is the only place that knows the locale.
+        citationUrl: 'internal:sources',
       },
     ],
     geometry: 'line',
