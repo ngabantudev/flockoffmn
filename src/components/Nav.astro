@@ -67,6 +67,67 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     </nav>
 
     <div class="ml-auto flex shrink-0 items-center gap-1 text-sm">
+      <div
+        data-theme-control
+        class="mr-1 flex items-center gap-1 border-l border-ink-800 pl-2"
+      >
+        <div role="group" aria-label={t('themeToggleGroupLabel')} class="hidden items-center gap-1 sm:flex">
+          <button
+            type="button"
+            id="theme-toggle-light"
+            aria-pressed="false"
+            class="rounded px-2 py-1 text-sm text-ink-400 transition-colors hover:bg-ink-850 hover:text-ink-100"
+          >
+            {t('themeLight')}
+          </button>
+          <button
+            type="button"
+            id="theme-toggle-dark"
+            aria-pressed="true"
+            class="rounded bg-ink-800 px-2 py-1 text-sm text-ink-100 transition-colors"
+          >
+            {t('themeDark')}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          id="theme-toggle-mobile"
+          aria-label={t('themeSwitchToLight')}
+          class="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-850 hover:text-ink-100 sm:hidden"
+        >
+          <svg
+            id="theme-toggle-mobile-icon-sun"
+            viewBox="0 0 24 24"
+            class="h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+          >
+            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.75" />
+            <path
+              d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linecap="round"
+            />
+          </svg>
+          <svg
+            id="theme-toggle-mobile-icon-moon"
+            viewBox="0 0 24 24"
+            class="hidden h-4 w-4"
+            aria-hidden="true"
+            fill="none"
+          >
+            <path
+              d="M20 14.5a8 8 0 1 1-10.5-10.5 6.5 6.5 0 0 0 10.5 10.5z"
+              stroke="currentColor"
+              stroke-width="1.75"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+
       {
         LOCALES.map((code) => (
           <a
@@ -88,3 +149,76 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     </div>
   </div>
 </header>
+
+<script is:inline type="application/json" id="theme-toggle-strings" set:html={JSON.stringify({ light: t('themeLight'), dark: t('themeDark'), switchToLight: t('themeSwitchToLight'), switchToDark: t('themeSwitchToDark') })} />
+
+<script>
+  /*
+   * Theme toggle. State lives in `document.documentElement.dataset.theme`
+   * and `localStorage['flockoff:theme']` — nothing here touches the map,
+   * `#detail-panel`, the record list, or `#map-status` (spec: accessibility
+   * sync is off limits to this control). A later slice listens for the
+   * `flockoff:theme-change` event to re-key the map basemap; this slice only
+   * has to dispatch it with a stable payload shape.
+   */
+  const STORAGE_KEY = 'flockoff:theme';
+  type Theme = 'light' | 'dark';
+
+  const stringsEl = document.getElementById('theme-toggle-strings');
+  const strings = stringsEl?.textContent
+    ? (JSON.parse(stringsEl.textContent) as {
+        light: string;
+        dark: string;
+        switchToLight: string;
+        switchToDark: string;
+      })
+    : { light: 'Light', dark: 'Dark', switchToLight: 'Switch to light theme', switchToDark: 'Switch to dark theme' };
+
+  const lightBtn = document.getElementById('theme-toggle-light');
+  const darkBtn = document.getElementById('theme-toggle-dark');
+  const mobileBtn = document.getElementById('theme-toggle-mobile');
+  const sunIcon = document.getElementById('theme-toggle-mobile-icon-sun');
+  const moonIcon = document.getElementById('theme-toggle-mobile-icon-moon');
+
+  function currentTheme(): Theme {
+    return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  }
+
+  function reflect(theme: Theme) {
+    const isLight = theme === 'light';
+
+    lightBtn?.setAttribute('aria-pressed', String(isLight));
+    darkBtn?.setAttribute('aria-pressed', String(!isLight));
+    lightBtn?.classList.toggle('bg-ink-800', isLight);
+    lightBtn?.classList.toggle('text-ink-100', isLight);
+    lightBtn?.classList.toggle('text-ink-400', !isLight);
+    darkBtn?.classList.toggle('bg-ink-800', !isLight);
+    darkBtn?.classList.toggle('text-ink-100', !isLight);
+    darkBtn?.classList.toggle('text-ink-400', isLight);
+
+    // The mobile button is a single toggle: its label and icon describe the
+    // action it will perform (switch to the *other* theme), not the current
+    // state.
+    mobileBtn?.setAttribute('aria-label', isLight ? strings.switchToDark : strings.switchToLight);
+    sunIcon?.classList.toggle('hidden', isLight);
+    moonIcon?.classList.toggle('hidden', !isLight);
+  }
+
+  function setTheme(theme: Theme) {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(STORAGE_KEY, theme);
+    } catch {
+      // Storage can throw (e.g. Safari private browsing) — the in-memory
+      // dataset.theme change above still takes effect for this page view.
+    }
+    reflect(theme);
+    document.dispatchEvent(new CustomEvent('flockoff:theme-change', { detail: { theme } }));
+  }
+
+  lightBtn?.addEventListener('click', () => setTheme('light'));
+  darkBtn?.addEventListener('click', () => setTheme('dark'));
+  mobileBtn?.addEventListener('click', () => setTheme(currentTheme() === 'light' ? 'dark' : 'light'));
+
+  reflect(currentTheme());
+</script>
