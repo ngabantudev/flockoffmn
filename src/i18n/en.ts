@@ -18,17 +18,6 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
-  // Theme control. On the map page it's a MapLibre corner control
-  // (src/lib/themeControl.ts) with an extra "Map theme" section; everywhere
-  // else it's the same popover in the header cluster next to the language
-  // switcher (Nav.astro), site-theme-only since there's no map to also
-  // theme. themeButtonLabel is the icon button itself; themeToggleGroupLabel
-  // is the "Site theme" heading inside the opened popover.
-  themeButtonLabel: 'Theme',
-  themeToggleGroupLabel: 'Site theme',
-  themeLight: 'Light',
-  themeDark: 'Dark',
-
   // Live flights — always on in the main map's sidebar (no checkbox to
   // disable it), deliberately not a registry layer (see
   // src/lib/liveFlights.ts). Worldwide, filtered

@@ -19,5 +19,4 @@
     // Storage can throw (e.g. Safari private browsing) — fall back to the
     // OS-level prefers-color-scheme media query, no theme override.
   }
-  document.documentElement.classList.add('js');
 })();
