@@ -1,5 +1,5 @@
 import type { IControl, Map as MLMap } from 'maplibre-gl';
-import { createElement, Layers, Check, type IconNode } from 'lucide';
+import { createElement, Palette, Check, type IconNode } from 'lucide';
 import {
   MAP_STYLES,
   currentTheme,
@@ -47,7 +47,7 @@ export class ThemeControl implements IControl {
     button.setAttribute('aria-label', 'Map and site theme');
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-haspopup', 'true');
-    button.appendChild(createElement(Layers as IconNode, { width: 18, height: 18 }));
+    button.appendChild(createElement(Palette as IconNode, { width: 18, height: 18 }));
     button.addEventListener('click', (e) => {
       e.stopPropagation();
       this.setOpen(this.panel?.hidden !== false);
