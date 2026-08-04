@@ -60,7 +60,12 @@ const POLL_MS = 20_000;
  */
 const ADSB_GLOBAL_URL = 'https://api.adsb.lol/v2/point/0/0/10000';
 
-/** Kept identical to functions/api/ice-flights.js's copy — see that file. */
+/**
+ * Kept identical to functions/lib/ice-charter-filter.mjs's copy — see that
+ * file. Duplicated here on purpose, not imported: this script must run with
+ * `node` and zero build step, with no dependency on anything under
+ * functions/, which is Cloudflare Pages Functions-only code.
+ */
 const ICE_CHARTER_CALLSIGN_PATTERN = /^(TYS|GXA6...|BBQ82..|AWI7...|EAL8...|OAE4...|LYM300|LYM400|LYM500)/;
 
 async function fetchIceCharterFlights() {

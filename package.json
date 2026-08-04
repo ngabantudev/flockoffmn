@@ -28,7 +28,8 @@
     "data:covenants": "node scripts/ingest/covenants.mjs",
     "data:ej": "node scripts/ingest/ej-cumulative.mjs",
     "data:airports": "node scripts/ingest/airports.mjs",
-    "dev:live-flights-check": "node scripts/dev-tools/live-flights-check.mjs"
+    "dev:live-flights-check": "node scripts/dev-tools/live-flights-check.mjs",
+    "dev:flight-sightings-check": "node scripts/dev-tools/flight-sightings-check.mjs"
   },
   "dependencies": {
     "astro": "^7.1.6",

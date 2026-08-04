@@ -30,6 +30,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | Cumulative impacts (MPCA) | `ej-cumulative.geojson` | No formal licence published; public government data under [Minn. Stat. ch. 13](https://www.revisor.mn.gov/statutes/cite/13) | Attribute MPCA. Draft data (CI-MAP, December 2025); see the layer's `knownGaps`. |
 | County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
+| Flight sighting log | D1 table `flight_sightings` (via `functions/api/flight-log/*`) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike, likely.** Attribution to adsb.lol required always. If this persisted table counts as a Derivative Database (plausible — see below), ODbL's offer-back clause applies. Not a static file in `public/data/`, so it is not covered by the CC BY 4.0 grant above either. |
 
 **Combining layers:** the most restrictive term governs the combination. A
 product mixing the camera layer with the redlining layer inherits both ODbL
@@ -53,6 +54,9 @@ Reproduce these when redistributing the corresponding layer:
 - **Data centers** — FracTracker Alliance; More Than Just Parks Data Center
   Tracker; Cleanview; Baxtel; PoweredByWho.
 - **County, place and jurisdiction geography** — U.S. Census Bureau.
+- **Flight sighting log** — © adsb.lol contributors, ODbL 1.0. Model notice
+  text per the license: "Contains information from adsb.lol, which is made
+  available here under the Open Database License (ODbL)."
 
 ## The data-center trackers
 
@@ -105,6 +109,35 @@ So `covenants.geojson` is still not a copy of the upstream dataset and should
 not be used as one. **If you want the full per-property research data, get it
 from Mapping Prejudice directly** — it is public, better maintained, and
 theirs.
+
+## The flight sighting log
+
+**Vetted.** adsb.lol licenses both its live API and its historical trace
+data under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/),
+stated on their own docs (`adsb.lol/docs/open-data/api/`,
+`adsb.lol/docs/open-data/historical/`) and in the `globe_history` repo's
+`LICENSE-ODbL.txt`. This is the same license this project already handles
+for the ALPR/OpenStreetMap layers above, so the same obligations apply:
+
+- **Extraction** (ODbL's term for storing/persisting Contents into another
+  medium) and **Re-utilisation** (redistributing/republishing them) are both
+  explicitly permitted, including commercially, indefinitely.
+- **Attribution is required, always** — see "Required attributions" below.
+- **Share-alike likely applies.** ODbL distinguishes a "Produced Work" (only
+  needs attribution) from a "Derivative Database" (must itself be ODbL-licensed,
+  keep notices intact, and — per §4.6 — offer recipients a free, machine-readable
+  copy if distributed online). A systematically stored, queryable
+  hex/callsign/timestamp history reads more like the latter than the former.
+  Treating it that way is the safer call, matching how this project already
+  treats the ALPR layer's ODbL obligations.
+- **Practical follow-up this implies:** add a bulk CSV/JSON export of the
+  `flight_sightings` table (satisfies the §4.6 offer-back obligation, and is
+  independently useful to legal teams doing bulk analysis rather than
+  one-record-at-a-time lookups).
+
+adsb.lol's data license does not depend on or inherit ADS-B Exchange's terms
+— it is a separate project (github.com/adsblol) with its own ODbL grant, not
+merely a "drop-in API-compatible" alias of ADSBX's own policies.
 
 ## A note on scope
 
