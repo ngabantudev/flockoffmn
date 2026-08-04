@@ -4,6 +4,7 @@ import { loadAllLayers, distinctValues } from '~/layers/data';
 import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { densityGradientCss } from '~/lib/densityRamp';
+import { ALT_BANDS } from '~/lib/liveFlights';
 
 interface Props {
   locale: Locale;
@@ -169,14 +170,16 @@ const liveFlightsStrings = {
   count: t('liveFlightsCount'),
   updated: t('liveFlightsUpdated'),
   unavailable: t('liveFlightsUnavailable'),
-  legendTitle: t('liveFlightsLegendTitle'),
-  altLabels: {
-    ground: t('liveFlightsAltGround'),
-    low: t('liveFlightsAltLow'),
-    mid: t('liveFlightsAltMid'),
-    high: t('liveFlightsAltHigh'),
-    veryhigh: t('liveFlightsAltVeryHigh'),
-  },
+};
+
+// Only needed server-side for the "About this data" altitude key below, so
+// it stays out of the client-hydrated liveFlightsStrings payload above.
+const altBandLabels: Record<string, string> = {
+  ground: t('liveFlightsAltGround'),
+  low: t('liveFlightsAltLow'),
+  mid: t('liveFlightsAltMid'),
+  high: t('liveFlightsAltHigh'),
+  veryhigh: t('liveFlightsAltVeryHigh'),
 };
 ---
 
@@ -219,8 +222,9 @@ const liveFlightsStrings = {
       combine it with (no separate "show everything" mode to opt out of
       into) and the feed itself is cheap: server-side filtering runs a few
       ms of CPU behind a 45s edge cache (see functions/api/ice-flights.js).
-      The description and caveats live behind the "About this data"
-      disclosure below so the card itself stays a single slim row. See
+      The description, caveats, altitude key, and sources all live behind the
+      "About this data" disclosure below so the card itself stays a single
+      slim row instead of parking a legend permanently over the map. See
       src/lib/liveFlights.ts for the overlay itself.
     */}
     <div class="border-b border-ink-800 p-3">
@@ -238,6 +242,39 @@ const liveFlightsStrings = {
               </summary>
               <p class="mt-1 text-[11px] leading-relaxed text-ink-400">{t('liveFlightsIntro')}</p>
               <p class="mt-1 text-[11px] leading-relaxed text-warn">{t('liveFlightsCaveat')}</p>
+
+              <p class="mt-2 text-[10px] font-semibold tracking-wider text-ink-400 uppercase">
+                {t('liveFlightsLegendTitle')}
+              </p>
+              <ul class="mt-1 space-y-0.5">
+                {ALT_BANDS.map((band) => (
+                  <li class="flex items-center gap-1.5 text-[10px] text-ink-300">
+                    <span class="h-2 w-2 shrink-0 rounded-full" style={`background:${band.color}`} aria-hidden="true" />
+                    <span class="min-w-0 truncate">{altBandLabels[band.id]}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <p class="mt-2 text-[10px] font-semibold tracking-wider text-ink-400 uppercase">
+                {t('liveFlightsSourcesTitle')}
+              </p>
+              <ul class="mt-1 space-y-0.5">
+                <li class="text-[10px] text-ink-300">
+                  <a
+                    class="underline hover:text-ink-100"
+                    href="https://lexingtonalarm.org/habeas-flight-watch"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Habeas Flight Watch
+                  </a>
+                </li>
+                <li class="text-[10px] text-ink-300">
+                  <a class="underline hover:text-ink-100" href="https://ottergoose.net" target="_blank" rel="noopener noreferrer">
+                    Otter Goose — MSP ICE Air Flight Tracker
+                  </a>
+                </li>
+              </ul>
             </details>
           </div>
         </div>
@@ -518,7 +555,7 @@ const liveFlightsStrings = {
 
 <script>
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
-  import { LiveFlightsOverlay, ALT_BANDS } from '~/lib/liveFlights';
+  import { LiveFlightsOverlay } from '~/lib/liveFlights';
   import { compassLabel } from '~/lib/geo.mjs';
   import { displayName } from '~/lib/authority.mjs';
   import { createElement, Route, Fingerprint, Speech, Landmark, type IconNode } from 'lucide';
@@ -579,8 +616,6 @@ const liveFlightsStrings = {
     count: string;
     updated: string;
     unavailable: string;
-    legendTitle: string;
-    altLabels: Record<string, string>;
   };
   const liveFlightsStatusEl = document.getElementById('live-flights-status') as HTMLElement;
 
@@ -1045,31 +1080,11 @@ const liveFlightsStrings = {
       mapKeysEl.appendChild(card);
     }
 
-    // Live flights isn't in `layers` (see src/lib/liveFlights.ts for why),
-    // so its legend is built from ALT_BANDS directly rather than from a
-    // registry layer's categoryColors. Always included — there's no
-    // checkbox to gate it on anymore.
-    const card = document.createElement('div');
-    card.setAttribute('class', 'rounded-md border border-rose-500/30 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm');
-    const title = document.createElement('p');
-    title.setAttribute('class', 'mb-1 truncate text-[10px] leading-tight text-ink-300');
-    title.textContent = LS.legendTitle;
-    card.appendChild(title);
-    const list = document.createElement('ul');
-    list.setAttribute('class', 'space-y-0.5');
-    for (const band of ALT_BANDS) {
-      const li = document.createElement('li');
-      li.setAttribute('class', 'flex items-center gap-1.5 text-[10px] text-ink-300');
-      const dot = document.createElement('span');
-      dot.setAttribute('class', 'h-2 w-2 shrink-0 rounded-full');
-      dot.style.background = band.color;
-      const label = document.createElement('span');
-      label.textContent = LS.altLabels[band.id] ?? band.id;
-      li.append(dot, label);
-      list.appendChild(li);
-    }
-    card.appendChild(list);
-    mapKeysEl.appendChild(card);
+    // Live flights' altitude key used to always render here too, but that
+    // pinned it over the map permanently since the overlay has no checkbox
+    // to gate it on. It now lives in the "About this data" disclosure in the
+    // sidebar card instead (see the markup above) — read there on demand
+    // rather than shown at all times.
   }
 
   function refreshGroups() {
