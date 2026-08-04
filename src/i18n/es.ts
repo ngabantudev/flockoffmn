@@ -23,10 +23,11 @@ export const es: Record<string, string> = {
   liveFlightsToggleLabel: 'Vuelos chárter de ICE Air en vivo',
   liveFlightsAboutToggle: 'Acerca de estos datos',
   liveFlightsIntro:
-    'Aeronaves en cualquier parte del mundo que actualmente emiten un distintivo de llamada que coincide con operadores chárter conocidos de ICE Air, según adsb.lol — el mismo enfoque que usa el "MSP ICE Air Flight Tracker" de Otter Goose (ottergoose.net). Estos chárteres pasan la mayor parte del tiempo lejos de Minnesota, por lo que este es un feed mundial, no limitado al estado como el resto de las capas aquí.',
+    'Aeronaves en todo el mundo que emiten un distintivo de llamada que coincide con operadores chárter conocidos de ICE Air, según adsb.lol — el mismo enfoque que usa el "MSP ICE Air Flight Tracker" de Otter Goose (ottergoose.net). Estos chárteres pasan la mayor parte del tiempo fuera de Minnesota, así que, a diferencia del resto de las capas aquí, este feed no está limitado al estado.',
   liveFlightsCaveat:
-    'Una coincidencia de distintivo de llamada no es una confirmación de registro: puede reutilizarse para un vuelo no relacionado, reasignarse, o simplemente no transmitirse, y este filtro no puede distinguir entre esos casos. Las posiciones entre actualizaciones se estiman interpolando entre dos posiciones reales, no una nueva lectura GPS en cada fotograma. La estela de color detrás de cada aeronave es su trayectoria reciente realmente reportada; al hacer clic en un avión se carga su historial real completo hasta la última vez que dejó tierra. La línea gris discontinua adelante es una proyección en línea recta desde el rumbo y la velocidad actuales para los próximos 10 minutos, no un plan de vuelo real — este feed no ofrece ninguno de los dos. El filtrado ocurre en el servidor antes de llegar a su navegador, y esto se actualiza con menos frecuencia que un feed en vivo típico, ya que la consulta mundial subyacente es grande.',
+    'Una coincidencia de distintivo de llamada no es una confirmación de registro: puede reutilizarse, reasignarse o no transmitirse. Las posiciones entre actualizaciones se interpolan, no son nuevas lecturas GPS. La estela es la trayectoria reciente real de cada aeronave; la línea discontinua adelante es una proyección en línea recta, no un plan de vuelo real. Esto se actualiza más lento que un feed en vivo típico.',
   liveFlightsLegendTitle: 'Coloreado por altitud',
+  liveFlightsSourcesTitle: 'Fuentes',
   liveFlightsAltGround: 'En tierra',
   liveFlightsAltLow: 'Menos de 10,000 pies',
   liveFlightsAltMid: '10,000–25,000 pies',
