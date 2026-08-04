@@ -155,14 +155,22 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
 <script>
   /*
    * Theme toggle. State lives in `document.documentElement.dataset.theme`
-   * and `localStorage['flockoff:theme']` — nothing here touches the map,
-   * `#detail-panel`, the record list, or `#map-status` (spec: accessibility
-   * sync is off limits to this control). A later slice listens for the
-   * `flockoff:theme-change` event to re-key the map basemap; this slice only
-   * has to dispatch it with a stable payload shape.
+   * and `localStorage['flockoff:theme']` (src/lib/theme.ts) — nothing here
+   * touches the map, `#detail-panel`, the record list, or `#map-status`
+   * (spec: accessibility sync is off limits to this control). The map's
+   * theme-aware basemap/paint logic listens for `onThemeChange`; this file
+   * only has to call `setTheme`, which dispatches that event.
+   *
+   * Imports from a real module on purpose, not just for reuse: a `<script>`
+   * with no imports gets inlined directly into the HTML by Astro's
+   * bundler, and this site's CSP (`script-src 'self'`, no `unsafe-inline`)
+   * silently blocks that — the buttons would render but do nothing, with
+   * only a console CSP violation to explain why. Importing from
+   * src/lib/theme.ts forces this into an external `/_astro/*.js` file
+   * instead, the same way FlightLog.astro's script (which imports from
+   * `~/lib/flightLog`) already does.
    */
-  const STORAGE_KEY = 'flockoff:theme';
-  type Theme = 'light' | 'dark';
+  import { currentTheme, setTheme, type Theme } from '~/lib/theme';
 
   const stringsEl = document.getElementById('theme-toggle-strings');
   const strings = stringsEl?.textContent
@@ -179,10 +187,6 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
   const mobileBtn = document.getElementById('theme-toggle-mobile');
   const sunIcon = document.getElementById('theme-toggle-mobile-icon-sun');
   const moonIcon = document.getElementById('theme-toggle-mobile-icon-moon');
-
-  function currentTheme(): Theme {
-    return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
-  }
 
   function reflect(theme: Theme) {
     const isLight = theme === 'light';
@@ -204,21 +208,14 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     moonIcon?.classList.toggle('hidden', !isLight);
   }
 
-  function setTheme(theme: Theme) {
-    document.documentElement.dataset.theme = theme;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, theme);
-    } catch {
-      // Storage can throw (e.g. Safari private browsing) — the in-memory
-      // dataset.theme change above still takes effect for this page view.
-    }
+  function setThemeAndReflect(theme: Theme) {
+    setTheme(theme);
     reflect(theme);
-    document.dispatchEvent(new CustomEvent('flockoff:theme-change', { detail: { theme } }));
   }
 
-  lightBtn?.addEventListener('click', () => setTheme('light'));
-  darkBtn?.addEventListener('click', () => setTheme('dark'));
-  mobileBtn?.addEventListener('click', () => setTheme(currentTheme() === 'light' ? 'dark' : 'light'));
+  lightBtn?.addEventListener('click', () => setThemeAndReflect('light'));
+  darkBtn?.addEventListener('click', () => setThemeAndReflect('dark'));
+  mobileBtn?.addEventListener('click', () => setThemeAndReflect(currentTheme() === 'light' ? 'dark' : 'light'));
 
   reflect(currentTheme());
 </script>
