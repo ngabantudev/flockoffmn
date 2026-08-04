@@ -288,14 +288,14 @@ Options, roughly in order of independence:
      "preview": {
        "d1_databases": [ /* repeat the top-level d1_databases entry here too */ ],
        "vars": {
-         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
+         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2-dark/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
          "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
        }
      },
      "production": {
        "d1_databases": [ /* repeat the top-level d1_databases entry here too */ ],
        "vars": {
-         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
+         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2-dark/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
          "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
        }
      }
@@ -338,11 +338,16 @@ Options, roughly in order of independence:
      (view-source finds it in seconds), so keeping it out of git bought no
      real secrecy, only slightly less convenient scraping. The real control
      is step 1's origin restriction — apply it, don't just plan to.
-3. `basic-v2` is a light style — that's fine, the `osm` raster layer's paint
-   properties in `mapStyle.ts` already desaturate and dim whatever light
-   tileset comes back, the same way they do for `tile.openstreetmap.org`
-   today. Any other MapTiler raster style id works the same way; swap
-   `basic-v2` for it.
+3. `basic-v2-dark` — not `basic-v2` — matches this project's dark UI without
+   needing much correction from `mapStyle.ts`'s raster paint properties,
+   which now only cap peak brightness rather than force a light style dark.
+   `basic-v2` (light) was the first thing tried; stacked with the old heavy
+   desaturation it looked flat and washed out — two dimming passes doing the
+   same job. If you swap to a different MapTiler style, prefer one of its
+   own dark variants over a light one for the same reason; the light
+   `tile.openstreetmap.org` dev fallback is the one place still relying on
+   that lighter paint filter to look reasonable, and that's an accepted
+   tradeoff for a path that's "fine for development," not production.
 4. MapTiler's free tier is metered (100k tile loads/month as of this
    writing) — watch usage after a traffic spike like the one that broke the
    OSM fallback.
