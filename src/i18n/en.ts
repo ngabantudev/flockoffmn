@@ -29,10 +29,11 @@ export const en: Record<string, string> = {
   liveFlightsToggleLabel: 'Live ICE Air charter flights',
   liveFlightsAboutToggle: 'About this data',
   liveFlightsIntro:
-    'Aircraft anywhere in the world currently broadcasting a callsign matching known ICE Air charter operators, from adsb.lol — the same approach Otter Goose\'s MSP ICE Air Flight Tracker (ottergoose.net) uses. These charters spend most of their time far outside Minnesota, so this is a worldwide feed, not one scoped to the state like every other layer here.',
+    "Aircraft worldwide broadcasting a callsign matching known ICE Air charter operators, via adsb.lol — the same approach Otter Goose's MSP ICE Air Flight Tracker (ottergoose.net) uses. These charters spend most of their time outside Minnesota, so unlike every other layer here, this feed isn't scoped to the state.",
   liveFlightsCaveat:
-    'A callsign match is not registry confirmation: it can be reused for an unrelated flight, reassigned, or simply not broadcast, and this filter cannot tell the difference. Positions between updates are estimated by interpolating between two real fixes — not a new GPS reading every frame. The colored trail behind each aircraft is its actual recent reported track; clicking a plane loads its full real history back to wherever it last left the ground. The dashed gray line ahead is a straight-line projection from current heading and speed for the next 10 minutes, not a real flight plan — this feed provides neither. Filtering happens server-side before anything reaches your browser, and this refreshes less often than a typical live feed since the underlying worldwide query is large.',
+    "A callsign match isn't confirmed registry: it can be reused, reassigned, or unbroadcast. Positions between updates are interpolated, not fresh GPS reads. The trail is each aircraft's real recent track; the dashed line ahead is a straight-line projection, not a real flight plan. This refreshes slower than a typical live feed.",
   liveFlightsLegendTitle: 'Colored by altitude',
+  liveFlightsSourcesTitle: 'Sources',
   liveFlightsAltGround: 'On the ground',
   liveFlightsAltLow: 'Below 10,000 ft',
   liveFlightsAltMid: '10,000–25,000 ft',
