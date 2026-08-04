@@ -1,10 +1,19 @@
-import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
+import maplibregl, { type Map as MLMap, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
-import { baseStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
+import { baseStyle, basemapPaint, tileUrlForStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
-import { GLOW_STOPS, THREAD_STOPS, densityColorExpression } from './densityRamp';
+import {
+  GLOW_STOPS,
+  THREAD_STOPS_DARK,
+  THREAD_STOPS_LIGHT,
+  CORD_STROKE_DARK,
+  CORD_STROKE_LIGHT,
+  densityColorExpression,
+} from './densityRamp';
 import { groupNodes } from './nodes';
 import { groupBlocks } from './blocks';
+import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
+import { ThemeControl } from './themeControl';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -26,6 +35,8 @@ export interface ClientLayer {
     citation2Url?: string;
   }[];
   color: string;
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  colorLight?: string;
   geometry: 'point' | 'polygon' | 'line';
   /**
    * Where this layer's category sits in the draw order, low to high.
@@ -227,7 +238,11 @@ const NODE_WEIGHT = [
  * a fifth in the 101. The curve keeps climbing past the largest so a denser
  * extract, or another state, does not flatten out at the top.
  */
-const networkColor = (key: string, maxRecords: number, stops: Array<[number, string]> = THREAD_STOPS) =>
+// No default `stops` on purpose: every call site now has a real, current-theme
+// choice to make (THREAD_STOPS_DARK/_LIGHT depending on the basemap; GLOW_STOPS
+// where the caller wants the full wash instead) — a silent default would be
+// exactly how this went theme-blind the first time.
+const networkColor = (key: string, maxRecords: number, stops: Array<[number, string]>) =>
   [
     'interpolate',
     ['linear'],
@@ -331,6 +346,15 @@ export class MapController {
   private popup: maplibregl.Popup | null = null;
   /** Set once the map's `load` event has fired. See ready(). */
   private hasLoaded = false;
+  /**
+   * Whether the *current basemap* is dark, not the site theme — they're
+   * independent (lib/theme.ts). Drives every basemap-dependent paint
+   * property — a layer's own colour/colorLight, casings drawn in the
+   * basemap's own background, the density ramp's thread/cord colours — both
+   * at initial layer creation and on repaint when the map style changes;
+   * see repaintThemedLayers().
+   */
+  private basemapDark = MAP_STYLES[initialMapStyle()].dark;
   /** Where the reader was before a tapped record moved the camera to it. */
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
 
@@ -340,7 +364,7 @@ export class MapController {
 
     this.map = new maplibregl.Map({
       container,
-      style: baseStyle(),
+      style: baseStyle(initialMapStyle()),
       center: MN_CENTER,
       zoom: 5.6,
       minZoom: 3,
@@ -353,11 +377,27 @@ export class MapController {
       pitchWithRotate: false,
     });
 
+    // Added before NavigationControl so it stacks above the zoom buttons —
+    // MapLibre stacks same-position controls in the order they're added, and
+    // "map theme / site theme" reads as a settings entry point, which belongs
+    // above the more frequently-used zoom controls, not buried below them.
+    this.map.addControl(new ThemeControl(), 'top-right');
     this.map.addControl(
       new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
       'top-right',
     );
     this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
+
+    // The basemap is independent of every other layer here — swapping it is
+    // just the raster source's tile URL plus two paint properties, never
+    // map.setStyle() (which would drop every registry layer this class has
+    // added). Queued on 'load' if a visitor toggles before the map has
+    // finished its first style load, since setPaintProperty on a layer that
+    // doesn't exist yet throws.
+    onMapStyleChange((styleId) => {
+      if (this.hasLoaded) this.setBasemap(styleId);
+      else this.map.once('load', () => this.setBasemap(styleId));
+    });
 
     this.map.on('load', () => {
       this.hasLoaded = true;
@@ -376,6 +416,131 @@ export class MapController {
       if (this.map.queryRenderedFeatures(e.point, { layers: ids }).length) return;
       this.clearSelection();
     });
+  }
+
+  /**
+   * Re-keys the basemap without map.setStyle() — that would drop every
+   * source/layer this class has added for the registry layers, live flights,
+   * and density threads. A raster source's setTiles() plus two paint
+   * properties is the entire visual surface baseStyle()'s 'osm'/'background'
+   * layers expose, so that's the entire surface this needs to touch.
+   */
+  setBasemap(styleId: MapStyleId): void {
+    const source = this.map.getSource('osm') as RasterTileSource | undefined;
+    if (!source) return;
+    source.setTiles([tileUrlForStyle(styleId)]);
+    const dark = MAP_STYLES[styleId].dark;
+    const { 'background-color': backgroundColor, osmPaint } = basemapPaint(dark);
+    this.map.setPaintProperty('background', 'background-color', backgroundColor);
+    // Explicit reset to 1 for a light style, not just omitting the property:
+    // a light style follows a dark one that set raster-brightness-max to
+    // 0.85, and MapLibre paint properties don't revert to their spec default
+    // just because a later setPaintProperty call leaves them unmentioned.
+    this.map.setPaintProperty('osm', 'raster-brightness-max', osmPaint['raster-brightness-max'] ?? 1);
+
+    if (dark !== this.basemapDark) {
+      this.basemapDark = dark;
+      this.repaintThemedLayers();
+    }
+  }
+
+  /** The basemap's own background colour — casings/halos/strokes are drawn in this so a coloured mark reads against the map instead of floating on it. */
+  private get basemapColor(): string {
+    return this.basemapDark ? '#0a0c10' : '#ffffff';
+  }
+
+  /** A layer's identity colour for the current basemap. See LayerDefinition.colorLight's comment in layers/types.ts for why this can fall back to `color`. */
+  private layerColor(layer: ClientLayer): string {
+    return this.basemapDark ? layer.color : (layer.colorLight ?? layer.color);
+  }
+
+  /**
+   * Re-keys every basemap-dependent paint property after `basemapDark`
+   * changes: a colour chosen while dark was current — a layer's own
+   * identity colour, a casing drawn in the basemap's own background, or the
+   * density ramp's thread/cord colours — doesn't update itself just because
+   * the basemap did. Only colour properties are re-set; width/opacity/blur
+   * are zoom- or data-driven, not background-driven, and were already
+   * correct.
+   *
+   * Cone sprites are handled differently: they're cached bitmap images
+   * (ensureConeSprite), not a paint property, so there's nothing here to
+   * call setPaintProperty on. refresh() regenerates them by re-deriving
+   * that layer's cone source data, which calls ensureConeSprite again with
+   * the (now current) basemap colour baked into a freshly-generated sprite.
+   */
+  private repaintThemedLayers(): void {
+    for (const layer of this.layers) {
+      if (this.map.getLayer(`${layer.id}-fill`)) {
+        if (!layer.categoryColors) {
+          this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', [
+            'coalesce',
+            ['get', 'holcFill'],
+            this.layerColor(layer),
+          ] as unknown as maplibregl.ExpressionSpecification);
+        }
+        if (this.map.getLayer(`${layer.id}-labels`)) {
+          this.map.setPaintProperty(`${layer.id}-labels`, 'text-halo-color', this.basemapColor);
+        }
+      }
+
+      if (this.map.getLayer(`${layer.id}-points`)) {
+        // Mirrors the circle-color expression built at layer creation
+        // exactly (see the '-points' addLayer call below) — including the
+        // categoryColors case, whose far-zoom "below the closest tier" step
+        // is this.layerColor(layer) too, not just the simple case's whole
+        // expression.
+        const circleColor = layer.categoryColors
+          ? ([
+              'step',
+              ['zoom'],
+              this.layerColor(layer),
+              scaleOf(layer).pointsFrom,
+              [
+                'match',
+                ['get', layer.categoryColors.key],
+                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+                layer.categoryColors.fallback,
+              ],
+            ] as unknown as maplibregl.ExpressionSpecification)
+          : this.layerColor(layer);
+        this.map.setPaintProperty(`${layer.id}-points`, 'circle-color', circleColor);
+        this.map.setPaintProperty(`${layer.id}-points`, 'circle-stroke-color', this.basemapColor);
+      }
+
+      if (this.map.getLayer(`${layer.id}-line`) && !layer.networkColor) {
+        this.map.setPaintProperty(`${layer.id}-line`, 'line-color', this.layerColor(layer));
+        if (this.map.getLayer(`${layer.id}-line-casing`)) {
+          this.map.setPaintProperty(`${layer.id}-line-casing`, 'line-color', this.basemapColor);
+        }
+      }
+
+      if (layer.bearingKey && this.map.getSource(this.coneSourceId(layer.id))) {
+        this.refresh(layer.id);
+      }
+
+      if (!layer.networkColor || !this.map.getLayer(`${layer.id}-line`)) continue;
+
+      const threadStops = this.basemapDark ? THREAD_STOPS_DARK : THREAD_STOPS_LIGHT;
+      const cordColor = layer.networkColor
+        ? this.basemapDark
+          ? CORD_STROKE_DARK
+          : CORD_STROKE_LIGHT
+        : layer.cordTier?.color;
+      const thread = networkColor(layer.networkColor.key, layer.networkColor.maxRecords, threadStops);
+      const glow = networkColor(layer.networkColor.key, layer.networkColor.maxRecords, GLOW_STOPS);
+
+      const cord = layer.cordTier;
+      const byTier = (mesh: unknown, cordValue: unknown) =>
+        (cord
+          ? ['case', ['==', ['get', cord.key], cord.value], cordValue, mesh]
+          : mesh) as unknown as maplibregl.ExpressionSpecification;
+      const threadByTier = cord ? byTier(thread, cordColor) : thread;
+      const glowByTier = cord ? byTier(glow, cordColor) : glow;
+
+      this.map.setPaintProperty(`${layer.id}-line`, 'line-color', threadByTier);
+      this.map.setPaintProperty(`${layer.id}-line-casing`, 'line-color', glowByTier);
+    }
   }
 
   /** Style layers a tap can select a record on. See bindInteractions. */
@@ -471,7 +636,13 @@ export class MapController {
    */
   private ensureConeSprite(layer: ClientLayer, arc: number): string | null {
     const rounded = Math.round(arc);
-    const id = `${layer.id}-cone-${rounded}`;
+    // Theme suffix, not just layer+arc: the sprite is a baked bitmap, colour
+    // included, so a basemap change needs a genuinely different cached image
+    // rather than a repaint — see repaintThemedLayers(), which calls
+    // refresh() for any layer with bearingKey specifically so this runs
+    // again with the new basemapDark and produces a freshly-coloured sprite
+    // under a new id instead of reusing the stale one.
+    const id = `${layer.id}-cone-${rounded}-${this.basemapDark ? 'dark' : 'light'}`;
     if (this.map.hasImage(id)) return id;
 
     const pixelRatio = 2;
@@ -496,10 +667,10 @@ export class MapController {
       ctx.closePath();
     }
     ctx.globalAlpha = 0.45;
-    ctx.fillStyle = layer.color;
+    ctx.fillStyle = this.layerColor(layer);
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = layer.color;
+    ctx.strokeStyle = this.layerColor(layer);
     ctx.lineWidth = px * 0.03;
     ctx.stroke();
 
@@ -879,7 +1050,7 @@ export class MapController {
               ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
               layer.categoryColors.fallback,
             ]
-          : ['coalesce', ['get', 'holcFill'], layer.color]
+          : ['coalesce', ['get', 'holcFill'], this.layerColor(layer)]
       ) as unknown as maplibregl.ExpressionSpecification;
 
       // The grid stands under the parcels and fades out exactly as they fade
@@ -1014,7 +1185,7 @@ export class MapController {
           },
           paint: {
             'text-color': polygonColor,
-            'text-halo-color': '#0a0c10',
+            'text-halo-color': this.basemapColor,
             'text-halo-width': 1.4,
           },
         });
@@ -1029,14 +1200,18 @@ export class MapController {
       // line legible over a dark basemap without drawing it fat enough to
       // imply a width the data does not have — a corridor is a stretch of
       // road, not a band of ground.
-      // Colour carries the connection where a line cannot be drawn.
+      // Colour carries the connection where a line cannot be drawn. Which
+      // ramp is legible depends on the *basemap*, not the site theme — see
+      // this.basemapDark's comment — and repaintThemedLayers() re-sets this
+      // same line-color if the basemap changes after this layer is added.
+      const threadStops = this.basemapDark ? THREAD_STOPS_DARK : THREAD_STOPS_LIGHT;
       const thread = layer.networkColor
-        ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords)
-        : (layer.color as unknown as maplibregl.ExpressionSpecification);
+        ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords, threadStops)
+        : (this.layerColor(layer) as unknown as maplibregl.ExpressionSpecification);
       // The halo gets the density surface's own ramp, cool end included, so a
       // corridor reads as the same heat the point heatmap would show over that
       // same ground — just carried by the street shape instead of a blob over
-      // it. The core below stays on THREAD_STOPS: a halo is a wash, so the low
+      // it. The core below stays on THREAD_STOPS_*: a halo is a wash, so the low
       // end's near-zero contrast is fine, but the thin core is the one legible
       // mark on a mesh body and needs the ramp that clears 3:1 against the map.
       const glow = layer.networkColor
@@ -1062,9 +1237,21 @@ export class MapController {
             ? ['case', ['==', ['get', cord.key], cord.value], cordValue, mesh]
             : mesh) as unknown as maplibregl.ExpressionSpecification;
         // Cords stay off the network ramp: it says how many reader locations a
-        // mesh body holds, and a cord belongs to two bodies at once.
-        const threadByTier = cord ? byTier(thread, cord.color) : thread;
-        const glowByTier = cord ? byTier(glow, cord.color) : glow;
+        // mesh body holds, and a cord belongs to two bodies at once. Where a
+        // layer's cord rides the ramp (has networkColor, true of every cord
+        // tier so far), colour comes from this.basemapDark rather than
+        // layer.cordTier.color — it's exactly as background-dependent as the
+        // mesh's colour is (see densityRamp.ts's CORD_STROKE_DARK/_LIGHT), so
+        // a value read once from static registry config would go stale the
+        // same way the mesh's did. cord.color stays the real answer for a
+        // hypothetical filament layer with a cord tier but no network ramp.
+        const cordColor = layer.networkColor
+          ? this.basemapDark
+            ? CORD_STROKE_DARK
+            : CORD_STROKE_LIGHT
+          : cord?.color;
+        const threadByTier = cord ? byTier(thread, cordColor) : thread;
+        const glowByTier = cord ? byTier(glow, cordColor) : glow;
         // Painted first within the layer, so the mesh sits on top of the trunk
         // rather than the other way round. MapLibre sorts ascending.
         const sortByTier = byTier(1, 0);
@@ -1291,7 +1478,7 @@ export class MapController {
             source: src,
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': '#0a0c10',
+              'line-color': this.basemapColor,
               // The casing tracks the core rather than staying put: a dark halo
               // at full strength under a half-strength line reads as a shadow
               // with nothing casting it.
@@ -1308,7 +1495,7 @@ export class MapController {
             source: src,
             layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: {
-              'line-color': layer.color,
+              'line-color': this.layerColor(layer),
               'line-opacity': fade(0.9, layer.opacity),
               'line-width': ['interpolate', ['linear'], ['zoom'], 6, at(1.6), 11, at(3), 16, at(6)],
             },
@@ -1319,6 +1506,9 @@ export class MapController {
       // A line is a hard thing to hit with a finger. This one is invisible and
       // exists only to widen the target; a zero-opacity layer is still
       // queryable, so click and hover behave as they do on every other layer.
+      // Colour is irrelevant at opacity 0, left as the plain layer colour
+      // rather than threaded through layerColor() for a property nothing
+      // ever sees.
       this.map.addLayer(
         {
           id: `${layer.id}-line-hit`,
@@ -1401,7 +1591,7 @@ export class MapController {
           ? ([
               'step',
               ['zoom'],
-              layer.color,
+              this.layerColor(layer),
               tier.pointsFrom,
               [
                 'match',
@@ -1410,9 +1600,9 @@ export class MapController {
                 layer.categoryColors.fallback,
               ],
             ] as unknown as maplibregl.ExpressionSpecification)
-          : layer.color,
+          : this.layerColor(layer),
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8],
-        'circle-stroke-color': '#0a0c10',
+        'circle-stroke-color': this.basemapColor,
         /*
          * Dots rise out of the surface rather than switching on over it.
          *

@@ -201,7 +201,7 @@ const locatorStrings = {
       <button
         id="copy-letter"
         type="button"
-        class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-ink-950 hover:brightness-110"
+        class="rounded-md bg-accent px-4 py-2 text-sm font-medium text-on-accent hover:brightness-110"
       >
         Copy letter
       </button>
@@ -222,7 +222,7 @@ const locatorStrings = {
     <textarea
       id="letter"
       rows="18"
-      class="scroll-slim w-full rounded-md border border-ink-700 bg-ink-950 p-3 font-mono text-xs leading-relaxed text-ink-100 focus:border-accent focus:outline-none"
+      class="scroll-slim w-full rounded-md border border-ink-700 bg-well p-3 font-mono text-xs leading-relaxed text-ink-100 focus:border-accent focus:outline-none"
     ></textarea>
   </section>
 
@@ -882,7 +882,7 @@ const locatorStrings = {
   function render(j: Jurisdiction) {
     panelEl.textContent = '';
 
-    const wrap = el('div', 'rounded-lg border border-ink-800 bg-ink-950 p-4');
+    const wrap = el('div', 'rounded-lg border border-ink-800 bg-well p-4');
     wrap.append(el('h3', 'text-sm font-semibold text-ink-100', S.whoAnswersTitle));
 
     const line = el('p', 'mt-1 text-sm');

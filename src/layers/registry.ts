@@ -1,4 +1,4 @@
-import { CORD_STROKE } from '~/lib/densityRamp';
+import { CORD_STROKE_DARK } from '~/lib/densityRamp';
 import type { LayerCategory, LayerDefinition } from './types';
 
 /**
@@ -108,6 +108,7 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#f97316',
+    colorLight: '#c35305',
     action: {
       requestType: '287g',
       label: {
@@ -220,6 +221,7 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#38bdf8',
+    colorLight: '#067baf',
     bearingKey: 'direction',
     density: {
       label: { en: 'Camera density', es: 'Densidad de cámaras' },
@@ -421,6 +423,7 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'line',
     color: '#818cf8',
+    colorLight: '#5160f5',
     filament: true,
     positions: {
       offsetsKey: 'siteOffsets',
@@ -439,7 +442,12 @@ export const LAYERS: LayerDefinition[] = [
     cordTier: {
       key: 'kind',
       value: 'cord',
-      color: CORD_STROKE,
+      // This layer has networkColor set, so mapController.ts actually
+      // colours the cord from the density ramp at the current basemap's
+      // dark/light state (CORD_STROKE_DARK/_LIGHT) — this value is a
+      // fallback for the type, not what's actually drawn. See the comment
+      // where cordColor is resolved in mapController.ts.
+      color: CORD_STROKE_DARK,
     },
     // 0 rather than a real threshold: every mesh link carries a
     // connectedSites of at least 2 (a link joins two reader locations at
@@ -575,6 +583,7 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'polygon',
     color: '#c084fc',
+    colorLight: '#9c3efa',
     categoryColors: {
       key: 'grade',
       label: { en: 'HOLC grade', es: 'Calificación HOLC' },
@@ -806,6 +815,7 @@ export const LAYERS: LayerDefinition[] = [
     ],
     geometry: 'point',
     color: '#34d399',
+    colorLight: '#1d845f',
     action: {
       requestType: 'datacenter',
       label: {
@@ -960,6 +970,7 @@ export const LAYERS: LayerDefinition[] = [
     // in the frame — and a saturated yellow over 40,000 statewide segments is
     // exactly that.
     color: '#c9a227',
+    colorLight: '#8d721b',
     // Context, not subject: this is the ground the other layers stand on, and
     // it has to stay legible underneath them rather than through them.
     opacity: 0.5,

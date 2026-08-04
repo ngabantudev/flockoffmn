@@ -38,6 +38,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     citation2Url: s.citation2Url,
   })),
   color: d.color,
+  colorLight: d.colorLight,
   geometry: d.geometry,
   // The panel's order is the draw order. Reading it off LAYER_CATEGORIES here
   // means a category can be moved, renamed or inserted in one place and the
@@ -182,6 +183,45 @@ const altBandLabels: Record<string, string> = {
   veryhigh: t('liveFlightsAltVeryHigh'),
 };
 ---
+
+{/*
+  One CSS custom property per layer, dark value as the default and a light
+  override under two selectors — the same pair global.css's whole ink ramp
+  uses, and both are required, not redundant: :root[data-theme='light'] is
+  an explicit choice (the site theme toggle sets that attribute), while
+  @media (prefers-color-scheme: light) : root:not([data-theme]) covers a
+  visitor who has never touched the toggle and is just following their OS
+  setting live via CSS, with no data-theme attribute for the first selector
+  to match at all. Missing this second block was a real bug caught by
+  actually loading the page with the OS set to light rather than trusting
+  the pattern was copied correctly: every layer's panel swatch stayed on
+  its dark value for exactly this (the far more common, toggle-never-
+  touched) case. Only layers whose colour actually fails WCAG 3:1 on a
+  light background carry a colorLight (see LayerDefinition's own comment in
+  layers/types.ts); the rest just repeat `color`, which already clears the
+  floor in both themes.
+
+  This governs *panel/UI* colour and tracks *site* theme specifically. The
+  map's own paint (dots, lines, fills) is a separate, independent question
+  answered in mapController.ts by this.layerColor(), keyed to the current
+  *basemap*'s dark/light state instead — the two aren't the same theme, see
+  lib/theme.ts, and conflating them here would make a panel swatch that's
+  right for the sidebar but wrong for what's actually drawn on the map, or
+  the other way around.
+*/}
+<style set:html={`
+  :root {
+    ${clientLayers.map((l) => `--layer-color-${l.id}: ${l.color};`).join('\n    ')}
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      ${clientLayers.map((l) => `--layer-color-${l.id}: ${l.colorLight ?? l.color};`).join('\n      ')}
+    }
+  }
+  :root[data-theme='light'] {
+    ${clientLayers.map((l) => `--layer-color-${l.id}: ${l.colorLight ?? l.color};`).join('\n    ')}
+  }
+`} />
 
 <div class="relative flex h-full min-h-0 flex-col lg:flex-row">
   {/* ---------------------------- Controls ---------------------------- */}
@@ -338,7 +378,7 @@ const altBandLabels: Record<string, string> = {
                         <span
                           data-group-dot={layer.id}
                           class="h-2 w-2 rounded-full opacity-25 transition-opacity"
-                          style={`background:${layer.color}`}
+                          style={`background:var(--layer-color-${layer.id})`}
                         />
                       ))}
                     </span>
@@ -361,7 +401,7 @@ const altBandLabels: Record<string, string> = {
                               data-layer-toggle={layer.id}
                               checked={layer.category === 'surveillance'}
                               class="mt-0.5 h-4 w-4 shrink-0 accent-current"
-                              style={`color:${layer.color}`}
+                              style={`color:var(--layer-color-${layer.id})`}
                             />
                             <div class="min-w-0 flex-1">
                               <label
@@ -370,7 +410,7 @@ const altBandLabels: Record<string, string> = {
                               >
                                 <span
                                   class="h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={`background:${layer.color}`}
+                                  style={`background:var(--layer-color-${layer.id})`}
                                   aria-hidden="true"
                                 />
                                 <span class="min-w-0">{layer.label}</span>
@@ -417,12 +457,23 @@ const altBandLabels: Record<string, string> = {
                                 sees a glow and has to guess whether brighter means more.
                                 The swatch is generated from the same stops the map is, so
                                 it cannot describe a ramp the map does not draw.
+
+                                `var(--color-ink-950)` rather than a literal hex: this is
+                                server-rendered once, but a CSS custom property inside an
+                                inline `background` is still re-evaluated by the browser on
+                                every repaint, so the swatch's backing colour flips with
+                                site theme for free, no client script needed. It tracks site
+                                theme specifically, not the map's own current background —
+                                those are independent (site theme vs. map theme, see
+                                lib/theme.ts) — so this is an approximation, correct for the
+                                common case of the two matching and only slightly off if a
+                                reader has deliberately set them apart.
                               */}
                               {layer.density && (
                                 <div class="mt-2">
                                   <div
                                     class="h-1.5 w-full rounded-full border border-ink-800"
-                                    style={`background:${densityGradientCss()}`}
+                                    style={`background:${densityGradientCss('var(--color-ink-950)')}`}
                                     aria-hidden="true"
                                   />
                                   <p class="mt-1 flex items-baseline justify-between text-[10px] text-ink-400">
@@ -780,7 +831,7 @@ const altBandLabels: Record<string, string> = {
         y1: H / 2,
         x2: W - PAD,
         y2: H / 2,
-        stroke: layer.color,
+        stroke: `var(--layer-color-${layer.id})`,
         'stroke-opacity': 0.35,
         'stroke-width': 2,
         'stroke-linecap': 'round',
@@ -797,9 +848,13 @@ const altBandLabels: Record<string, string> = {
           // tall. The caption says a bigger dot is more, and the exact figures
           // are in the fields above, so the diagram carries the shape only.
           r: 2.2 + Math.min(n, 8) * 0.45,
-          fill: layer.color,
+          fill: `var(--layer-color-${layer.id})`,
           'fill-opacity': 0.9,
-          stroke: '#0a0c10',
+          // This diagram sits on a panel card, not the map — ink-850 (the
+          // card's own raised surface colour) is the right thing for a dot's
+          // stroke to disappear into, not the basemap colour var(--layer-*)
+          // is otherwise tracking here.
+          stroke: 'var(--color-ink-850)',
           'stroke-width': 1,
         }),
       );
@@ -835,7 +890,7 @@ const altBandLabels: Record<string, string> = {
     const titleWrap = el('div', 'min-w-0');
     const badge = el('div', 'mb-1 flex items-center gap-1.5');
     const dot = el('span', 'h-2 w-2 rounded-full shrink-0');
-    dot.setAttribute('style', `background:${layer.color}`);
+    dot.setAttribute('style', `background:var(--layer-color-${layer.id})`);
     badge.append(dot, el('span', 'text-[11px] uppercase tracking-wider text-ink-400', layer.label));
     titleWrap.append(badge, el('h2', 'text-base font-semibold leading-snug text-ink-100', p.name));
     if (p.county) {
@@ -926,7 +981,7 @@ const altBandLabels: Record<string, string> = {
 
       const cta = el(
         'a',
-        'block rounded-md bg-accent px-3 py-2 text-center text-sm font-medium text-ink-950 hover:brightness-110',
+        'block rounded-md bg-accent px-3 py-2 text-center text-sm font-medium text-on-accent hover:brightness-110',
         layer.action.label,
       );
       cta.setAttribute('href', `${ACT_PATH}?${params}`);
@@ -1295,7 +1350,7 @@ const altBandLabels: Record<string, string> = {
       );
       button.setAttribute('type', 'button');
       const dot = el('span', 'mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full');
-      dot.setAttribute('style', `background:${layer.color}`);
+      dot.setAttribute('style', `background:var(--layer-color-${layer.id})`);
       const text = el('span', 'min-w-0');
       text.append(
         el('span', 'block truncate text-xs text-ink-100', feature.properties.name),
