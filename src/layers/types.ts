@@ -259,6 +259,35 @@ export interface LayerDefinition {
   whatThisMeans: I18nString;
   /** Honest limitations, shown with the layer and on the sources page (F8). */
   limitations: I18nString[];
+  /**
+   * Concrete, documented stakes, shown inside "What this means" rather than
+   * asserted in the explanation paragraph itself.
+   *
+   * `whatThisMeans` says what the reader is looking at; this says why it is
+   * not academic — each entry is anchored to a case, a study, or an audit,
+   * never a bare claim. Colour is a way to tell entries apart at a glance, not
+   * a finding of its own. Omit it and the layer carries no such section,
+   * which is right for most of them: a 1930s mortgage grade needs no case law
+   * to explain why it still matters.
+   */
+  impactSpheres?: Array<{
+    /**
+     * Name of a lucide icon export, e.g. "Route", "Fingerprint" — never an
+     * emoji. Resolved to an actual icon by the panel; see the ICONS map in
+     * MapView.astro's client script.
+     */
+    icon: string;
+    title: I18nString;
+    /** Hex colour distinguishing this card from the others. */
+    color: string;
+    body: I18nString;
+    /** Case name, study citation, or audit — not localised: a proper noun. */
+    citation: string;
+    citationUrl: string;
+    /** A second citation, where one claim rests on two sources. */
+    citation2?: string;
+    citation2Url?: string;
+  }>;
   geometry: 'point' | 'polygon' | 'line';
   /** Hex colour used for the map symbol and the legend swatch. */
   color: string;
