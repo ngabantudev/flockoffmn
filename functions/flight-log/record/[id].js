@@ -27,6 +27,7 @@ import {
   SECURITY_HEADERS,
   RECORD_PAGE_CSP,
 } from '../../lib/flight-log-shared.mjs';
+import { getMnCivicContext } from '../../lib/mn-context.mjs';
 
 const ID_PATTERN = /^[1-9]\d*$/;
 
@@ -34,7 +35,58 @@ function eventLabel(event) {
   return event === 'ground_arrival' ? 'Ground arrival' : 'Ground departure';
 }
 
-function renderRecord(sighting, paired, requestUrl, generatedAtIso) {
+/**
+ * "Minnesota context near this landing" — only rendered when
+ * getMnCivicContext() found the sighting's coordinates inside a Minnesota
+ * county. This is a proximity cross-reference against this project's own
+ * static layers, not a claim about who was aboard the flight or that the
+ * flight is connected to any specific facility or person — see the caveat
+ * paragraph below, which is load-bearing, not decorative.
+ */
+function renderMnContext(context) {
+  if (!context) return '';
+
+  const { countyName, nearestDetention, agreements287g, authorities } = context;
+
+  const detentionLine =
+    nearestDetention != null
+      ? `<p>Nearest known ICE detention facility on file: ${escapeHtml(nearestDetention.name)}, ~${escapeHtml(nearestDetention.miles.toFixed(1))} mi away.</p>`
+      : '';
+
+  const agreementLines = agreements287g
+    .map((a) => {
+      const parts = [escapeHtml(a.name)];
+      const detail = [a.supportType, a.signed ? `signed ${a.signed}` : null].filter(Boolean).map(escapeHtml).join(', ');
+      return `<p>${escapeHtml(countyName)} has a 287(g) agreement: ${parts.join('')}${detail ? ` (${detail})` : ''}.</p>`;
+    })
+    .join('\n      ');
+
+  const authorityItems = authorities
+    .map(
+      (a) =>
+        `<li>${escapeHtml(a.entity)} — ${escapeHtml(a.office.subdivision ? `Minn. Stat. § ${a.office.cite}, ${a.office.subdivision}` : `Minn. Stat. § ${a.office.cite}`)}: <a href="${escapeHtml(a.office.url)}">statute text</a></li>`,
+    )
+    .join('\n        ');
+
+  return `
+  <section class="mn-context">
+    <h2>Minnesota context near this landing</h2>
+    <p>In ${escapeHtml(countyName)}.</p>
+    ${detentionLine}
+    ${agreementLines}
+    <p>Accountable for enforcement here:</p>
+    <ul>
+        ${authorityItems}
+    </ul>
+    <p class="caveat">
+      This cross-reference is proximity between the sighting's recorded coordinates and this
+      project's own Minnesota layers — it is not a claim about who was aboard this flight, or that
+      this flight is connected to any specific facility or person.
+    </p>
+  </section>`;
+}
+
+function renderRecord(sighting, paired, mnContext, requestUrl, generatedAtIso) {
   const badge = escapeHtml(eventLabel(sighting.event));
   const pairedLine =
     paired == null
@@ -98,6 +150,29 @@ function renderRecord(sighting, paired, requestUrl, generatedAtIso) {
     font-size: 0.825rem;
     margin: 0.4rem 0;
   }
+  .mn-context {
+    margin: 1.5rem 0;
+    padding: 0.9rem 1.1rem;
+    border: 1px solid #2a3140;
+    border-radius: 0.5rem;
+    background: #11141b;
+    font-size: 0.9rem;
+  }
+  .mn-context h2 {
+    margin: 0 0 0.6rem;
+    font-size: 1rem;
+    color: #e7ecf3;
+  }
+  .mn-context p { margin: 0.4rem 0; }
+  .mn-context ul { margin: 0.3rem 0; padding-left: 1.25rem; }
+  .mn-context li { margin: 0.25rem 0; }
+  .mn-context .caveat {
+    margin-top: 0.75rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid #2a3140;
+    color: #a3adbd;
+    font-size: 0.8rem;
+  }
   footer {
     margin-top: 2rem;
     padding: 1rem 1.25rem;
@@ -139,6 +214,7 @@ function renderRecord(sighting, paired, requestUrl, generatedAtIso) {
   <div class="caveats">
       ${caveats}
   </div>
+  ${renderMnContext(mnContext)}
 
   <footer>
     <p>Source: <a href="https://adsb.lol/">adsb.lol</a></p>
@@ -177,8 +253,9 @@ export async function onRequestGet(context) {
 
   const sighting = toExport(result.row);
   const paired = result.paired ? toExport(result.paired) : null;
+  const mnContext = await getMnCivicContext(sighting.lat, sighting.lon, context.request.url);
   const generatedAtIso = new Date().toISOString();
-  const html = renderRecord(sighting, paired, context.request.url, generatedAtIso);
+  const html = renderRecord(sighting, paired, mnContext, context.request.url, generatedAtIso);
 
   return new Response(html, {
     status: 200,
