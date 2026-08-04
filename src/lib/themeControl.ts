@@ -1,8 +1,9 @@
 import type { IControl, Map as MLMap } from 'maplibre-gl';
-import { createElement, Palette, Check, type IconNode } from 'lucide';
+import { createElement, SunMoon, Sun, Moon, Check, type IconNode } from 'lucide';
 import {
   MAP_STYLES,
   currentTheme,
+  setTheme,
   onThemeChange,
   storedMapStyle,
   initialMapStyle,
@@ -11,15 +12,15 @@ import {
   type Theme,
   type MapStyleId,
 } from './theme';
-import { buildSiteThemeSection } from './themeControlUI';
 
 /**
  * The map's "Site theme / Map theme" control — a MapLibre IControl, not an
  * Astro component, because it has to live inside the map's own corner
  * control stack (see mapController.ts's addControl call), the same visual
- * family as the zoom buttons. Nav.astro has its own, separate control for
- * pages with no map to theme (see Nav.astro's comment on why it isn't just
- * this component reused there).
+ * family as the zoom buttons. This is the only place either setting can be
+ * changed — there is deliberately no header equivalent for pages without a
+ * map; the choice still applies everywhere via localStorage, it just isn't
+ * independently settable from, say, /about.
  *
  * Deliberately vanilla DOM construction with hand-written CSS classes
  * (global.css's .theme-control-* rules), not Tailwind utility classes:
@@ -32,7 +33,8 @@ export class ThemeControl implements IControl {
   private panel: HTMLElement | null = null;
   private button: HTMLButtonElement | null = null;
   private mapStyleButtons = new Map<MapStyleId, HTMLButtonElement>();
-  private reflectSiteTheme: ((theme: Theme) => void) | null = null;
+  private lightBtn: HTMLButtonElement | null = null;
+  private darkBtn: HTMLButtonElement | null = null;
   private offThemeChange: (() => void) | null = null;
   private offMapStyleChange: (() => void) | null = null;
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
@@ -47,7 +49,7 @@ export class ThemeControl implements IControl {
     button.setAttribute('aria-label', 'Map and site theme');
     button.setAttribute('aria-expanded', 'false');
     button.setAttribute('aria-haspopup', 'true');
-    button.appendChild(createElement(Palette as IconNode, { width: 18, height: 18 }));
+    button.appendChild(createElement(SunMoon as IconNode, { width: 18, height: 18 }));
     button.addEventListener('click', (e) => {
       e.stopPropagation();
       this.setOpen(this.panel?.hidden !== false);
@@ -57,9 +59,7 @@ export class ThemeControl implements IControl {
     const panel = document.createElement('div');
     panel.setAttribute('class', 'theme-control-panel');
     panel.hidden = true;
-    const siteTheme = buildSiteThemeSection();
-    this.reflectSiteTheme = siteTheme.reflect;
-    panel.appendChild(siteTheme.el);
+    panel.appendChild(this.buildSiteThemeSection());
     panel.appendChild(this.buildMapThemeSection());
     this.panel = panel;
 
@@ -78,7 +78,7 @@ export class ThemeControl implements IControl {
 
     this.reflectSiteTheme(currentTheme());
     this.reflectMapStyle(storedMapStyle() ?? initialMapStyle());
-    this.offThemeChange = onThemeChange((theme: Theme) => this.reflectSiteTheme?.(theme));
+    this.offThemeChange = onThemeChange((theme: Theme) => this.reflectSiteTheme(theme));
     this.offMapStyleChange = onMapStyleChange((style: MapStyleId) => this.reflectMapStyle(style));
 
     return container;
@@ -96,6 +96,46 @@ export class ThemeControl implements IControl {
     if (!this.panel || !this.button) return;
     this.panel.hidden = !open;
     this.button.setAttribute('aria-expanded', String(open));
+  }
+
+  private buildSiteThemeSection(): HTMLElement {
+    const section = document.createElement('div');
+    section.setAttribute('class', 'theme-control-section');
+
+    const label = document.createElement('div');
+    label.setAttribute('class', 'theme-control-label');
+    label.textContent = 'Site theme';
+    section.appendChild(label);
+
+    const row = document.createElement('div');
+    row.setAttribute('class', 'theme-control-segmented');
+
+    const lightBtn = document.createElement('button');
+    lightBtn.type = 'button';
+    lightBtn.setAttribute('class', 'theme-control-segment');
+    lightBtn.appendChild(createElement(Sun as IconNode, { width: 14, height: 14 }));
+    lightBtn.appendChild(document.createTextNode('Light'));
+    lightBtn.addEventListener('click', () => setTheme('light'));
+
+    const darkBtn = document.createElement('button');
+    darkBtn.type = 'button';
+    darkBtn.setAttribute('class', 'theme-control-segment');
+    darkBtn.appendChild(createElement(Moon as IconNode, { width: 14, height: 14 }));
+    darkBtn.appendChild(document.createTextNode('Dark'));
+    darkBtn.addEventListener('click', () => setTheme('dark'));
+
+    this.lightBtn = lightBtn;
+    this.darkBtn = darkBtn;
+    row.appendChild(lightBtn);
+    row.appendChild(darkBtn);
+    section.appendChild(row);
+    return section;
+  }
+
+  private reflectSiteTheme(theme: Theme): void {
+    const isLight = theme === 'light';
+    this.lightBtn?.classList.toggle('is-active', isLight);
+    this.darkBtn?.classList.toggle('is-active', !isLight);
   }
 
   private buildMapThemeSection(): HTMLElement {

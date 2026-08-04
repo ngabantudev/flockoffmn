@@ -166,13 +166,6 @@
     background: var(--color-accent);
     color: var(--color-on-accent);
   }
-
-  /* Anti-FOUC: the theme toggle is meaningless without theme-init.js running
-     to sync it to stored preference, so it stays hidden until that script
-     marks <html> as JS-capable. */
-  html:not(.js) [data-theme-control] {
-    display: none;
-  }
 }
 
 @layer components {
@@ -298,6 +291,18 @@
  */
 .theme-control {
   position: relative;
+}
+.theme-control-button {
+  /*
+   * MapLibre's own .maplibregl-ctrl-icon rule (display: block, height/width:
+   * 100%) assumes a *background-image* icon, which centers itself via
+   * background-position: 50%. This button's icon is an inline SVG child
+   * instead, which that rule does nothing to center — without this it sat
+   * at the child's natural top-left position in the 29x29px button box.
+   */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .theme-control-button svg {
   filter: invert(1) brightness(1.6);
