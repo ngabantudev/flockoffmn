@@ -100,13 +100,18 @@ export function baseStyle(): StyleSpecification {
         type: 'raster',
         source: 'osm',
         paint: {
-          // The OSM standard style is a light theme. Desaturating and dimming
-          // it keeps the data layers legible without shipping a second basemap.
-          'raster-saturation': -0.75,
-          'raster-brightness-min': 0.05,
-          'raster-brightness-max': 0.62,
-          'raster-contrast': 0.12,
-          'raster-opacity': 0.95,
+          // Light touch only: production points PUBLIC_TILE_URL at a tile
+          // style that's already dark (MapTiler basic-v2-dark — see
+          // docs/DEPLOYMENT.md § Base map tiles), so this just caps peak
+          // brightness rather than crushing color out of it. This used to
+          // desaturate hard (-0.75) to force OSM's light default style dark;
+          // that combination made the map look flat and washed out once the
+          // tile source itself was already dark — two dimming passes
+          // stacked. The unconfigured dev fallback (tile.openstreetmap.org,
+          // a light style) still renders under this same light filter,
+          // which is a fine tradeoff since dev explicitly doesn't need to
+          // look production-polished.
+          'raster-brightness-max': 0.85,
         },
       },
     ],
