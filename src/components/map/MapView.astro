@@ -185,14 +185,21 @@ const altBandLabels: Record<string, string> = {
 ---
 
 {/*
-  One CSS custom property per layer, dark value in @theme's default scope
-  and a light override under :root[data-theme='light'] — the same
-  attribute-selector pattern global.css's whole ink ramp uses, so a layer's
-  legend dot/badge/panel accent flips with site theme for free, with no
-  client script re-rendering anything. Only layers whose colour actually
-  fails WCAG 3:1 on a light background carry a colorLight (see
-  LayerDefinition's own comment in layers/types.ts); the rest just repeat
-  `color`, which already clears the floor in both themes.
+  One CSS custom property per layer, dark value as the default and a light
+  override under two selectors — the same pair global.css's whole ink ramp
+  uses, and both are required, not redundant: :root[data-theme='light'] is
+  an explicit choice (the site theme toggle sets that attribute), while
+  @media (prefers-color-scheme: light) : root:not([data-theme]) covers a
+  visitor who has never touched the toggle and is just following their OS
+  setting live via CSS, with no data-theme attribute for the first selector
+  to match at all. Missing this second block was a real bug caught by
+  actually loading the page with the OS set to light rather than trusting
+  the pattern was copied correctly: every layer's panel swatch stayed on
+  its dark value for exactly this (the far more common, toggle-never-
+  touched) case. Only layers whose colour actually fails WCAG 3:1 on a
+  light background carry a colorLight (see LayerDefinition's own comment in
+  layers/types.ts); the rest just repeat `color`, which already clears the
+  floor in both themes.
 
   This governs *panel/UI* colour and tracks *site* theme specifically. The
   map's own paint (dots, lines, fills) is a separate, independent question
@@ -205,6 +212,11 @@ const altBandLabels: Record<string, string> = {
 <style set:html={`
   :root {
     ${clientLayers.map((l) => `--layer-color-${l.id}: ${l.color};`).join('\n    ')}
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      ${clientLayers.map((l) => `--layer-color-${l.id}: ${l.colorLight ?? l.color};`).join('\n      ')}
+    }
   }
   :root[data-theme='light'] {
     ${clientLayers.map((l) => `--layer-color-${l.id}: ${l.colorLight ?? l.color};`).join('\n    ')}
