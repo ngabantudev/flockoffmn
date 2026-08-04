@@ -1,0 +1,270 @@
+---
+import type { Locale } from '~/layers/types';
+import { useTranslations, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+/**
+ * Set to false once an attorney has actually reviewed flightLogLegalContext*
+ * below — this is the single switch that removes the draft banner, per the
+ * plan's requirement that it not be entangled with the rest of the markup.
+ */
+const LEGAL_CONTEXT_REVIEWED = false;
+
+const strings = {
+  searchLabel: t('flightLogSearchLabel'),
+  loading: t('loading'),
+  noResults: t('noResults'),
+};
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">
+    {t('flightLogTitle')}
+  </h1>
+  <p class="prose-civic mt-3">{t('flightLogIntro')}</p>
+
+  <p class="mt-3 rounded-md border border-ink-800 bg-ink-900 p-3 text-xs leading-relaxed text-ink-300">
+    {t('flightLogKnownGaps')}
+  </p>
+
+  <!-- Search -->
+  <section class="mt-8">
+    <form id="flight-log-form" class="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto]">
+      <div>
+        <label for="flight-query" class="mb-1.5 block text-sm font-medium text-ink-200">
+          {t('flightLogSearchLabel')}
+        </label>
+        <input
+          id="flight-query"
+          type="text"
+          autocomplete="off"
+          placeholder="e.g. a1b2c3 or RCH123"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2.5 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+        />
+      </div>
+      <div>
+        <label for="flight-from" class="mb-1.5 block text-sm font-medium text-ink-200">From</label>
+        <input
+          id="flight-from"
+          type="date"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2.5 text-sm text-ink-100 focus:border-accent focus:outline-none"
+        />
+      </div>
+      <div>
+        <label for="flight-to" class="mb-1.5 block text-sm font-medium text-ink-200">To</label>
+        <input
+          id="flight-to"
+          type="date"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2.5 text-sm text-ink-100 focus:border-accent focus:outline-none"
+        />
+      </div>
+      <div class="flex items-end">
+        <button
+          type="submit"
+          class="w-full rounded-md border border-ink-700 bg-ink-850 px-4 py-2.5 text-sm font-medium text-ink-100 hover:border-accent hover:text-accent sm:w-auto"
+        >
+          Search
+        </button>
+      </div>
+    </form>
+
+    <p id="flight-log-status" role="status" aria-live="polite" class="mt-3 text-sm text-warn"></p>
+
+    <ul id="flight-log-results" class="mt-5 space-y-3"></ul>
+
+    <p id="flight-log-caveats" class="mt-4 hidden text-xs leading-relaxed text-ink-400"></p>
+  </section>
+
+  <section class="mt-10">
+    <h2 class="text-lg font-semibold text-ink-100">{t('flightLogLegalContextTitle')}</h2>
+
+    {
+      !LEGAL_CONTEXT_REVIEWED && (
+        <p class="mt-3 rounded-lg border border-warn/40 bg-warn/10 p-4 text-sm font-medium leading-relaxed text-warn">
+          {t('flightLogDraftNotice')}
+        </p>
+      )
+    }
+
+    <p class="mt-3 rounded-lg border border-accent/30 bg-accent/5 p-4 text-sm font-semibold leading-relaxed text-ink-100">
+      {t('flightLogNotLegalAdvice')}
+    </p>
+
+    <div class="prose-civic mt-4">
+      {t('flightLogLegalContext').split('\n\n').map((para) => <p>{para}</p>)}
+    </div>
+
+    <p class="mt-4 text-sm">
+      <a href={localePath(locale, '/sources')} class="text-accent underline underline-offset-2">
+        {t('navSources')} →
+      </a>
+    </p>
+  </section>
+</div>
+
+<script is:inline type="application/json" id="flight-log-strings" set:html={JSON.stringify(strings)} />
+
+<script>
+  type Sighting = {
+    id: number;
+    hex: string;
+    callsign: string | null;
+    aircraftType: string | null;
+    airportIcao: string | null;
+    event: 'ground_arrival' | 'ground_departure';
+    eventAtUtc: string;
+    lat: number | null;
+    lon: number | null;
+    groundDurationS: number | null;
+    source: string;
+  };
+
+  type FlightLogResponse = {
+    caveats?: Record<string, string> | null;
+    sightings?: Sighting[];
+    results?: Sighting[];
+  };
+
+  const S = JSON.parse(
+    document.getElementById('flight-log-strings')!.textContent!,
+  ) as Record<string, string>;
+
+  const form = document.getElementById('flight-log-form') as HTMLFormElement;
+  const queryInput = document.getElementById('flight-query') as HTMLInputElement;
+  const fromInput = document.getElementById('flight-from') as HTMLInputElement;
+  const toInput = document.getElementById('flight-to') as HTMLInputElement;
+  const statusEl = document.getElementById('flight-log-status')!;
+  const resultsEl = document.getElementById('flight-log-results')!;
+  const caveatsEl = document.getElementById('flight-log-caveats')!;
+
+  const HEX_PATTERN = /^[0-9a-f]{6}$/i;
+
+  function formatDuration(seconds: number | null | undefined): string {
+    if (seconds == null || seconds < 0) return '—';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.round((seconds % 3600) / 60);
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function renderCaveats(caveats: FlightLogResponse['caveats'] | null) {
+    if (!caveats) {
+      caveatsEl.classList.add('hidden');
+      caveatsEl.textContent = '';
+      return;
+    }
+    caveatsEl.textContent = Object.values(caveats).join(' ');
+    caveatsEl.classList.remove('hidden');
+  }
+
+  function renderResults(sightings: Sighting[]) {
+    resultsEl.innerHTML = '';
+    if (sightings.length === 0) {
+      statusEl.textContent = S.noResults;
+      return;
+    }
+    statusEl.textContent = '';
+
+    for (const s of sightings) {
+      const li = document.createElement('li');
+      li.setAttribute('class', 'rounded-lg border border-ink-800 bg-ink-900 p-4');
+
+      const title = document.createElement('h3');
+      title.setAttribute('class', 'text-sm font-semibold text-ink-100');
+      title.textContent = `${s.callsign ?? '(no callsign)'} — ${s.hex}`;
+      li.appendChild(title);
+
+      const dl = document.createElement('dl');
+      dl.setAttribute('class', 'mt-2 grid gap-2 text-sm sm:grid-cols-2');
+
+      const rows: [string, string][] = [
+        ['Event', s.event === 'ground_arrival' ? 'Ground arrival' : 'Ground departure'],
+        ['When (UTC)', s.eventAtUtc],
+        ['Airport', s.airportIcao ?? 'Unknown (best-effort, MN-only)'],
+        ['Aircraft type', s.aircraftType ?? '—'],
+        ['Ground duration', formatDuration(s.groundDurationS)],
+        ['Source', s.source],
+      ];
+      for (const [label, value] of rows) {
+        const div = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.setAttribute('class', 'text-[11px] tracking-wider text-ink-400 uppercase');
+        dt.textContent = label;
+        const dd = document.createElement('dd');
+        dd.setAttribute('class', 'mt-0.5 text-ink-100');
+        dd.textContent = value;
+        div.appendChild(dt);
+        div.appendChild(dd);
+        dl.appendChild(div);
+      }
+      li.appendChild(dl);
+
+      const confidence = document.createElement('p');
+      confidence.setAttribute('class', 'mt-2 text-xs text-ink-400');
+      confidence.textContent =
+        'Confidence: reported — a callsign match is not registry confirmation.';
+      li.appendChild(confidence);
+
+      resultsEl.appendChild(li);
+    }
+  }
+
+  function buildUrl(): string | null {
+    const query = queryInput.value.trim();
+    const from = fromInput.value;
+    const to = toInput.value;
+    if (!query) return null;
+
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+
+    if (HEX_PATTERN.test(query)) {
+      return `/api/flight-log/${query.toLowerCase()}?${params.toString()}`;
+    }
+    params.set('callsign', query);
+    return `/api/flight-log?${params.toString()}`;
+  }
+
+  async function runSearch() {
+    const url = buildUrl();
+    if (!url) {
+      statusEl.textContent = 'Enter a tail number/hex code or a callsign to search.';
+      resultsEl.innerHTML = '';
+      renderCaveats(null);
+      return;
+    }
+
+    statusEl.textContent = S.loading;
+    resultsEl.innerHTML = '';
+    renderCaveats(null);
+
+    try {
+      const res = await fetch(url);
+      if (res.status === 404) {
+        statusEl.textContent = 'No sightings found for that search.';
+        return;
+      }
+      if (!res.ok) {
+        statusEl.textContent = "Couldn't load flight-log data right now — try again later.";
+        return;
+      }
+      const data = (await res.json()) as FlightLogResponse;
+      const sightings = data.sightings ?? data.results ?? [];
+      renderCaveats(data.caveats ?? null);
+      renderResults(sightings);
+    } catch {
+      statusEl.textContent = "Couldn't reach the flight-log service — try again later.";
+    }
+  }
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    runSearch();
+  });
+</script>
