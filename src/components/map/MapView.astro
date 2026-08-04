@@ -627,10 +627,12 @@ const liveFlightsStrings = {
    * movement, a documented ICE-lookup audit for immigration status, and so
    * on. Anchored to a case, a study or an audit rather than asserted, which
    * is the whole reason each card carries a linked source rather than a bare
-   * claim.
+   * claim. Stands in for the plain-language paragraph on a layer that has
+   * one of these, rather than sitting under it, so there is no divider
+   * expecting something above it.
    */
   function impactSpheresBlock(spheres: NonNullable<ClientLayer['impactSpheres']>) {
-    const wrap = el('div', 'mt-3 space-y-3 border-t border-ink-800 pt-3');
+    const wrap = el('div', 'space-y-3');
     for (const sphere of spheres) {
       const card = el('div', 'border-l-2 pl-2.5');
       card.style.borderLeftColor = sphere.color;
@@ -840,11 +842,18 @@ const liveFlightsStrings = {
       it meant.
     */
     const means = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
-    means.append(
-      el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.whatThisMeans),
-      el('p', 'text-xs leading-relaxed text-ink-200', layer.whatThisMeans),
-    );
-    if (layer.impactSpheres?.length) means.append(impactSpheresBlock(layer.impactSpheres));
+    means.append(el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.whatThisMeans));
+    // A layer with cited cards lets them carry the explanation outright —
+    // the prose paragraph would only restate what the cards already show,
+    // and the whole point of shortening this section was less to read, not
+    // the same reading twice in two forms. Every other layer still gets the
+    // plain paragraph; whatThisMeans itself is untouched for the Sources
+    // page, which documents every layer the same way regardless.
+    if (layer.impactSpheres?.length) {
+      means.append(impactSpheresBlock(layer.impactSpheres));
+    } else {
+      means.append(el('p', 'text-xs leading-relaxed text-ink-200', layer.whatThisMeans));
+    }
     body.append(means);
 
     /*
