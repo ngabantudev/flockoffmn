@@ -162,9 +162,20 @@ What's different about this exception, and worth stating plainly:
   visitor's browser happens to trigger. The actual writer is
   `workers/flight-sightings-cron/`, a separate, standalone Cloudflare Worker
   deployable with its own `wrangler.jsonc` and its own D1 write binding, on a
-  once-a-minute Cron Trigger. It polls adsb.lol independently of any visitor
-  and is the ONLY place in the whole project a D1 write binding exists. See
-  its `index.mjs` header for the full mechanics (diffing ground status per
+  Cron Trigger, currently every 10 minutes, and is the ONLY place in the
+  whole project a D1 write binding exists. It does NOT query adsb.lol
+  directly — it fetches `functions/api/ice-flights.js`'s own already-filtered,
+  edge-cached result, so it rides the same 45s cache real visitors already
+  use instead of adding a second independent load against adsb.lol's rate
+  limit (the two were briefly uncoordinated when this Worker first shipped,
+  which is exactly what started producing 429s). The 10-minute cadence is
+  deliberate, not just a rate-limit concession: this log only cares about
+  discrete ground-arrival/ground-departure events, not a continuous position
+  feed, and ICE Air charter ground stops (loading, refueling, crew changes)
+  run well past 10 minutes in practice — a real trade-off (a stop shorter
+  than the poll interval could be missed, and a captured timestamp is only
+  precise to within it), stated explicitly wherever a sighting is shown. See
+  `index.mjs`'s header for the full mechanics (diffing ground status per
   aircraft, one row per state transition, never one row per poll).
 - **`functions/api/flight-log/*` is read-only**, `SELECT` only, enforced by
   review rather than a platform-level read-only D1 binding mode (D1 has no

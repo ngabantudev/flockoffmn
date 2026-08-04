@@ -47,7 +47,7 @@ export interface FlightLogCaveats {
 
 export const FLIGHT_LOG_CAVEATS: FlightLogCaveats = {
   pollingGranularity:
-    'Ground-arrival and ground-departure timestamps are only as precise as the cron poll that observed them: this log is checked once per minute, not continuously.',
+    'Ground-arrival and ground-departure timestamps are only as precise as the cron poll that observed them: this log is checked once every 10 minutes, not continuously. A ground stop shorter than that window could be missed entirely.',
   airportLabeling:
     'Nearest-airport labeling is best-effort and Minnesota-only. Sightings elsewhere in the world will have a null airport field even when the aircraft is plainly on the ground somewhere.',
   callsignMatch:
