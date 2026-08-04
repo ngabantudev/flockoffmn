@@ -43,14 +43,96 @@
   --color-accent: #f5a524;
   --color-warn: #fbbf24;
 
+  /* On-accent text and recessed/well surfaces are distinct roles from
+     ink-950 even though they share its dark-mode hex value — see the light
+     overrides below, where they diverge. */
+  --color-on-accent: #0a0c10;
+  --color-well: #0a0c10;
+
   --font-sans: 'Inter var', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+}
+
+/*
+ * Light-mode token overrides. Dark stays the default (no data-theme, no OS
+ * preference needed) so the `@theme` block above is the source of truth for
+ * dark values. These three selectors cover: OS-level light preference with
+ * no explicit user choice, an explicit "light" choice, and an explicit
+ * "dark" choice (which must win even under an OS light preference).
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --color-ink-950: #ffffff;
+    --color-ink-900: #f4f6f9;
+    --color-ink-850: #e9edf3;
+    --color-ink-800: #d7dde7;
+    --color-ink-700: #b9c3d1;
+    --color-ink-600: #8e9aac;
+    --color-ink-400: #5c6779;
+    --color-ink-300: #455061;
+    --color-ink-200: #2c3543;
+    --color-ink-100: #131a24;
+
+    --color-accent: #b45309;
+    --color-warn: #92400e;
+
+    --color-on-accent: #ffffff;
+    --color-well: #eef1f6;
+    --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
+
+    color-scheme: light;
+  }
+}
+
+:root[data-theme='light'] {
+  --color-ink-950: #ffffff;
+  --color-ink-900: #f4f6f9;
+  --color-ink-850: #e9edf3;
+  --color-ink-800: #d7dde7;
+  --color-ink-700: #b9c3d1;
+  --color-ink-600: #8e9aac;
+  --color-ink-400: #5c6779;
+  --color-ink-300: #455061;
+  --color-ink-200: #2c3543;
+  --color-ink-100: #131a24;
+
+  --color-accent: #b45309;
+  --color-warn: #92400e;
+
+  --color-on-accent: #ffffff;
+  --color-well: #eef1f6;
+  --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --color-ink-950: #0a0c10;
+  --color-ink-900: #11141b;
+  --color-ink-850: #161a23;
+  --color-ink-800: #1c212c;
+  --color-ink-700: #2a3140;
+  --color-ink-600: #3d4657;
+  --color-ink-400: #7c8798;
+  --color-ink-300: #a3adbd;
+  --color-ink-200: #c9d1dd;
+  --color-ink-100: #e7ecf3;
+
+  --color-accent: #f5a524;
+  --color-warn: #fbbf24;
+
+  --color-on-accent: #0a0c10;
+  --color-well: #0a0c10;
+  --color-ctrl-attrib-bg: rgba(10, 12, 16, 0.85);
+
+  color-scheme: dark;
 }
 
 @layer base {
   html {
     color-scheme: dark;
     -webkit-text-size-adjust: 100%;
+    --color-ctrl-attrib-bg: rgba(10, 12, 16, 0.85);
   }
 
   body {
@@ -82,7 +164,7 @@
 
   ::selection {
     background: var(--color-accent);
-    color: var(--color-ink-950);
+    color: var(--color-on-accent);
   }
 }
 
@@ -94,7 +176,7 @@
     z-index: 100;
     padding: 0.75rem 1rem;
     background: var(--color-accent);
-    color: var(--color-ink-950);
+    color: var(--color-on-accent);
     font-weight: 600;
   }
   .skip-link:focus {
@@ -152,11 +234,29 @@
 .maplibregl-ctrl-group button + button {
   border-top: 1px solid var(--color-ink-700) !important;
 }
+/*
+ * Dark is the default appearance (no data-theme, no OS light preference), so
+ * the filter that flips MapLibre's stock light-on-transparent icons to
+ * light-on-dark applies unconditionally here, then gets switched off
+ * wherever light mode is active. Light mode needs no filter: the stock
+ * icons are already dark-on-transparent, correct against a light UI.
+ */
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
   filter: invert(1) brightness(1.6);
 }
+:root[data-theme='dark'] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(1.6);
+}
+:root[data-theme='light'] .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: none;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+    filter: none;
+  }
+}
 .maplibregl-ctrl-attrib {
-  background: rgba(10, 12, 16, 0.85) !important;
+  background: var(--color-ctrl-attrib-bg) !important;
   color: var(--color-ink-300) !important;
   font-size: 11px !important;
 }
@@ -179,6 +279,128 @@
   color: var(--color-ink-300) !important;
   font-size: 1.125rem;
   padding: 0 0.375rem;
+}
+
+/*
+ * ThemeControl (src/lib/themeControl.ts) — the map-corner "site theme / map
+ * theme" popover. Built with hand-written classes rather than
+ * .maplibregl-ctrl-icon's convention (a class MapLibre expects on a
+ * *descendant* of the button, for a background-image icon) because this
+ * button's icon is an inline Lucide SVG child instead.
+ */
+.theme-control {
+  position: relative;
+}
+.theme-control-button {
+  /*
+   * MapLibre's own .maplibregl-ctrl-icon rule (display: block, height/width:
+   * 100%) assumes a *background-image* icon, which centers itself via
+   * background-position: 50%. This button's icon is an inline SVG child
+   * instead, which that rule does nothing to center — without this it sat
+   * at the child's natural top-left position in the 29x29px button box.
+   */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /*
+   * Lucide icons render with stroke="currentColor" and fill="none" (see
+   * node_modules/lucide/dist/esm/defaultAttributes.mjs) — a direct `color`
+   * follows the ink ramp automatically in both themes, same as any text.
+   * The other map control icons (MapLibre's own, e.g. zoom +/-) are
+   * background-image sprites with no `currentColor` to hook into, which is
+   * why *they* need the filter: invert(...) trick in the block above this
+   * one — that trick doesn't belong here, and inverting this icon's actual
+   * color produced a dim, muddy result instead of a clean white.
+   */
+  color: var(--color-ink-100);
+}
+.theme-control-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 10;
+  width: max-content;
+  min-width: 13rem;
+  background: var(--color-ink-850);
+  border: 1px solid var(--color-ink-700);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 0.625rem;
+}
+:root[data-theme='light'] .theme-control-panel {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+.theme-control-section + .theme-control-section {
+  margin-top: 0.625rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--color-ink-800);
+}
+.theme-control-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-400);
+  padding: 0 0.25rem 0.375rem;
+}
+.theme-control-segmented {
+  display: flex;
+  gap: 0.25rem;
+}
+.theme-control-segment {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--color-ink-400);
+  background: transparent;
+}
+.theme-control-segment:hover {
+  background: var(--color-ink-800);
+  color: var(--color-ink-100);
+}
+.theme-control-segment.is-active {
+  background: var(--color-ink-800);
+  color: var(--color-ink-100);
+}
+.theme-control-segment svg {
+  flex: none;
+}
+.theme-control-list {
+  display: flex;
+  flex-direction: column;
+}
+.theme-control-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  width: 100%;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--color-ink-300);
+  text-align: left;
+  white-space: nowrap;
+}
+.theme-control-list-item:hover {
+  background: var(--color-ink-800);
+  color: var(--color-ink-100);
+}
+.theme-control-list-item.is-active {
+  color: var(--color-ink-100);
+}
+.theme-control-check {
+  flex: none;
+  visibility: hidden;
+  color: var(--color-accent);
+}
+.theme-control-list-item.is-active .theme-control-check {
+  visibility: visible;
 }
 
 /*

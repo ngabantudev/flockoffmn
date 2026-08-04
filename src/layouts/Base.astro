@@ -23,6 +23,15 @@ const pageDescription = description ?? t('tagline');
 <html lang={locale} class={fullBleed ? 'h-full overflow-hidden' : ''}>
   <head>
     <meta charset="utf-8" />
+    <!--
+      Anti-FOUC: sets the stored theme (if any) on <html> before first paint.
+      Must run synchronously, as early as possible, and as an external file —
+      the CSP's `script-src 'self'` with no `'unsafe-inline'` means an inline
+      <script> block here would never execute. `is:inline` is required too:
+      without it Astro defers/bundles this as a module, which reintroduces
+      the flash this exists to prevent.
+    -->
+    <script is:inline src="/theme-init.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{pageTitle}</title>
     <meta name="description" content={pageDescription} />

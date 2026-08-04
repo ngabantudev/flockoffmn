@@ -33,5 +33,16 @@ export default defineConfig({
       // initialises. Naming it here gets it pre-bundled at server start.
       include: ['maplibre-gl'],
     },
+    build: {
+      // Vite inlines small built assets — including compiled page <script>
+      // bundles — as literal content under ~4KB by default. That's normally
+      // a perf win, but this site's CSP is `script-src 'self'` with no
+      // `unsafe-inline`: an inlined script has no `src` for 'self' to match,
+      // so the browser silently drops it and whatever it wired up (e.g. the
+      // theme toggle) just doesn't work, with nothing but a console CSP
+      // violation to explain why. 0 forces every script to a real external
+      // `/_astro/*.js` file, which is what 'self' actually allows.
+      assetsInlineLimit: 0,
+    },
   },
 });
