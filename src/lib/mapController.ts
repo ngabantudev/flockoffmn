@@ -1,10 +1,12 @@
-import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
+import maplibregl, { type Map as MLMap, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
-import { baseStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
+import { baseStyle, basemapPaint, tileUrlForStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { GLOW_STOPS, THREAD_STOPS, densityColorExpression } from './densityRamp';
 import { groupNodes } from './nodes';
 import { groupBlocks } from './blocks';
+import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
+import { ThemeControl } from './themeControl';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -340,7 +342,7 @@ export class MapController {
 
     this.map = new maplibregl.Map({
       container,
-      style: baseStyle(),
+      style: baseStyle(initialMapStyle()),
       center: MN_CENTER,
       zoom: 5.6,
       minZoom: 3,
@@ -353,11 +355,27 @@ export class MapController {
       pitchWithRotate: false,
     });
 
+    // Added before NavigationControl so it stacks above the zoom buttons —
+    // MapLibre stacks same-position controls in the order they're added, and
+    // "map theme / site theme" reads as a settings entry point, which belongs
+    // above the more frequently-used zoom controls, not buried below them.
+    this.map.addControl(new ThemeControl(), 'top-right');
     this.map.addControl(
       new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
       'top-right',
     );
     this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
+
+    // The basemap is independent of every other layer here — swapping it is
+    // just the raster source's tile URL plus two paint properties, never
+    // map.setStyle() (which would drop every registry layer this class has
+    // added). Queued on 'load' if a visitor toggles before the map has
+    // finished its first style load, since setPaintProperty on a layer that
+    // doesn't exist yet throws.
+    onMapStyleChange((styleId) => {
+      if (this.hasLoaded) this.setBasemap(styleId);
+      else this.map.once('load', () => this.setBasemap(styleId));
+    });
 
     this.map.on('load', () => {
       this.hasLoaded = true;
@@ -376,6 +394,26 @@ export class MapController {
       if (this.map.queryRenderedFeatures(e.point, { layers: ids }).length) return;
       this.clearSelection();
     });
+  }
+
+  /**
+   * Re-keys the basemap without map.setStyle() — that would drop every
+   * source/layer this class has added for the registry layers, live flights,
+   * and density threads. A raster source's setTiles() plus two paint
+   * properties is the entire visual surface baseStyle()'s 'osm'/'background'
+   * layers expose, so that's the entire surface this needs to touch.
+   */
+  setBasemap(styleId: MapStyleId): void {
+    const source = this.map.getSource('osm') as RasterTileSource | undefined;
+    if (!source) return;
+    source.setTiles([tileUrlForStyle(styleId)]);
+    const { 'background-color': backgroundColor, osmPaint } = basemapPaint(MAP_STYLES[styleId].dark);
+    this.map.setPaintProperty('background', 'background-color', backgroundColor);
+    // Explicit reset to 1 for a light style, not just omitting the property:
+    // a light style follows a dark one that set raster-brightness-max to
+    // 0.85, and MapLibre paint properties don't revert to their spec default
+    // just because a later setPaintProperty call leaves them unmentioned.
+    this.map.setPaintProperty('osm', 'raster-brightness-max', osmPaint['raster-brightness-max'] ?? 1);
   }
 
   /** Style layers a tap can select a record on. See bindInteractions. */

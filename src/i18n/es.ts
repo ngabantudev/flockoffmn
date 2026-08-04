@@ -20,12 +20,17 @@ export const es: Record<string, string> = {
   navAbout: 'Qué es esto',
   skipToContent: 'Saltar al contenido principal',
 
-  // Selector de tema, en el grupo del encabezado junto al selector de idioma.
-  themeToggleGroupLabel: 'Tema de color',
+  // Control de tema. En la página del mapa es un control de esquina de
+  // MapLibre (src/lib/themeControl.ts) con una sección extra "Tema del
+  // mapa"; en el resto es el mismo panel en el grupo del encabezado junto
+  // al selector de idioma (Nav.astro), solo con tema del sitio, ya que ahí
+  // no hay mapa que temizar. themeButtonLabel es el propio botón de icono;
+  // themeToggleGroupLabel es el encabezado "Tema del sitio" dentro del
+  // panel.
+  themeButtonLabel: 'Tema',
+  themeToggleGroupLabel: 'Tema del sitio',
   themeLight: 'Claro',
   themeDark: 'Oscuro',
-  themeSwitchToLight: 'Cambiar a tema claro',
-  themeSwitchToDark: 'Cambiar a tema oscuro',
 
   liveFlightsToggleLabel: 'Vuelos chárter de ICE Air en vivo',
   liveFlightsAboutToggle: 'Acerca de estos datos',

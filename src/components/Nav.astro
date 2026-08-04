@@ -67,65 +67,24 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     </nav>
 
     <div class="ml-auto flex shrink-0 items-center gap-1 text-sm">
+      <!--
+        Site-theme control for pages with no map to also theme (About,
+        Sources, Flight log, …) — the map page's equivalent lives inside the
+        map itself as a MapLibre corner control (src/lib/themeControl.ts),
+        stacked with an in-map "Map theme" picker there. Same underlying
+        popover section (src/lib/themeControlUI.ts's buildSiteThemeSection)
+        either way, just a different host element, since only one of the two
+        pages has a map to put a MapLibre control on. Built client-side by
+        theme-control-nav.ts rather than server-rendered, matching how the
+        map control is built — both use the same Lucide icon and the same
+        `.theme-control-*` CSS, so this reads as "the same control,"
+        wherever it appears, not two different ones.
+      -->
       <div
         data-theme-control
-        class="mr-1 flex items-center gap-1 border-l border-ink-800 pl-2"
+        id="header-theme-control"
+        class="relative mr-1 border-l border-ink-800 pl-2"
       >
-        <div role="group" aria-label={t('themeToggleGroupLabel')} class="hidden items-center gap-1 sm:flex">
-          <button
-            type="button"
-            id="theme-toggle-light"
-            aria-pressed="false"
-            class="rounded px-2 py-1 text-sm text-ink-400 transition-colors hover:bg-ink-850 hover:text-ink-100"
-          >
-            {t('themeLight')}
-          </button>
-          <button
-            type="button"
-            id="theme-toggle-dark"
-            aria-pressed="true"
-            class="rounded bg-ink-800 px-2 py-1 text-sm text-ink-100 transition-colors"
-          >
-            {t('themeDark')}
-          </button>
-        </div>
-
-        <button
-          type="button"
-          id="theme-toggle-mobile"
-          aria-label={t('themeSwitchToLight')}
-          class="rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-850 hover:text-ink-100 sm:hidden"
-        >
-          <svg
-            id="theme-toggle-mobile-icon-sun"
-            viewBox="0 0 24 24"
-            class="h-4 w-4"
-            aria-hidden="true"
-            fill="none"
-          >
-            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.75" />
-            <path
-              d="M12 2.5v2M12 19.5v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2.5 12h2M19.5 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linecap="round"
-            />
-          </svg>
-          <svg
-            id="theme-toggle-mobile-icon-moon"
-            viewBox="0 0 24 24"
-            class="hidden h-4 w-4"
-            aria-hidden="true"
-            fill="none"
-          >
-            <path
-              d="M20 14.5a8 8 0 1 1-10.5-10.5 6.5 6.5 0 0 0 10.5 10.5z"
-              stroke="currentColor"
-              stroke-width="1.75"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </button>
       </div>
 
       {
@@ -150,72 +109,78 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
   </div>
 </header>
 
-<script is:inline type="application/json" id="theme-toggle-strings" set:html={JSON.stringify({ light: t('themeLight'), dark: t('themeDark'), switchToLight: t('themeSwitchToLight'), switchToDark: t('themeSwitchToDark') })} />
+<script
+  is:inline
+  type="application/json"
+  id="theme-toggle-strings"
+  set:html={JSON.stringify({
+    buttonLabel: t('themeButtonLabel'),
+    sectionLabel: t('themeToggleGroupLabel'),
+    light: t('themeLight'),
+    dark: t('themeDark'),
+  })}
+/>
 
 <script>
   /*
-   * Theme toggle. State lives in `document.documentElement.dataset.theme`
-   * and `localStorage['flockoff:theme']` (src/lib/theme.ts) — nothing here
+   * Site-theme control for pages with no map (see the comment on
+   * #header-theme-control above). Builds the same icon-button-that-opens-a-
+   * popover shape as the map's ThemeControl (src/lib/themeControl.ts),
+   * using the same shared section builder (src/lib/themeControlUI.ts) —
+   * just without a "Map theme" section, and hosted in a plain header div
+   * instead of a MapLibre IControl container. State lives in
+   * `document.documentElement.dataset.theme` and
+   * `localStorage['flockoff:theme']` (src/lib/theme.ts) — nothing here
    * touches the map, `#detail-panel`, the record list, or `#map-status`
-   * (spec: accessibility sync is off limits to this control). The map's
-   * theme-aware basemap/paint logic listens for `onThemeChange`; this file
-   * only has to call `setTheme`, which dispatches that event.
+   * (spec: accessibility sync is off limits to this control).
    *
-   * Imports from a real module on purpose, not just for reuse: a `<script>`
+   * Imports from real modules on purpose, not just for reuse: a `<script>`
    * with no imports gets inlined directly into the HTML by Astro's
    * bundler, and this site's CSP (`script-src 'self'`, no `unsafe-inline`)
-   * silently blocks that — the buttons would render but do nothing, with
-   * only a console CSP violation to explain why. Importing from
-   * src/lib/theme.ts forces this into an external `/_astro/*.js` file
-   * instead, the same way FlightLog.astro's script (which imports from
-   * `~/lib/flightLog`) already does.
+   * silently blocks that — the button would render but do nothing, with
+   * only a console CSP violation to explain why.
    */
-  import { currentTheme, setTheme, type Theme } from '~/lib/theme';
+  import { createElement, Layers, type IconNode } from 'lucide';
+  import { currentTheme, onThemeChange } from '~/lib/theme';
+  import { buildSiteThemeSection, DEFAULT_SITE_THEME_STRINGS } from '~/lib/themeControlUI';
 
   const stringsEl = document.getElementById('theme-toggle-strings');
   const strings = stringsEl?.textContent
-    ? (JSON.parse(stringsEl.textContent) as {
-        light: string;
-        dark: string;
-        switchToLight: string;
-        switchToDark: string;
-      })
-    : { light: 'Light', dark: 'Dark', switchToLight: 'Switch to light theme', switchToDark: 'Switch to dark theme' };
+    ? (JSON.parse(stringsEl.textContent) as { buttonLabel: string; sectionLabel: string; light: string; dark: string })
+    : { buttonLabel: 'Theme', ...DEFAULT_SITE_THEME_STRINGS };
 
-  const lightBtn = document.getElementById('theme-toggle-light');
-  const darkBtn = document.getElementById('theme-toggle-dark');
-  const mobileBtn = document.getElementById('theme-toggle-mobile');
-  const sunIcon = document.getElementById('theme-toggle-mobile-icon-sun');
-  const moonIcon = document.getElementById('theme-toggle-mobile-icon-moon');
+  const host = document.getElementById('header-theme-control');
+  if (host) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.setAttribute('class', 'rounded p-1.5 text-ink-400 transition-colors hover:bg-ink-850 hover:text-ink-100');
+    button.setAttribute('aria-label', strings.buttonLabel);
+    button.setAttribute('aria-haspopup', 'true');
+    button.setAttribute('aria-expanded', 'false');
+    button.appendChild(createElement(Layers as IconNode, { width: 18, height: 18 }));
 
-  function reflect(theme: Theme) {
-    const isLight = theme === 'light';
+    const panel = document.createElement('div');
+    panel.setAttribute('class', 'theme-control-panel');
+    panel.hidden = true;
+    const siteTheme = buildSiteThemeSection(strings);
+    panel.appendChild(siteTheme.el);
 
-    lightBtn?.setAttribute('aria-pressed', String(isLight));
-    darkBtn?.setAttribute('aria-pressed', String(!isLight));
-    lightBtn?.classList.toggle('bg-ink-800', isLight);
-    lightBtn?.classList.toggle('text-ink-100', isLight);
-    lightBtn?.classList.toggle('text-ink-400', !isLight);
-    darkBtn?.classList.toggle('bg-ink-800', !isLight);
-    darkBtn?.classList.toggle('text-ink-100', !isLight);
-    darkBtn?.classList.toggle('text-ink-400', isLight);
+    function setOpen(open: boolean) {
+      panel.hidden = !open;
+      button.setAttribute('aria-expanded', String(open));
+    }
+    button.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setOpen(panel.hidden !== false);
+    });
+    document.addEventListener('click', (e) => {
+      if (!host.contains(e.target as Node)) setOpen(false);
+    });
 
-    // The mobile button is a single toggle: its label and icon describe the
-    // action it will perform (switch to the *other* theme), not the current
-    // state.
-    mobileBtn?.setAttribute('aria-label', isLight ? strings.switchToDark : strings.switchToLight);
-    sunIcon?.classList.toggle('hidden', isLight);
-    moonIcon?.classList.toggle('hidden', !isLight);
+    host.appendChild(button);
+    host.appendChild(panel);
+
+    siteTheme.reflect(currentTheme());
+    onThemeChange((theme) => siteTheme.reflect(theme));
   }
-
-  function setThemeAndReflect(theme: Theme) {
-    setTheme(theme);
-    reflect(theme);
-  }
-
-  lightBtn?.addEventListener('click', () => setThemeAndReflect('light'));
-  darkBtn?.addEventListener('click', () => setThemeAndReflect('dark'));
-  mobileBtn?.addEventListener('click', () => setThemeAndReflect(currentTheme() === 'light' ? 'dark' : 'light'));
-
-  reflect(currentTheme());
 </script>
