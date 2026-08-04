@@ -15,12 +15,33 @@
  * section for the full rationale, and migrations/0001_flight_sightings.sql
  * for the schema this writes to.
  *
- * What it does, once a minute:
- *   1. Fetch adsb.lol's worldwide feed (same point/radius query as
- *      functions/api/ice-flights.js) and filter it down to known ICE Air
- *      charter callsigns using the shared ../../functions/lib/ice-charter-filter.mjs
- *      module — no drift between what the live map shows and what gets
- *      persisted here.
+ * What it does, once every 10 minutes:
+ *   1. Fetch already-filtered ICE Air charter aircraft from this project's
+ *      own functions/api/ice-flights.js — NOT adsb.lol directly. That route
+ *      already does the expensive worldwide adsb.lol query and caches its
+ *      response at Cloudflare's edge for 45s (functions/api/ice-flights.js's
+ *      own header explains why: that fetch alone draws a 429 from adsb.lol
+ *      after only a handful of requests in a couple of minutes). Before this
+ *      fix, this Worker fetched adsb.lol directly and uncached on its own
+ *      independent one-minute clock — two uncoordinated consumers hitting
+ *      the same rate-limited endpoint, which is exactly what started
+ *      producing 429s once this Worker went live. Fetching our own route
+ *      instead means this Worker rides the same shared edge cache real
+ *      visitors already use, rather than adding a second independent load.
+ *      Also means no drift between what the live map shows and what gets
+ *      persisted here, since this reads literally the same filtered result
+ *      rather than re-deriving it.
+ *
+ *      The schedule itself was deliberately loosened from every minute to
+ *      every 10 — this log only cares about the discrete pickup/dropoff
+ *      events (ground arrival, ground departure), not a continuous position
+ *      feed, and ICE Air charter ground stops are real transport operations
+ *      (loading, refueling, crew changes), not quick touch-and-gos — they
+ *      run well past 10 minutes in practice. That trade-off is real, not
+ *      free: a stop shorter than 10 minutes could be missed entirely, and a
+ *      captured timestamp is only precise to within this poll interval. See
+ *      functions/lib/flight-log-shared.mjs's CAVEATS.pollingGranularity,
+ *      which states this explicitly wherever a sighting is shown.
  *   2. For each matched aircraft, diff `alt_baro === 'ground'` against
  *      aircraft_state.last_status for that hex:
  *        - airborne -> ground: INSERT a ground_arrival row, upsert
@@ -42,10 +63,16 @@
  * scheduler.
  */
 
-import { filterIceCharterFlights } from '../../functions/lib/ice-charter-filter.mjs';
 import { haversineMeters } from '../../src/lib/geo.mjs';
 
-const ADSB_GLOBAL_URL = 'https://api.adsb.lol/v2/point/0/0/10000';
+/**
+ * This project's own already-filtered, already-cached live-flights route —
+ * see this file's header comment for why this Worker reads from here
+ * instead of adsb.lol directly. Same domain as AIRPORTS_URL below, on
+ * purpose: a shared Cache API entry only lines up if both this Worker's
+ * requests and real visitor traffic hit the exact same URL.
+ */
+const ICE_FLIGHTS_URL = 'https://flockoffmn.org/api/ice-flights';
 
 /**
  * Fetched from the live site rather than bundled: this Worker has no build
@@ -243,15 +270,16 @@ export async function processPoll(db, aircraft, airports) {
 }
 
 async function fetchAndFilter() {
-  const upstream = await fetch(ADSB_GLOBAL_URL, {
+  const res = await fetch(ICE_FLIGHTS_URL, {
     signal: AbortSignal.timeout(15000),
     headers: {
       'User-Agent': 'flockoffmn/flight-sightings-cron (civic transparency project; github.com/ngabantudev/flockoffmn)',
     },
   });
-  if (!upstream.ok) throw new Error(`adsb.lol HTTP ${upstream.status}`);
-  const text = await upstream.text();
-  return filterIceCharterFlights(text);
+  if (!res.ok) throw new Error(`/api/ice-flights HTTP ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(`/api/ice-flights reported an error: ${data.error}`);
+  return Array.isArray(data.ac) ? data.ac : [];
 }
 
 export default {

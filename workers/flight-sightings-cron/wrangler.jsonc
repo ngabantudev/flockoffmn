@@ -16,7 +16,7 @@
   "compatibility_date": "2026-07-30",
 
   "triggers": {
-    "crons": ["*/1 * * * *"]
+    "crons": ["*/10 * * * *"]
   },
 
   "d1_databases": [
