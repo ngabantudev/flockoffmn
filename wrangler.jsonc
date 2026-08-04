@@ -145,7 +145,7 @@
       // inherits the OSM-fallback 403s too — see docs/DEPLOYMENT.md § Base
       // map tiles.
       "vars": {
-        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
+        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/streets-v4-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
       }
     },
@@ -158,7 +158,7 @@
         }
       ],
       "vars": {
-        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
+        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/streets-v4-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
       }
     }
