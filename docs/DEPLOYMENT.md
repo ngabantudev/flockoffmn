@@ -255,9 +255,30 @@ Options, roughly in order of independence:
    tileset comes back, the same way they do for `tile.openstreetmap.org`
    today. Any other MapTiler raster style id works the same way; swap
    `basic-v2` for it.
-3. Set both as environment variables in the Cloudflare Pages dashboard
-   (Settings → Environment variables) for the `production` environment —
-   not in `wrangler.jsonc`, so the key doesn't sit in git history. Redeploy.
+3. Set both as **plain-text Environment Variables** (Settings → Environment
+   variables), not Secrets, and for **both** the `production` and `preview`
+   environments:
+   - `PUBLIC_TILE_URL` is inlined into the client bundle by Vite at *build*
+     time (it's read via `import.meta.env` in `mapStyle.ts`). Cloudflare's
+     Git-integration build only sees the dashboard's Environment Variables,
+     not deployment Secrets (`wrangler pages secret put` sets the latter) —
+     a value set only as a Secret is invisible to the build and silently
+     falls back to `tile.openstreetmap.org`, i.e. this exact incident,
+     regardless of what a one-off `wrangler pages deploy` showed working.
+   - Every pull request also gets a Preview build (that's the reason this
+     project uses Git integration at all — see the top of `wrangler.jsonc`);
+     without the preview environment configured too, every PR preview map
+     is broken and keeps sending traffic to whichever host the fallback
+     points at.
+   - Do **not** also add them to `wrangler.jsonc`'s `vars` — even as empty
+     strings, a `vars` entry with the same name as an existing Secret fails
+     the deploy outright ("Binding name ... already in use"). Keeping the
+     key out of `wrangler.jsonc` is also why it doesn't sit in git history.
+   - The key ends up in the public JS bundle either way (it's inlined for
+     every visitor's browser), so treat "Secret" storage as a git-hygiene
+     choice, not real secrecy — restrict the key to your production/preview
+     origins in the MapTiler dashboard so a scraped key can't be reused
+     elsewhere against your quota.
 4. MapTiler's free tier is metered (100k tile loads/month as of this
    writing) — watch usage after a traffic spike like the one that broke the
    OSM fallback.
