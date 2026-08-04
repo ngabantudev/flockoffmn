@@ -140,7 +140,7 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
    * silently blocks that — the button would render but do nothing, with
    * only a console CSP violation to explain why.
    */
-  import { createElement, Layers, type IconNode } from 'lucide';
+  import { createElement, Palette, type IconNode } from 'lucide';
   import { currentTheme, onThemeChange } from '~/lib/theme';
   import { buildSiteThemeSection, DEFAULT_SITE_THEME_STRINGS } from '~/lib/themeControlUI';
 
@@ -157,7 +157,7 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     button.setAttribute('aria-label', strings.buttonLabel);
     button.setAttribute('aria-haspopup', 'true');
     button.setAttribute('aria-expanded', 'false');
-    button.appendChild(createElement(Layers as IconNode, { width: 18, height: 18 }));
+    button.appendChild(createElement(Palette as IconNode, { width: 18, height: 18 }));
 
     const panel = document.createElement('div');
     panel.setAttribute('class', 'theme-control-panel');
