@@ -249,19 +249,37 @@ Options, roughly in order of independence:
 
 ### MapTiler quick start
 
-1. Create an account at [maptiler.com](https://www.maptiler.com/) and copy an
-   API key from the dashboard. In the MapTiler dashboard, restrict that key
-   to this project's origins (`flockoffmn.org`, `*.flockoffmn.pages.dev`) —
-   see why in the next step. **This has not been done for the key currently
-   committed** — verified live (an arbitrary/absent Referer and Origin both
-   still return `200`), so treat that key as fully public, not just
-   git-visible, until it's restricted. Before switching the restriction on,
-   confirm MapTiler enforces it against the CORS `Origin` header rather than
-   `Referer` — this site sends `Referrer-Policy: no-referrer`
-   (`public/_headers`), so MapLibre's own tile requests carry no Referer,
-   and a Referer-based allowlist would 403 the real map the moment it's
-   enabled — the same failure this whole page exists to prevent. Reload the
-   live map after enabling it either way.
+1. Create an account at [maptiler.com](https://www.maptiler.com/) and create
+   a **new** key — MapTiler's auto-generated "Default key" cannot be
+   restricted (there's no Allowed HTTP origins field on it), which is why
+   the key committed here is a separate one named `flockoffmn-production`.
+   In its **Allowed HTTP origins** field, add:
+   ```
+   flockoffmn.org
+   *.flockoffmn.pages.dev
+   ```
+   Leave **Allowed user-agent header** blank — that field is for non-browser
+   clients (mobile apps, desktop GIS software); a public website is hit by
+   every browser's own user-agent string, so restricting by it would block
+   real visitors.
+
+   Verified directly against MapTiler with curl: a request with a matching
+   `Origin` returns `200`, a foreign `Origin` returns `403`, and the same
+   for `Referer` when no `Origin` is present. **Not yet verified:** a
+   request with *neither* header returns `403` too — and this site sends
+   `Referrer-Policy: no-referrer` (`public/_headers`), so if MapLibre's tile
+   `<img>` requests don't carry a CORS `Origin` header either, real
+   visitors hit that same `403` — recreating the exact incident this page
+   exists to prevent. MapLibre conventionally sets `crossOrigin=anonymous`
+   on tile images (to avoid tainting the WebGL canvas), which should mean a
+   real `Origin` header always goes out regardless of `Referrer-Policy` —
+   but that's an expectation, not a confirmed fact; curl can't exercise
+   MapLibre's actual request path. **Load the live map in a real browser
+   and check the Network tab for the tile requests** before trusting this
+   is settled. If tiles come back `403`, add the `?` placeholder to Allowed
+   HTTP origins in the MapTiler dashboard — it explicitly permits requests
+   with no Origin/Referer, at the cost of also permitting other no-header
+   requests (e.g. curl, some scrapers) through.
 2. Put the key straight into `wrangler.jsonc`, under **both**
    `env.production` and `env.preview` — each needs its own `vars` *and* its
    own `d1_databases` (see step below on non-inheritance):
