@@ -265,21 +265,20 @@ Options, roughly in order of independence:
 
    Verified directly against MapTiler with curl: a request with a matching
    `Origin` returns `200`, a foreign `Origin` returns `403`, and the same
-   for `Referer` when no `Origin` is present. **Not yet verified:** a
-   request with *neither* header returns `403` too — and this site sends
-   `Referrer-Policy: no-referrer` (`public/_headers`), so if MapLibre's tile
-   `<img>` requests don't carry a CORS `Origin` header either, real
-   visitors hit that same `403` — recreating the exact incident this page
-   exists to prevent. MapLibre conventionally sets `crossOrigin=anonymous`
-   on tile images (to avoid tainting the WebGL canvas), which should mean a
-   real `Origin` header always goes out regardless of `Referrer-Policy` —
-   but that's an expectation, not a confirmed fact; curl can't exercise
-   MapLibre's actual request path. **Load the live map in a real browser
-   and check the Network tab for the tile requests** before trusting this
-   is settled. If tiles come back `403`, add the `?` placeholder to Allowed
-   HTTP origins in the MapTiler dashboard — it explicitly permits requests
-   with no Origin/Referer, at the cost of also permitting other no-header
-   requests (e.g. curl, some scrapers) through.
+   for `Referer` when no `Origin` is present. A request with *neither*
+   header also returns `403`, which raised a real concern given this site's
+   `Referrer-Policy: no-referrer` (`public/_headers`) — if MapLibre's tile
+   requests didn't carry a CORS `Origin` header either, real visitors would
+   hit that same `403`. Checked with an actual headless browser against a
+   preview build, not just curl: MapLibre's tile `<img>` requests do send
+   `Origin: https://<deploy>.flockoffmn.pages.dev` (empty `Referer`, as
+   expected — `Origin` isn't governed by `Referrer-Policy`, only `Referer`
+   is). All 30 tile requests on that run returned `200` and the map
+   rendered correctly with MapTiler attribution visible. If a future
+   MapLibre upgrade changes how it loads tile images, re-check this the
+   same way; the `?` placeholder in Allowed HTTP origins is the stopgap if
+   it ever regresses (permits no-origin requests, at the cost of also
+   letting other headerless requests through).
 2. Put the key straight into `wrangler.jsonc`, under **both**
    `env.production` and `env.preview` — each needs its own `vars` *and* its
    own `d1_databases` (see step below on non-inheritance):

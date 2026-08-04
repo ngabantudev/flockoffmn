@@ -102,18 +102,19 @@
   // matching Origin → 200, foreign Origin → 403, matching Referer with no
   // Origin → 200, foreign Referer with no Origin → 403.
   //
-  // Unresolved as of this commit: curl with NEITHER header present → 403.
-  // This site sends `Referrer-Policy: no-referrer` (public/_headers), so if
-  // MapLibre's tile `<img>` requests don't carry a CORS `Origin` header
-  // either, real visitors get this same 403 — recreating the incident this
-  // key exists to fix. MapLibre conventionally sets `crossOrigin=anonymous`
-  // on tile images (to avoid tainting the WebGL canvas), which should mean
-  // a real Origin header is always sent regardless of Referrer-Policy — but
-  // curl can't confirm what MapLibre's actual image requests do. Load the
-  // live map in a real browser and check the Network tab for the tile
-  // requests before trusting this is settled; if tiles 403, add the `?`
-  // placeholder to Allowed HTTP origins in the MapTiler dashboard to permit
-  // no-origin requests too.
+  // curl with NEITHER header present → 403, which raised a real concern
+  // given this site's `Referrer-Policy: no-referrer` (public/_headers): if
+  // MapLibre's tile requests didn't carry a CORS Origin header either, real
+  // visitors would get this same 403. Checked with an actual headless
+  // browser against a preview build, not just curl: MapLibre's tile `<img>`
+  // requests do send `Origin: https://<deploy>.flockoffmn.pages.dev` (empty
+  // Referer, as expected) — Origin isn't governed by Referrer-Policy, only
+  // Referer is. All 30 tile requests on that run returned 200 and the map
+  // rendered correctly with MapTiler attribution visible. If this ever
+  // needs re-checking (e.g. after a MapLibre upgrade changes how it loads
+  // tile images), add the `?` placeholder to Allowed HTTP origins in the
+  // MapTiler dashboard as a stopgap — it explicitly permits no-origin
+  // requests, at the cost of also letting other headerless requests through.
   //
   // NOTE: if you change the tile host, update the CSP in public/_headers to
   // match, or the map will silently fail to load tiles.
