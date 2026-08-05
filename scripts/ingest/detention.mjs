@@ -100,14 +100,21 @@ function countyFromName(facilityName) {
  *   CoreCivic's own 2026-08-04 investor release confirms the contract was
  *   actually signed, effective 2026-08-11 — https://ir.corecivic.com/news-releases/news-release-details/corecivic-announces-new-contract-award-prairie-correctional
  *   (Tier 3, corroborating that the sole-source intent became an award).
- *   Coordinates are the facility's public infobox location, not a certified
- *   address — more precise than a city centroid, but flagged as such via
- *   `locatedBy` rather than presented as ICE-grade precision.
+ *   Street address, 445 South Munsterman Street, Appleton, MN 56208, is
+ *   CoreCivic's own listing for the facility (Tier 3) —
+ *   https://www.corecivic.com/facilities/prairie-correctional-facility —
+ *   independently corroborated by a third-party business listing. That
+ *   address was then geocoded with the Census Bureau's public geocoder
+ *   (TIGER/Line address-range interpolation, Tier 1 for position), fetched
+ *   2026-08-05: https://geocoding.geo.census.gov/geocoder/locations/onelineaddress
+ *   Interpolated along a street segment, not a rooftop point — closer than a
+ *   city centroid, but still an estimate, hence `locatedBy: 'address'` rather
+ *   than a claim of surveyed precision.
  */
 const MANUAL_ADDITIONS = [
   {
     type: 'Feature',
-    geometry: { type: 'Point', coordinates: [-96.025, 45.19] },
+    geometry: { type: 'Point', coordinates: [-96.021184, 45.194695] },
     properties: {
       id: 'detention-mn-prairie-correctional-facility',
       layer: 'detention_facility',
@@ -119,10 +126,11 @@ const MANUAL_ADDITIONS = [
       sourceDate: '2026-08-04',
       attributes: {
         city: 'Appleton',
+        address: '445 South Munsterman Street, Appleton, MN 56208',
         contractType: 'Direct federal contract with facility owner (sole-source)',
         facilityType: 'Dedicated immigration facility',
         operator: 'CoreCivic, Inc.',
-        locatedBy: 'address-estimate',
+        locatedBy: 'address',
         inspectionUrl: 'https://www.ice.gov/detain/detention-facilities',
         contractNoticeNumber: '70CDCR26R00000011',
         contractNoticeUrl: 'https://sam.gov/opp/09e7882089b3475788b19242cc98c21a/view',
@@ -241,6 +249,17 @@ async function main() {
               es: 'Prairie Correctional Facility (Appleton): un aviso de contratación de fuente única de DHS/ICE, antes de su aparición en la lista oficial de instalaciones de ICE.',
             },
           },
+          {
+            key: 'corecivic-locator',
+            name: 'CoreCivic — Facility Locator',
+            url: 'https://www.corecivic.com/facilities/prairie-correctional-facility',
+            license: 'All rights reserved; used here for the facility’s address only',
+            licenseUrl: null,
+            contributes: {
+              en: 'Prairie Correctional Facility (Appleton): the operator’s own listed street address, geocoded via the U.S. Census Bureau’s public geocoder.',
+              es: 'Prairie Correctional Facility (Appleton): la dirección postal indicada por el propio operador, geolocalizada mediante el geocodificador público de la Oficina del Censo de EE. UU.',
+            },
+          },
         ]
         : undefined,
     },
@@ -253,7 +272,8 @@ async function main() {
         ? 'Prairie Correctional Facility (Appleton) is plotted from a DHS/ICE sole-source '
           + 'contract notice and CoreCivic’s confirmation of the signed award, not yet from '
           + 'ICE’s own facility list — see the contract notice link on its detail panel. Its '
-          + 'position is a public building-location estimate, not a facility address of record.'
+          + 'position is the operator’s listed street address geocoded to the nearest street '
+          + 'segment, not a surveyed rooftop point.'
         : null,
     ].filter(Boolean),
     features,
