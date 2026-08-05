@@ -759,6 +759,10 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'facilityType', label: { en: 'Facility type', es: 'Tipo de instalación' } },
       { key: 'contractType', label: { en: 'Contract type', es: 'Tipo de contrato' } },
       { key: 'inspectionUrl', label: { en: 'Inspection records', es: 'Registros de inspección' }, format: 'link' },
+      // Null on every ICE-list facility; populated only on facilities added
+      // manually ahead of ICE's own list (see MANUAL_ADDITIONS in detention.mjs).
+      { key: 'contractNoticeNumber', label: { en: 'Federal contract notice #', es: 'N.º de aviso de contrato federal' } },
+      { key: 'contractNoticeUrl', label: { en: 'Federal contract notice', es: 'Aviso de contrato federal' }, format: 'link' },
     ],
     nearMe: {
       mode: 'nearest',
