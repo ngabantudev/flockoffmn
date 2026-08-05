@@ -160,6 +160,18 @@ async function main() {
       'ICE publishes no coordinates; positions are city or county interior points, not building addresses.',
       'Covers only adult facilities authorised to hold people over 72 hours — not juvenile or family facilities, and not short-term holding rooms.',
       'Contracts change without announcement; a listed facility may not currently hold anyone for ICE.',
+      // Pending addition, tracked here rather than plotted: CoreCivic (Tier 3) announced
+      // a new 5-year ICE contract for this facility on 2026-08-04, corroborated by MN
+      // news outlets (Tier 4) the same day, but it is not yet on ICE's own facility
+      // list (Tier 1/2) so it is not geocoded or drawn. Remove this line, and let the
+      // facility appear automatically, once ICE lists it — expected around intake in
+      // Q4 2026. If a SAM.gov/USASpending contract record turns up first, that's a
+      // stronger citation than the press release; use it instead.
+      "Prairie Correctional Facility (Appleton, Swift County) is under a new 5-year ICE "
+        + "contract beginning Aug. 11, 2026, announced by operator CoreCivic on Aug. 4, 2026 "
+        + "and reported by multiple Minnesota outlets the same day. It is not yet on ICE's "
+        + "Over 72-Hour Facility List, so it is not plotted on this map. People are expected "
+        + "to begin arriving under the contract in Q4 2026.",
     ],
     features,
   });
