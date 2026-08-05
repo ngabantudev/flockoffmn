@@ -15,6 +15,10 @@
  * ICE publishes no coordinates, so facilities are geocoded to their city's
  * Census interior point, falling back to the county named in the facility
  * itself. Precision is recorded on every record.
+ *
+ * MANUAL_ADDITIONS below covers the gap between a contract taking effect and
+ * ICE re-publishing this spreadsheet to match — see the comment there for
+ * what belongs in that list and what does not.
  */
 
 import {
@@ -70,6 +74,62 @@ function countyFromName(facilityName) {
   const m = /^(.*?)\s+county\b/i.exec(facilityName ?? '');
   return m ? normaliseCounty(m[1]) : null;
 }
+
+/**
+ * Facilities confirmed under contract by a Tier 1/2 primary record but not
+ * yet on ICE's own Over 72-Hour Facility List — the list ICE re-publishes on
+ * no fixed schedule, typically once a facility is actually receiving people.
+ *
+ * Keep this list short and remove an entry the moment either becomes true:
+ *   (a) the ICE spreadsheet itself lists the facility (the dedupe check below
+ *       drops the manual entry automatically once that happens, so a stale
+ *       entry here is a no-op, not a duplicate pin — but delete it anyway so
+ *       the next reader isn't left wondering why it's still here), or
+ *   (b) the contract is reported cancelled or the facility never activates.
+ *
+ * Every entry needs its own citation independent of this layer's blanket ICE
+ * provenance, because by definition ICE has not documented it yet.
+ *
+ * — Prairie Correctional Facility, Appleton (Swift County), added 2026-08-05.
+ *   DHS/ICE posted a sole-source special notice naming CoreCivic as "the sole
+ *   owner and operator of the Prairie detention facility" for a 1,600-bed,
+ *   5-year contract serving the ICE ERO Saint Paul Field Office:
+ *   solicitation 70CDCR26R00000011, posted 2026-06-04, DHS/ICE Detention
+ *   Compliance and Removals — https://sam.gov/opp/09e7882089b3475788b19242cc98c21a/view
+ *   (Tier 1: federal procurement record, names the facility directly).
+ *   CoreCivic's own 2026-08-04 investor release confirms the contract was
+ *   actually signed, effective 2026-08-11 — https://ir.corecivic.com/news-releases/news-release-details/corecivic-announces-new-contract-award-prairie-correctional
+ *   (Tier 3, corroborating that the sole-source intent became an award).
+ *   Coordinates are the facility's public infobox location, not a certified
+ *   address — more precise than a city centroid, but flagged as such via
+ *   `locatedBy` rather than presented as ICE-grade precision.
+ */
+const MANUAL_ADDITIONS = [
+  {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [-96.025, 45.19] },
+    properties: {
+      id: 'detention-mn-prairie-correctional-facility',
+      layer: 'detention_facility',
+      name: 'Prairie Correctional Facility',
+      county: 'Swift County',
+      state: 'MN',
+      countyFips: '27151',
+      confidence: 'confirmed',
+      sourceDate: '2026-08-04',
+      attributes: {
+        city: 'Appleton',
+        contractType: 'Direct federal contract with facility owner (sole-source)',
+        facilityType: 'Dedicated immigration facility',
+        operator: 'CoreCivic, Inc.',
+        locatedBy: 'address-estimate',
+        inspectionUrl: 'https://www.ice.gov/detain/detention-facilities',
+        contractNoticeNumber: '70CDCR26R00000011',
+        contractNoticeUrl: 'https://sam.gov/opp/09e7882089b3475788b19242cc98c21a/view',
+      },
+    },
+  },
+];
 
 async function main() {
   const res = await fetchWithRetry(FACILITY_LIST, { timeoutMs: 90_000 });
@@ -142,6 +202,20 @@ async function main() {
     });
   }
 
+  // Fold in manually-sourced facilities ICE hasn't listed yet — but if ICE's
+  // own feed has already caught up for one, its automated entry wins and the
+  // manual one is dropped rather than duplicated.
+  const additions = MANUAL_ADDITIONS.filter(
+    (m) => !features.some(
+      (f) => f.properties.state === m.properties.state
+        && normalisePlace(f.properties.name) === normalisePlace(m.properties.name),
+    ),
+  );
+  for (const extra of additions) {
+    log('detention', `manual addition: ${extra.properties.name} (${extra.properties.attributes.city}) — not yet on ICE's list`);
+  }
+  features.push(...additions);
+
   await writeLayer('detention', {
     layer: 'detention_facility',
     provenance: {
@@ -154,25 +228,34 @@ async function main() {
       sourceDate: null,
       refresh: 'periodic',
       nationalFacilityCount: facilities.length,
+      secondarySources: additions.length
+        ? [
+          {
+            key: 'sam-gov',
+            name: 'SAM.gov — Contract Opportunities',
+            url: 'https://sam.gov/opp/09e7882089b3475788b19242cc98c21a/view',
+            license: 'Public domain (US federal government work)',
+            licenseUrl: 'https://www.usa.gov/government-works',
+            contributes: {
+              en: 'Prairie Correctional Facility (Appleton): a DHS/ICE sole-source procurement notice, ahead of its appearance on ICE’s own facility list.',
+              es: 'Prairie Correctional Facility (Appleton): un aviso de contratación de fuente única de DHS/ICE, antes de su aparición en la lista oficial de instalaciones de ICE.',
+            },
+          },
+        ]
+        : undefined,
     },
     knownGaps: [
       'Facility-level only. This layer contains no information about any detained person, by design.',
       'ICE publishes no coordinates; positions are city or county interior points, not building addresses.',
       'Covers only adult facilities authorised to hold people over 72 hours — not juvenile or family facilities, and not short-term holding rooms.',
       'Contracts change without announcement; a listed facility may not currently hold anyone for ICE.',
-      // Pending addition, tracked here rather than plotted: CoreCivic (Tier 3) announced
-      // a new 5-year ICE contract for this facility on 2026-08-04, corroborated by MN
-      // news outlets (Tier 4) the same day, but it is not yet on ICE's own facility
-      // list (Tier 1/2) so it is not geocoded or drawn. Remove this line, and let the
-      // facility appear automatically, once ICE lists it — expected around intake in
-      // Q4 2026. If a SAM.gov/USASpending contract record turns up first, that's a
-      // stronger citation than the press release; use it instead.
-      "Prairie Correctional Facility (Appleton, Swift County) is under a new 5-year ICE "
-        + "contract beginning Aug. 11, 2026, announced by operator CoreCivic on Aug. 4, 2026 "
-        + "and reported by multiple Minnesota outlets the same day. It is not yet on ICE's "
-        + "Over 72-Hour Facility List, so it is not plotted on this map. People are expected "
-        + "to begin arriving under the contract in Q4 2026.",
-    ],
+      additions.length
+        ? 'Prairie Correctional Facility (Appleton) is plotted from a DHS/ICE sole-source '
+          + 'contract notice and CoreCivic’s confirmation of the signed award, not yet from '
+          + 'ICE’s own facility list — see the contract notice link on its detail panel. Its '
+          + 'position is a public building-location estimate, not a facility address of record.'
+        : null,
+    ].filter(Boolean),
     features,
   });
 }
