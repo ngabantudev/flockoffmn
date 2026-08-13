@@ -1,6 +1,7 @@
-import maplibregl, { type Map as MLMap, type GeoJSONSource, type RasterTileSource } from 'maplibre-gl';
+import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
+import { Protocol as PMTilesProtocol } from 'pmtiles';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
-import { baseStyle, basemapPaint, tileUrlForStyle, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
+import { baseStyle, BASEMAP_LAYERS, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import {
   GLOW_STOPS,
@@ -319,6 +320,14 @@ const JURISDICTION_LAYER = 'jurisdiction-outline';
 /** Neutral against every layer colour: this is a frame, not a finding. */
 const JURISDICTION_COLOR = '#94a3b8';
 
+// Registers the pmtiles:// URL scheme with MapLibre so baseStyle()'s vector
+// source can reference the self-hosted archive directly (see mapStyle.ts's
+// header comment). Module-level, not per-instance: addProtocol is global
+// registry state on the maplibregl import, and every MapController in a
+// page shares one. Safe to call more than once (a later call just
+// overwrites the handler with an equivalent one) but there's no reason to.
+maplibregl.addProtocol('pmtiles', new PMTilesProtocol().tile);
+
 /**
  * Owns the MapLibre instance and all layer state.
  *
@@ -389,14 +398,30 @@ export class MapController {
     this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
 
     // The basemap is independent of every other layer here — swapping it is
-    // just the raster source's tile URL plus two paint properties, never
-    // map.setStyle() (which would drop every registry layer this class has
-    // added). Queued on 'load' if a visitor toggles before the map has
-    // finished its first style load, since setPaintProperty on a layer that
-    // doesn't exist yet throws.
+    // just re-setting BASEMAP_LAYERS' paint properties, never map.setStyle()
+    // (which would drop every registry layer this class has added). Queued
+    // on 'load' if a visitor toggles before the map has finished its first
+    // style load, since setPaintProperty on a layer that doesn't exist yet
+    // throws.
     onMapStyleChange((styleId) => {
       if (this.hasLoaded) this.setBasemap(styleId);
       else this.map.once('load', () => this.setBasemap(styleId));
+    });
+
+    // The old raster setup shipped to production twice with a silently blank
+    // map (see mapStyle.ts's history note) because nothing surfaced a failed
+    // tile fetch anywhere a visitor could see. This is the vector
+    // equivalent's one required difference: a failure to reach the archive
+    // — wrong URL, bucket unreachable, CORS misconfigured — degrades to a
+    // visible status message rather than a silent blank canvas. Everything
+    // else (pins, the record list, search) works with no basemap at all, by
+    // construction — the record list is the accessible primary interface
+    // and never depended on tiles.
+    this.map.on('error', (e) => {
+      const err = e as unknown as { sourceId?: string };
+      if (err.sourceId === 'basemap') {
+        this.events.onError?.('basemap', 'Base map unavailable — layers and search still work.');
+      }
     });
 
     this.map.on('load', () => {
@@ -421,22 +446,23 @@ export class MapController {
   /**
    * Re-keys the basemap without map.setStyle() — that would drop every
    * source/layer this class has added for the registry layers, live flights,
-   * and density threads. A raster source's setTiles() plus two paint
-   * properties is the entire visual surface baseStyle()'s 'osm'/'background'
-   * layers expose, so that's the entire surface this needs to touch.
+   * and density threads. The vector basemap has one source and ~20 layers
+   * (BASEMAP_LAYERS in mapStyle.ts) instead of the old raster setup's one
+   * source and two paint properties, but the principle is the same: every
+   * paint key BASEMAP_LAYERS defines gets re-set here, every time, for every
+   * layer — never left to whatever a previous flavor happened to set. That's
+   * what makes a bug like the old raster-brightness-max reset (a paint key
+   * MapLibre won't revert on its own just because a later call omits it)
+   * structurally impossible instead of something to remember by hand.
    */
   setBasemap(styleId: MapStyleId): void {
-    const source = this.map.getSource('osm') as RasterTileSource | undefined;
-    if (!source) return;
-    source.setTiles([tileUrlForStyle(styleId)]);
     const dark = MAP_STYLES[styleId].dark;
-    const { 'background-color': backgroundColor, osmPaint } = basemapPaint(dark);
-    this.map.setPaintProperty('background', 'background-color', backgroundColor);
-    // Explicit reset to 1 for a light style, not just omitting the property:
-    // a light style follows a dark one that set raster-brightness-max to
-    // 0.85, and MapLibre paint properties don't revert to their spec default
-    // just because a later setPaintProperty call leaves them unmentioned.
-    this.map.setPaintProperty('osm', 'raster-brightness-max', osmPaint['raster-brightness-max'] ?? 1);
+    for (const layer of BASEMAP_LAYERS) {
+      if (!this.map.getLayer(layer.id)) continue;
+      for (const [key, value] of Object.entries(layer.paint(dark))) {
+        this.map.setPaintProperty(layer.id, key, value);
+      }
+    }
 
     if (dark !== this.basemapDark) {
       this.basemapDark = dark;
@@ -444,9 +470,16 @@ export class MapController {
     }
   }
 
-  /** The basemap's own background colour — casings/halos/strokes are drawn in this so a coloured mark reads against the map instead of floating on it. */
+  /**
+   * The basemap's own background colour — casings/halos/strokes are drawn in
+   * this so a coloured mark reads against the map instead of floating on it.
+   * Read from BASEMAP_LAYERS' 'base-background' entry rather than restating
+   * the two hex values here, so this and the actual rendered background can
+   * never drift apart.
+   */
   private get basemapColor(): string {
-    return this.basemapDark ? '#0a0c10' : '#ffffff';
+    const bg = BASEMAP_LAYERS.find((l) => l.id === 'base-background');
+    return (bg?.paint(this.basemapDark)['background-color'] as string | undefined) ?? '#0a0c10';
   }
 
   /** A layer's identity colour for the current basemap. See LayerDefinition.colorLight's comment in layers/types.ts for why this can fall back to `color`. */
