@@ -1434,13 +1434,20 @@ export class MapController {
         /*
          * Below `emergeFrom`, radius follows the same 5/10/15 curve every
          * point layer has always used. A layer that also names `speckleFrom`
-         * (ALPR, so far — see scaleOf's comment) gets one earlier anchor: a
-         * true speck, on screen from the statewide or nationwide view instead
-         * of only from `emergeFrom` up. Layers that don't name it see
+         * (ALPR, so far — see scaleOf's comment) gets two earlier anchors
+         * instead: a true speck — sub-pixel at the map's own minimum zoom —
+         * that only grows into a readable dot by the time the view has
+         * narrowed to a few states across. Layers that don't name it see
          * `speckleFrom === emergeFrom` and take the unchanged branch below.
          */
         'circle-radius': (tier.speckleFrom < tier.emergeFrom
-          ? ['interpolate', ['linear'], ['zoom'], tier.speckleFrom, 1.1, 5, 3.4, 10, 5.5, 15, 8]
+          ? [
+              'interpolate', ['linear'], ['zoom'],
+              tier.speckleFrom, 0.6,
+              6, 1.4,
+              10, 5.5,
+              15, 8,
+            ]
           : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
         ) as unknown as maplibregl.ExpressionSpecification,
         'circle-stroke-color': this.basemapColor,
