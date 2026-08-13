@@ -13,19 +13,22 @@ import { MAP_STYLES, type MapStyleId } from './theme';
  * and the rebuild runbook.
  *
  * The archive is a PMTiles file (github.com/protomaps/PMTiles): a single
- * static file the browser reads with plain HTTP range requests, so
- * Served from a custom domain on the R2 bucket (tiles.flockoffmn.org), not
- * the bucket's r2.dev default URL — Cloudflare's own docs are explicit that
- * r2.dev is rate-limited and "intended for non-production traffic," and
- * gets none of the caching/WAF features a custom domain does. A custom
- * domain still needs a zone-level Cache Rule ("Cache Everything" for
- * `tiles.flockoffmn.org/*`, since `.pmtiles` isn't one of the extensions
- * Cloudflare caches by default) before responses actually get served from
- * the edge instead of hitting R2 on every request — see docs/DEPLOYMENT.md
- * § Base map tiles for that one manual dashboard step and why it isn't
- * automatable (it needs a zone-write API scope the deploy token doesn't
- * carry). No tile server or Worker either way — it's a static file R2
- * serves directly by byte range.
+ * static file the browser reads with plain HTTP range requests, served from
+ * a custom domain on the R2 bucket (tiles.flockoffmn.org), not the bucket's
+ * r2.dev default URL — Cloudflare's own docs are explicit that r2.dev is
+ * rate-limited and "intended for non-production traffic," and gets none of
+ * the caching/WAF features a custom domain does. A custom domain also needs
+ * a zone-level Cache Rule ("Cache Everything" for `tiles.flockoffmn.org/*`,
+ * since `.pmtiles` isn't one of the extensions Cloudflare caches by default)
+ * before responses actually get served from the edge instead of hitting R2
+ * on every request — in place and confirmed live (verified by
+ * `cf-cache-status: HIT` on a repeat range request, including that distinct
+ * byte ranges cache and serve independently rather than colliding under the
+ * same URL). See docs/DEPLOYMENT.md § Base map tiles for the setup steps —
+ * the Cache Rule itself has to be added from the dashboard, not `wrangler`,
+ * since creating one needs a zone-write API scope the deploy token doesn't
+ * carry. No tile server or Worker either way — it's a static file R2 serves
+ * directly by byte range.
  *
  * `||` rather than `??` on purpose, matching the pre-existing convention
  * here: an unset env var arrives as undefined, but one declared-and-empty
