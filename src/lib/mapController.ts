@@ -58,7 +58,7 @@ export interface ClientLayer {
   /** Offsets of a record's parts along its own length, if it has a length. */
   positions?: { offsetsKey: string; countsKey: string; label: string };
   /** The zooms across which this layer's records emerge. */
-  scale?: { emergeFrom: number; pointsFrom: number };
+  scale?: { speckleFrom?: number; emergeFrom: number; pointsFrom: number };
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
   blockAggregate?: { cellMeters: number; blocksUntil: number; detailFrom: number };
   /** Colour records by a category once they are drawn individually. */
@@ -148,19 +148,28 @@ const PULSE_COLOR = '#f4fbf2';
 
 
 /**
- * Where a layer's records emerge, from the two zooms it names.
+ * Where a layer's records emerge, from the zooms it names.
  *
- * Records fade in between these two numbers rather than switching on at a
- * single cut, so a reader zooming in never crosses a line where the map
- * stops meaning one thing and starts meaning another. Everything downstream
- * reads these rather than a constant of its own, so the cones cannot arrive
- * before the records they annotate.
+ * Records fade in across these rather than switching on at a single cut, so a
+ * reader zooming in never crosses a line where the map stops meaning one
+ * thing and starts meaning another. Everything downstream reads these rather
+ * than a constant of its own, so the cones cannot arrive before the records
+ * they annotate.
+ *
+ * `speckleFrom` is the earliest of the three and optional: a layer that omits
+ * it (every point layer today except ALPR) fades in starting at `emergeFrom`
+ * exactly as before. ALPR sets it to the map's own minimum zoom, so a faint,
+ * uncoloured speck is on screen the instant the view is that far out — the
+ * statewide or nationwide look, not a switch that stays off until `emergeFrom`.
  */
 function scaleOf(layer: ClientLayer) {
   const emergeFrom = layer.scale?.emergeFrom ?? 0;
   const pointsFrom = layer.scale?.pointsFrom ?? emergeFrom + 1;
+  const speckleFrom = layer.scale?.speckleFrom ?? emergeFrom;
   return {
-    /** Dots begin to appear here, faint. */
+    /** A faint, uniform speck is visible from here — see the function comment. */
+    speckleFrom,
+    /** Dots begin to fade toward solid here. */
     emergeFrom,
     /** Records are fully drawn from here, and so are their indicators. */
     pointsFrom,
@@ -1422,7 +1431,18 @@ export class MapController {
               ],
             ] as unknown as maplibregl.ExpressionSpecification)
           : this.layerColor(layer),
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8],
+        /*
+         * Below `emergeFrom`, radius follows the same 5/10/15 curve every
+         * point layer has always used. A layer that also names `speckleFrom`
+         * (ALPR, so far — see scaleOf's comment) gets one earlier anchor: a
+         * true speck, on screen from the statewide or nationwide view instead
+         * of only from `emergeFrom` up. Layers that don't name it see
+         * `speckleFrom === emergeFrom` and take the unchanged branch below.
+         */
+        'circle-radius': (tier.speckleFrom < tier.emergeFrom
+          ? ['interpolate', ['linear'], ['zoom'], tier.speckleFrom, 1.1, 5, 3.4, 10, 5.5, 15, 8]
+          : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
+        ) as unknown as maplibregl.ExpressionSpecification,
         'circle-stroke-color': this.basemapColor,
         /*
          * Dots fade in rather than switching on at a single zoom.
@@ -1441,13 +1461,26 @@ export class MapController {
           tier.emergeFrom, 0,
           tier.pointsFrom, 1.2,
         ] as unknown as maplibregl.ExpressionSpecification,
-        'circle-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          tier.emergeFrom, 0,
-          tier.pointsFrom, 0.95,
-        ] as unknown as maplibregl.ExpressionSpecification,
+        /*
+         * Opacity follows the same two-branch shape as radius, just above.
+         * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
+         * dot is already visible at the map's own minimum zoom, and it climbs
+         * to solid across `emergeFrom` → `pointsFrom` same as before. Nothing
+         * here is a density estimate — it is the same records, just visible
+         * further out, at a size and opacity that don't claim more precision
+         * than a speck can carry.
+         */
+        'circle-opacity': (tier.speckleFrom < tier.emergeFrom
+          ? [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              tier.speckleFrom, 0.55,
+              tier.emergeFrom, 0.65,
+              tier.pointsFrom, 0.95,
+            ]
+          : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
+        ) as unknown as maplibregl.ExpressionSpecification,
       },
     });
 

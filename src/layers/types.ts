@@ -372,21 +372,31 @@ export interface LayerDefinition {
     key: string;
   };
   /**
-   * The two zooms across which this layer's records emerge.
+   * The zooms across which this layer's records emerge.
    *
-   * A point layer answers a different question at every scale. Across a state
-   * the question is where the infrastructure is concentrated; across a street
-   * it is which pole, facing which way — and only there is a pin the right
-   * shape for the answer. Records fade up from nothing to solid between these
-   * two zooms rather than switching on at a single cut, so what a reader is
-   * looking at at zoom 12 is what they were looking at at zoom 9, with more of
-   * it resolved.
+   * A point layer answers a different question at every scale. Across a
+   * country or state the question is where the infrastructure is at all;
+   * across a street it is which pole, facing which way — and only there is a
+   * pin the right shape for the answer. Records fade up between these zooms
+   * rather than switching on at a single cut, so what a reader is looking at
+   * at zoom 12 is what they were looking at at zoom 9, with more of it
+   * resolved.
    *
-   * Both numbers live here rather than beside the thing each one governs,
-   * because they are ends of the same fade and have to agree.
+   * All the numbers live here rather than beside the thing each one governs,
+   * because they are points on the same fade and have to agree.
    */
   scale?: {
-    /** Zoom at which records start to appear, still faint. */
+    /**
+     * Zoom at which a faint, uniform, uncoloured speck starts to appear —
+     * visible from the whole state or country. Optional, and rare: most
+     * point layers are dense enough, or few enough, to stay solid
+     * throughout (see mapController.ts's scaleOf), and only need
+     * `emergeFrom`/`pointsFrom` below. Set this when a reader should be able
+     * to see records exist before they're anywhere near close enough to read
+     * one.
+     */
+    speckleFrom?: number;
+    /** Zoom at which records start to take on their own identity — cones, individual colour. */
     emergeFrom: number;
     /** Zoom by which records are solid, coloured by category, and annotated. */
     pointsFrom: number;
