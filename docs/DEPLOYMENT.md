@@ -80,7 +80,7 @@ and `astro preview` ignore that file.
   silently break the map. Images and tile fetches cannot execute; the
   executable surface stays locked down. If you want
   to tighten these to your specific tile host, do it — just remember to update
-  the file whenever `PUBLIC_TILE_URL` changes.
+  the file whenever `PUBLIC_TILES_URL` changes.
 
 ### One binding, narrowly scoped
 
