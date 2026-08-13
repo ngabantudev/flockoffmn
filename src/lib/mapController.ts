@@ -44,6 +44,8 @@ export interface ClientLayer {
   color: string;
   /** See LayerDefinition's own comment in layers/types.ts. */
   colorLight?: string;
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  pointStrokeColor?: string;
   geometry: 'point' | 'polygon' | 'line';
   /**
    * Where this layer's category sits in the draw order, low to high.
@@ -58,7 +60,7 @@ export interface ClientLayer {
   /** Offsets of a record's parts along its own length, if it has a length. */
   positions?: { offsetsKey: string; countsKey: string; label: string };
   /** The zooms across which this layer's records emerge. */
-  scale?: { emergeFrom: number; pointsFrom: number };
+  scale?: { speckleFrom?: number; emergeFrom: number; pointsFrom: number };
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
   blockAggregate?: { cellMeters: number; blocksUntil: number; detailFrom: number };
   /** Colour records by a category once they are drawn individually. */
@@ -148,19 +150,28 @@ const PULSE_COLOR = '#f4fbf2';
 
 
 /**
- * Where a layer's records emerge, from the two zooms it names.
+ * Where a layer's records emerge, from the zooms it names.
  *
- * Records fade in between these two numbers rather than switching on at a
- * single cut, so a reader zooming in never crosses a line where the map
- * stops meaning one thing and starts meaning another. Everything downstream
- * reads these rather than a constant of its own, so the cones cannot arrive
- * before the records they annotate.
+ * Records fade in across these rather than switching on at a single cut, so a
+ * reader zooming in never crosses a line where the map stops meaning one
+ * thing and starts meaning another. Everything downstream reads these rather
+ * than a constant of its own, so the cones cannot arrive before the records
+ * they annotate.
+ *
+ * `speckleFrom` is the earliest of the three and optional: a layer that omits
+ * it (every point layer today except ALPR) fades in starting at `emergeFrom`
+ * exactly as before. ALPR sets it to the map's own minimum zoom, so a faint,
+ * uncoloured speck is on screen the instant the view is that far out — the
+ * statewide or nationwide look, not a switch that stays off until `emergeFrom`.
  */
 function scaleOf(layer: ClientLayer) {
   const emergeFrom = layer.scale?.emergeFrom ?? 0;
   const pointsFrom = layer.scale?.pointsFrom ?? emergeFrom + 1;
+  const speckleFrom = layer.scale?.speckleFrom ?? emergeFrom;
   return {
-    /** Dots begin to appear here, faint. */
+    /** A faint, uniform speck is visible from here — see the function comment. */
+    speckleFrom,
+    /** Dots begin to fade toward solid here. */
     emergeFrom,
     /** Records are fully drawn from here, and so are their indicators. */
     pointsFrom,
@@ -474,6 +485,25 @@ export class MapController {
   }
 
   /**
+   * A point layer's `circle-color` expression — category colour at every
+   * zoom if the layer names one, else the plain identity colour. The single
+   * source of truth for this expression: used at layer creation, in the
+   * theme repaint, and by the glow layer, so the three can never drift apart
+   * the way the theme repaint once did (it kept its own copy of the old,
+   * zoom-stepped version after the always-on-colour change landed here).
+   */
+  private pointCircleColor(layer: ClientLayer): maplibregl.ExpressionSpecification | string {
+    return layer.categoryColors
+      ? ([
+          'match',
+          ['get', layer.categoryColors.key],
+          ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+          layer.categoryColors.fallback,
+        ] as unknown as maplibregl.ExpressionSpecification)
+      : this.layerColor(layer);
+  }
+
+  /**
    * Re-keys every basemap-dependent paint property after `basemapDark`
    * changes: a colour chosen while dark was current — a layer's own
    * identity colour, a casing drawn in the basemap's own background, or the
@@ -504,27 +534,22 @@ export class MapController {
       }
 
       if (this.map.getLayer(`${layer.id}-points`)) {
-        // Mirrors the circle-color expression built at layer creation
-        // exactly (see the '-points' addLayer call below) — including the
-        // categoryColors case, whose far-zoom "below the closest tier" step
-        // is this.layerColor(layer) too, not just the simple case's whole
-        // expression.
-        const circleColor = layer.categoryColors
-          ? ([
-              'step',
-              ['zoom'],
-              this.layerColor(layer),
-              scaleOf(layer).pointsFrom,
-              [
-                'match',
-                ['get', layer.categoryColors.key],
-                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
-                layer.categoryColors.fallback,
-              ],
-            ] as unknown as maplibregl.ExpressionSpecification)
-          : this.layerColor(layer);
+        const circleColor = this.pointCircleColor(layer);
         this.map.setPaintProperty(`${layer.id}-points`, 'circle-color', circleColor);
-        this.map.setPaintProperty(`${layer.id}-points`, 'circle-stroke-color', this.basemapColor);
+        this.map.setPaintProperty(
+          `${layer.id}-points`,
+          'circle-stroke-color',
+          layer.pointStrokeColor ?? this.basemapColor,
+        );
+        // The glow shares the dot's exact colour (see pointCircleColor) —
+        // only ever the categoryColors match branch, since the glow layer
+        // only exists when a layer names categoryColors, so this is a no-op
+        // in practice today. Kept in step anyway so a future layer that
+        // pairs categoryColors with the plain layerColor() fallback branch
+        // doesn't go stale on a theme toggle the way `-points` itself just did.
+        if (this.map.getLayer(`${layer.id}-points-glow`)) {
+          this.map.setPaintProperty(`${layer.id}-points-glow`, 'circle-color', circleColor);
+        }
       }
 
       if (this.map.getLayer(`${layer.id}-line`) && !layer.networkColor) {
@@ -1355,14 +1380,15 @@ export class MapController {
         id: `${layer.id}-cones`,
         type: 'symbol',
         source: coneSrc,
-        // A cone annotates a record, so it cannot arrive before one — a dot
-        // is already on the map, faintly, from emergeFrom (see scaleOf's own
-        // comment), and the cone starts fading in there too. Past that
-        // shared start, this deliberately outpaces the dot's own fade: a
-        // reader asked for cones legible from higher up, not just present,
-        // so this ramp is fully resolved a couple of zooms before pointsFrom
-        // (the dots' own solid point) rather than exactly matching it.
-        minzoom: tier.emergeFrom,
+        // A cone annotates a record, so it cannot arrive before the reader can
+        // already tell one dot from the next. Cones used to start at
+        // emergeFrom, fading in alongside the dot itself — but at metro scale
+        // that means one cone per camera, all overlapping, on top of a dot
+        // that isn't even coloured by operator yet: clutter standing in for
+        // detail nobody asked to see yet. They now wait for pointsFrom, the
+        // same zoom the dot goes solid and category-coloured, and fade in
+        // over the two zooms past it.
+        minzoom: tier.pointsFrom,
         layout: {
           'icon-image': ['get', CONE_PROP],
           'icon-rotate': ['get', BEARING_PROP],
@@ -1377,8 +1403,8 @@ export class MapController {
             'interpolate',
             ['linear'],
             ['zoom'],
-            tier.emergeFrom, 0.75,
-            tier.pointsFrom - 2, 1.05,
+            tier.pointsFrom, 0.75,
+            tier.pointsFrom + 2, 1.05,
             18, 1.3,
           ],
         },
@@ -1387,8 +1413,47 @@ export class MapController {
             'interpolate',
             ['linear'],
             ['zoom'],
-            tier.emergeFrom, 0.4,
-            tier.pointsFrom - 2, 0.95,
+            tier.pointsFrom, 0.4,
+            tier.pointsFrom + 2, 0.95,
+          ] as unknown as maplibregl.ExpressionSpecification,
+        },
+      });
+    }
+
+    // See pointCircleColor's own comment: category colour at every zoom, not
+    // just once records are individually resolved — the physical limit left
+    // is a dot too small to show a legible colour, not an editorial one.
+    // Shared with the glow layer just below so a dot and its halo are never
+    // out of sync with each other.
+    const circleColor = this.pointCircleColor(layer);
+
+    // A soft per-dot halo in the dot's own colour, drawn under it. Radius and
+    // opacity stay at zero below `emergeFrom` on purpose: this layer had a
+    // density-style glow before (see the registry's own `scale` comment) and
+    // it was removed because overlapping halos across many close-together
+    // cameras read as a density surface the data can't back at that
+    // distance. A halo confined to the zoom range where dots are already
+    // individually resolved carries no information the dot's own colour
+    // doesn't already carry — it just makes that colour easier to read.
+    if (layer.categoryColors) {
+      this.map.addLayer({
+        id: `${layer.id}-points-glow`,
+        type: 'circle',
+        source: src,
+        paint: {
+          'circle-color': circleColor,
+          'circle-blur': 0.9,
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            tier.emergeFrom, 0,
+            tier.emergeFrom + 1, 6,
+            15, 16,
+          ] as unknown as maplibregl.ExpressionSpecification,
+          'circle-opacity': [
+            'interpolate', ['linear'], ['zoom'],
+            tier.emergeFrom, 0,
+            tier.pointsFrom, 0.4,
+            15, 0.5,
           ] as unknown as maplibregl.ExpressionSpecification,
         },
       });
@@ -1399,31 +1464,30 @@ export class MapController {
       type: 'circle',
       source: src,
       paint: {
+        'circle-color': circleColor,
         /*
-         * One colour until the records are individual, then the category.
-         *
-         * A `step` on zoom rather than two layers, so there is one dot per
-         * camera at every scale and nothing to keep in sync. Below the closest
-         * tier the dot is the layer's own colour: at that distance a coloured
-         * dot claims to distinguish things the reader cannot yet resolve, and
-         * most of them would be the "nobody wrote it down" grey anyway.
+         * Below `emergeFrom`, radius follows the same 5/10/15 curve every
+         * point layer has always used. A layer that also names `speckleFrom`
+         * (ALPR, so far — see scaleOf's comment) gets earlier anchors
+         * instead: a true speck — sub-pixel at the map's own minimum zoom —
+         * climbing to a small, clean dot at metro scale rather than the
+         * bigger close-up size. Cut down from the original curve specifically
+         * to match deflock.org's own metro-zoom rendering, which is small
+         * and uncluttered even packed as tight as the Twin Cities get.
+         * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
+         * take the unchanged branch below.
          */
-        'circle-color': layer.categoryColors
-          ? ([
-              'step',
-              ['zoom'],
-              this.layerColor(layer),
-              tier.pointsFrom,
-              [
-                'match',
-                ['get', layer.categoryColors.key],
-                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
-                layer.categoryColors.fallback,
-              ],
-            ] as unknown as maplibregl.ExpressionSpecification)
-          : this.layerColor(layer),
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8],
-        'circle-stroke-color': this.basemapColor,
+        'circle-radius': (tier.speckleFrom < tier.emergeFrom
+          ? [
+              'interpolate', ['linear'], ['zoom'],
+              tier.speckleFrom, 0.5,
+              7, 1.2,
+              tier.emergeFrom, 2.8,
+              15, 8,
+            ]
+          : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
+        ) as unknown as maplibregl.ExpressionSpecification,
+        'circle-stroke-color': layer.pointStrokeColor ?? this.basemapColor,
         /*
          * Dots fade in rather than switching on at a single zoom.
          *
@@ -1441,13 +1505,26 @@ export class MapController {
           tier.emergeFrom, 0,
           tier.pointsFrom, 1.2,
         ] as unknown as maplibregl.ExpressionSpecification,
-        'circle-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          tier.emergeFrom, 0,
-          tier.pointsFrom, 0.95,
-        ] as unknown as maplibregl.ExpressionSpecification,
+        /*
+         * Opacity follows the same two-branch shape as radius, just above.
+         * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
+         * dot is already visible at the map's own minimum zoom, and it climbs
+         * to solid across `emergeFrom` → `pointsFrom` same as before. Nothing
+         * here is a density estimate — it is the same records, just visible
+         * further out, at a size and opacity that don't claim more precision
+         * than a speck can carry.
+         */
+        'circle-opacity': (tier.speckleFrom < tier.emergeFrom
+          ? [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              tier.speckleFrom, 0.55,
+              tier.emergeFrom, 0.65,
+              tier.pointsFrom, 0.95,
+            ]
+          : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
+        ) as unknown as maplibregl.ExpressionSpecification,
       },
     });
 
@@ -1644,6 +1721,7 @@ export class MapController {
       '-line-casing',
       '-line',
       '-line-hit',
+      '-points-glow',
       '-points',
       '-cones',
       '-labels',

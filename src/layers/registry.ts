@@ -214,6 +214,13 @@ export const LAYERS: LayerDefinition[] = [
     geometry: 'point',
     color: '#38bdf8',
     colorLight: '#067baf',
+    // Category colour now applies at every zoom (see mapController.ts), and
+    // the most common value by far — "Not recorded", muted slate #64748b —
+    // reads as almost no edge at all against the dark basemap's own
+    // near-black background under the default basemap-coloured ring. A fixed
+    // white ring keeps every dot legible regardless of which category colour
+    // it landed on or which basemap it's sitting over.
+    pointStrokeColor: '#ffffff',
     bearingKey: 'direction',
     categoryColors: {
       key: 'operatorType',
@@ -232,10 +239,14 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#94a3b8',
     },
-    // Plain locations, not a density estimate. From zoom 10 the dots fade up
-    // until they are solid hardware at 14 — no heatmap or node surface beneath
-    // them, just the mapped cameras themselves.
-    scale: { emergeFrom: 10, pointsFrom: 14 },
+    // Plain locations, not a density estimate. A faint, uncoloured speck is
+    // visible from the map's own minimum zoom (3 — the whole state, or the
+    // whole country) so a reader never has to take "there are cameras out
+    // there" on faith; it fades toward solid hardware from zoom 10 and is
+    // fully resolved, coloured by who runs it, by 14. No heatmap or node
+    // surface beneath them at any point — just the mapped cameras themselves,
+    // drawn smaller and fainter the further out you are.
+    scale: { speckleFrom: 3, emergeFrom: 10, pointsFrom: 14 },
     // The operator is recorded on maybe a third of these, so the fallback is
     // not an edge case — it is the common path. Outside a city with its own
     // force the sheriff is the agency for that ground, and asking the wrong
