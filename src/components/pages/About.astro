@@ -78,10 +78,9 @@ const isIt = [
     <h2>We do not surveil our own users</h2>
     <p>
       There are no accounts, no trackers, no third-party analytics, no advertising technology, and
-      no cookies on this site. Almost the whole thing is static files, with two narrow exceptions
-      documented in <code>docs/DEPLOYMENT.md</code> (a same-origin relay for the live-flights
-      toggle, and read-only lookups against the public flight sighting log) — neither logs a
-      visitor, a query, or an IP address anywhere. When you use the "near me" lookup, the place
+      no cookies on this site. The whole thing is static files — no server-side code, no database,
+      no bindings of any kind (see <code>wrangler.jsonc</code>) — so there is nothing running that
+      could log a visitor, a query, or an IP address. When you use the "near me" lookup, the place
       list is downloaded to your browser and the search runs there — nothing you type is sent
       anywhere, because there is nothing to send it to and nowhere to log it. If you use browser
       geolocation, the coordinates are read into memory and discarded. The base map you're looking
