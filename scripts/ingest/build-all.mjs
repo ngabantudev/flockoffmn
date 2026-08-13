@@ -38,9 +38,6 @@ const STEPS = [
   { name: 'redlining', script: 'redlining.mjs' },
   { name: 'covenants', script: 'covenants.mjs' },
   { name: 'ej-cumulative', script: 'ej-cumulative.mjs' },
-  // Reference data for the live-flights map overlay, not a registry layer —
-  // see the script's own header. Independent of everything above it.
-  { name: 'airports', script: 'airports.mjs' },
 ];
 
 function run(script) {

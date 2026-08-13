@@ -455,8 +455,8 @@ export class MapController {
 
   /**
    * Re-keys the basemap without map.setStyle() — that would drop every
-   * source/layer this class has added for the registry layers, live flights,
-   * and density threads. The vector basemap has one source and ~20 layers
+   * source/layer this class has added for the registry layers and density
+   * threads. The vector basemap has one source and ~20 layers
    * (BASEMAP_LAYERS in mapStyle.ts) instead of the old raster setup's one
    * source and two paint properties, but the principle is the same: every
    * paint key that *can* differ between flavors gets re-set here, every
