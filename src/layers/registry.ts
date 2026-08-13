@@ -207,25 +207,14 @@ export const LAYERS: LayerDefinition[] = [
         es: '«Quién lo opera» se deduce buscando palabras clave en el texto libre que un voluntario escribió en el campo de operador. Registra lo que sugiere una palabra de ese campo, nunca un contrato verificado: «Eagan» es una ciudad sin ninguna palabra clave y queda en «otros», y un nombre que abarca varias agencias se archiva bajo una sola. Cuatro de cada cinco lectores no dicen nada en absoluto, y eso —no el desglose del quinto restante— es el hallazgo aquí.',
       },
       {
-        en: 'The glow under the dots is a density estimate, not coverage. It smooths mapped cameras over a radius, so it paints colour on ground no camera stands on and none can see — it shows where mapped cameras gather, and nothing else. It stays on the map at every zoom and dims as the dots appear, which means the estimate and the mapped positions do overlap: the dot is the surveyed location, the haze around it is not evidence that anything stands there.',
-        es: 'El resplandor bajo los puntos es una estimación de densidad, no una cobertura. Suaviza las cámaras mapeadas sobre un radio, así que colorea terreno donde no hay ninguna cámara ni alcance de ninguna: solo muestra dónde se concentran las cámaras mapeadas. Permanece en el mapa en todos los niveles de zoom y se atenúa a medida que aparecen los puntos, por lo que la estimación y las posiciones mapeadas sí se superponen: el punto es la ubicación registrada; la neblina a su alrededor no es prueba de que allí haya nada.',
-      },
-      {
-        en: 'A brighter patch of that glow is a node: two or more reader locations within about 70 metres of one another, drawn as one body whose brightness rises with the number of cameras in it. The grouping distance is a drawing convention chosen to be roughly the size of a signalled intersection — widen it and a node would swallow a block, narrow it and cameras facing each other across a junction would come apart. Brightness is a rough scale and not a readable count: to know how many cameras are at a junction, zoom in and count the dots.',
-        es: 'Una mancha más brillante de ese resplandor es un nodo: dos o más ubicaciones de lectores a unos 70 metros entre sí, dibujadas como un solo cuerpo cuyo brillo aumenta con la cantidad de cámaras que contiene. Esa distancia de agrupación es una convención de dibujo elegida para aproximarse al tamaño de un cruce con semáforo: si se amplía, un nodo abarcaría una manzana; si se reduce, cámaras enfrentadas en un mismo cruce se separarían. El brillo es una escala aproximada, no un recuento legible: para saber cuántas cámaras hay en un cruce, acerque el zoom y cuente los puntos.',
-      },
-      {
-        en: 'A node where several cameras share a pole ("321;109") is drawn as one cone per recorded heading over a single dot. A record tagged "0-360" is drawn as a full circle, meaning the surveyor recorded no single direction at all.',
-        es: 'Un nodo donde varias cámaras comparten un poste («321;109») se dibuja con un cono por cada orientación registrada sobre un solo punto. Un registro etiquetado «0-360» se dibuja como un círculo completo, lo que significa que no se registró ninguna dirección concreta.',
+        en: 'Several cameras sharing a pole ("321;109") are drawn as one cone per recorded heading over a single dot. A record tagged "0-360" is drawn as a full circle, meaning the surveyor recorded no single direction at all.',
+        es: 'Varias cámaras que comparten un poste («321;109») se dibujan con un cono por cada orientación registrada sobre un solo punto. Un registro etiquetado «0-360» se dibuja como un círculo completo, lo que significa que no se registró ninguna dirección concreta.',
       },
     ],
     geometry: 'point',
     color: '#38bdf8',
     colorLight: '#067baf',
     bearingKey: 'direction',
-    density: {
-      label: { en: 'Camera density', es: 'Densidad de cámaras' },
-    },
     categoryColors: {
       key: 'operatorType',
       label: { en: 'Who runs it', es: 'Quién lo opera' },
@@ -243,10 +232,9 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#94a3b8',
     },
-    // One drawing, all the way in. The surface never leaves; it thickens into
-    // nodes where readers stand together, and from zoom 10 the dots fade up out
-    // of it until they are solid hardware at 14. There is no scale at which the
-    // reader is handed a different picture of the same cameras.
+    // Plain locations, not a density estimate. From zoom 10 the dots fade up
+    // until they are solid hardware at 14 — no heatmap or node surface beneath
+    // them, just the mapped cameras themselves.
     scale: { emergeFrom: 10, pointsFrom: 14 },
     // The operator is recorded on maybe a third of these, so the fallback is
     // not an edge case — it is the common path. Outside a city with its own
@@ -350,10 +338,6 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Los cordones siguen siendo un conjunto reducido de vías, y la ausencia de un cordón nunca prueba que no haya carretera entre dos lugares. La mayoría de los cordones dibujan una vía por unión. Solo se dibuja una segunda donde la red está muy plegada —dos grupos a menos de doce millas sobre el terreno pero a más del cuádruple de esa distancia a través de la red— y nunca una tercera. Donde cuatro vías reales unen dos grupos, este mapa muestra una, o dos. Qué vía gana lo decide la distancia en línea recta entre los lectores más cercanos de ambos grupos, y luego se calcula la ruta; algunas uniones faltan del todo porque no se obtuvo ninguna ruta transitable, y el archivo de datos las cuenta.',
       },
       {
-        en: 'Every mesh link — never the cords — occasionally sends a slow spark along its own length, the way the axon this layer is named for fires and rests rather than carrying something continuously. An earlier version animated every strand this way, all the time and unthrottled, and it was removed rather than kept: it cost every reader’s machine real work on every frame, and a map that is heavy to open is a map fewer people read. This version is narrower and cheaper on purpose — the cords never animate at all, a given link is quiet most of the time and only carries a spark for a few seconds when it does, positions update a few times a second rather than every frame, and it turns off entirely if your system asks for reduced motion. The spark carries no fact of its own; it dramatises what the colour and width already say, standing still would say the same thing, just quieter.',
-        es: 'Cada conexión de la malla —nunca los cordones— envía de vez en cuando una chispa lenta a lo largo de su propio trazado, tal como el axón que da nombre a esta capa se dispara y descansa en lugar de transportar algo de forma continua. Una versión anterior animaba así cada hebra, todo el tiempo y sin límite de frecuencia, y se retiró en lugar de conservarla: exigía trabajo real al equipo de cada lector en cada fotograma, y un mapa pesado de abrir es un mapa que lee menos gente. Esta versión es más limitada y más económica a propósito: los cordones nunca se animan, una conexión dada permanece quieta la mayor parte del tiempo y solo lleva una chispa durante unos segundos cuando se dispara, las posiciones se actualizan solo unas pocas veces por segundo en lugar de en cada fotograma, y se desactiva por completo si el sistema pide movimiento reducido. La chispa no aporta ningún dato propio; dramatiza lo que el color y el grosor ya dicen, y quedarse quieto diría lo mismo, solo que más callado.',
-      },
-      {
         en: 'Colour is the body of mesh, not the road, and it counts thin strands only. Two thin strands in the same shade are joined through a chain of neighbourhood links, and the shade says how many reader locations that chain holds — cords are excluded from the count, or every strand in Minnesota would be the same shade and the encoding would say nothing. A body of mesh is a chain of mapped links under the distance limit above, so it is as much a product of those two choices as of the cameras: one unmapped reader, or one link a hundred yards over the limit, can be the difference between two bodies and one.',
         es: 'El color indica el cuerpo de malla, no la vía, y solo cuenta las hebras finas. Dos hebras finas del mismo tono están unidas por una cadena de conexiones de vecindario, y el tono indica cuántas ubicaciones de lectores tiene esa cadena; los cordones quedan fuera del recuento, o todas las hebras de Minnesota tendrían el mismo tono y la codificación no diría nada. Un cuerpo de malla es una cadena de conexiones mapeadas por debajo del límite de distancia anterior, así que depende tanto de esas dos decisiones como de las cámaras: un lector sin mapear, o una conexión que supere el límite por cien metros, puede ser la diferencia entre dos cuerpos y uno.',
       },
@@ -449,12 +433,8 @@ export const LAYERS: LayerDefinition[] = [
       // where cordColor is resolved in mapController.ts.
       color: CORD_STROKE_DARK,
     },
-    // 0 rather than a real threshold: every mesh link carries a
-    // connectedSites of at least 2 (a link joins two reader locations at
-    // minimum), so this includes the whole mesh tier. Cords still never
-    // pulse — that exclusion is in setupPulse itself, keyed on cordTier,
-    // not on this number.
-    pulse: { minConnectedSites: 0 },
+    // No pulse: the travelling-spark animation is disabled for this layer.
+    // Mesh links and cords are drawn as static lines only.
     action: {
       requestType: 'alpr',
       label: {

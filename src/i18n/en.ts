@@ -136,10 +136,6 @@ export const en: Record<string, string> = {
   // accessible equivalent, so it carries the same offsets the drawing does.
   positionsScale: 'Drawn to scale over {total} miles. A larger dot means more in one place.',
   positionsSummary: '{count} marks along {total} miles, at {offsets} miles from the start.',
-  densityScale: 'sparse → dense',
-  // The legend has to say what a brighter patch is, or the reader is left to
-  // guess whether it means more cameras or a different kind of camera.
-  densityNodes: 'Brighter patches are nodes: two or more cameras standing together.',
   categoryFromZoom: 'Colours apply once cameras are drawn one by one, from zoom {zoom}.',
 
   confidenceConfirmed: 'Confirmed — documented in an official public record.',

@@ -334,39 +334,11 @@ export interface LayerDefinition {
     label: I18nString;
   };
   /**
-   * Draw this layer's points as a density surface underneath the records.
-   *
-   * Cameras do not spread evenly. They thicken around a few metro corridors and
-   * thin to nothing across most of the state, and a field of identical dots
-   * flattens that — a hundred dots in Hennepin County and a hundred spread over
-   * the Iron Range look alike until you count them. The surface shows the shape
-   * of the concentration at a glance, and it keeps showing it: the surface is
-   * drawn at every zoom and dims as the records rise out of it, rather than
-   * being switched off and replaced by another way of drawing the same data.
-   *
-   * Where two or more of the layer's points stand together — an intersection, a
-   * frontage road — the surface is drawn heavier over them, scaled by how many
-   * cameras are in the group. That is a node, and it is still the surface: no
-   * bubble, no count, nothing extra to click. See `src/lib/nodes.ts`.
-   *
-   * It is an estimate, and the layer's `limitations` must say so: a density
-   * surface smooths over a radius, so it paints colour on ground that has no
-   * camera on it. It shows where mapped cameras gather. It is not a map of
-   * what any camera can see. Because it now runs under the dots as well, the
-   * limitations have to say that too — the reader is looking at an estimate and
-   * a mapped position in the same pixel, and only the text says which is which.
-   */
-  density?: {
-    /** Attribute weighting each point, where some points count for more. */
-    weightKey?: string;
-    label: I18nString;
-  };
-  /**
    * Colour records by a category once they are drawn individually.
    *
    * Only at the closest scale, and deliberately: while the records are still
-   * emerging from the surface, a per-record colour is a distinction the reader
-   * cannot yet resolve, and most of it would be the "nobody wrote it down"
+   * fading in, a per-record colour is a distinction the reader cannot yet
+   * resolve, and most of it would be the "nobody wrote it down"
    * grey. Close in, it is the difference between "a camera" and "a camera
    * someone's homeowners association put there".
    *
@@ -400,19 +372,13 @@ export interface LayerDefinition {
     key: string;
   };
   /**
-   * The two zooms across which this layer's records emerge from its surface.
+   * The two zooms across which this layer's records emerge.
    *
    * A point layer answers a different question at every scale. Across a state
-   * the question is where the infrastructure is concentrated, and a thousand
-   * overlapping pins answer it worse than a surface does. Across a street it is
-   * which pole, facing which way — and only there is a pin the right shape for
-   * the answer.
-   *
-   * There used to be a third state between them, a count in a bubble, and two
-   * hard cuts to get through it: the map stopped being one thing and became
-   * another, twice, on the way in. It is one drawing now. The surface is
-   * continuous, the gatherings in it are nodes, and between these two zooms the
-   * dots fade up from nothing to solid on top of it — so what a reader is
+   * the question is where the infrastructure is concentrated; across a street
+   * it is which pole, facing which way — and only there is a pin the right
+   * shape for the answer. Records fade up from nothing to solid between these
+   * two zooms rather than switching on at a single cut, so what a reader is
    * looking at at zoom 12 is what they were looking at at zoom 9, with more of
    * it resolved.
    *
@@ -420,7 +386,7 @@ export interface LayerDefinition {
    * because they are ends of the same fade and have to agree.
    */
   scale?: {
-    /** Zoom at which records start to appear, still faint over the surface. */
+    /** Zoom at which records start to appear, still faint. */
     emergeFrom: number;
     /** Zoom by which records are solid, coloured by category, and annotated. */
     pointsFrom: number;
@@ -435,9 +401,8 @@ export interface LayerDefinition {
    * the two zooms named here a plain grid cell — coloured and counted from
    * the parcels inside it, nothing more — stands in for the detail the view
    * cannot yet show, and fades as the real parcels fade in under it. It is
-   * computed in the browser from the same records already on the map, the way
-   * `density`/nodes stand in for ALPR points (see `src/lib/nodes.ts`), and for
-   * the same reason it is not a record of its own: not clickable, not
+   * computed in the browser from the same records already on the map, and is
+   * not a record of its own for that reason: not clickable, not
    * searchable, not in the accessible list. The parcels themselves are never
    * removed by zoom, only faded, so that list stays exactly what it always
    * was regardless of how close the view is.

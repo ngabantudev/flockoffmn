@@ -121,8 +121,6 @@ export const es: Record<string, string> = {
   positionsScale:
     'Dibujado a escala sobre {total} millas. Un punto más grande significa más en un mismo lugar.',
   positionsSummary: '{count} marcas a lo largo de {total} millas, a {offsets} millas del inicio.',
-  densityScale: 'escasa → densa',
-  densityNodes: 'Las manchas más brillantes son nodos: dos o más cámaras juntas.',
   categoryFromZoom: 'Los colores se aplican cuando las cámaras se dibujan una a una, desde el zoom {zoom}.',
 
   confidenceConfirmed: 'Confirmado: documentado en un registro público oficial.',

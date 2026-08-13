@@ -3,7 +3,6 @@ import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
 import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
-import { densityGradientCss } from '~/lib/densityRamp';
 
 interface Props {
   locale: Locale;
@@ -50,9 +49,6 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
         countsKey: d.positions.countsKey,
         label: pick(d.positions.label, locale),
       }
-    : undefined,
-  density: d.density
-    ? { weightKey: d.density.weightKey, label: pick(d.density.label, locale) }
     : undefined,
   scale: d.scale,
   blockAggregate: d.blockAggregate,
@@ -154,8 +150,6 @@ const strings = {
   ofTotal: t('ofTotal'),
   positionsScale: t('positionsScale'),
   positionsSummary: t('positionsSummary'),
-  densityScale: t('densityScale'),
-  densityNodes: t('densityNodes'),
   categoryFromZoom: t('categoryFromZoom'),
   actionAddressed: t('actionAddressed'),
   actionUnknownOperator: t('actionUnknownOperator'),
@@ -358,39 +352,6 @@ const strings = {
                                 </details>
                               )}
 
-                              {/*
-                                A density surface with no key is unreadable — the reader
-                                sees a glow and has to guess whether brighter means more.
-                                The swatch is generated from the same stops the map is, so
-                                it cannot describe a ramp the map does not draw.
-
-                                `var(--color-ink-950)` rather than a literal hex: this is
-                                server-rendered once, but a CSS custom property inside an
-                                inline `background` is still re-evaluated by the browser on
-                                every repaint, so the swatch's backing colour flips with
-                                site theme for free, no client script needed. It tracks site
-                                theme specifically, not the map's own current background —
-                                those are independent (site theme vs. map theme, see
-                                lib/theme.ts) — so this is an approximation, correct for the
-                                common case of the two matching and only slightly off if a
-                                reader has deliberately set them apart.
-                              */}
-                              {layer.density && (
-                                <div class="mt-2">
-                                  <div
-                                    class="h-1.5 w-full rounded-full border border-ink-800"
-                                    style={`background:${densityGradientCss('var(--color-ink-950)')}`}
-                                    aria-hidden="true"
-                                  />
-                                  <p class="mt-1 flex items-baseline justify-between text-[10px] text-ink-400">
-                                    <span>{layer.density.label}</span>
-                                    <span>{strings.densityScale}</span>
-                                  </p>
-                                  <p class="mt-1 text-[10px] leading-snug text-ink-400">
-                                    {strings.densityNodes}
-                                  </p>
-                                </div>
-                              )}
                             </div>
                           </div>
 
@@ -481,8 +442,7 @@ const strings = {
 
     {/*
       On-map keys for colour-coded layers, one bar per visible layer that
-      declares categoryColors, in the manner of the density spectrum swatch.
-      Rebuilt from the layer toggles on every change, so a key can never
+      declares categoryColors. Rebuilt from the layer toggles on every change, so a key can never
       outlive the layer it explains. aria-hidden because the same table
       already exists accessibly in the layer panel beside the map — this is
       the glanceable duplicate, not the record.
