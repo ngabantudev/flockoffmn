@@ -44,7 +44,9 @@ import { mkdirSync, existsSync, statSync, writeFileSync, createReadStream } from
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { log, fetchWithRetry } from '../ingest/lib/util.mjs';
 
+const SCOPE = 'build-basemap';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const BUILD_DIR = path.join(ROOT, '.tiles-build');
 const PLANETILER_JAR = path.join(BUILD_DIR, 'planetiler.jar');
@@ -63,10 +65,6 @@ const MAXZOOM = 14;
 const BUCKET = 'flockoffmn-tiles';
 const UPLOAD = process.argv.includes('--upload');
 
-function log(msg) {
-  console.log(`[build-basemap] ${msg}`);
-}
-
 function sha256(filePath) {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256');
@@ -84,20 +82,24 @@ async function main() {
     execFileSync('java', ['-version'], { stdio: 'ignore' });
   } catch {
     console.error(
-      '[build-basemap] Java not found on PATH. planetiler is a Java program — ' +
+      `[${SCOPE}] Java not found on PATH. planetiler is a Java program — ` +
         'install a JDK (e.g. `brew install openjdk` on macOS) and ensure `java -version` works.',
     );
     process.exit(1);
   }
 
   if (!existsSync(PLANETILER_JAR)) {
-    log('Downloading planetiler...');
-    const res = await fetch(PLANETILER_VERSION_URL, { redirect: 'follow' });
-    if (!res.ok) throw new Error(`Failed to download planetiler: HTTP ${res.status}`);
+    log(SCOPE, 'Downloading planetiler...');
+    // fetchWithRetry, not a bare fetch: GitHub Releases is generally solid but
+    // this is a one-time-per-machine ~90MB download with no resume, so a
+    // transient failure shouldn't hard-fail the whole build on attempt one —
+    // same reasoning scripts/ingest/*.mjs already applies to every upstream
+    // fetch (see that module's header on the Good-Citizen Fetcher rule).
+    const res = await fetchWithRetry(PLANETILER_VERSION_URL, { redirect: 'follow' });
     writeFileSync(PLANETILER_JAR, Buffer.from(await res.arrayBuffer()));
   }
 
-  log(`Building ${OUTPUT} (maxzoom=${MAXZOOM})...`);
+  log(SCOPE, `Building ${OUTPUT} (maxzoom=${MAXZOOM})...`);
   const result = spawnSync(
     'java',
     [
@@ -125,22 +127,37 @@ async function main() {
     sha256: hash,
   };
   writeFileSync(path.join(BUILD_DIR, 'minnesota.pmtiles.provenance.json'), JSON.stringify(provenance, null, 2));
-  log(`Built ${(size / 1024 / 1024).toFixed(0)}MB, sha256 ${hash.slice(0, 12)}...`);
+  log(SCOPE, `Built ${(size / 1024 / 1024).toFixed(0)}MB, sha256 ${hash.slice(0, 12)}...`);
+
+  // --content-type/--cache-control are not cosmetic: R2 sets neither by
+  // default, and without a Cache-Control header nothing downstream (a zone
+  // Cache Rule included — see docs/DEPLOYMENT.md § Base map tiles) has
+  // anything to key an edge-cache decision on. Confirmed live: the first
+  // upload of this archive omitted both and served with no cache headers
+  // at all until re-uploaded with these flags.
+  const UPLOAD_ARGS = [
+    'wrangler',
+    'r2',
+    'object',
+    'put',
+    `${BUCKET}/minnesota.pmtiles`,
+    `--file=${OUTPUT}`,
+    '--content-type=application/octet-stream',
+    '--cache-control=public, max-age=3600, stale-while-revalidate=86400',
+    '--remote',
+  ];
 
   if (UPLOAD) {
-    log(`Uploading to R2 bucket '${BUCKET}'...`);
-    execFileSync('npx', ['wrangler', 'r2', 'object', 'put', `${BUCKET}/minnesota.pmtiles`, `--file=${OUTPUT}`, '--remote'], {
-      cwd: ROOT,
-      stdio: 'inherit',
-    });
-    log('Uploaded. The live site picks this up immediately — R2 is the source of truth, nothing to redeploy.');
+    log(SCOPE, `Uploading to R2 bucket '${BUCKET}'...`);
+    execFileSync('npx', UPLOAD_ARGS, { cwd: ROOT, stdio: 'inherit' });
+    log(SCOPE, 'Uploaded. The live site picks this up immediately — R2 is the source of truth, nothing to redeploy.');
   } else {
-    log('Built without uploading. Re-run with --upload to publish to R2, or upload manually:');
-    log(`  npx wrangler r2 object put ${BUCKET}/minnesota.pmtiles --file=${OUTPUT} --remote`);
+    log(SCOPE, 'Built without uploading. Re-run with --upload to publish to R2, or upload manually:');
+    log(SCOPE, `  npx ${UPLOAD_ARGS.join(' ')}`);
   }
 }
 
 main().catch((err) => {
-  console.error('[build-basemap] Failed:', err);
+  console.error(`[${SCOPE}] Failed:`, err);
   process.exit(1);
 });

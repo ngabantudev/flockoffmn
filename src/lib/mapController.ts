@@ -1,7 +1,15 @@
 import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
 import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
-import { baseStyle, BASEMAP_LAYERS, METRO_BOUNDS, MN_BOUNDS, MN_CENTER } from './mapStyle';
+import {
+  baseStyle,
+  basemapBackgroundColor,
+  BASEMAP_LAYERS,
+  FLAVOR_VARIANT_PAINT_KEYS,
+  METRO_BOUNDS,
+  MN_BOUNDS,
+  MN_CENTER,
+} from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import {
   GLOW_STOPS,
@@ -364,6 +372,8 @@ export class MapController {
    * see repaintThemedLayers().
    */
   private basemapDark = MAP_STYLES[initialMapStyle()].dark;
+  /** See the `basemapColor` getter's comment — kept in sync by setBasemap(), the only place `basemapDark` changes. */
+  private cachedBasemapColor = basemapBackgroundColor(this.basemapDark);
   /** Where the reader was before a tapped record moved the camera to it. */
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
 
@@ -449,23 +459,30 @@ export class MapController {
    * and density threads. The vector basemap has one source and ~20 layers
    * (BASEMAP_LAYERS in mapStyle.ts) instead of the old raster setup's one
    * source and two paint properties, but the principle is the same: every
-   * paint key BASEMAP_LAYERS defines gets re-set here, every time, for every
-   * layer — never left to whatever a previous flavor happened to set. That's
-   * what makes a bug like the old raster-brightness-max reset (a paint key
-   * MapLibre won't revert on its own just because a later call omits it)
-   * structurally impossible instead of something to remember by hand.
+   * paint key that *can* differ between flavors gets re-set here, every
+   * time, for every layer — never left to whatever a previous flavor
+   * happened to set. That's what makes a bug like the old
+   * raster-brightness-max reset (a paint key MapLibre won't revert on its
+   * own just because a later call omits it) structurally impossible instead
+   * of something to remember by hand. "Can differ" is FLAVOR_VARIANT_PAINT_KEYS
+   * (mapStyle.ts) — precomputed by literally comparing both flavors' paint
+   * output, not a hand-picked subset — so a key that's provably identical
+   * either way (most `line-width` curves, for instance) is skipped rather
+   * than redundantly reapplied to every one of ~20 layers on every toggle.
    */
   setBasemap(styleId: MapStyleId): void {
     const dark = MAP_STYLES[styleId].dark;
     for (const layer of BASEMAP_LAYERS) {
       if (!this.map.getLayer(layer.id)) continue;
-      for (const [key, value] of Object.entries(layer.paint(dark))) {
-        this.map.setPaintProperty(layer.id, key, value);
+      const paint = layer.paint(dark);
+      for (const key of FLAVOR_VARIANT_PAINT_KEYS.get(layer.id) ?? []) {
+        this.map.setPaintProperty(layer.id, key, paint[key]);
       }
     }
 
     if (dark !== this.basemapDark) {
       this.basemapDark = dark;
+      this.cachedBasemapColor = basemapBackgroundColor(dark);
       this.repaintThemedLayers();
     }
   }
@@ -473,13 +490,15 @@ export class MapController {
   /**
    * The basemap's own background colour — casings/halos/strokes are drawn in
    * this so a coloured mark reads against the map instead of floating on it.
-   * Read from BASEMAP_LAYERS' 'base-background' entry rather than restating
-   * the two hex values here, so this and the actual rendered background can
-   * never drift apart.
+   * A cached field, not a live lookup: `repaintThemedLayers()` reads this
+   * once per registry layer (dozens, potentially), and re-deriving it every
+   * time meant a linear scan over BASEMAP_LAYERS plus a fresh paint-object
+   * allocation on every single read of a value that's constant for the
+   * entire loop and only ever changes when `basemapDark` flips — see
+   * `setBasemap()`, the only place that invalidates it.
    */
   private get basemapColor(): string {
-    const bg = BASEMAP_LAYERS.find((l) => l.id === 'base-background');
-    return (bg?.paint(this.basemapDark)['background-color'] as string | undefined) ?? '#0a0c10';
+    return this.cachedBasemapColor;
   }
 
   /** A layer's identity colour for the current basemap. See LayerDefinition.colorLight's comment in layers/types.ts for why this can fall back to `color`. */

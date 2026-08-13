@@ -104,6 +104,106 @@ export interface BasemapLayerDef {
 }
 
 /**
+ * A boundary `admin_level` comparison that tolerates features which carry no
+ * `admin_level` at all — a bare `['get', 'admin_level']` compared against a
+ * number logs "Expected value to be of type number, but found null instead"
+ * once per such feature (harmless — the filter still evaluates to false —
+ * but needless console noise on every tile). `fallback` is a sentinel
+ * chosen so the comparison fails safely in whichever direction `op` needs:
+ * a value below anything real for `==`/`<=` against a low target, above
+ * anything real for `<=` against a high one. One place to get that right,
+ * used by every boundary-tier layer instead of each re-deriving its own.
+ */
+function adminLevelFilter(op: '==' | '<=', value: number, fallback: number): unknown[] {
+  return [op, ['coalesce', ['get', 'admin_level'], fallback], value];
+}
+
+/** One road tier's shape: a casing line under a narrower fill line, both keyed on the same OpenMapTiles `class` values. */
+interface RoadTierSpec {
+  /** Suffixed onto 'base-road-' for both layers, e.g. 'minor' → 'base-road-minor-casing' / 'base-road-minor'. */
+  id: string;
+  classes: string[];
+  minzoom: number;
+  /** [zoom1, width1, zoom2, width2] for the wider casing / narrower fill, each a 2-stop linear zoom interpolation. */
+  casingWidth: [number, number, number, number];
+  fillWidth: [number, number, number, number];
+  casingColor: (dark: boolean) => string;
+  fillColor: (dark: boolean) => string;
+}
+
+/**
+ * Casing-under-fill is one rendering technique, reused at three tiers
+ * (minor/medium/major) that differ only in which OSM classes they match,
+ * how deep they fade in, and their two colours — so it's expressed once
+ * here and applied by `roadTierLayers()` below, rather than as six
+ * hand-duplicated layer objects that would drift the moment one tier's
+ * width curve or class list changed without the other two following.
+ */
+const ROAD_TIERS: readonly RoadTierSpec[] = [
+  {
+    id: 'minor',
+    classes: ['minor', 'service', 'track'],
+    minzoom: 12,
+    casingWidth: [12, 1.5, 18, 8],
+    fillWidth: [12, 0.75, 18, 6],
+    casingColor: (dark) => (dark ? '#181c22' : '#ffffff'),
+    fillColor: (dark) => (dark ? '#232830' : '#e8ebee'),
+  },
+  {
+    id: 'medium',
+    classes: ['secondary', 'tertiary'],
+    minzoom: 9,
+    casingWidth: [9, 1, 18, 10],
+    fillWidth: [9, 0.75, 18, 7.5],
+    casingColor: (dark) => (dark ? '#1a1e25' : '#ffffff'),
+    fillColor: (dark) => (dark ? '#2b323d' : '#dfe4e8'),
+  },
+  {
+    id: 'major',
+    classes: ['motorway', 'trunk', 'primary'],
+    minzoom: 5,
+    casingWidth: [5, 1, 18, 14],
+    fillWidth: [5, 0.75, 18, 11],
+    casingColor: (dark) => (dark ? '#1d222a' : '#ffffff'),
+    fillColor: (dark) => (dark ? '#3a4250' : '#d7dde3'),
+  },
+];
+
+function roadTierLayers(spec: RoadTierSpec): BasemapLayerDef[] {
+  const filter = ['match', ['get', 'class'], spec.classes, true, false];
+  const layout = { 'line-cap': 'round', 'line-join': 'round' };
+  const widthExpr = ([z1, w1, z2, w2]: readonly [number, number, number, number]) => [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    z1,
+    w1,
+    z2,
+    w2,
+  ];
+  return [
+    {
+      id: `base-road-${spec.id}-casing`,
+      type: 'line',
+      sourceLayer: 'transportation',
+      minzoom: spec.minzoom,
+      filter,
+      layout,
+      paint: (dark) => ({ 'line-color': spec.casingColor(dark), 'line-width': widthExpr(spec.casingWidth) }),
+    },
+    {
+      id: `base-road-${spec.id}`,
+      type: 'line',
+      sourceLayer: 'transportation',
+      minzoom: spec.minzoom,
+      filter,
+      layout,
+      paint: (dark) => ({ 'line-color': spec.fillColor(dark), 'line-width': widthExpr(spec.fillWidth) }),
+    },
+  ];
+}
+
+/**
  * Two flavors only (dark/light), not the four the old MapTiler catalog
  * offered — regenerating tiles per style was the reason to multiply
  * presets, and that cost is gone now that one archive serves every flavor.
@@ -168,12 +268,7 @@ export const BASEMAP_LAYERS: readonly BasemapLayerDef[] = [
     type: 'line',
     sourceLayer: 'boundary',
     minzoom: 7,
-    // 'coalesce' before the comparison, not a bare ['get', 'admin_level']:
-    // some boundary features carry no admin_level at all, and comparing
-    // null against a number logs "Expected value to be of type number, but
-    // found null instead" once per such feature — harmless (the filter
-    // still evaluates to false) but needless console noise on every tile.
-    filter: ['==', ['coalesce', ['get', 'admin_level'], -1], 6],
+    filter: adminLevelFilter('==', 6, -1),
     layout: { 'line-join': 'round' },
     paint: (dark) => ({
       'line-color': dark ? '#232a35' : '#cdd3da',
@@ -185,7 +280,7 @@ export const BASEMAP_LAYERS: readonly BasemapLayerDef[] = [
     id: 'base-boundary-state',
     type: 'line',
     sourceLayer: 'boundary',
-    filter: ['<=', ['coalesce', ['get', 'admin_level'], 99], 4],
+    filter: adminLevelFilter('<=', 4, 99),
     layout: { 'line-join': 'round' },
     paint: (dark) => ({
       'line-color': dark ? '#3a4557' : '#b7bfc9',
@@ -202,78 +297,12 @@ export const BASEMAP_LAYERS: readonly BasemapLayerDef[] = [
       'fill-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0, 15, 1],
     }),
   },
-  {
-    id: 'base-road-minor-casing',
-    type: 'line',
-    sourceLayer: 'transportation',
-    minzoom: 12,
-    filter: ['match', ['get', 'class'], ['minor', 'service', 'track'], true, false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: (dark) => ({
-      'line-color': dark ? '#181c22' : '#ffffff',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 1.5, 18, 8],
-    }),
-  },
-  {
-    id: 'base-road-minor',
-    type: 'line',
-    sourceLayer: 'transportation',
-    minzoom: 12,
-    filter: ['match', ['get', 'class'], ['minor', 'service', 'track'], true, false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: (dark) => ({
-      'line-color': dark ? '#232830' : '#e8ebee',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.75, 18, 6],
-    }),
-  },
-  {
-    id: 'base-road-medium-casing',
-    type: 'line',
-    sourceLayer: 'transportation',
-    minzoom: 9,
-    filter: ['match', ['get', 'class'], ['secondary', 'tertiary'], true, false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: (dark) => ({
-      'line-color': dark ? '#1a1e25' : '#ffffff',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 9, 1, 18, 10],
-    }),
-  },
-  {
-    id: 'base-road-medium',
-    type: 'line',
-    sourceLayer: 'transportation',
-    minzoom: 9,
-    filter: ['match', ['get', 'class'], ['secondary', 'tertiary'], true, false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: (dark) => ({
-      'line-color': dark ? '#2b323d' : '#dfe4e8',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.75, 18, 7.5],
-    }),
-  },
-  {
-    id: 'base-road-major-casing',
-    type: 'line',
-    sourceLayer: 'transportation',
-    minzoom: 5,
-    filter: ['match', ['get', 'class'], ['motorway', 'trunk', 'primary'], true, false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: (dark) => ({
-      'line-color': dark ? '#1d222a' : '#ffffff',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1, 18, 14],
-    }),
-  },
-  {
-    id: 'base-road-major',
-    type: 'line',
-    sourceLayer: 'transportation',
-    minzoom: 5,
-    filter: ['match', ['get', 'class'], ['motorway', 'trunk', 'primary'], true, false],
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: (dark) => ({
-      'line-color': dark ? '#3a4250' : '#d7dde3',
-      'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.75, 18, 11],
-    }),
-  },
+  // Casing-under-fill, three tiers (minor/medium/major) — see ROAD_TIERS and
+  // roadTierLayers() above. Was six hand-duplicated layer objects here;
+  // spreading the generated pairs keeps the stacking order identical
+  // (minor first/bottom, major last/top, each casing immediately under its
+  // own fill) without three tiers of copy-pasted filter/layout boilerplate.
+  ...ROAD_TIERS.flatMap(roadTierLayers),
   {
     id: 'base-transportation-name',
     type: 'symbol',
@@ -327,6 +356,39 @@ export const BASEMAP_LAYERS: readonly BasemapLayerDef[] = [
     }),
   },
 ];
+
+/**
+ * Which of each layer's paint keys can actually differ between flavors —
+ * computed once here, at module load, by literally comparing `paint(true)`
+ * against `paint(false)`, not maintained by hand. `MapController.setBasemap()`
+ * (mapController.ts) uses this to skip re-applying properties that are
+ * providably identical in both flavors (most `line-width` interpolations,
+ * for instance, don't depend on `dark` at all) on every flavor toggle,
+ * without weakening the guarantee that made that function safe in the first
+ * place: any key that *can* differ is still always re-set, every time, for
+ * every layer — see that function's own comment for the bug class that
+ * guards against. Precomputed once rather than diffed on every toggle,
+ * since BASEMAP_LAYERS and its paint functions are static.
+ */
+export const FLAVOR_VARIANT_PAINT_KEYS: ReadonlyMap<string, readonly string[]> = new Map(
+  BASEMAP_LAYERS.map((layer) => {
+    const dark = layer.paint(true);
+    const light = layer.paint(false);
+    const keys = new Set([...Object.keys(dark), ...Object.keys(light)]);
+    return [layer.id, [...keys].filter((key) => JSON.stringify(dark[key]) !== JSON.stringify(light[key]))];
+  }),
+);
+
+/**
+ * The basemap's own background colour for a given flavor — the single
+ * source `MapController.basemapColor` (mapController.ts) resolves and
+ * caches, so casings/halos/strokes drawn "in the background" can never
+ * read a value that drifts from what `base-background` actually paints.
+ */
+export function basemapBackgroundColor(dark: boolean): string {
+  const bg = BASEMAP_LAYERS.find((l) => l.id === 'base-background');
+  return (bg?.paint(dark)['background-color'] as string | undefined) ?? '#0a0c10';
+}
 
 export function baseStyle(initialStyle: MapStyleId): StyleSpecification {
   const dark = MAP_STYLES[initialStyle].dark;
