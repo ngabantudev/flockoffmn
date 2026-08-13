@@ -11,37 +11,11 @@ export const en: Record<string, string> = {
   navNearMe: 'Near me',
   navSources: 'Sources & methodology',
   navExplainer: 'How this connects',
-  navFlightLog: 'Flight log',
   navAct: 'Take action',
   navData: 'Open data',
   navContribute: 'Contribute',
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
-
-  // Live flights — always on in the main map's sidebar (no checkbox to
-  // disable it), deliberately not a registry layer (see
-  // src/lib/liveFlights.ts). Worldwide, filtered
-  // server-side (functions/api/ice-flights.js) to aircraft broadcasting a
-  // callsign matching known ICE Air charter operators — the same
-  // underlying idea as Otter Goose's MSP ICE Air Flight Tracker
-  // (ottergoose.net), done natively instead of embedding a third party.
-  // {count}, {seconds} substituted client-side as the feed updates.
-  liveFlightsToggleLabel: 'Live ICE Air charter flights',
-  liveFlightsAboutToggle: 'About this data',
-  liveFlightsIntro:
-    "Aircraft worldwide broadcasting a callsign matching known ICE Air charter operators, via adsb.lol — the same approach Otter Goose's MSP ICE Air Flight Tracker (ottergoose.net) uses. These charters spend most of their time outside Minnesota, so unlike every other layer here, this feed isn't scoped to the state.",
-  liveFlightsCaveat:
-    "A callsign match isn't confirmed registry: it can be reused, reassigned, or unbroadcast. Positions between updates are interpolated, not fresh GPS reads. The trail is each aircraft's real recent track; the dashed line ahead is a straight-line projection, not a real flight plan. This refreshes slower than a typical live feed.",
-  liveFlightsLegendTitle: 'Colored by altitude',
-  liveFlightsSourcesTitle: 'Sources',
-  liveFlightsAltGround: 'On the ground',
-  liveFlightsAltLow: 'Below 10,000 ft',
-  liveFlightsAltMid: '10,000–25,000 ft',
-  liveFlightsAltHigh: '25,000–35,000 ft',
-  liveFlightsAltVeryHigh: 'Above 35,000 ft',
-  liveFlightsCount: '{count} aircraft tracked',
-  liveFlightsUpdated: 'updated {seconds}s ago',
-  liveFlightsUnavailable: 'adsb.lol is not responding right now.',
 
   // Map chrome
   layers: 'Layers',
@@ -174,27 +148,6 @@ export const en: Record<string, string> = {
 
   // Honest-limits banner
   limitsTitle: 'What this is, and what it is not',
-
-  // Flight log — persisted ground-arrival/departure history for aircraft
-  // matching the live overlay's ICE Air charter filter, plus a habeas-corpus
-  // legal explainer. Data is always confidence: 'reported', never
-  // 'confirmed' (see src/lib/flightLog.ts). The legal-context copy below is
-  // an attorney-review draft — see flightLogDraftNotice.
-  flightLogTitle: 'Flight log',
-  flightLogIntro:
-    "A searchable history of ground arrivals and departures for aircraft that have matched this site's ICE Air charter filter, plus a short explainer on why that timing data matters to habeas corpus practice. Unlike the live map overlay, records here persist past the current poll, so a lawyer can cite a specific ground time after the fact.",
-  flightLogSearchLabel: 'Tail number, hex code, or callsign',
-  flightLogKnownGaps:
-    "Known gaps: sightings are captured by polling once every 10 minutes, so a timestamp can be off by up to that much, and a ground stop shorter than 10 minutes could be missed entirely. Airport identification is best-effort and Minnesota-only — sightings elsewhere are recorded with a null airport rather than a guess. A callsign match is not registry confirmation: callsigns can be reused, reassigned, or simply not broadcast, and this filter cannot tell the difference.",
-  flightLogLegalContextTitle: 'Why flight timing data matters in habeas corpus cases',
-  flightLogLegalContext:
-    "In habeas corpus practice, courts often default to treating a petitioner's immediate custodian — whoever holds the power to produce them — as the proper respondent, and to hearing the case where that custodian is located. This is the rule the Supreme Court applied in Rumsfeld v. Padilla, 542 U.S. 426 (2004), for challenges to a person's present physical confinement. It is a default, not an absolute: courts have recognized exceptions, and which custodian and which court are proper can turn on the specific facts of a transfer. A documented ground-arrival or ground-departure time is one input into that fact-specific question, nothing more.\n\nHabeas jurisdiction under 28 U.S.C. § 2241 reaches broadly: in Munaf v. Geren, 553 U.S. 674 (2008), the Supreme Court held it extends to anyone in actual custody of the United States, regardless of the formal authority holding them. The same decision cuts the other way too — it also held that courts may not use habeas to enjoin the transfer of a person in U.S. custody to a foreign sovereign to face that sovereign's own prosecution for crimes committed in its territory. Both halves are part of the holding. Separately, Federal Rule of Appellate Procedure 23(a) is a real, narrow procedural safeguard: while a habeas petition is pending review, it bars a custodian from transferring the petitioner out of the court's jurisdiction without that court's authorization. It says nothing on its own about what any particular timestamp can establish.\n\nTwo recent cases show how courts have actually handled the timing of removal flights — cited here as documented history, not as settled precedent for future disputes. In J.G.G. v. Trump (D.D.C. No. 1:25-cv-00766, filed March 15, 2025), the court, during an emergency hearing, ordered that flights then in the air be returned; one flight that had already departed landed at its destination afterward, and the court later found probable cause for criminal contempt. In A.A.R.P./W.M.M. v. Trump (Supreme Court No. 24A1007, 605 U.S. ___ (2025)), the Court issued a middle-of-the-night emergency order barring removal of a class of people facing removal, pending further review, and later vacated the lower appellate judgment and remanded for the district and circuit courts to address preliminary-injunction and due-process-notice requirements. Neither case establishes a rule that this project's data proves anything under.\n\nJust Security's Immigration Habeas Tracker (justsecurity.org/133928) has documented instances in which courts found that the government removed or transferred petitioners in violation of court orders — we cite it only for that specific proposition. Some advocates, including Lexington Alarm, whose Habeas Flight Watch inspired this page, argue further that habeas jurisdiction 'does not end at takeoff' and continues until an aircraft lands. We could not verify that framing against any judicial holding, so it appears here only as an attributed argument made by others, not as a claim this project makes about the law.\n\nWe have not found any court decision that specifically admitted ADS-B flight-tracking timestamp data like this as evidence, and we make no claim that this project's data has been used in any specific case. We also have not found, and do not offer, any legal framework describing the risk involved in publishing tracking data of this kind — if that matters to your situation, that is a question for an attorney, not something this page can answer.",
-  flightLogNotLegalAdvice:
-    'This is not legal advice. If you are involved in a habeas corpus matter, consult an attorney — this page is a starting point for research, not a substitute for counsel.',
-  flightLogDraftNotice:
-    'Draft — pending attorney review. This section has not yet been reviewed by a lawyer and should not be relied upon until it has been.',
-  flightLogPermalink: 'View permanent record',
-  flightLogDownloadCsv: 'Download CSV (this search)',
 
   // Footer
   openSource: 'Open source',
