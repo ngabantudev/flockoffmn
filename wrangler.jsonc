@@ -7,20 +7,7 @@
   // a Worker — there is deliberately no `main` entrypoint, because the site is
   // pure static output with no server-side code. If a `main` key ever appears
   // here, something has gone wrong: this project's Pages project has no
-  // backend of its own by design (see docs/DEPLOYMENT.md). That warning stays
-  // scoped to THIS file — `workers/flight-sightings-cron/wrangler.jsonc` is a
-  // separate, standalone Worker deployable with its own `main`, deployed
-  // independently of this Pages project specifically because it needs a Cron
-  // Trigger, which Pages Functions cannot have.
-  //
-  // The narrow exceptions here are `functions/api/` routes: ice-flights.js
-  // and trace/[hex].js — Cloudflare Pages Functions (not a Worker `main`, and
-  // need none of the config below to run). They exist only because adsb.lol
-  // sends no CORS headers, so something server-side has to relay its
-  // response; they hold no state, no binding, and nothing written anywhere.
-  // See "Live flight proxy" in docs/DEPLOYMENT.md for the full rationale and
-  // what they deliberately do not do. `functions/api/flight-log/*` is the
-  // second exception — read-only D1 access, see the binding comment below.
+  // backend of its own by design (see docs/DEPLOYMENT.md).
   //
   // Deployment is via Pages' Git integration, so Cloudflare runs the build
   // itself. That is chosen over a deploy workflow specifically because it
@@ -40,46 +27,15 @@
   "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-07-30",
 
-  // One binding, narrowly scoped: FLIGHT_SIGHTINGS_DB, a Cloudflare D1
-  // database. It is read-only in application code — it backs
-  // functions/api/flight-log/{index,[hex],export}.js and
-  // functions/flight-log/record/{[id],[id]/pdf}.js, all SELECT-only, never
-  // INSERT/UPDATE. It holds aircraft-level facts (hex, callsign,
-  // ground-arrival/departure timestamps — see
-  // migrations/0001_flight_sightings.sql) and nothing about a visitor: no
-  // query is logged, no IP or request identifier is stored anywhere.
-  //
-  // The write path lives entirely in the separate, standalone
-  // workers/flight-sightings-cron/ deployable (its own wrangler.jsonc, its
-  // own D1 binding, its own Cron Trigger) — NOT in this Pages project. See
-  // that Worker's index.mjs header and docs/DEPLOYMENT.md's "Flight
-  // sighting log (the second exception)" section for the full rationale.
-  //
-  // Still no KV, no queues, no secrets here, and no R2 *binding* — the
-  // self-hosted basemap (see "Base map tiles" below) lives in a separate,
-  // unbound `flockoffmn-tiles` R2 bucket that this Pages project never
-  // reads from and this file never references. The browser talks to that
-  // bucket's public URL directly (a static file, requested by byte range),
-  // the same shape as MapTiler before it, just self-hosted. Nothing here
-  // gains a way to read or write it. Adding an actual binding — one this
-  // application code touches — is still the thing to think twice about:
-  // it means adding another place data could accumulate, and that still
-  // shouldn't happen without revisiting the privacy claims on /about and
-  // this file's own reasoning.
-  //
-  // This top-level copy is inherited by nothing deployed — see the `env`
-  // block below: declaring env.preview/env.production at all makes bindings
-  // non-inheritable, so both keep their own identical copy. This one only
-  // matters for `wrangler pages dev` and a manual `wrangler pages deploy`.
-  // Rotating database_id means editing three places, not one; there's no
-  // build-time check that they stay in sync.
-  "d1_databases": [
-    {
-      "binding": "FLIGHT_SIGHTINGS_DB",
-      "database_name": "flockoffmn-flight-sightings",
-      "database_id": "90f43a8b-be4e-437c-ae31-097f1fc88a2b"
-    }
-  ],
+  // No bindings: no KV, no R2, no D1, no queues, no secrets. The self-hosted
+  // basemap (see "Base map tiles" below) lives in a separate, unbound
+  // `flockoffmn-tiles` R2 bucket that this Pages project never reads from
+  // and this file never references — the browser talks to that bucket's
+  // public URL directly (a static file, requested by byte range), the same
+  // shape as MapTiler before it, just self-hosted. Adding an actual
+  // binding — one this application code touches — means adding another
+  // place data could accumulate; do not do it without revisiting the
+  // privacy claims on /about and this file's own reasoning.
 
   // Base map tiles. This used to be a MapTiler API key (see git history —
   // docs/DEPLOYMENT.md's old "MapTiler quick start" section had ~80 lines
@@ -100,42 +56,18 @@
   // § Base map tiles for the rebuild-and-upload runbook.
   "vars": {},
   "env": {
-    // Declaring `env` at all makes every binding non-inheritable, including
-    // ones this section doesn't mention — Cloudflare stops falling back to
-    // the top-level `d1_databases` the moment `env.preview` exists, even
-    // though preview always had that binding before this file had an `env`
-    // block. Confirmed live: earlier PR previews (#46, #48) served
-    // /api/flight-log/ fine; a preview built from a first draft of this
-    // change that omitted d1_databases here returned a 500 ("Cannot read
-    // properties of undefined (reading 'prepare')"). Keep this in sync with
-    // the top-level and env.production copies below — see that block's
-    // comment for what the binding is for.
     "preview": {
-      "d1_databases": [
-        {
-          "binding": "FLIGHT_SIGHTINGS_DB",
-          "database_name": "flockoffmn-flight-sightings",
-          "database_id": "90f43a8b-be4e-437c-ae31-097f1fc88a2b"
-        }
-      ],
       // Same public bucket as production — a preview deploy and the live
       // site read the same static archive (it carries no visitor data, so
-      // there's no separation concern the way there would be for the D1
-      // binding above). Explicit here rather than left to mapStyle.ts's
-      // built-in default so a future bucket-URL change is a one-line edit
-      // in the file that already documents it, not an app-code change.
+      // there's no separation concern the way there would be for a D1
+      // binding). Explicit here rather than left to mapStyle.ts's built-in
+      // default so a future bucket-URL change is a one-line edit in the
+      // file that already documents it, not an app-code change.
       "vars": {
         "PUBLIC_TILES_URL": "https://tiles.flockoffmn.org/minnesota.pmtiles"
       }
     },
     "production": {
-      "d1_databases": [
-        {
-          "binding": "FLIGHT_SIGHTINGS_DB",
-          "database_name": "flockoffmn-flight-sightings",
-          "database_id": "90f43a8b-be4e-437c-ae31-097f1fc88a2b"
-        }
-      ],
       "vars": {
         "PUBLIC_TILES_URL": "https://tiles.flockoffmn.org/minnesota.pmtiles"
       }

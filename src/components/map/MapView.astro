@@ -4,7 +4,6 @@ import { loadAllLayers, distinctValues } from '~/layers/data';
 import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { densityGradientCss } from '~/lib/densityRamp';
-import { ALT_BANDS } from '~/lib/liveFlights';
 
 interface Props {
   locale: Locale;
@@ -163,25 +162,6 @@ const strings = {
   actionPickBody: t('actionPickBody'),
   filtersCleared: t('filtersCleared'),
 };
-
-// Kept separate from `strings`/`clientLayers` above on purpose — this isn't a
-// registry layer (see src/lib/liveFlights.ts for why) and shouldn't have to
-// pretend to be one just to get its text translated.
-const liveFlightsStrings = {
-  count: t('liveFlightsCount'),
-  updated: t('liveFlightsUpdated'),
-  unavailable: t('liveFlightsUnavailable'),
-};
-
-// Only needed server-side for the "About this data" altitude key below, so
-// it stays out of the client-hydrated liveFlightsStrings payload above.
-const altBandLabels: Record<string, string> = {
-  ground: t('liveFlightsAltGround'),
-  low: t('liveFlightsAltLow'),
-  mid: t('liveFlightsAltMid'),
-  high: t('liveFlightsAltHigh'),
-  veryhigh: t('liveFlightsAltVeryHigh'),
-};
 ---
 
 {/*
@@ -245,80 +225,6 @@ const altBandLabels: Record<string, string> = {
         role="listbox"
       >
       </ul>
-    </div>
-
-    {/*
-      Deliberately styled unlike every card below it — a different border
-      colour, a pulsing dot instead of a static one, no source/license line —
-      because this isn't a sourced civic-transparency finding the way the
-      layers below it are, and it isn't general air traffic either: it's a
-      live worldwide feed filtered, server-side, to aircraft broadcasting a
-      callsign matching known ICE Air charter operators — the same
-      underlying idea as Otter Goose's MSP ICE Air Flight Tracker
-      (ottergoose.net), done natively instead of embedding a third party.
-      Always on, unlike every other layer here and unlike this card's own
-      earlier version — there is no checkbox and no client-side way to turn
-      it off, since it's the one thing on this map with nothing else to
-      combine it with (no separate "show everything" mode to opt out of
-      into) and the feed itself is cheap: server-side filtering runs a few
-      ms of CPU behind a 45s edge cache (see functions/api/ice-flights.js).
-      The description, caveats, altitude key, and sources all live behind the
-      "About this data" disclosure below so the card itself stays a single
-      slim row instead of parking a legend permanently over the map. See
-      src/lib/liveFlights.ts for the overlay itself.
-    */}
-    <div class="border-b border-ink-800 p-3">
-      <div class="rounded-lg border border-rose-500/40 bg-ink-850">
-        <div class="flex items-start gap-2.5 p-2.5">
-          <span class="mt-1.5 h-2 w-2 shrink-0 animate-pulse rounded-full bg-rose-400" aria-hidden="true" />
-          <div class="min-w-0 flex-1">
-            <p class="flex min-w-0 items-center text-sm font-medium text-ink-100">
-              <span class="min-w-0">{t('liveFlightsToggleLabel')}</span>
-            </p>
-            <p id="live-flights-status" class="mt-1 hidden font-mono text-[11px] text-ink-400"></p>
-            <details class="mt-1.5">
-              <summary class="cursor-pointer text-[10px] text-ink-400 hover:text-ink-100">
-                {t('liveFlightsAboutToggle')}
-              </summary>
-              <p class="mt-1 text-[11px] leading-relaxed text-ink-400">{t('liveFlightsIntro')}</p>
-              <p class="mt-1 text-[11px] leading-relaxed text-warn">{t('liveFlightsCaveat')}</p>
-
-              <p class="mt-2 text-[10px] font-semibold tracking-wider text-ink-400 uppercase">
-                {t('liveFlightsLegendTitle')}
-              </p>
-              <ul class="mt-1 space-y-0.5">
-                {ALT_BANDS.map((band) => (
-                  <li class="flex items-center gap-1.5 text-[10px] text-ink-300">
-                    <span class="h-2 w-2 shrink-0 rounded-full" style={`background:${band.color}`} aria-hidden="true" />
-                    <span class="min-w-0 truncate">{altBandLabels[band.id]}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <p class="mt-2 text-[10px] font-semibold tracking-wider text-ink-400 uppercase">
-                {t('liveFlightsSourcesTitle')}
-              </p>
-              <ul class="mt-1 space-y-0.5">
-                <li class="text-[10px] text-ink-300">
-                  <a
-                    class="underline hover:text-ink-100"
-                    href="https://lexingtonalarm.org/hfw-dashboard/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Habeas Flight Watch
-                  </a>
-                </li>
-                <li class="text-[10px] text-ink-300">
-                  <a class="underline hover:text-ink-100" href="https://ottergoose.net/ice-flights-msp/map/" target="_blank" rel="noopener noreferrer">
-                    Otter Goose — MSP ICE Air Flight Tracker
-                  </a>
-                </li>
-              </ul>
-            </details>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div class="p-3">
@@ -602,11 +508,9 @@ const altBandLabels: Record<string, string> = {
 <script is:inline type="application/json" id="layer-config" set:html={JSON.stringify(clientLayers)} />
 <script is:inline type="application/json" id="ui-strings" set:html={JSON.stringify(strings)} />
 <script is:inline type="application/json" id="act-path" set:html={JSON.stringify(localePath(locale, '/act'))} />
-<script is:inline type="application/json" id="live-flights-strings" set:html={JSON.stringify(liveFlightsStrings)} />
 
 <script>
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
-  import { LiveFlightsOverlay } from '~/lib/liveFlights';
   import { compassLabel } from '~/lib/geo.mjs';
   import { displayName } from '~/lib/authority.mjs';
   import { createElement, Route, Fingerprint, Speech, Landmark, type IconNode } from 'lucide';
@@ -660,26 +564,6 @@ const altBandLabels: Record<string, string> = {
     onError: (id, message) =>
       status(`${layerById.get(id)?.label ?? id}: ${message}`, 6000),
   });
-
-  /* ----------------------------- Live flights ----------------------------- */
-
-  const LS = JSON.parse(document.getElementById('live-flights-strings')!.textContent!) as {
-    count: string;
-    updated: string;
-    unavailable: string;
-  };
-  const liveFlightsStatusEl = document.getElementById('live-flights-status') as HTMLElement;
-
-  const liveFlights = new LiveFlightsOverlay(controller.map, (live) => {
-    liveFlightsStatusEl.hidden = false;
-    liveFlightsStatusEl.textContent = live.error
-      ? LS.unavailable
-      : `${LS.count.replace('{count}', String(live.count))} · ${LS.updated.replace('{seconds}', String(live.ageSeconds ?? 0))}`;
-  });
-
-  // Always on — there is no checkbox for this one (see the comment above
-  // its card in the markup), so start() just runs unconditionally.
-  liveFlights.start();
 
   /* ----------------------------- Detail panel ---------------------------- */
 
@@ -1134,12 +1018,6 @@ const altBandLabels: Record<string, string> = {
 
       mapKeysEl.appendChild(card);
     }
-
-    // Live flights' altitude key used to always render here too, but that
-    // pinned it over the map permanently since the overlay has no checkbox
-    // to gate it on. It now lives in the "About this data" disclosure in the
-    // sidebar card instead (see the markup above) — read there on demand
-    // rather than shown at all times.
   }
 
   function refreshGroups() {
