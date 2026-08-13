@@ -8,6 +8,9 @@ The subject of this site is **the apparatus**: surveillance infrastructure, enfo
 agreements, detention contracts, the money that funds them, and the public officials who
 authorize them. Never the people it is aimed at.
 
+This repo imports the cross-project durability standard: @DURABILITY.md — see Part 3 for
+where this repo departs from it and why.
+
 ---
 
 ## Part 0: Guiding Principles
@@ -254,3 +257,45 @@ npm run dev       # Start Astro dev server
 npm run check     # Run astro check & type verification — MUST STAY AT 0 ERRORS
 npm run build     # Production build
 ```
+
+---
+
+## Part 3: DURABILITY.md — Exceptions For This Repo
+
+DURABILITY.md is written project-agnostic, for products with pricing, accounts, and a
+contributor economy. This repo has none of those by design (§0.7 — no login, no paywall).
+Per DURABILITY.md's own closing section, exceptions are recorded here, not edited into
+that file.
+
+**Pillar 3 (Goodwill) is mostly inert here.** No pricing, no signup, no cancellation flow
+exists or ever will. Skip those Definition-of-Done items — they are not unmet, they are
+not applicable. The parts that do apply — no selling or leaking user data, no engagement
+bait, no dark patterns — are already covered by §0.7/§4 and stay in force.
+
+**The "lifeforce rule" (Pillar 2) is subordinate to §1b, not the other way around.**
+DURABILITY.md treats every step between a visitor and their first contribution as a bug
+until proven necessary, and warns against silently rejecting a newcomer. §1b requires
+mandatory human review of every free-text submission field before publication, and any
+submission form must structurally reject person-level content. Where these conflict, §1b
+wins: the review queue is not a bug to be optimized away, and a submission withheld for
+containing person-level content is not owed the fast, explanatory turnaround DURABILITY.md
+asks for — it is simply not published. Acknowledge good-faith equipment/location reports
+quickly; do not loosen the review gate to hit a time-to-first-contribution target.
+
+**"Credit contributors visibly" does not apply to submitters.** DURABILITY.md's Marketplace
+precedent assumes named creators opting into recognition. §1b requires residents,
+commenters, and petitioners be counted only in aggregate, never enumerated — including
+supportive ones. Do not build a contributor leaderboard, byline, or credit surface for
+anyone submitting camera or location reports. (Bylines for the site's own authors, per
+§0.11, are unaffected — that's the site's own accountable voice, not a contributor-credit
+system.)
+
+**Distribution artifacts (badges, embeds, shareable pages) answer to §0.11 first.**
+Shareable public pages and exports are encouraged (§0.6); gamified badges or streak-style
+engagement surfaces are not, per §0.11's rejection of theatrics and borrowed iconography.
+A distribution feature that reads as a symbol or a game-style reward rather than a
+document fails here regardless of what it does for sharing.
+
+**Everything else in DURABILITY.md stands as written** — in particular Pillar 1 (systems
+over content, boring/vendor-able tech, data outlives apps) and the versioning/change-feed
+requirements, which restate §0.5 and §0.8 rather than compete with them.
