@@ -17,9 +17,14 @@
   #                            need to relax this, don't.
   #   style-src 'unsafe-inline' — Astro inlines critical CSS at build time.
   #   img-src / connect-src https: — deliberately permissive so that changing
-  #                            the map tile provider does not silently break
-  #                            the map. Images and tile fetches cannot execute;
-  #                            the executable surface stays locked down.
+  #                            the basemap archive's host (currently a public
+  #                            R2 bucket, see mapStyle.ts) does not silently
+  #                            break the map. The archive is fetched via
+  #                            connect-src (PMTiles reads it with ranged
+  #                            fetch() calls, not <img> tags); img-src stays
+  #                            for any future raster asset. Neither can
+  #                            execute — the executable surface stays locked
+  #                            down regardless of where tiles come from.
   #   worker-src blob:       — MapLibre spawns its renderer in a blob worker.
   #   form-action 'none'     — there are no forms that submit anywhere. The
   #                            records-request generator builds text locally

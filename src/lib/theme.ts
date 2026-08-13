@@ -57,28 +57,30 @@ export function onThemeChange(handler: (theme: Theme) => void): () => void {
 }
 
 /**
- * Map basemap styles. Independent of the site theme by design — see the
+ * Map basemap flavors. Independent of the site theme by design — see the
  * in-map "Map theme" control (mapController.ts's ThemeControl) — but a
  * visitor who has never touched that control gets whichever of these two
  * defaults matches their site theme (initialMapStyle() below), rather than
- * an arbitrary fixed style. `maptilerId` is the MapTiler style path segment
- * (`.../maps/<maptilerId>/256/...`), not a full URL — mapStyle.ts's
- * `tileUrlForStyle()` builds the two defaults from the pre-committed full
- * PUBLIC_TILE_URL/PUBLIC_TILE_URL_LIGHT and everything else from
- * PUBLIC_TILE_KEY, so first paint never depends on string-building from a
- * bare key before any app code has run.
+ * an arbitrary fixed style.
+ *
+ * Only two flavors, where the old MapTiler-backed catalog had four
+ * (streets-dark, muted-dark, streets-light, minimal-light): regenerating
+ * tiles per style used to be the reason to multiply presets, and that cost
+ * is gone now that one self-hosted vector archive serves every flavor (see
+ * mapStyle.ts's BASEMAP_LAYERS). The cost that remains is hand-maintained
+ * paint code, which has to stay legible under every data layer this site
+ * carries — so it stays to exactly the two the site theme needs, not the
+ * four a swappable vendor made cheap to offer.
  */
-export type MapStyleId = 'streets-dark' | 'muted-dark' | 'streets-light' | 'minimal-light';
+export type MapStyleId = 'dark' | 'light';
 
-export const MAP_STYLES: Record<MapStyleId, { label: string; maptilerId: string; dark: boolean }> = {
-  'streets-dark': { label: 'Streets (Dark)', maptilerId: 'streets-v4-dark', dark: true },
-  'muted-dark': { label: 'Muted (Dark)', maptilerId: 'basic-v2-dark', dark: true },
-  'streets-light': { label: 'Streets (Light)', maptilerId: 'streets-v4', dark: false },
-  'minimal-light': { label: 'Minimal (Light)', maptilerId: 'dataviz-v4-light', dark: false },
+export const MAP_STYLES: Record<MapStyleId, { label: string; dark: boolean }> = {
+  dark: { label: 'Dark', dark: true },
+  light: { label: 'Light', dark: false },
 };
 
-export const DEFAULT_DARK_STYLE: MapStyleId = 'streets-dark';
-export const DEFAULT_LIGHT_STYLE: MapStyleId = 'streets-light';
+export const DEFAULT_DARK_STYLE: MapStyleId = 'dark';
+export const DEFAULT_LIGHT_STYLE: MapStyleId = 'light';
 
 export const MAP_STYLE_STORAGE_KEY = 'flockoff:map-style';
 export const MAP_STYLE_CHANGE_EVENT = 'flockoff:map-style-change';

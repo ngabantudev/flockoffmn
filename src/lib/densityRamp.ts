@@ -50,7 +50,7 @@ export function densityColorExpression(): unknown[] {
 
 /**
  * The two basemap backgrounds the ramp is ever read against — see
- * `mapStyle.ts`'s `basemapPaint()`. Every consumer below (`THREAD_STOPS_*`,
+ * `mapStyle.ts`'s `BASEMAP_LAYERS`, `base-background` entry. Every consumer below (`THREAD_STOPS_*`,
  * `GLOW_STOPS`, `CORD_STROKE_*`) is a *stroke* colour stripped of its own
  * alpha via `opaque()`, painted with its own separate `line-opacity`, so
  * "legible" always means "legible once fully opaque" — never the ramp's own

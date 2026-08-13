@@ -228,10 +228,11 @@ npm install && npm run data && npm run build   # dist/ is the whole site
 
 This project deploys to **Cloudflare Pages** (`wrangler.jsonc`), which builds a
 preview URL for every pull request — so a contributor's fix can be reviewed by
-clicking a link. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for setup, and
-note the one thing you must change before real traffic: **point
-`PUBLIC_TILE_URL` at your own tiles** rather than OpenStreetMap's volunteer
-servers.
+clicking a link. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for setup. The
+basemap is a self-hosted tile archive on Cloudflare R2 — the code already
+defaults to this project's own bucket, so there's nothing to configure to see
+a working map; a fork only needs to set `PUBLIC_TILES_URL` if it wants to
+build and host its own archive instead (see "Base map tiles" in that doc).
 
 ## Licence
 

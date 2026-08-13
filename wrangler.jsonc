@@ -55,9 +55,17 @@
   // that Worker's index.mjs header and docs/DEPLOYMENT.md's "Flight
   // sighting log (the second exception)" section for the full rationale.
   //
-  // Still no KV, no R2, no queues, no secrets here. Adding another binding
-  // means adding another place data could accumulate; do not do it without
-  // revisiting the privacy claims on /about and this file's own reasoning.
+  // Still no KV, no queues, no secrets here, and no R2 *binding* — the
+  // self-hosted basemap (see "Base map tiles" below) lives in a separate,
+  // unbound `flockoffmn-tiles` R2 bucket that this Pages project never
+  // reads from and this file never references. The browser talks to that
+  // bucket's public URL directly (a static file, requested by byte range),
+  // the same shape as MapTiler before it, just self-hosted. Nothing here
+  // gains a way to read or write it. Adding an actual binding — one this
+  // application code touches — is still the thing to think twice about:
+  // it means adding another place data could accumulate, and that still
+  // shouldn't happen without revisiting the privacy claims on /about and
+  // this file's own reasoning.
   //
   // This top-level copy is inherited by nothing deployed — see the `env`
   // block below: declaring env.preview/env.production at all makes bindings
@@ -73,60 +81,23 @@
     }
   ],
 
-  // Base map tiles. The default in code points at OpenStreetMap's standard
-  // tile servers, which is fine for development but NOT for production —
-  // they are volunteer-funded and their usage policy asks apps not to lean
-  // on them at scale.
+  // Base map tiles. This used to be a MapTiler API key (see git history —
+  // docs/DEPLOYMENT.md's old "MapTiler quick start" section had ~80 lines
+  // about origin restriction and a Pages-secrets-vs-build-time-vars trap
+  // that shipped a broken basemap to production twice). That's gone: the
+  // basemap is now one self-hosted PMTiles archive, built once from OSM data
+  // by scripts/tiles/build-basemap.mjs and served from a public,
+  // *unbound* R2 bucket (see the d1_databases comment above for why unbound
+  // matters). No vendor, no key, no request-count ceiling, no origin
+  // restriction to verify.
   //
-  // This file is the source of truth for this Pages project (Cloudflare
-  // disables the dashboard's plain-text "Environment variables" editor once
-  // a wrangler config exists — it only leaves Secrets manageable there), and
-  // PUBLIC_TILE_URL is read via `import.meta.env` at Vite BUILD time, not at
-  // Pages Functions runtime. That combination rules out Pages secrets
-  // entirely for this value: a secret (dashboard or `wrangler pages secret
-  // put`) is invisible to Cloudflare's own Git-integration build, so the
-  // build silently re-inlines the tile.openstreetmap.org fallback — this
-  // shipped to production twice already before that was understood. It has
-  // to be a real committed `vars` value instead, scoped per environment
-  // below since `vars`/bindings are non-inheritable in Wrangler config.
-  //
-  // The MapTiler key ending up in git is a knowing tradeoff, not an
-  // oversight: it's already fully exposed in the public JS bundle to every
-  // visitor (view-source finds it in seconds), so keeping it out of git
-  // bought no real secrecy — only slightly less convenient scraping. The
-  // real control is a dedicated, origin-restricted key (this is
-  // `flockoffmn-production`, created 2026-08-04 specifically because
-  // MapTiler's auto-generated "Default key" cannot be restricted — do not
-  // swap this for that one). Allowed HTTP origins: flockoffmn.org,
-  // *.flockoffmn.pages.dev. Verified with curl directly against MapTiler:
-  // matching Origin → 200, foreign Origin → 403, matching Referer with no
-  // Origin → 200, foreign Referer with no Origin → 403.
-  //
-  // curl with NEITHER header present → 403, which raised a real concern
-  // given this site's `Referrer-Policy: no-referrer` (public/_headers): if
-  // MapLibre's tile requests didn't carry a CORS Origin header either, real
-  // visitors would get this same 403. Checked with an actual headless
-  // browser against a preview build, not just curl: MapLibre's tile `<img>`
-  // requests do send `Origin: https://<deploy>.flockoffmn.pages.dev` (empty
-  // Referer, as expected) — Origin isn't governed by Referrer-Policy, only
-  // Referer is. All 30 tile requests on that run returned 200 and the map
-  // rendered correctly with MapTiler attribution visible. If this ever
-  // needs re-checking (e.g. after a MapLibre upgrade changes how it loads
-  // tile images), add the `?` placeholder to Allowed HTTP origins in the
-  // MapTiler dashboard as a stopgap — it explicitly permits no-origin
-  // requests, at the cost of also letting other headerless requests through.
-  //
-  // PUBLIC_TILE_URL/PUBLIC_TILE_URL_LIGHT are the dark/light defaults used
-  // until a visitor explicitly picks a basemap from the in-map "Map theme"
-  // control (see mapController.ts's ThemeControl and lib/theme.ts's
-  // MAP_STYLES catalog). That catalog needs the bare key too, to build URLs
-  // for the styles that aren't one of these two defaults — hence
-  // PUBLIC_TILE_KEY alongside the full URLs, not instead of them; the two
-  // defaults stay pre-built full URLs so first paint never depends on
-  // string-building from a bare key before any app code has run.
-  //
-  // NOTE: if you change the tile host, update the CSP in public/_headers to
-  // match, or the map will silently fail to load tiles.
+  // PUBLIC_TILES_URL is optional — mapStyle.ts already defaults to the real
+  // production archive's URL, so this repo works with zero env config out of
+  // the box (`npm run dev` points at the same public bucket production
+  // does — see that file's header comment for why that's the right
+  // tradeoff for a newcomer's first `npm run dev`). Set it only if you're
+  // running your own fork against your own bucket; see docs/DEPLOYMENT.md
+  // § Base map tiles for the rebuild-and-upload runbook.
   "vars": {},
   "env": {
     // Declaring `env` at all makes every binding non-inheritable, including
@@ -147,17 +118,14 @@
           "database_id": "90f43a8b-be4e-437c-ae31-097f1fc88a2b"
         }
       ],
-      // Same tile config as production: preview deploys are served from
-      // *.flockoffmn.pages.dev, which is (meant to be — see the key comment
-      // above) in the key's allowed-origins list, so there's no separate
-      // exposure from reusing it here. Without this, every PR preview
-      // inherits the OSM-fallback 403s too — see docs/DEPLOYMENT.md § Base
-      // map tiles.
+      // Same public bucket as production — a preview deploy and the live
+      // site read the same static archive (it carries no visitor data, so
+      // there's no separation concern the way there would be for the D1
+      // binding above). Explicit here rather than left to mapStyle.ts's
+      // built-in default so a future bucket-URL change is a one-line edit
+      // in the file that already documents it, not an app-code change.
       "vars": {
-        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/streets-v4-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_URL_LIGHT": "https://api.maptiler.com/maps/streets-v4/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_KEY": "79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+        "PUBLIC_TILES_URL": "https://tiles.flockoffmn.org/minnesota.pmtiles"
       }
     },
     "production": {
@@ -169,10 +137,7 @@
         }
       ],
       "vars": {
-        "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/streets-v4-dark/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_URL_LIGHT": "https://api.maptiler.com/maps/streets-v4/256/{z}/{x}/{y}.png?key=79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_KEY": "79D0bmZHNKT9buPdLFvN",
-        "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
+        "PUBLIC_TILES_URL": "https://tiles.flockoffmn.org/minnesota.pmtiles"
       }
     }
   }
