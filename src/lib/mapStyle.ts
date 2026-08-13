@@ -77,6 +77,18 @@ export const METRO_BOUNDS: [[number, number], [number, number]] = [
 ];
 
 /**
+ * Midpoint of METRO_BOUNDS. Most of what this site tracks — ALPR cameras,
+ * task force MOAs, county contracts — clusters in the metro, so the map
+ * opens here rather than on a statewide view that renders a fistful of dots
+ * lost in the state's outline. Paired with a zoom (see mapController.ts's
+ * constructor) chosen to roughly match METRO_BOUNDS at a typical viewport;
+ * the 'load' handler's fitBounds(METRO_BOUNDS) then squares that against the
+ * visitor's actual container size, same two-step pattern MN_CENTER/MN_BOUNDS
+ * already used for the statewide view this replaced as the default.
+ */
+export const METRO_CENTER: [number, number] = [-93.245, 44.975];
+
+/**
  * One basemap layer's paint, as a function of flavor (dark/light — see
  * lib/theme.ts's MAP_STYLES). Every colour-valued paint key lives here as a
  * function rather than as two static objects picked between, because
