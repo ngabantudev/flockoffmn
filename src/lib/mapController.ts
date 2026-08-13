@@ -44,6 +44,8 @@ export interface ClientLayer {
   color: string;
   /** See LayerDefinition's own comment in layers/types.ts. */
   colorLight?: string;
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  pointStrokeColor?: string;
   geometry: 'point' | 'polygon' | 'line';
   /**
    * Where this layer's category sits in the draw order, low to high.
@@ -1410,30 +1412,23 @@ export class MapController {
       source: src,
       paint: {
         /*
-         * One colour until the records are individual, then the category.
-         *
-         * A `step` on zoom rather than two layers, so there is one dot per
-         * camera at every scale and nothing to keep in sync. Below the
-         * threshold the dot is the layer's own colour: at that distance a
-         * coloured dot claims to distinguish things the reader cannot yet
-         * resolve, and most of them would be the "nobody wrote it down" grey
-         * anyway. The threshold is `emergeFrom`, not `pointsFrom` — the same
-         * zoom a reader can already tell one camera from the next, which is
-         * also the zoom "who runs it" stops being a filter checkbox and
-         * starts being a colour you can read straight off the map.
+         * Category colour at every zoom, not just once records are
+         * individually resolved. `operatorType` (or whatever key a layer
+         * names) is a real recorded field, not an inference — withholding it
+         * below some zoom threshold protected against a false claim of
+         * resolution that was never really the risk here, at the cost of
+         * making "who runs it" something a reader had to open the filter
+         * panel to learn instead of reading straight off the map. The one
+         * honest limit left is physical, not editorial: a dot a fraction of
+         * a pixel wide (see the speckle end of `circle-radius`, below)
+         * doesn't show a legible colour no matter what this expression says.
          */
         'circle-color': layer.categoryColors
           ? ([
-              'step',
-              ['zoom'],
-              this.layerColor(layer),
-              tier.emergeFrom,
-              [
-                'match',
-                ['get', layer.categoryColors.key],
-                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
-                layer.categoryColors.fallback,
-              ],
+              'match',
+              ['get', layer.categoryColors.key],
+              ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+              layer.categoryColors.fallback,
             ] as unknown as maplibregl.ExpressionSpecification)
           : this.layerColor(layer),
         /*
@@ -1458,7 +1453,7 @@ export class MapController {
             ]
           : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
         ) as unknown as maplibregl.ExpressionSpecification,
-        'circle-stroke-color': this.basemapColor,
+        'circle-stroke-color': layer.pointStrokeColor ?? this.basemapColor,
         /*
          * Dots fade in rather than switching on at a single zoom.
          *

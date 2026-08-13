@@ -214,6 +214,13 @@ export const LAYERS: LayerDefinition[] = [
     geometry: 'point',
     color: '#38bdf8',
     colorLight: '#067baf',
+    // Category colour now applies at every zoom (see mapController.ts), and
+    // the most common value by far — "Not recorded", muted slate #64748b —
+    // reads as almost no edge at all against the dark basemap's own
+    // near-black background under the default basemap-coloured ring. A fixed
+    // white ring keeps every dot legible regardless of which category colour
+    // it landed on or which basemap it's sitting over.
+    pointStrokeColor: '#ffffff',
     bearingKey: 'direction',
     categoryColors: {
       key: 'operatorType',

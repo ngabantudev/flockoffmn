@@ -302,6 +302,18 @@ export interface LayerDefinition {
    */
   colorLight?: string;
   /**
+   * Override the ring drawn around each point, in both themes.
+   *
+   * Left unset, a point's ring is drawn in the basemap's own background
+   * colour (see MapController's `basemapColor`) so it reads as a casing the
+   * dot sits on rather than a colour of its own — the default for every
+   * point layer. Set this when a layer wants a ring that doesn't change
+   * with the basemap; ALPR uses a fixed white so each dot stays legible
+   * against both the light and dark basemap without becoming a near-invisible
+   * black ring on the dark one.
+   */
+  pointStrokeColor?: string;
+  /**
    * Attribute holding a compass bearing in degrees, if the layer has one.
    *
    * Set it and the map draws a small arrow at each record showing which way
