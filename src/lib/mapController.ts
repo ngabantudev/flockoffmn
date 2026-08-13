@@ -485,6 +485,25 @@ export class MapController {
   }
 
   /**
+   * A point layer's `circle-color` expression — category colour at every
+   * zoom if the layer names one, else the plain identity colour. The single
+   * source of truth for this expression: used at layer creation, in the
+   * theme repaint, and by the glow layer, so the three can never drift apart
+   * the way the theme repaint once did (it kept its own copy of the old,
+   * zoom-stepped version after the always-on-colour change landed here).
+   */
+  private pointCircleColor(layer: ClientLayer): maplibregl.ExpressionSpecification | string {
+    return layer.categoryColors
+      ? ([
+          'match',
+          ['get', layer.categoryColors.key],
+          ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+          layer.categoryColors.fallback,
+        ] as unknown as maplibregl.ExpressionSpecification)
+      : this.layerColor(layer);
+  }
+
+  /**
    * Re-keys every basemap-dependent paint property after `basemapDark`
    * changes: a colour chosen while dark was current — a layer's own
    * identity colour, a casing drawn in the basemap's own background, or the
@@ -515,27 +534,22 @@ export class MapController {
       }
 
       if (this.map.getLayer(`${layer.id}-points`)) {
-        // Mirrors the circle-color expression built at layer creation
-        // exactly (see the '-points' addLayer call below) — including the
-        // categoryColors case, whose far-zoom "below the closest tier" step
-        // is this.layerColor(layer) too, not just the simple case's whole
-        // expression.
-        const circleColor = layer.categoryColors
-          ? ([
-              'step',
-              ['zoom'],
-              this.layerColor(layer),
-              scaleOf(layer).pointsFrom,
-              [
-                'match',
-                ['get', layer.categoryColors.key],
-                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
-                layer.categoryColors.fallback,
-              ],
-            ] as unknown as maplibregl.ExpressionSpecification)
-          : this.layerColor(layer);
+        const circleColor = this.pointCircleColor(layer);
         this.map.setPaintProperty(`${layer.id}-points`, 'circle-color', circleColor);
-        this.map.setPaintProperty(`${layer.id}-points`, 'circle-stroke-color', this.basemapColor);
+        this.map.setPaintProperty(
+          `${layer.id}-points`,
+          'circle-stroke-color',
+          layer.pointStrokeColor ?? this.basemapColor,
+        );
+        // The glow shares the dot's exact colour (see pointCircleColor) —
+        // only ever the categoryColors match branch, since the glow layer
+        // only exists when a layer names categoryColors, so this is a no-op
+        // in practice today. Kept in step anyway so a future layer that
+        // pairs categoryColors with the plain layerColor() fallback branch
+        // doesn't go stale on a theme toggle the way `-points` itself just did.
+        if (this.map.getLayer(`${layer.id}-points-glow`)) {
+          this.map.setPaintProperty(`${layer.id}-points-glow`, 'circle-color', circleColor);
+        }
       }
 
       if (this.map.getLayer(`${layer.id}-line`) && !layer.networkColor) {
@@ -1406,31 +1420,51 @@ export class MapController {
       });
     }
 
+    // See pointCircleColor's own comment: category colour at every zoom, not
+    // just once records are individually resolved — the physical limit left
+    // is a dot too small to show a legible colour, not an editorial one.
+    // Shared with the glow layer just below so a dot and its halo are never
+    // out of sync with each other.
+    const circleColor = this.pointCircleColor(layer);
+
+    // A soft per-dot halo in the dot's own colour, drawn under it. Radius and
+    // opacity stay at zero below `emergeFrom` on purpose: this layer had a
+    // density-style glow before (see the registry's own `scale` comment) and
+    // it was removed because overlapping halos across many close-together
+    // cameras read as a density surface the data can't back at that
+    // distance. A halo confined to the zoom range where dots are already
+    // individually resolved carries no information the dot's own colour
+    // doesn't already carry — it just makes that colour easier to read.
+    if (layer.categoryColors) {
+      this.map.addLayer({
+        id: `${layer.id}-points-glow`,
+        type: 'circle',
+        source: src,
+        paint: {
+          'circle-color': circleColor,
+          'circle-blur': 0.9,
+          'circle-radius': [
+            'interpolate', ['linear'], ['zoom'],
+            tier.emergeFrom, 0,
+            tier.emergeFrom + 1, 6,
+            15, 16,
+          ] as unknown as maplibregl.ExpressionSpecification,
+          'circle-opacity': [
+            'interpolate', ['linear'], ['zoom'],
+            tier.emergeFrom, 0,
+            tier.pointsFrom, 0.4,
+            15, 0.5,
+          ] as unknown as maplibregl.ExpressionSpecification,
+        },
+      });
+    }
+
     this.map.addLayer({
       id: `${layer.id}-points`,
       type: 'circle',
       source: src,
       paint: {
-        /*
-         * Category colour at every zoom, not just once records are
-         * individually resolved. `operatorType` (or whatever key a layer
-         * names) is a real recorded field, not an inference — withholding it
-         * below some zoom threshold protected against a false claim of
-         * resolution that was never really the risk here, at the cost of
-         * making "who runs it" something a reader had to open the filter
-         * panel to learn instead of reading straight off the map. The one
-         * honest limit left is physical, not editorial: a dot a fraction of
-         * a pixel wide (see the speckle end of `circle-radius`, below)
-         * doesn't show a legible colour no matter what this expression says.
-         */
-        'circle-color': layer.categoryColors
-          ? ([
-              'match',
-              ['get', layer.categoryColors.key],
-              ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
-              layer.categoryColors.fallback,
-            ] as unknown as maplibregl.ExpressionSpecification)
-          : this.layerColor(layer),
+        'circle-color': circleColor,
         /*
          * Below `emergeFrom`, radius follows the same 5/10/15 curve every
          * point layer has always used. A layer that also names `speckleFrom`
@@ -1687,6 +1721,7 @@ export class MapController {
       '-line-casing',
       '-line',
       '-line-hit',
+      '-points-glow',
       '-points',
       '-cones',
       '-labels',
