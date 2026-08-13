@@ -7,8 +7,8 @@ import {
   BASEMAP_LAYERS,
   FLAVOR_VARIANT_PAINT_KEYS,
   METRO_BOUNDS,
+  METRO_CENTER,
   MN_BOUNDS,
-  MN_CENTER,
 } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import {
@@ -384,8 +384,12 @@ export class MapController {
     this.map = new maplibregl.Map({
       container,
       style: baseStyle(initialMapStyle()),
-      center: MN_CENTER,
-      zoom: 5.6,
+      // Twin Cities metro, not the statewide view — see METRO_CENTER's
+      // comment in mapStyle.ts. This is only the placeholder shown before
+      // 'load' fires below and corrects it against the real container size;
+      // it matters on slow connections (§0.7) where that gap is longest.
+      center: METRO_CENTER,
+      zoom: 9,
       minZoom: 3,
       maxZoom: 18,
       attributionControl: { compact: true },
@@ -436,7 +440,11 @@ export class MapController {
 
     this.map.on('load', () => {
       this.hasLoaded = true;
-      this.map.fitBounds(MN_BOUNDS, { padding: 24, animate: false });
+      // Metro on load, not the statewide MN_BOUNDS — see METRO_CENTER's
+      // comment in mapStyle.ts. MN_BOUNDS is still where the "Reset to
+      // Minnesota" button (resetView(), below) sends a reader who has
+      // panned or filtered elsewhere and wants the whole state back.
+      this.map.fitBounds(METRO_BOUNDS, { padding: 24, animate: false });
     });
 
     // A tap that lands on nothing of ours is the reader stepping back out of
