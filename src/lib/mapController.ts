@@ -1,6 +1,6 @@
 import maplibregl, { type Map as MLMap, type GeoJSONSource } from 'maplibre-gl';
 import { Protocol as PMTilesProtocol } from 'pmtiles';
-import type { Feature, FeatureCollection, Geometry, Point } from 'geojson';
+import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import {
   baseStyle,
   basemapBackgroundColor,
@@ -17,9 +17,7 @@ import {
   THREAD_STOPS_LIGHT,
   CORD_STROKE_DARK,
   CORD_STROKE_LIGHT,
-  densityColorExpression,
 } from './densityRamp';
-import { groupNodes } from './nodes';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
@@ -59,9 +57,7 @@ export interface ClientLayer {
   bearingKey?: string;
   /** Offsets of a record's parts along its own length, if it has a length. */
   positions?: { offsetsKey: string; countsKey: string; label: string };
-  /** Draw this layer's points as a density surface beneath the records. */
-  density?: { weightKey?: string; label: string };
-  /** The zooms across which this layer's records emerge from its surface. */
+  /** The zooms across which this layer's records emerge. */
   scale?: { emergeFrom: number; pointsFrom: number };
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
   blockAggregate?: { cellMeters: number; blocksUntil: number; detailFrom: number };
@@ -152,20 +148,19 @@ const PULSE_COLOR = '#f4fbf2';
 
 
 /**
- * Where a layer's records emerge from its surface, from the two zooms it names.
+ * Where a layer's records emerge, from the two zooms it names.
  *
- * There is one picture at every scale now, not three. The density surface is
- * drawn at every zoom, the nodes are the heavier parts of it, and the dots fade
- * up out of it between these two numbers — so a reader zooming in never crosses
- * a line where the map stops meaning one thing and starts meaning another.
- * Everything downstream reads these rather than a constant of its own, so the
- * cones cannot arrive before the records they annotate.
+ * Records fade in between these two numbers rather than switching on at a
+ * single cut, so a reader zooming in never crosses a line where the map
+ * stops meaning one thing and starts meaning another. Everything downstream
+ * reads these rather than a constant of its own, so the cones cannot arrive
+ * before the records they annotate.
  */
 function scaleOf(layer: ClientLayer) {
   const emergeFrom = layer.scale?.emergeFrom ?? 0;
   const pointsFrom = layer.scale?.pointsFrom ?? emergeFrom + 1;
   return {
-    /** Dots begin to appear here, faint, over a surface still at full strength. */
+    /** Dots begin to appear here, faint. */
     emergeFrom,
     /** Records are fully drawn from here, and so are their indicators. */
     pointsFrom,
@@ -186,44 +181,8 @@ const DEFAULT_CONE_ARC = 50;
 const BEARING_PROP = '__bearing';
 const CONE_PROP = '__cone';
 
-/** The density ramp lives in densityRamp.ts so the legend cannot drift from it. */
-const DENSITY_COLOR = densityColorExpression() as unknown as maplibregl.ExpressionSpecification;
-
-/** Written onto derived nodes by us; not an upstream field. */
-const NODE_CAMERAS_PROP = '__nodeCameras';
-
 /** Written onto derived grid blocks by us; not an upstream field. */
 const BLOCK_COUNT_PROP = '__blockCount';
-
-/**
- * How heavily a node burns, by the number of cameras standing in it.
- *
- * The node is drawn in the surface's own ramp and reads as a denser patch of
- * it, which is the whole point: a junction with eight readers on it is not a
- * different kind of thing from a junction with two, it is more of the same
- * thing, and a number in a bubble said the opposite by making it a separate
- * object you had to click. Two cameras sit just above the surface around them;
- * the largest bodies in the metro reach the pale end of the ramp.
- *
- * The stops are cut to the range the data actually holds. In the current
- * Minnesota extract, 1,430 mapped reader locations form 157 nodes; half of them
- * are two cameras, nine in ten are five or fewer, and the largest is ten. A
- * linear ramp to some round number would leave nearly every node sitting on the
- * same dim purple. The curve keeps climbing past ten so a denser extract, or
- * another state, does not flatten out at the top.
- */
-const NODE_WEIGHT = [
-  'interpolate',
-  ['linear'],
-  ['get', NODE_CAMERAS_PROP],
-  2, 0.3,
-  3, 0.42,
-  5, 0.6,
-  8, 0.8,
-  12, 0.92,
-  20, 1,
-] as unknown as maplibregl.ExpressionSpecification;
-
 
 /**
  * How brightly a link burns, by the size of the connected network it belongs to.
@@ -233,8 +192,8 @@ const NODE_WEIGHT = [
  * — so instead they light up together, and the brighter a strand is the more
  * reader locations its network holds.
  *
- * The stops are cut to the range the data actually holds, as the node ramp
- * above is, and that range is a finding in its own right. Under the old
+ * The stops are cut to the range the data actually holds, and that range is
+ * a finding in its own right. Under the old
  * nearest-neighbour model the largest network in Minnesota was nine reader
  * locations and there were 354 of them: linking each reader to exactly one
  * neighbour cannot help but shatter a map into pieces, and the pieces were an
@@ -751,17 +710,6 @@ export class MapController {
     return this.firstStyleLayer((id) => marks.some((suffix) => id.endsWith(suffix)));
   }
 
-  /**
-   * The bottom-most style layer belonging to any registry layer.
-   *
-   * The density surface has to sit under everything of ours — including other
-   * layers' areas and lines — or a corridor switched on first would be washed
-   * out by a surface added afterwards.
-   */
-  private beneathEverything(): string | undefined {
-    return this.firstStyleLayer((id) => this.layers.some((l) => id.startsWith(`${l.id}-`)));
-  }
-
   private firstStyleLayer(match: (id: string) => boolean): string | undefined {
     for (const styleLayer of this.map.getStyle().layers ?? []) {
       if (match(styleLayer.id)) return styleLayer.id;
@@ -781,20 +729,17 @@ export class MapController {
    *
    * So after every addition the whole stack is sorted. The order is:
    *
-   *   1. Surfaces — the density fields and their nodes — beneath everything of
-   *      ours. A surface is an estimate smeared over a radius, and anything
-   *      drawn under one is being read through a haze that is not about it.
-   *   2. Then by category, in the order the layer panel lists them: what drew
+   *   1. By category, in the order the layer panel lists them: what drew
    *      the lines, what was built on them, what records, who acts. The map
    *      and the panel then say the same thing in two ways, and the layers a
    *      reader came for sit on top of the context they need to be read
    *      against rather than under it.
-   *   3. Then by shape within a category: areas, then lines, then dots. A dot
+   *   2. Then by shape within a category: areas, then lines, then dots. A dot
    *      is one exact position and the smallest target on the map, so nothing
    *      from its own category is allowed over it.
    *
-   * `sort` is stable, so each layer's own internal sequence — surface, casing,
-   * core, hit target, cones, dots — survives untouched inside its band.
+   * `sort` is stable, so each layer's own internal sequence — casing, core,
+   * hit target, cones, dots — survives untouched inside its band.
    */
   private restack() {
     /** Areas first, then lines, then the dots that must stay clickable. */
@@ -804,25 +749,12 @@ export class MapController {
       .map((styleLayer) => {
         const layer = this.layers.find((l) => styleLayer.id.startsWith(`${l.id}-`));
         if (!layer) return null;
-        return {
-          styleId: styleLayer.id,
-          layer,
-          // Kept out of the category bands entirely rather than ranked within
-          // them: a surface belongs under every record on the map, not just
-          // under the records of the layers below its own.
-          surface: styleLayer.id.endsWith('-density') || styleLayer.id.endsWith('-nodes'),
-        };
+        return { styleId: styleLayer.id, layer };
       })
       .filter((o) => o !== null);
 
     owned.sort(
-      (a, b) =>
-        // `b` first: a surface is the bottom band, and true sorts as 1.
-        Number(b.surface) - Number(a.surface) ||
-        // Surfaces are already beneath everything; ordering them among
-        // themselves by category would be inventing a hierarchy for haze.
-        (a.surface ? 0 : a.layer.stackRank - b.layer.stackRank) ||
-        (a.surface ? 0 : byShape[a.layer.geometry] - byShape[b.layer.geometry]),
+      (a, b) => a.layer.stackRank - b.layer.stackRank || byShape[a.layer.geometry] - byShape[b.layer.geometry],
     );
 
     // Bottom to top, each moved to the top in turn: the last one moved ends up
@@ -830,49 +762,16 @@ export class MapController {
     for (const { styleId } of owned) this.map.moveLayer(styleId);
   }
 
-  private densitySourceId = (layerId: string) => `src-${layerId}-density`;
-  private nodeSourceId = (layerId: string) => `src-${layerId}-nodes`;
   private blockSourceId = (layerId: string) => `src-${layerId}-blocks`;
-
-  /**
-   * Reader locations gathered into nodes, as points carrying a camera count.
-   *
-   * Derived in the browser rather than at ingest because it has to answer to
-   * the filters: switch to sheriff-run readers only and the node at a junction
-   * where a city and a county both put cameras up is a smaller body, not the
-   * same body with some of its cameras hidden underneath it.
-   */
-  private nodeFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
-    const sites = features
-      .filter((f) => f.geometry.type === 'Point')
-      .map((f) => {
-        const [lng, lat] = (f.geometry as Point).coordinates as [number, number];
-        // A pole tagged with several headings carries several cameras, and the
-        // cones already say so. The node counts what is standing there, so it
-        // has to agree with them.
-        const cameras = layer.bearingKey
-          ? Math.max(1, parseSectors(f.properties.attributes[layer.bearingKey]).length)
-          : 1;
-        return { lng, lat, cameras };
-      });
-    return {
-      type: 'FeatureCollection',
-      features: groupNodes(sites).map((node) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [node.lng, node.lat] },
-        properties: { [NODE_CAMERAS_PROP]: node.cameras },
-      })) as Feature[],
-    };
-  }
 
   /**
    * Parcels gathered into a grid cell, as squares carrying a count and the
    * commonest category inside them.
    *
    * Derived in the browser, from whichever parcels the active filters leave
-   * standing, for the same reason `nodeFeatures` is: a decade filter that
-   * hides most of a cell's covenants has to shrink or empty that cell, not
-   * leave a block claiming parcels the map no longer shows underneath it.
+   * standing: a decade filter that hides most of a cell's covenants has to
+   * shrink or empty that cell, not leave a block claiming parcels the map no
+   * longer shows underneath it.
    */
   private blockFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
     if (!layer.blockAggregate) return EMPTY_FC;
@@ -905,27 +804,6 @@ export class MapController {
           ...(categoryKey ? { [categoryKey]: block.category } : {}),
         },
       })) as Feature[],
-    };
-  }
-
-  /**
-   * Points for the density surface, in their own unclustered source.
-   *
-   * The record source clusters, and a heatmap over clustered data measures the
-   * cluster centroids rather than the cameras — so the surface would change
-   * shape at every zoom step as clusters merged, which is an artefact of the
-   * rendering and not a fact about where cameras are.
-   */
-  private densityFeatures(features: LoadedFeature[]): FeatureCollection {
-    return {
-      type: 'FeatureCollection',
-      features: features
-        .filter((f) => f.geometry.type === 'Point')
-        .map((f) => ({
-          type: 'Feature',
-          geometry: f.geometry,
-          properties: { ...f.properties.attributes },
-        })) as Feature[],
     };
   }
 
@@ -965,123 +843,6 @@ export class MapController {
     const src = this.sourceId(layer.id);
     if (this.map.getSource(src)) return;
     const tier = scaleOf(layer);
-
-    // The density surface goes down first and stays at the bottom of our stack.
-    // Both it and the nodes above it insert before whatever was bottom-most
-    // when we started, so the pair lands in the order written here — a node
-    // inserted "beneath everything" a moment after the surface would go under
-    // the surface it is meant to brighten.
-    if (layer.density) {
-      const belowAll = this.beneathEverything();
-      const densitySrc = this.densitySourceId(layer.id);
-      this.map.addSource(densitySrc, { type: 'geojson', data: this.densityFeatures(features) });
-      this.map.addLayer(
-        {
-          id: `${layer.id}-density`,
-          type: 'heatmap',
-          source: densitySrc,
-          // No maxzoom, and that is the change. The surface used to be switched
-          // off before records drew, on the promise that an estimate and a
-          // mapped position were never read off the same pixel — kept by
-          // handing the middle scale to counted bubbles, which turned zooming
-          // in into two hard cuts between three different maps. The surface now
-          // runs the whole way and the dots rise out of it, so the promise is
-          // made in the drawing instead: the estimate is dim wherever a dot is
-          // bright, and the limitations say plainly that the two overlap.
-          paint: {
-            'heatmap-weight': layer.density.weightKey
-              ? ['coalesce', ['to-number', ['get', layer.density.weightKey]], 1]
-              : 1,
-            // Rising with zoom so the surface stays legible as points spread
-            // apart on screen instead of thinning into nothing, then held flat
-            // once the dots are carrying the detail.
-            'heatmap-intensity': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              4, 0.55,
-              9, 1.2,
-              13, 2.4,
-              16, 2.4,
-            ],
-            // Kept growing past the old top stop so the glow stays tied to the
-            // ground rather than shrinking into a pinprick under each dot.
-            'heatmap-radius': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              4, 8,
-              9, 24,
-              13, 46,
-              16, 72,
-              18, 96,
-            ],
-            'heatmap-color': DENSITY_COLOR,
-            'heatmap-opacity': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              // Held well under full strength. The surface and the corridor
-              // threads share a palette, so a surface at full opacity swallows
-              // the corridors sitting on top of it — which is precisely how a
-              // map with 25 corridors drawn on it came to look like it had none.
-              tier.emergeFrom - 2, 0.55,
-              // Down, not out, as the dots take over: enough to still read as
-              // the ground the cameras stand on, faint enough that nobody
-              // mistakes the haze under a dot for the dot's own footprint.
-              tier.pointsFrom, 0.34,
-            ],
-          },
-        },
-        belowAll,
-      );
-
-      /*
-       * Nodes: where two or more readers stand together.
-       *
-       * Same source ramp, same kind of mark, drawn over the surface rather than
-       * instead of it — a node is a denser patch of the same estimate, and the
-       * brightness is the count. Nothing here is clickable and nothing here is
-       * labelled: the record is still the camera, and a node that could be
-       * selected would be a second kind of object competing with it.
-       */
-      const nodeSrc = this.nodeSourceId(layer.id);
-      this.map.addSource(nodeSrc, {
-        type: 'geojson',
-        data: this.nodeFeatures(layer, features),
-      });
-      this.map.addLayer(
-        {
-          id: `${layer.id}-nodes`,
-          type: 'heatmap',
-          source: nodeSrc,
-          paint: {
-            'heatmap-weight': NODE_WEIGHT,
-            // Flat with zoom, unlike the surface underneath. What a node is
-            // does not change with the scale you look at it from, so its
-            // brightness should not either — only the camera count moves it.
-            'heatmap-intensity': 0.9,
-            // A node is an intersection, so its glow grows with the view the
-            // way the junction itself does, instead of staying a fixed blob.
-            'heatmap-radius': [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              5, 9,
-              9, 16,
-              13, 30,
-              16, 54,
-              18, 78,
-            ],
-            'heatmap-color': DENSITY_COLOR,
-            // "Slightly brighter", literally: low enough that a two-camera node
-            // is a thickening of the surface rather than a new mark on it.
-            'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 5, 0.5, 13, 0.58, 18, 0.44],
-          },
-        },
-        belowAll,
-      );
-    }
 
     // Never clustered. The source holds one feature per record at every zoom,
     // which is what lets the record list, the counter and the dots agree
@@ -1130,8 +891,7 @@ export class MapController {
               // MapLibre only allows `["zoom"]` as the direct input to a
               // top-level `step`/`interpolate`, never composed inside another
               // expression. A cell with one covenant is a thinner claim than
-              // a cell with forty; held well under full strength either way,
-              // see the density surface's own comment on the same caution.
+              // a cell with forty; held well under full strength either way.
               'fill-opacity': [
                 'interpolate',
                 ['linear'],
@@ -1260,12 +1020,12 @@ export class MapController {
       const thread = layer.networkColor
         ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords, threadStops)
         : (this.layerColor(layer) as unknown as maplibregl.ExpressionSpecification);
-      // The halo gets the density surface's own ramp, cool end included, so a
-      // corridor reads as the same heat the point heatmap would show over that
-      // same ground — just carried by the street shape instead of a blob over
-      // it. The core below stays on THREAD_STOPS_*: a halo is a wash, so the low
-      // end's near-zero contrast is fine, but the thin core is the one legible
-      // mark on a mesh body and needs the ramp that clears 3:1 against the map.
+      // The halo gets the full density ramp, cool end included, so a corridor
+      // reads as the same palette the rest of the map uses for density,
+      // carried by the street shape rather than a blob over the ground. The
+      // core below stays on THREAD_STOPS_*: a halo is a wash, so the low end's
+      // near-zero contrast is fine, but the thin core is the one legible mark
+      // on a mesh body and needs the ramp that clears 3:1 against the map.
       const glow = layer.networkColor
         ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords, GLOW_STOPS)
         : thread;
@@ -1350,9 +1110,9 @@ export class MapController {
               // than drawn. This is illumination, not the crispness that was
               // tried and rejected (see the core layer's own comment below).
               'line-opacity': byZoomAndTier([
-                [5, 0.3, 0.42],
-                [9, 0.3, 0.35],
-                [13, 0.3, 0.2],
+                [5, 0.2, 0.27],
+                [9, 0.2, 0.23],
+                [13, 0.2, 0.13],
               ]),
               /*
                * Blur is paid per pixel covered, and this layer now covers a
@@ -1444,15 +1204,16 @@ export class MapController {
                * connected thing. No cord's data changes across the ramp — the
                * miles on the strand and the panel read the same at every zoom.
                */
-              // Lifted a step from where this first shipped, same reasoning as
-              // the halo above: still capped well under the mesh's 0.55 at
-              // every zoom, and blur/width are untouched, so this stays the
-              // soft filament inside the glow rather than the hard line that
-              // was tried and rejected — just a brighter one.
+              // Lowered across the board to make the whole layer read as
+              // lighter and less insistent against the basemap; the mesh/cord
+              // relationship (cord stays under the mesh at every zoom) and
+              // blur/width are otherwise untouched, so this stays the soft
+              // filament inside the glow rather than the hard line that was
+              // tried and rejected — just a fainter one.
               'line-opacity': byZoomAndTier([
-                [5, 0.55, 0.38],
-                [9, 0.55, 0.3],
-                [13, 0.55, 0.16],
+                [5, 0.36, 0.25],
+                [9, 0.36, 0.2],
+                [13, 0.36, 0.1],
               ]),
               'line-width': byZoomAndTier([
                 [5, 2.6, 2.4],
@@ -1656,7 +1417,7 @@ export class MapController {
         'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8],
         'circle-stroke-color': this.basemapColor,
         /*
-         * Dots rise out of the surface rather than switching on over it.
+         * Dots fade in rather than switching on at a single zoom.
          *
          * Every record is in this layer at every zoom; what changes is how much
          * of it you can see. Between the two zooms the layer names, a dot goes
@@ -1870,8 +1631,6 @@ export class MapController {
   private applyVisibility(layer: ClientLayer) {
     const on = this.visible.has(layer.id);
     for (const suffix of [
-      '-density',
-      '-nodes',
       '-fill',
       '-outline',
       '-line-casing',
@@ -2040,18 +1799,9 @@ export class MapController {
     // record list no longer shows.
     const cones = this.map.getSource(this.coneSourceId(layerId)) as GeoJSONSource | undefined;
     cones?.setData(this.coneFeatures(layer, visible));
-    // The density surface is a third source and drifts the same way: a filter
-    // that hides half the cameras must not leave the glow claiming they are
-    // still there.
-    const density = this.map.getSource(this.densitySourceId(layerId)) as GeoJSONSource | undefined;
-    density?.setData(this.densityFeatures(visible));
-    // Nodes are regrouped from the surviving cameras rather than dimmed, so a
-    // filtered node is a smaller body and not a body with a hidden interior.
-    const nodes = this.map.getSource(this.nodeSourceId(layerId)) as GeoJSONSource | undefined;
-    nodes?.setData(this.nodeFeatures(layer, visible));
-    // The grid regroups from the surviving parcels rather than dimming, same
-    // reasoning as nodes above: a filtered-down cell is a smaller claim, not
-    // a claim over parcels the map no longer shows.
+    // The grid regroups from the surviving parcels rather than dimming: a
+    // filtered-down cell is a smaller claim, not a claim over parcels the map
+    // no longer shows.
     const blocks = this.map.getSource(this.blockSourceId(layerId)) as GeoJSONSource | undefined;
     blocks?.setData(this.blockFeatures(layer, visible));
     this.emitCounts();

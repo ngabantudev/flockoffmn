@@ -9,11 +9,10 @@
  * shape of the coverage still reads while the lots themselves cannot yet be
  * told apart.
  *
- * This is a rendering aggregate and nothing more, the polygon counterpart to
- * `groupNodes` in `src/lib/nodes.ts`. Blocks are not records: not clickable,
- * not searchable, and not in the accessible record list, because the thing a
- * reader can act on is a parcel and this is a shape drawn over several of
- * them.
+ * This is a rendering aggregate and nothing more. Blocks are not records: not
+ * clickable, not searchable, and not in the accessible record list, because
+ * the thing a reader can act on is a parcel and this is a shape drawn over
+ * several of them.
  */
 
 /** One parcel centroid, with the categorical value it should count toward. */
@@ -38,17 +37,17 @@ export interface Block {
 
 const M_PER_DEG_LAT = 111_320;
 
-/** Longitude metres per degree, at the middle of the state — see groupNodes's own comment on the same constant. */
+/** Longitude metres per degree, at the middle of the state. */
 const M_PER_DEG_LNG = M_PER_DEG_LAT * Math.cos((46.4 * Math.PI) / 180);
 
 /**
  * Bucket parcel centroids into a fixed grid of `cellMeters` squares.
  *
- * A plain grid, not single-link clustering like `groupNodes`: a block is a
- * fixed place on the ground, not a body that grows by chaining neighbours
- * together, so there is no radius test between sites — only which cell each
- * one's centroid falls in. Recomputed from whichever parcels survive the
- * active filters, so a block never claims a parcel that the filter has hidden.
+ * A plain grid: a block is a fixed place on the ground, not a body that grows
+ * by chaining neighbours together, so there is no radius test between sites —
+ * only which cell each one's centroid falls in. Recomputed from whichever
+ * parcels survive the active filters, so a block never claims a parcel that
+ * the filter has hidden.
  */
 export function groupBlocks(sites: BlockSite[], cellMeters: number): Block[] {
   const cellLat = cellMeters / M_PER_DEG_LAT;

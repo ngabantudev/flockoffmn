@@ -1,27 +1,20 @@
 /**
  * The density ramp, defined once.
  *
- * Shared by the map and the legend swatch beside the layer toggle, for the same
- * reason `geo.mjs` is shared by the ingest and the browser: a legend that
- * drifts from the surface it explains is worse than no legend, because it is
- * still believed. Both are generated from this list, so they cannot disagree.
+ * Originally built for a point-density heatmap and its legend swatch; both
+ * were removed, but the ramp itself lives on as the shared palette for the
+ * ALPR corridor layer's mesh/cord colouring below (`THREAD_STOPS_*`,
+ * `GLOW_STOPS`, `CORD_STROKE_*`) — one list, so those consumers cannot
+ * disagree about what the palette is.
  *
  * The hues are the sixteen classes of Duncan Smith's World Population Density
  * map (luminocity3d.org/WorldPopDen, CASA/UCL, GHSL 2020), in its order: pale
  * mint at the fringe, through cyan, blue, indigo, purple and magenta, into
- * crimson, red, orange and gold at the core. Two changes were needed to carry a
- * classed choropleth onto a kernel surface, and both are visible above:
- *
- * 1. The bottom stop is the first class at zero alpha. Luminocity paints its
- *    lowest class as near-white because it only draws cells that have people in
- *    them — absence is simply not drawn. A heatmap has no such edge; it fades to
- *    its first colour everywhere, so an opaque low stop would wash the whole
- *    state in mint and turn "no cameras" into a reading. Alpha climbs with the
- *    ramp instead, so nothing still looks like nothing.
- * 2. The stops interpolate rather than step. The classes are hard-edged on
- *    luminocity because a cell count is a measurement; here the surface is an
- *    estimate, and banding it would draw sixteen crisp rings around every
- *    camera and claim a precision the data does not have.
+ * crimson, red, orange and gold at the core. Every consumer below strips this
+ * ramp's built-in alpha via `opaque()` and paints its own `line-opacity`
+ * instead, so the alpha values on each stop are inherited from the original
+ * heatmap use rather than load-bearing today — left in place because the ramp
+ * is otherwise unchanged and splitting it apart risks drifting the hues.
  */
 export const DENSITY_STOPS: Array<[number, string]> = [
   [0, 'rgba(244,251,242,0)'],
@@ -43,19 +36,13 @@ export const DENSITY_STOPS: Array<[number, string]> = [
   [1, 'rgba(255,195,0,1)'],
 ];
 
-/** The ramp as a MapLibre `heatmap-color` interpolation. */
-export function densityColorExpression(): unknown[] {
-  return ['interpolate', ['linear'], ['heatmap-density'], ...DENSITY_STOPS.flat()];
-}
-
 /**
  * The two basemap backgrounds the ramp is ever read against — see
  * `mapStyle.ts`'s `BASEMAP_LAYERS`, `base-background` entry. Every consumer below (`THREAD_STOPS_*`,
  * `GLOW_STOPS`, `CORD_STROKE_*`) is a *stroke* colour stripped of its own
  * alpha via `opaque()`, painted with its own separate `line-opacity`, so
  * "legible" always means "legible once fully opaque" — never the ramp's own
- * built-in alpha blended in, which is a different question entirely (see
- * `densityColorExpression`'s doc comment for where that alpha matters).
+ * built-in alpha blended in.
  */
 const DARK_BACKGROUND = '#0a0c10';
 const LIGHT_BACKGROUND = '#ffffff';
@@ -161,12 +148,10 @@ export const THREAD_STOPS_LIGHT = threadStopsFor(LIGHT_BACKGROUND);
  * of a thin core line — a wash reads as "a soft light" against either
  * basemap using the same hues, so unlike the thread stops this one genuinely
  * doesn't need a light/dark split. Taking the ramp's own alpha along with the
- * hue would be wrong here regardless — that alpha exists so an *empty* patch
- * of the heatmap fades to nothing, and the anchor below already puts every
- * corridor's smallest possible network on this ramp's first stop. Keep that
- * stop's built-in alpha of zero and every corridor with a small network —
- * most of them — goes invisible, which is what happens if this is built from
- * `DENSITY_STOPS` directly instead of through `opaque()`.
+ * hue would be wrong here regardless — the anchor below already puts every
+ * corridor's smallest possible network on this ramp's first stop, and that
+ * stop's built-in alpha is zero. Skip `opaque()` and every corridor with a
+ * small network — most of them — goes invisible.
  */
 export const GLOW_STOPS: Array<[number, string]> = DENSITY_STOPS.map(([at, color]) => [at, opaque(color)]);
 
@@ -199,16 +184,3 @@ export const GLOW_STOPS: Array<[number, string]> = DENSITY_STOPS.map(([at, color
  */
 export const CORD_STROKE_DARK = opaque(DENSITY_STOPS[0][1]);
 export const CORD_STROKE_LIGHT = THREAD_STOPS_LIGHT[0][1];
-
-/**
- * The ramp as a CSS gradient for the legend.
- *
- * The swatch sits on the panel background rather than the map, so the
- * transparent low end would read as "no colour defined" instead of "no
- * cameras". Compositing over the map's own background colour keeps the swatch
- * showing what the reader actually sees on the map.
- */
-export function densityGradientCss(over = DARK_BACKGROUND): string {
-  const stops = DENSITY_STOPS.map(([at, color]) => `${color} ${Math.round(at * 100)}%`).join(', ');
-  return `linear-gradient(to right, ${stops}), ${over}`;
-}
