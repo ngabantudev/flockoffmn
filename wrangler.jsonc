@@ -43,9 +43,9 @@
   // that shipped a broken basemap to production twice). That's gone: the
   // basemap is now one self-hosted PMTiles archive, built once from OSM data
   // by scripts/tiles/build-basemap.mjs and served from a public,
-  // *unbound* R2 bucket (see the d1_databases comment above for why unbound
-  // matters). No vendor, no key, no request-count ceiling, no origin
-  // restriction to verify.
+  // *unbound* R2 bucket (see the "No bindings" comment above for why
+  // unbound matters). No vendor, no key, no request-count ceiling, no
+  // origin restriction to verify.
   //
   // PUBLIC_TILES_URL is optional — mapStyle.ts already defaults to the real
   // production archive's URL, so this repo works with zero env config out of
