@@ -30,13 +30,14 @@ and deliberately **no `main` entrypoint**: this is a static site, not a Worker.
    yet independently confirmed:** once a repo's `wrangler.jsonc` exists (this
    one already does), Cloudflare appears to treat it as the source of truth
    for the project and disables this same dashboard editor for plain-text
-   `vars` — see "Base map tiles" below, confirmed the hard way for
-   `PUBLIC_TILE_URL`. If `NODE_VERSION` turns out to be similarly locked,
-   it isn't currently expressible in `wrangler.jsonc` either; check
+   `vars` — see "Base map tiles" below, confirmed the hard way when this
+   project still used MapTiler. If `NODE_VERSION` turns out to be similarly
+   locked, it isn't currently expressible in `wrangler.jsonc` either; check
    Cloudflare's current docs rather than assuming this step still works.
-4. `PUBLIC_TILE_URL` and `PUBLIC_TILE_ATTRIBUTION` are already committed in
-   `wrangler.jsonc` for this repo (see "Base map tiles" below) — nothing to
-   set here for production. A fork needs its own key; see that section.
+4. Nothing else to set for the basemap — see "Base map tiles" below. Unlike
+   the old MapTiler setup there's no key a fork needs to obtain; the code
+   defaults to this project's own public R2 bucket, and a fork only needs to
+   set `PUBLIC_TILES_URL` if it wants to point at its own.
 
 Git integration is worth choosing over a deploy workflow for one specific
 reason: **Pages builds a preview URL for every pull request.** For a project
@@ -75,10 +76,11 @@ and `astro preview` ignore that file.
 - **`script-src 'self'`** is the directive that matters, and it is strict. No
   inline scripts, no CDNs, no third-party JS.
 - **`img-src` and `connect-src` allow any HTTPS origin**, on purpose, so that
-  swapping the tile provider does not silently break the map. Images and tile
-  fetches cannot execute; the executable surface stays locked down. If you want
+  swapping the basemap archive's host (currently a public R2 bucket) does not
+  silently break the map. Images and tile fetches cannot execute; the
+  executable surface stays locked down. If you want
   to tighten these to your specific tile host, do it — just remember to update
-  the file whenever `PUBLIC_TILE_URL` changes.
+  the file whenever `PUBLIC_TILES_URL` changes.
 
 ### One binding, narrowly scoped
 
@@ -222,138 +224,126 @@ reviewed, and narrow) before it's added.
 
 ## Base map tiles
 
-**Do not point production traffic at OpenStreetMap's standard tile servers.**
-They are volunteer-funded infrastructure, and their
-[usage policy](https://operations.osmfoundation.org/policies/tiles/) asks that
-apps not rely on them at scale. The default is set for local development only.
+**History, so this isn't relitigated:** this project used MapTiler (a hosted
+raster tile vendor) through August 2026. Every visitor's browser called
+MapTiler directly, with nothing caching in front of it, and MapTiler's free
+tier hit its request/session ceiling within a normal month of traffic — the
+whole point of "caching" was never actually built. That, plus MapTiler being
+a vendor who could revoke access at will (the exact risk §0.8 of `CLAUDE.md`
+asks this project to design against), is why it's gone.
 
-Configure your own before launch:
+**What's here now:** a single self-hosted vector tile archive
+(`minnesota.pmtiles`) covering Minnesota, built once from OpenStreetMap data
+and served as a static file from a public Cloudflare R2 bucket
+(`flockoffmn-tiles`). No API key, no vendor account, no request-count
+ceiling of its own — R2 has zero egress fees and the archive fits
+comfortably inside its free storage tier. `src/lib/mapStyle.ts` already
+defaults to this project's own bucket, so **a plain checkout needs zero
+config** to see a working map, in both `npm run dev` and a production build.
+
+### How it works
+
+- **Format:** [PMTiles](https://github.com/protomaps/PMTiles) — a single
+  file the browser reads with plain HTTP byte-range requests via the
+  `pmtiles` npm package (registered as a MapLibre protocol in
+  `mapController.ts`). No tile server, no Worker; served from a custom
+  domain (`tiles.flockoffmn.org`) on the R2 bucket with a zone Cache Rule so
+  Cloudflare's edge actually caches the ranges — see "Setting up your own
+  bucket" below for why that Cache Rule is a required, non-optional step
+  (the R2 default, `.r2.dev`, is explicitly rate-limited and uncached).
+- **Data:** [Geofabrik's Minnesota extract](https://download.geofabrik.de/north-america/us/minnesota-latest.osm.pbf)
+  — never OSM's live tile servers. Geofabrik explicitly publishes these
+  extracts for bulk download; scraping tile.openstreetmap.org at any volume
+  would violate OSM's usage policy and this project's own "Good-Citizen
+  Fetcher" rule (`CLAUDE.md`).
+- **Render:** [planetiler](https://github.com/onthegomap/planetiler), a
+  Java program, via `scripts/tiles/build-basemap.mjs`. It emits the
+  [OpenMapTiles schema](https://github.com/openmaptiles/openmaptiles) at
+  zoom 0-14 (MapLibre overzooms past that by scaling vector geometry rather
+  than blurring pixels the way raster tiles do — see the maxzoom comment in
+  that script).
+- **Style:** hand-written vector paint rules in `src/lib/mapStyle.ts`'s
+  `BASEMAP_LAYERS`, two flavors (dark/light) matching the site theme. Not
+  four, the way the old MapTiler catalog offered — see that file's header
+  comment for why.
+- **Attribution:** two separate credits are legally required, not one —
+  OpenStreetMap (the data, ODbL) and OpenMapTiles (the tile schema, CC BY).
+  Both are baked into `TILE_ATTRIBUTION` in `mapStyle.ts` and render in
+  MapLibre's attribution control automatically. See `LICENSE-DATA.md`'s
+  basemap section for the full Produced-Work-vs-Derivative-Database
+  reasoning behind why this can ship without ODbL's share-alike clause
+  attaching.
+
+### Rebuilding the archive
+
+Needed if Minnesota's roads have visibly drifted from what the map shows —
+there's no automatic schedule (see `scripts/tiles/build-basemap.mjs`'s header
+for why an unattended write path into a production bucket isn't worth taking
+on for this). Roughly annually is a reasonable cadence.
 
 ```bash
-PUBLIC_TILE_URL="https://your-tiles.example/{z}/{x}/{y}.png"
-PUBLIC_TILE_ATTRIBUTION="© OpenStreetMap contributors"
+# Requires a JDK on PATH — planetiler is a Java program.
+#   macOS: brew install openjdk
+#   then confirm: java -version
+
+npm run tiles:build      # downloads the extract, builds .tiles-build/minnesota.pmtiles
+npm run tiles:publish    # same, then uploads to the flockoffmn-tiles R2 bucket
 ```
 
-Options, roughly in order of independence:
+`tiles:publish` needs `wrangler` authenticated against the Cloudflare account
+that owns the bucket (`npx wrangler whoami` to check). The upload takes
+effect immediately — R2 is the source of truth for what the live site
+serves, so there's nothing to redeploy afterward.
 
-1. **Self-host raster tiles.** Most control, no third party who can cut you off.
-2. **A tile provider** (Protomaps, MapTiler, Stadia…). Simple, but introduces a
-   vendor who sees your users' tile requests and can revoke access. Note
-   Protomaps' hosted API is vector-only (MVT) — it does not fit this project's
-   raster-only `mapStyle.ts` without also rewriting the style and self-hosting
-   glyphs for label layers (the CSP's `font-src 'self'` blocks their glyph
-   server on purpose). MapTiler and Stadia both serve raster PNG tiles
-   directly, so they're the simpler drop-in fits for `PUBLIC_TILE_URL` today.
-3. **Bundle vector tiles as PMTiles** on your own origin. Single-file, range-
-   requested, no tile server needed. Good middle ground if bandwidth allows.
+### Setting up your own bucket (forks)
 
-### MapTiler quick start
+1. `npx wrangler r2 bucket create your-bucket-name`
+2. **Use a custom domain on your own zone, not the `.r2.dev` dev URL.**
+   Cloudflare's own docs are explicit that `r2.dev` is rate-limited and
+   "intended for non-production traffic," and gets none of the edge caching
+   a custom domain does — using it in production just swaps one
+   rate-limited endpoint for another. `npx wrangler r2 bucket domain add
+   your-bucket-name --domain=tiles.your-domain.example --zone-id=<your zone
+   ID>` (find the zone ID in the dashboard, or `GET
+   /zones?name=your-domain.example` against the Cloudflare API). The
+   `dev-url enable` / `.r2.dev` path still exists and is fine for a quick
+   local check, just not for anything a real visitor hits.
+3. **Add a Cache Rule for the new hostname.** This is the one step that
+   can't be done from `wrangler` — it needs the dashboard (**Caching →
+   Cache Rules**, or the legacy **Rules → Page Rules**) because it requires
+   a zone-write API scope a deploy token doesn't carry. Without it,
+   `.pmtiles` isn't one of the extensions Cloudflare caches by default, so
+   every request hits R2 directly (`cf-cache-status: DYNAMIC` on every
+   response, verifiable with `curl -I`) instead of being served from the
+   edge. Rule: match hostname equals `tiles.your-domain.example`, action
+   "Cache Eligibility → Eligible for cache" (or the older "Cache Everything"
+   Page Rule action). Confirm afterward with `curl -sI -H "Range:
+   bytes=0-1023" https://tiles.your-domain.example/minnesota.pmtiles` twice
+   in a row — second response should show `cf-cache-status: HIT`.
+4. `npx wrangler r2 bucket cors set your-bucket-name --file=cors.json` with a
+   rule permitting `GET`/`HEAD` and the `Range` header from your site's
+   origin(s) — PMTiles' range requests need this to succeed cross-origin.
+5. `npm run tiles:build`, then `npx wrangler r2 object put
+   your-bucket-name/minnesota.pmtiles --file=.tiles-build/minnesota.pmtiles
+   --content-type=application/octet-stream --cache-control="public,
+   max-age=3600, stale-while-revalidate=86400" --remote` — the
+   `--cache-control` flag matters: without it, R2 serves the object with no
+   `Cache-Control` header at all, which undercuts step 3 even after the
+   Cache Rule is in place.
+6. Set `PUBLIC_TILES_URL` to your custom domain + `/minnesota.pmtiles` — in
+   `.env` for local dev, and in `wrangler.jsonc`'s `env.production`/
+   `env.preview` `vars` for a deployed fork (see the d1_databases comment in
+   that file for why `vars` has to be repeated per-environment, not just set
+   once at the top level).
 
-1. Create an account at [maptiler.com](https://www.maptiler.com/) and create
-   a **new** key — MapTiler's auto-generated "Default key" cannot be
-   restricted (there's no Allowed HTTP origins field on it), which is why
-   the key committed here is a separate one named `flockoffmn-production`.
-   In its **Allowed HTTP origins** field, add:
-   ```
-   flockoffmn.org
-   *.flockoffmn.pages.dev
-   ```
-   Leave **Allowed user-agent header** blank — that field is for non-browser
-   clients (mobile apps, desktop GIS software); a public website is hit by
-   every browser's own user-agent string, so restricting by it would block
-   real visitors.
-
-   Verified directly against MapTiler with curl: a request with a matching
-   `Origin` returns `200`, a foreign `Origin` returns `403`, and the same
-   for `Referer` when no `Origin` is present. A request with *neither*
-   header also returns `403`, which raised a real concern given this site's
-   `Referrer-Policy: no-referrer` (`public/_headers`) — if MapLibre's tile
-   requests didn't carry a CORS `Origin` header either, real visitors would
-   hit that same `403`. Checked with an actual headless browser against a
-   preview build, not just curl: MapLibre's tile `<img>` requests do send
-   `Origin: https://<deploy>.flockoffmn.pages.dev` (empty `Referer`, as
-   expected — `Origin` isn't governed by `Referrer-Policy`, only `Referer`
-   is). All 30 tile requests on that run returned `200` and the map
-   rendered correctly with MapTiler attribution visible. If a future
-   MapLibre upgrade changes how it loads tile images, re-check this the
-   same way; the `?` placeholder in Allowed HTTP origins is the stopgap if
-   it ever regresses (permits no-origin requests, at the cost of also
-   letting other headerless requests through).
-2. Put the key straight into `wrangler.jsonc`, under **both**
-   `env.production` and `env.preview` — each needs its own `vars` *and* its
-   own `d1_databases` (see step below on non-inheritance):
-
-   ```jsonc
-   "env": {
-     "preview": {
-       "d1_databases": [ /* repeat the top-level d1_databases entry here too */ ],
-       "vars": {
-         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2-dark/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
-         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
-       }
-     },
-     "production": {
-       "d1_databases": [ /* repeat the top-level d1_databases entry here too */ ],
-       "vars": {
-         "PUBLIC_TILE_URL": "https://api.maptiler.com/maps/basic-v2-dark/256/{z}/{x}/{y}.png?key=YOUR_MAPTILER_KEY",
-         "PUBLIC_TILE_ATTRIBUTION": "© <a href=\"https://www.maptiler.com/copyright/\">MapTiler</a> © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors"
-       }
-     }
-   }
-   ```
-
-   This is not the obvious choice, and it took a live outage (twice) to find
-   the right one — record of why, so it isn't relitigated:
-   - `PUBLIC_TILE_URL` is inlined into the client bundle by Vite at **build**
-     time (`import.meta.env` in `mapStyle.ts`), not read at request time.
-   - Once a project has a `wrangler.jsonc`/`.toml`, Cloudflare treats it as
-     the **source of truth** and disables the dashboard's plain-text
-     "Environment variables" editor for it — the dashboard is left able to
-     manage only Secrets from then on. Pages secrets (dashboard or
-     `wrangler pages secret put`) are visible to Pages *Functions* at
-     request time only — never to Cloudflare's own Git-integration build
-     step. A value that only exists as a secret is invisible to the build
-     and it silently re-inlines the `tile.openstreetmap.org` fallback —
-     this shipped to production **twice** before that combination was
-     understood, including once from a manual `wrangler pages deploy` that
-     looked correct right up until the next unrelated PR merged and
-     triggered a real rebuild.
-   - So the value has to be a real, committed `vars` entry — there is no
-     dashboard-only or secret-only path that survives a Git-triggered build
-     for this project. It also doesn't reach a *local* `wrangler pages
-     deploy` build — Vite only reads `.env`/shell env locally, never
-     `wrangler.jsonc`'s `vars` — so a manual deploy still needs
-     `PUBLIC_TILE_URL` set in your local `.env`.
-   - `vars` (and every binding, including `d1_databases`) is **non-inheritable**
-     in Wrangler config: declaring an `env.*` section at all means
-     Cloudflare stops inheriting the top-level `d1_databases` for that
-     environment, so it must be repeated inside **both** `env.production`
-     *and* `env.preview` or the flight-log D1 binding silently disappears —
-     confirmed live for preview: `/api/flight-log/` on a preview build that
-     first omitted this returned a 500 (`Cannot read properties of
-     undefined (reading 'prepare')`), where the same route on prior PR
-     previews (before this file had an `env` block) returned 200.
-   - The key ending up in git is a knowing tradeoff, not an oversight: it's
-     already fully exposed in the public JS bundle to every visitor
-     (view-source finds it in seconds), so keeping it out of git bought no
-     real secrecy, only slightly less convenient scraping. The real control
-     is step 1's origin restriction — apply it, don't just plan to.
-3. `basic-v2-dark` — not `basic-v2` — matches this project's dark UI without
-   needing much correction from `mapStyle.ts`'s raster paint properties,
-   which now only cap peak brightness rather than force a light style dark.
-   `basic-v2` (light) was the first thing tried; stacked with the old heavy
-   desaturation it looked flat and washed out — two dimming passes doing the
-   same job. If you swap to a different MapTiler style, prefer one of its
-   own dark variants over a light one for the same reason; the light
-   `tile.openstreetmap.org` dev fallback is the one place still relying on
-   that lighter paint filter to look reasonable, and that's an accepted
-   tradeoff for a path that's "fine for development," not production.
-4. MapTiler's free tier is metered (100k tile loads/month as of this
-   writing) — watch usage after a traffic spike like the one that broke the
-   OSM fallback.
-
-Whatever you pick, keep the attribution string accurate — it is a licence
-condition for OSM-derived tiles, not a courtesy.
+No API key, no origin-restriction dance, no build-time-vars-vs-Pages-secrets
+trap the way the old MapTiler setup needed (that whole class of problem came
+from a vendor's key needing to be both build-time-visible and
+origin-restricted at once — a self-hosted public file has neither
+constraint). Step 3 is the new equivalent "easy to get wrong" step — the
+symptom if you skip it isn't a broken map, it's a *working but
+un-cached* one that reads R2 on every single visitor request instead of
+almost none of them.
 
 ## Headers
 

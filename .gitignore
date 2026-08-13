@@ -34,3 +34,8 @@ pnpm-debug.log*
 # files are the published open datasets — they are the product, they make the
 # repository reproducible without a network round trip, and committing them is
 # what lets a fork or mirror serve the site immediately.
+
+# Tile build scratch space (scripts/tiles/build-basemap.mjs): the downloaded
+# OSM extract, planetiler itself, and the built .pmtiles archive. The archive
+# ships to R2, not to git — see scripts/tiles/build-basemap.mjs's header.
+.tiles-build/
