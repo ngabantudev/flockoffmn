@@ -14,11 +14,18 @@ import { MAP_STYLES, type MapStyleId } from './theme';
  *
  * The archive is a PMTiles file (github.com/protomaps/PMTiles): a single
  * static file the browser reads with plain HTTP range requests, so
- * Cloudflare's own edge CDN caches it like any other static asset — no tile
- * server, no Worker, nothing that could hit a request-count ceiling of its
- * own. It's built by scripts/tiles/build-basemap.mjs from Geofabrik's
- * Minnesota extract (never scraped live from OSM's own tile servers — see
- * that script's header) and hosted on a public Cloudflare R2 bucket.
+ * Served from a custom domain on the R2 bucket (tiles.flockoffmn.org), not
+ * the bucket's r2.dev default URL — Cloudflare's own docs are explicit that
+ * r2.dev is rate-limited and "intended for non-production traffic," and
+ * gets none of the caching/WAF features a custom domain does. A custom
+ * domain still needs a zone-level Cache Rule ("Cache Everything" for
+ * `tiles.flockoffmn.org/*`, since `.pmtiles` isn't one of the extensions
+ * Cloudflare caches by default) before responses actually get served from
+ * the edge instead of hitting R2 on every request — see docs/DEPLOYMENT.md
+ * § Base map tiles for that one manual dashboard step and why it isn't
+ * automatable (it needs a zone-write API scope the deploy token doesn't
+ * carry). No tile server or Worker either way — it's a static file R2
+ * serves directly by byte range.
  *
  * `||` rather than `??` on purpose, matching the pre-existing convention
  * here: an unset env var arrives as undefined, but one declared-and-empty
@@ -26,9 +33,7 @@ import { MAP_STYLES, type MapStyleId } from './theme';
  * that empty string and hand MapLibre a blank archive URL, producing a map
  * with no basemap and no error.
  */
-const TILES_URL =
-  import.meta.env.PUBLIC_TILES_URL ||
-  'https://pub-8949b0e4d4a6454a927063c08b77e719.r2.dev/minnesota.pmtiles';
+const TILES_URL = import.meta.env.PUBLIC_TILES_URL || 'https://tiles.flockoffmn.org/minnesota.pmtiles';
 
 /**
  * ODbL requires attribution on any Produced Work rendered from OSM data —

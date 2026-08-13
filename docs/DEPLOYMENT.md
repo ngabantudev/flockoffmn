@@ -246,8 +246,11 @@ config** to see a working map, in both `npm run dev` and a production build.
 - **Format:** [PMTiles](https://github.com/protomaps/PMTiles) — a single
   file the browser reads with plain HTTP byte-range requests via the
   `pmtiles` npm package (registered as a MapLibre protocol in
-  `mapController.ts`). No tile server, no Worker; Cloudflare's own edge CDN
-  caches the ranges like any other static asset.
+  `mapController.ts`). No tile server, no Worker; served from a custom
+  domain (`tiles.flockoffmn.org`) on the R2 bucket with a zone Cache Rule so
+  Cloudflare's edge actually caches the ranges — see "Setting up your own
+  bucket" below for why that Cache Rule is a required, non-optional step
+  (the R2 default, `.r2.dev`, is explicitly rate-limited and uncached).
 - **Data:** [Geofabrik's Minnesota extract](https://download.geofabrik.de/north-america/us/minnesota-latest.osm.pbf)
   — never OSM's live tile servers. Geofabrik explicitly publishes these
   extracts for bulk download; scraping tile.openstreetmap.org at any volume
@@ -295,17 +298,40 @@ serves, so there's nothing to redeploy afterward.
 ### Setting up your own bucket (forks)
 
 1. `npx wrangler r2 bucket create your-bucket-name`
-2. `npx wrangler r2 bucket dev-url enable your-bucket-name` — gives you a
-   public `pub-<hash>.r2.dev` URL with no DNS/custom-domain setup required.
-   (A custom domain on the bucket works too, if you'd rather not use the
-   `.r2.dev` URL in production — see the R2 dashboard.)
-3. `npx wrangler r2 bucket cors set your-bucket-name --file=cors.json` with a
+2. **Use a custom domain on your own zone, not the `.r2.dev` dev URL.**
+   Cloudflare's own docs are explicit that `r2.dev` is rate-limited and
+   "intended for non-production traffic," and gets none of the edge caching
+   a custom domain does — using it in production just swaps one
+   rate-limited endpoint for another. `npx wrangler r2 bucket domain add
+   your-bucket-name --domain=tiles.your-domain.example --zone-id=<your zone
+   ID>` (find the zone ID in the dashboard, or `GET
+   /zones?name=your-domain.example` against the Cloudflare API). The
+   `dev-url enable` / `.r2.dev` path still exists and is fine for a quick
+   local check, just not for anything a real visitor hits.
+3. **Add a Cache Rule for the new hostname.** This is the one step that
+   can't be done from `wrangler` — it needs the dashboard (**Caching →
+   Cache Rules**, or the legacy **Rules → Page Rules**) because it requires
+   a zone-write API scope a deploy token doesn't carry. Without it,
+   `.pmtiles` isn't one of the extensions Cloudflare caches by default, so
+   every request hits R2 directly (`cf-cache-status: DYNAMIC` on every
+   response, verifiable with `curl -I`) instead of being served from the
+   edge. Rule: match hostname equals `tiles.your-domain.example`, action
+   "Cache Eligibility → Eligible for cache" (or the older "Cache Everything"
+   Page Rule action). Confirm afterward with `curl -sI -H "Range:
+   bytes=0-1023" https://tiles.your-domain.example/minnesota.pmtiles` twice
+   in a row — second response should show `cf-cache-status: HIT`.
+4. `npx wrangler r2 bucket cors set your-bucket-name --file=cors.json` with a
    rule permitting `GET`/`HEAD` and the `Range` header from your site's
    origin(s) — PMTiles' range requests need this to succeed cross-origin.
-4. `npm run tiles:build`, then `npx wrangler r2 object put
-   your-bucket-name/minnesota.pmtiles --file=.tiles-build/minnesota.pmtiles --remote`
-5. Set `PUBLIC_TILES_URL` to your bucket's public URL + `/minnesota.pmtiles`
-   — in `.env` for local dev, and in `wrangler.jsonc`'s `env.production`/
+5. `npm run tiles:build`, then `npx wrangler r2 object put
+   your-bucket-name/minnesota.pmtiles --file=.tiles-build/minnesota.pmtiles
+   --content-type=application/octet-stream --cache-control="public,
+   max-age=3600, stale-while-revalidate=86400" --remote` — the
+   `--cache-control` flag matters: without it, R2 serves the object with no
+   `Cache-Control` header at all, which undercuts step 3 even after the
+   Cache Rule is in place.
+6. Set `PUBLIC_TILES_URL` to your custom domain + `/minnesota.pmtiles` — in
+   `.env` for local dev, and in `wrangler.jsonc`'s `env.production`/
    `env.preview` `vars` for a deployed fork (see the d1_databases comment in
    that file for why `vars` has to be repeated per-environment, not just set
    once at the top level).
@@ -314,7 +340,10 @@ No API key, no origin-restriction dance, no build-time-vars-vs-Pages-secrets
 trap the way the old MapTiler setup needed (that whole class of problem came
 from a vendor's key needing to be both build-time-visible and
 origin-restricted at once — a self-hosted public file has neither
-constraint).
+constraint). Step 3 is the new equivalent "easy to get wrong" step — the
+symptom if you skip it isn't a broken map, it's a *working but
+un-cached* one that reads R2 on every single visitor request instead of
+almost none of them.
 
 ## Headers
 
