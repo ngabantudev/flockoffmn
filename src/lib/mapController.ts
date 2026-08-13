@@ -1364,14 +1364,15 @@ export class MapController {
         id: `${layer.id}-cones`,
         type: 'symbol',
         source: coneSrc,
-        // A cone annotates a record, so it cannot arrive before one — a dot
-        // is already on the map, faintly, from emergeFrom (see scaleOf's own
-        // comment), and the cone starts fading in there too. Past that
-        // shared start, this deliberately outpaces the dot's own fade: a
-        // reader asked for cones legible from higher up, not just present,
-        // so this ramp is fully resolved a couple of zooms before pointsFrom
-        // (the dots' own solid point) rather than exactly matching it.
-        minzoom: tier.emergeFrom,
+        // A cone annotates a record, so it cannot arrive before the reader can
+        // already tell one dot from the next. Cones used to start at
+        // emergeFrom, fading in alongside the dot itself — but at metro scale
+        // that means one cone per camera, all overlapping, on top of a dot
+        // that isn't even coloured by operator yet: clutter standing in for
+        // detail nobody asked to see yet. They now wait for pointsFrom, the
+        // same zoom the dot goes solid and category-coloured, and fade in
+        // over the two zooms past it.
+        minzoom: tier.pointsFrom,
         layout: {
           'icon-image': ['get', CONE_PROP],
           'icon-rotate': ['get', BEARING_PROP],
@@ -1386,8 +1387,8 @@ export class MapController {
             'interpolate',
             ['linear'],
             ['zoom'],
-            tier.emergeFrom, 0.75,
-            tier.pointsFrom - 2, 1.05,
+            tier.pointsFrom, 0.75,
+            tier.pointsFrom + 2, 1.05,
             18, 1.3,
           ],
         },
@@ -1396,8 +1397,8 @@ export class MapController {
             'interpolate',
             ['linear'],
             ['zoom'],
-            tier.emergeFrom, 0.4,
-            tier.pointsFrom - 2, 0.95,
+            tier.pointsFrom, 0.4,
+            tier.pointsFrom + 2, 0.95,
           ] as unknown as maplibregl.ExpressionSpecification,
         },
       });
@@ -1412,17 +1413,21 @@ export class MapController {
          * One colour until the records are individual, then the category.
          *
          * A `step` on zoom rather than two layers, so there is one dot per
-         * camera at every scale and nothing to keep in sync. Below the closest
-         * tier the dot is the layer's own colour: at that distance a coloured
-         * dot claims to distinguish things the reader cannot yet resolve, and
-         * most of them would be the "nobody wrote it down" grey anyway.
+         * camera at every scale and nothing to keep in sync. Below the
+         * threshold the dot is the layer's own colour: at that distance a
+         * coloured dot claims to distinguish things the reader cannot yet
+         * resolve, and most of them would be the "nobody wrote it down" grey
+         * anyway. The threshold is `emergeFrom`, not `pointsFrom` — the same
+         * zoom a reader can already tell one camera from the next, which is
+         * also the zoom "who runs it" stops being a filter checkbox and
+         * starts being a colour you can read straight off the map.
          */
         'circle-color': layer.categoryColors
           ? ([
               'step',
               ['zoom'],
               this.layerColor(layer),
-              tier.pointsFrom,
+              tier.emergeFrom,
               [
                 'match',
                 ['get', layer.categoryColors.key],
@@ -1434,18 +1439,21 @@ export class MapController {
         /*
          * Below `emergeFrom`, radius follows the same 5/10/15 curve every
          * point layer has always used. A layer that also names `speckleFrom`
-         * (ALPR, so far — see scaleOf's comment) gets two earlier anchors
+         * (ALPR, so far — see scaleOf's comment) gets earlier anchors
          * instead: a true speck — sub-pixel at the map's own minimum zoom —
-         * that only grows into a readable dot by the time the view has
-         * narrowed to a few states across. Layers that don't name it see
-         * `speckleFrom === emergeFrom` and take the unchanged branch below.
+         * climbing to a small, clean dot at metro scale rather than the
+         * bigger close-up size. Cut down from the original curve specifically
+         * to match deflock.org's own metro-zoom rendering, which is small
+         * and uncluttered even packed as tight as the Twin Cities get.
+         * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
+         * take the unchanged branch below.
          */
         'circle-radius': (tier.speckleFrom < tier.emergeFrom
           ? [
               'interpolate', ['linear'], ['zoom'],
-              tier.speckleFrom, 0.6,
-              6, 1.4,
-              10, 5.5,
+              tier.speckleFrom, 0.5,
+              7, 1.2,
+              tier.emergeFrom, 2.8,
               15, 8,
             ]
           : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
