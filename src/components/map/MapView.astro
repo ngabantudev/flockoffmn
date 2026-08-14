@@ -308,27 +308,6 @@ const strings = {
                                 <span> {strings.ofTotal} </span>
                                 <span>{layer.featureCount}</span>
                               </p>
-
-                              {layer.categoryColors && (
-                                <details class="mt-2">
-                                  <summary class="cursor-pointer text-[10px] text-ink-400 hover:text-ink-100">
-                                    {layer.categoryColors.label}
-                                  </summary>
-                                  <ul class="mt-1 space-y-0.5">
-                                    {layer.categoryColors.colors.map((c) => (
-                                      <li class="flex items-center gap-1.5 text-[10px] text-ink-300">
-                                        <span
-                                          class="h-2 w-2 shrink-0 rounded-full"
-                                          style={`background:${c.color}`}
-                                          aria-hidden="true"
-                                        />
-                                        <span class="min-w-0 truncate">{c.value}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </details>
-                              )}
-
                             </div>
                           </div>
 
