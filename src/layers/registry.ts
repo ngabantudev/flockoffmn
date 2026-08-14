@@ -214,7 +214,7 @@ export const LAYERS: LayerDefinition[] = [
     color: '#38bdf8',
     colorLight: '#067baf',
     // Category colour now applies at every zoom (see mapController.ts), and
-    // the most common value by far — "Not recorded", muted slate #64748b —
+    // the rarest value — "Other or unclassified", muted slate #94a3b8 —
     // reads as almost no edge at all against the dark basemap's own
     // near-black background under the default basemap-coloured ring. A fixed
     // white ring keeps every dot legible regardless of which category colour
@@ -225,8 +225,13 @@ export const LAYERS: LayerDefinition[] = [
       key: 'operatorType',
       label: { en: 'Who runs it', es: 'Quién lo opera' },
       colors: [
-        // Muted, and first, because it is the answer four readers in five give.
-        { value: 'Not recorded', color: '#64748b' },
+        // First, because it is the answer four readers in five give — but not
+        // muted. A desaturated grey here used to read as "no camera," the
+        // opposite of what it means: every one of these is a live, recording
+        // reader, just one whose operator nobody has identified yet. A
+        // saturated red keeps that legible at a glance, the way a device's own
+        // recording light would.
+        { value: 'Not recorded', color: '#dc2626' },
         { value: 'Police department', color: '#38bdf8' },
         { value: 'County sheriff', color: '#22d3ee' },
         { value: 'State agency', color: '#a78bfa' },
