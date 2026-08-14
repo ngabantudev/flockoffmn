@@ -25,16 +25,15 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fetchWithRetry, log, PUBLIC_DATA } from './lib/util.mjs';
+import { fetchWithRetry, log, decodeXml, PUBLIC_DATA } from './lib/util.mjs';
 
 const LANDING = 'https://dps.mn.gov/divisions/bca/data-and-reports/agencies-use-lprs-lpr';
 
 /** Strip HTML tags and decode the handful of entities this page actually uses. */
 function stripTags(html) {
-  return html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&#x27;/g, "'")
-    .replace(/&amp;/g, '&')
+  return decodeXml(html.replace(/<[^>]+>/g, ' '))
+    // Not an XML entity, so decodeXml leaves it: HTML-only, and the page uses
+    // it as a layout space.
     .replace(/&nbsp;/g, ' ')
     .replace(/​/g, '') // zero-width space the page's own CMS inserts mid-word
     .replace(/\s+/g, ' ')
@@ -45,7 +44,8 @@ function stripTags(html) {
  * Pull the "Location of fixed or stationary devices" list out of an agency's
  * rich-text body, if the agency reported any. Vehicle-mounted-only agencies
  * report "N/A" here, which is a real answer, not a missing one — callers get
- * an empty array either way and the boolean elsewhere says which happened.
+ * an empty array either way, and agency-jurisdictions.mjs's alprReportStatus
+ * carries the distinction in words a reader can act on.
  */
 function deviceLocations(bodyHtml) {
   const section = /Location of[\s​]*fixed or stationary devices[^<]*<\/h2>\s*(<ul>[\s\S]*?<\/ul>|<p>[\s\S]*?<\/p>)/i.exec(

@@ -1,3 +1,4 @@
+import type { DetailFieldFormat } from '../layers/types';
 import { compassLabel } from './geo.mjs';
 
 /**
@@ -11,24 +12,44 @@ import { compassLabel } from './geo.mjs';
  * cannot diverge between the browser and the ingest — and this is the same
  * argument one level up.
  *
+ * The parameter is the closed `DetailFieldFormat` union rather than `string`,
+ * and the switch is exhaustive against it: an earlier version took `string`
+ * and let everything it didn't recognise fall through to `String(value)`,
+ * which silently dropped `link` — the registry has two such fields, and the
+ * first one named in a hover card would have rendered a bare URL in the card
+ * and an anchor in the panel, with the type checker seeing nothing wrong. A
+ * new member of the union now fails the build here instead.
+ *
  * Returns null for an absent value, so callers can skip the row entirely
- * rather than printing an empty one.
+ * rather than printing an empty one. `link` returns the href; rendering it as
+ * an anchor is the caller's job, since that is an element choice and not a
+ * string one.
  */
-export function formatValue(value: unknown, format?: string): string | null {
+export function formatValue(
+  value: unknown,
+  format: DetailFieldFormat = 'text',
+  locale: string = document.documentElement.lang,
+): string | null {
   if (value === null || value === undefined || value === '') return null;
-  if (format === 'date') {
-    const d = new Date(String(value));
-    return Number.isNaN(d.getTime())
-      ? String(value)
-      : d.toLocaleDateString(document.documentElement.lang, {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        });
+  switch (format) {
+    case 'date': {
+      const d = new Date(String(value));
+      return Number.isNaN(d.getTime())
+        ? String(value)
+        : d.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    case 'degrees': {
+      const compass = compassLabel(value);
+      return compass ? `${value}° (${compass})` : `${value}°`;
+    }
+    case 'link':
+    case 'text':
+      return String(value);
+    default: {
+      // Exhaustiveness guard: adding a DetailFieldFormat member without a case
+      // above is a compile error here, not a silent fall-through.
+      const unhandled: never = format;
+      return String(unhandled);
+    }
   }
-  if (format === 'degrees') {
-    const compass = compassLabel(value);
-    return compass ? `${value}° (${compass})` : `${value}°`;
-  }
-  return String(value);
 }

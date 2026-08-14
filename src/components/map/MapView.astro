@@ -57,6 +57,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     : undefined,
   labelBy: d.labelBy,
   polygonClick: d.polygonClick,
+  selectedEmphasis: d.selectedEmphasis,
   markerIcon: d.markerIcon,
   hoverCard: d.hoverCard
     ? {
@@ -124,10 +125,9 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   Ordering inside a section stays the order the registry declares its entries
   in, because that ordering is already an argument about what to read first;
   the sections only decide which layers stand next to which. A layer naming a
-  category this file has
-  never heard of would otherwise vanish out of the panel while remaining on the
-  map, which is exactly the silent kind of wrong the registry is meant to
-  prevent — so it stops the build instead.
+  category this file has never heard of would otherwise vanish out of the panel
+  while remaining on the map, which is exactly the silent kind of wrong the
+  registry is meant to prevent — so it stops the build instead.
 */
 const known = new Set(LAYER_CATEGORIES.map((c) => c.id));
 const orphan = clientLayers.find((l) => !known.has(l.category));
@@ -452,7 +452,7 @@ const strings = {
   import { createElement } from 'lucide';
   // The same closed allow-list the map's own marker glyphs resolve through —
   // see its comment for why there is one map and not two.
-  import { MARKER_ICONS } from '../../lib/icons';
+  import { MARKER_ICONS } from '~/lib/icons';
 
   type Jurisdiction = {
     geoid: string;
