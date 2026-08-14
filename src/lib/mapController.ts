@@ -11,7 +11,9 @@ import {
   MN_BOUNDS,
 } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
-import { Shield, Star, Landmark, Building2, type IconNode } from 'lucide';
+import { createElement } from 'lucide';
+import { MARKER_ICONS } from './icons';
+import { formatValue } from './detailFields';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
@@ -79,6 +81,8 @@ export interface ClientLayer {
       joinKey: string;
       labelKey: string;
       linkKey?: string;
+      linkLabel: string;
+      moreLabel: string;
       title: string;
       empty: string;
       max?: number;
@@ -89,6 +93,7 @@ export interface ClientLayer {
   relatedBuildings?: {
     layerId: LayerId;
     joinKey: string;
+    hubKey?: string;
     pathsTo?: { layerId: LayerId; joinKey: string };
   };
   /** Scale this line layer's width by a magnitude in its own data. */
@@ -271,6 +276,18 @@ const RELATED_IMPACT_SOURCE = 'src-related-impacts';
 const RELATED_IMPACT_LAYER = 'related-impacts';
 
 /**
+ * The selection overlays, bottom to top. restack() pins these above every
+ * registry layer in this order — the thrown lines under the marks they
+ * connect, the answer to the reader's question on top of everything.
+ */
+const OVERLAY_STACK = [
+  RELATED_PATHS_LAYER,
+  RELATED_IMPACT_LAYER,
+  RELATED_BUILDINGS_GLOW_LAYER,
+  RELATED_BUILDINGS_LAYER,
+];
+
+/**
  * The line-throw on selecting a jurisdiction, in milliseconds.
  *
  * Each line is thrown from the agency's own building to one reader that
@@ -280,10 +297,11 @@ const RELATED_IMPACT_LAYER = 'related-impacts';
  * at once is a single event where fifteen arriving in sequence is fifteen.
  *
  * Strictly bounded: every line has landed by THROW_MS + the largest stagger,
- * the rings fade over IMPACT_MS, and the loop then stops itself. Nothing
- * here animates at rest — see the `pulse` field's own comment in
- * layers/types.ts for the earlier, unbounded animation this deliberately
- * does not repeat.
+ * the rings fade over IMPACT_MS, and the loop then stops itself. Nothing here
+ * animates at rest, which is the rule this map holds to — a permanently
+ * running animation costs battery on every device showing the page for as long
+ * as it is open, and says "urgent" about records whose whole argument is that
+ * they are routine (§0.4).
  */
 const THROW_MS = 420;
 const THROW_STAGGER_MS = 70;
@@ -295,7 +313,8 @@ const IMPACT_MS = 520;
  * in MapView, and for the same reason: the registry stays a data file, and a
  * name it makes up resolves to nothing rather than to an arbitrary import.
  */
-const MARKER_ICONS: Record<string, IconNode> = { Shield, Star, Landmark, Building2 };
+/** Every style-layer suffix a tap can select a record on. */
+const SELECTABLE_SUFFIXES = ['-fill', '-line-hit', '-points'];
 
 // Registers the pmtiles:// URL scheme with MapLibre so baseStyle()'s vector
 // source can reference the self-hosted archive directly (see mapStyle.ts's
@@ -329,6 +348,30 @@ export class MapController {
   private visible = new Set<string>();
   private filters = new Map<string, FilterState>();
   private loading = new Set<string>();
+  /**
+   * In-flight fetches, keyed by layer. The `data` map only answers "is it here
+   * yet", which is false for the whole duration of the request — so two ward
+   * clicks inside that window, or a checkbox ticked while a cross-layer lookup
+   * is already downloading the same file, each issued their own GET and their
+   * own parse of the same quarter-megabyte. Callers share the promise instead.
+   */
+  private inFlight = new Map<string, Promise<LoadedFeature[]>>();
+  /**
+   * Per-layer lookup by record id, built in one pass when the features land.
+   * Every hover, every record-list click and every search result resolves an
+   * id against a layer of up to ~1,400 records, and a hover resolves one per
+   * pointer move.
+   */
+  private byId = new Map<string, Map<string, LoadedFeature>>();
+  /**
+   * Per-layer lookup by an attribute value, for the registry-declared joins
+   * (`hoverCard.related`, `relatedPoints`). Keyed `layerId::attributeKey` and
+   * built on first use, because which key a layer is joined on is a registry
+   * decision this class shouldn't have to know in advance.
+   */
+  private joinIndexes = new Map<string, Map<string, LoadedFeature[]>>();
+  /** detailFields lookup per layer, for the hover card. See buildHoverCard. */
+  private fieldLabels = new Map<string, Map<string, ClientLayer['detailFields'][number]>>();
   private popup: maplibregl.Popup | null = null;
   /** Set once the map's `load` event has fired. See ready(). */
   private hasLoaded = false;
@@ -344,8 +387,14 @@ export class MapController {
   private cachedBasemapColor = basemapBackgroundColor(this.basemapDark);
   /** Where the reader was before a tapped record moved the camera to it. */
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
-  /** The one feature-state-highlighted polygon per `polygonClick: 'highlight'` layer, if any. */
-  private selectedPolygon = new Map<string, string>();
+  /**
+   * The one feature-state-highlighted polygon, if any. Singular by design, not
+   * by accident: markPolygonSelected releases whatever held the highlight
+   * before taking it, so a second highlight layer would still only ever light
+   * one polygon at a time — and the overlays hung off the selection
+   * (relatedPoints, thrown paths) are single-source for the same reason.
+   */
+  private selectedPolygon: { layerId: string; featureId: string } | null = null;
   /**
    * Resolved `markerIcon` expression per layer, filled in by loadLayer
    * before it draws. Cached because building it decodes an SVG per icon, and
@@ -354,6 +403,14 @@ export class MapController {
   private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
   /** rAF handle for the path-throw animation, so a new selection can cancel the last. */
   private throwFrame: number | null = null;
+  /**
+   * Which layer's selection the overlays currently belong to — their colour
+   * and glyph are that layer's. Tracked rather than re-derived with
+   * `layers.find((l) => l.relatedPoints)`, which answers "which layer declares
+   * the field" and not "whose overlay is on the map": the same answer only
+   * while exactly one layer declares it, and a silently wrong one after that.
+   */
+  private relatedOverlayOwner: string | null = null;
   /**
    * Bumped on every selection and every release. showRelatedBuildings awaits
    * network fetches, so it compares this against the value it started with
@@ -453,7 +510,7 @@ export class MapController {
     // per-layer click handler also fired, so this owes nothing to listener
     // registration order against handlers bound as layers arrive.
     this.map.on('click', (e) => {
-      const ids = this.interactiveStyleLayerIds();
+      const ids = this.styleLayerIds(SELECTABLE_SUFFIXES);
       if (!ids.length) return;
       if (this.map.queryRenderedFeatures(e.point, { layers: ids }).length) return;
       this.clearSelection();
@@ -639,7 +696,7 @@ export class MapController {
     // The transient selection overlays bake a colour at creation the same way
     // a layer does, and they outlive a basemap toggle because the toggle
     // doesn't clear the reader's selection.
-    const owner = this.layers.find((l) => l.relatedBuildings);
+    const owner = this.layers.find((l) => l.id === this.relatedOverlayOwner);
     if (owner) {
       const color = this.layerColor(owner);
       if (this.map.getLayer(RELATED_BUILDINGS_GLOW_LAYER)) {
@@ -670,11 +727,20 @@ export class MapController {
    * expression is dropped first because it names the *old* theme's image ids.
    */
   private async refreshMarkerIcons(): Promise<void> {
-    const relatedGlyphOwner = this.layers.find((l) => l.relatedBuildings)?.relatedBuildings?.layerId;
-    for (const layer of this.layers) {
-      if (!layer.markerIcon) continue;
-      this.markerExpressions.delete(layer.id);
-      await this.cacheMarkerExpression(layer);
+    // Whose glyph the overlay is currently drawing — read off the live owner,
+    // not off whichever layer declares the field first.
+    const relatedGlyphOwner = this.layers.find((l) => l.id === this.relatedOverlayOwner)
+      ?.relatedBuildings?.layerId;
+    const iconLayers = this.layers.filter((l) => l.markerIcon);
+    // Each glyph is an independent decode-and-raster; nothing here depends on
+    // the previous one's result, and this runs on every basemap toggle.
+    await Promise.all(
+      iconLayers.map((layer) => {
+        this.markerExpressions.delete(layer.id);
+        return this.cacheMarkerExpression(layer);
+      }),
+    );
+    for (const layer of iconLayers) {
       const expression = this.markerExpressions.get(layer.id);
       if (!expression) continue;
       if (this.map.getLayer(`${layer.id}-points`)?.type === 'symbol') {
@@ -689,17 +755,15 @@ export class MapController {
     }
   }
 
-  /** Just the dot/glyph layers, which sit above every polygon. See bindHighlightSelect. */
-  private interactivePointLayerIds(): string[] {
-    return this.layers
-      .map((l) => `${l.id}-points`)
-      .filter((id) => this.map.getLayer(id));
-  }
-
-  /** Style layers a tap can select a record on. See bindInteractions. */
-  private interactiveStyleLayerIds(): string[] {
-    return this.layers
-      .flatMap((l) => [`${l.id}-fill`, `${l.id}-line-hit`, `${l.id}-points`])
+  /**
+   * The style layers a set of registry layers currently has on the map, for
+   * the given id suffixes. `-points` alone is the dot/glyph layers, which sit
+   * above every polygon (see bindHighlightSelect); the full set is everything
+   * a tap can select a record on (see bindInteractions).
+   */
+  private styleLayerIds(suffixes: string[], from: ClientLayer[] = this.layers): string[] {
+    return from
+      .flatMap((l) => suffixes.map((s) => `${l.id}${s}`))
       .filter((id) => this.map.getLayer(id));
   }
 
@@ -869,21 +933,18 @@ export class MapController {
     const color = this.layerColor(layer);
     const inner = px * 0.62;
 
-    // lucide ships each icon as [tag, attrs][]; rebuild it as standalone SVG
-    // markup rather than through createElement so this stays a string the
-    // canvas can decode without ever attaching a node to the document.
-    const body = node
-      .map(
-        ([tag, attrs]) =>
-          `<${tag} ${Object.entries(attrs)
-            .map(([k, v]) => `${k}="${String(v)}"`)
-            .join(' ')}/>`,
-      )
-      .join('');
-    const svg =
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${inner}" height="${inner}" viewBox="0 0 24 24"` +
-      ` fill="none" stroke="${color}" stroke-width="2.25" stroke-linecap="round"` +
-      ` stroke-linejoin="round">${body}</svg>`;
+    // Built by lucide's own createElement, which supplies xmlns, viewBox, fill
+    // and the stroke-lin* defaults, and recurses into nested children — a
+    // hand-rolled `[tag, attrs] -> markup` pass silently dropped those. The
+    // element is detached; serialising it never attaches a node to the
+    // document, which is the property this needs.
+    const el = createElement(node, {
+      width: String(inner),
+      height: String(inner),
+      stroke: color,
+      'stroke-width': '2.25',
+    });
+    const svg = new XMLSerializer().serializeToString(el);
 
     const img = new Image();
     img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -1023,6 +1084,15 @@ export class MapController {
     // Bottom to top, each moved to the top in turn: the last one moved ends up
     // highest, so walking the desired order forwards produces it exactly.
     for (const { styleId } of owned) this.map.moveLayer(styleId);
+
+    // The selection overlays belong to no registry layer, so the sort above
+    // never sees them and every restack() — one fires whenever a layer is
+    // switched on — would otherwise leave a highlighted building buried under
+    // the jurisdiction fill that was just moved over it. Pinned last, in one
+    // place, rather than each overlay guessing a `before` at creation.
+    for (const styleId of OVERLAY_STACK) {
+      if (this.map.getLayer(styleId)) this.map.moveLayer(styleId);
+    }
   }
 
   private blockSourceId = (layerId: string) => `src-${layerId}-blocks`;
@@ -1080,20 +1150,69 @@ export class MapController {
    * selection would not be.
    */
   private async ensureDataLoaded(layerId: LayerId): Promise<LoadedFeature[]> {
-    if (this.data.has(layerId)) return this.data.get(layerId) ?? [];
     const layer = this.layers.find((l) => l.id === layerId);
     if (!layer) return [];
     try {
-      const res = await fetch(layer.dataPath);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const collection = await res.json();
-      const features: LoadedFeature[] = collection.features ?? [];
-      this.rawData.set(layerId, features);
-      this.data.set(layerId, features);
-      return features;
+      return await this.fetchFeatures(layer);
     } catch {
       return [];
     }
+  }
+
+  /**
+   * The single fetch-and-store path. Both entry points — ensureDataLoaded for
+   * a cross-layer lookup and loadLayer for drawing — go through here, so a
+   * layer is downloaded and parsed at most once no matter how many callers
+   * want it or how closely together they ask.
+   */
+  private fetchFeatures(layer: ClientLayer): Promise<LoadedFeature[]> {
+    const held = this.data.get(layer.id);
+    if (held) return Promise.resolve(held);
+    const pending = this.inFlight.get(layer.id);
+    if (pending) return pending;
+
+    const load = (async () => {
+      const res = await fetch(layer.dataPath);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const collection = await res.json();
+      const features = (collection.features ?? []) as LoadedFeature[];
+      this.rawData.set(layer.id, features);
+      this.data.set(layer.id, features);
+      const ids = new Map<string, LoadedFeature>();
+      for (const f of features) ids.set(f.properties.id, f);
+      this.byId.set(layer.id, ids);
+      return features;
+    })().finally(() => this.inFlight.delete(layer.id));
+
+    this.inFlight.set(layer.id, load);
+    return load;
+  }
+
+  /** One record by id, O(1) against the index fetchFeatures built. */
+  private featureById(layerId: string, id: string): LoadedFeature | undefined {
+    return this.byId.get(layerId)?.get(id);
+  }
+
+  /**
+   * Every record of `layerId` grouped by one attribute value — the join a
+   * registry entry declares. Built once per layer/key pair and reused, so a
+   * card that lists a department's readers stops re-filtering the whole layer
+   * on every pointer move.
+   */
+  private joinIndex(layerId: string, key: string): Map<string, LoadedFeature[]> {
+    const cacheKey = `${layerId}::${key}`;
+    const cached = this.joinIndexes.get(cacheKey);
+    if (cached) return cached;
+    const index = new Map<string, LoadedFeature[]>();
+    for (const f of this.data.get(layerId) ?? []) {
+      const value = f.properties.attributes[key];
+      if (value == null) continue;
+      const bucket = index.get(String(value));
+      if (bucket) bucket.push(f);
+      else index.set(String(value), [f]);
+    }
+    this.joinIndexes.set(cacheKey, index);
+    return index;
   }
 
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
@@ -1109,15 +1228,7 @@ export class MapController {
     if (this.data.has(layer.id) && this.map.getSource(this.sourceId(layer.id))) return;
     this.loading.add(layer.id);
     try {
-      let features = this.data.get(layer.id);
-      if (!features) {
-        const res = await fetch(layer.dataPath);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const collection = await res.json();
-        features = (collection.features ?? []) as LoadedFeature[];
-        this.rawData.set(layer.id, features);
-        this.data.set(layer.id, features);
-      }
+      const features = await this.fetchFeatures(layer);
       await this.ready();
       // Glyphs before the layer that references them: MapLibre would warn and
       // draw nothing for an icon-image whose image is still decoding.
@@ -1685,15 +1796,28 @@ export class MapController {
       // A selected record already has the full panel open beside the map;
       // a card repeating it would just cover the ground the reader is
       // looking at.
-      if (this.selectedPolygon.get(layer.id) === id) return hide();
-      if (id === this.hoverCardId && this.hoverPopup) {
+      if (this.selectedPolygon?.layerId === layer.id && this.selectedPolygon.featureId === id) {
+        return hide();
+      }
+      // Where two card-bearing layers overlap — and half the agency-reported
+      // readers have a crowd-sourced camera within 50 m — MapLibre dispatches
+      // both layers' handlers for the same pointer move. Whichever draws on
+      // top owns the card; without this the two handlers alternate, each
+      // seeing the other's record in the shared state, so neither ever takes
+      // the unchanged-pointer path below and both rebuild the card at pointer
+      // rate.
+      if (!this.hoverCardOwner(layer, e.point)) return;
+      // Keyed by layer as well as record: two layers can hold records with
+      // the same id, and a bare id match would suppress a real card change.
+      const key = `${layer.id}:${id}`;
+      if (key === this.hoverCardId && this.hoverPopup) {
         this.hoverPopup.setLngLat(e.lngLat);
         return;
       }
-      const feature = this.data.get(layer.id)?.find((f) => f.properties.id === id);
+      const feature = this.featureById(layer.id, id);
       if (!feature) return hide();
 
-      this.hoverCardId = id;
+      this.hoverCardId = key;
       const card = this.buildHoverCard(layer, feature);
       if (!this.hoverPopup) {
         this.hoverPopup = new maplibregl.Popup({
@@ -1704,10 +1828,35 @@ export class MapController {
           className: 'hover-card',
         });
       }
-      this.hoverPopup.setLngLat(e.lngLat).setDOMContent(card).addTo(this.map);
+      this.hoverPopup.setLngLat(e.lngLat).setDOMContent(card);
+      // addTo() begins by removing an already-added popup — tearing the node
+      // out of the DOM, dropping its map listeners and re-registering them —
+      // so re-adding on a content change costs far more than the content
+      // change itself.
+      if (!this.hoverPopup.isOpen()) this.hoverPopup.addTo(this.map);
     });
 
     this.map.on('mouseleave', mapLayerId, hide);
+  }
+
+  /**
+   * Whether `layer` is the card-bearing layer drawn topmost at this point —
+   * i.e. the one whose record the reader is actually pointing at.
+   *
+   * Cheap in the ordinary case: with fewer than two card-bearing layers
+   * visible there is nothing to arbitrate and no render query is made. The
+   * query only runs where cards genuinely overlap.
+   */
+  private hoverCardOwner(layer: ClientLayer, point: maplibregl.Point): boolean {
+    const contenders = this.layers.filter((l) => l.hoverCard && this.visible.has(l.id));
+    if (contenders.length < 2) return true;
+    const owners = new Map<string, string>();
+    for (const l of contenders) {
+      for (const id of this.styleLayerIds(SELECTABLE_SUFFIXES, [l])) owners.set(id, l.id);
+    }
+    const top = this.map.queryRenderedFeatures(point, { layers: [...owners.keys()] })[0];
+    const owner = top ? owners.get(top.layer.id) : undefined;
+    return owner === undefined || owner === layer.id;
   }
 
   /** Assemble one hover card. See bindHoverCard for why this is DOM, not HTML. */
@@ -1718,24 +1867,32 @@ export class MapController {
     // The record list beside the map is the accessible interface (spec §4);
     // this is a pointer-only shortcut to it, so it is not announced twice.
     root.setAttribute('aria-hidden', 'true');
-    root.className = 'space-y-1.5 text-[12px] leading-snug';
+    root.className = 'hover-card-body';
 
     const title = document.createElement('p');
-    title.className = 'font-semibold text-[13px]';
+    title.className = 'hover-card-title';
     title.textContent = feature.properties.name;
     root.append(title);
 
-    const labelFor = (key: string) =>
-      layer.detailFields.find((f) => f.key === key)?.label ?? key;
+    // The card and the detail panel read the same `detailFields` table, so
+    // they render it the same way — same labels, same formatter. A `format`
+    // written once against a field cannot mean two things depending on which
+    // surface shows it.
+    let fields = this.fieldLabels.get(layer.id);
+    if (!fields) {
+      fields = new Map(layer.detailFields.map((f) => [f.key, f]));
+      this.fieldLabels.set(layer.id, fields);
+    }
 
     for (const key of spec.fields) {
-      const value = attrs[key];
-      if (value === null || value === undefined || value === '') continue;
+      const field = fields.get(key);
+      const value = formatValue(attrs[key], field?.format);
+      if (value === null) continue;
       const row = document.createElement('p');
       const label = document.createElement('span');
-      label.className = 'opacity-60';
-      label.textContent = `${labelFor(key)}: `;
-      row.append(label, document.createTextNode(String(value)));
+      label.className = 'hover-card-label';
+      label.textContent = `${field?.label ?? key}: `;
+      row.append(label, document.createTextNode(value));
       root.append(row);
     }
 
@@ -1749,44 +1906,43 @@ export class MapController {
     // exactly the claim §1c says not to make.
     if (rel && joinValue != null) {
       const heading = document.createElement('p');
-      heading.className = 'pt-1 font-semibold';
+      heading.className = 'hover-card-heading';
       const loaded = this.data.has(rel.layerId);
-      const matches = !loaded
-        ? []
-        : (this.data.get(rel.layerId) ?? []).filter(
-            (f) => f.properties.attributes[rel.joinKey] === joinValue,
-          );
+      const matches = loaded
+        ? (this.joinIndex(rel.layerId, rel.joinKey).get(String(joinValue)) ?? [])
+        : [];
+      const max = rel.max ?? 4;
 
       if (!loaded) {
         // Say nothing rather than the wrong thing: until the other layer is
         // in hand, "none reported" would be a claim we cannot make yet.
         heading.textContent = rel.title;
         const pending = document.createElement('p');
-        pending.className = 'opacity-70';
+        pending.className = 'hover-card-muted';
         pending.textContent = '…';
         root.append(heading, pending);
       } else if (!matches.length) {
         heading.textContent = rel.title;
         const empty = document.createElement('p');
-        empty.className = 'opacity-70';
+        empty.className = 'hover-card-muted';
         empty.textContent = rel.empty;
         root.append(heading, empty);
       } else {
         heading.textContent = `${rel.title} (${matches.length})`;
         root.append(heading);
         const list = document.createElement('ul');
-        list.className = 'list-disc space-y-0.5 pl-4 opacity-80';
-        for (const m of matches.slice(0, rel.max ?? 4)) {
+        list.className = 'hover-card-list';
+        for (const m of matches.slice(0, max)) {
           const li = document.createElement('li');
           li.textContent = String(m.properties.attributes[rel.labelKey] ?? '');
           list.append(li);
         }
         root.append(list);
-        const hidden = matches.length - (rel.max ?? 4);
+        const hidden = matches.length - max;
         if (hidden > 0) {
           const more = document.createElement('p');
-          more.className = 'opacity-60';
-          more.textContent = `+${hidden} more`;
+          more.className = 'hover-card-more';
+          more.textContent = rel.moreLabel.replace('{n}', String(hidden));
           root.append(more);
         }
         const href = rel.linkKey
@@ -1797,8 +1953,8 @@ export class MapController {
           cite.href = href;
           cite.target = '_blank';
           cite.rel = 'noopener noreferrer';
-          cite.className = 'underline';
-          cite.textContent = 'The filing these come from';
+          cite.className = 'hover-card-cite';
+          cite.textContent = rel.linkLabel;
           root.append(cite);
         }
       }
@@ -1806,11 +1962,29 @@ export class MapController {
 
     if (spec.note) {
       const note = document.createElement('p');
-      note.className = 'pt-1 opacity-60';
+      note.className = 'hover-card-note';
       note.textContent = spec.note;
       root.append(note);
     }
     return root;
+  }
+
+  /**
+   * Whether a dot or glyph is drawn over this point, for a polygon layer whose
+   * tap would otherwise answer for it.
+   *
+   * MapLibre runs every layer's click listener independently, and restack()
+   * puts points above polygons for every layer — so a jurisdiction fill
+   * covering the whole metro also answers for taps on the cameras standing on
+   * it, and which one ends up in the panel comes down to whichever finished
+   * loading last. That is true of every polygon layer, not only the one with
+   * `polygonClick: 'highlight'`, which is why the test lives here rather than
+   * inside bindHighlightSelect.
+   */
+  private coveredByPoint(layer: ClientLayer, point: maplibregl.Point): boolean {
+    if (layer.geometry !== 'polygon') return false;
+    const above = this.styleLayerIds(['-points']);
+    return above.length > 0 && this.map.queryRenderedFeatures(point, { layers: above }).length > 0;
   }
 
   private bindInteractions(layer: ClientLayer, mapLayerId: string) {
@@ -1823,6 +1997,7 @@ export class MapController {
     this.map.on('click', mapLayerId, (e) => {
       const hit = e.features?.[0];
       if (!hit) return;
+      if (this.coveredByPoint(layer, e.point)) return;
       const id = (hit.properties as Record<string, unknown>)?.id as string;
       // Same move the search results already give a record: centre and zoom
       // in on it, not just open its detail. A tapped dot is a reader saying
@@ -1882,22 +2057,14 @@ export class MapController {
       const id = (hit.properties as Record<string, unknown>)?.id as string;
       if (!id) return;
 
-      // A record drawn on top of this ward owns the tap. MapLibre runs every
-      // layer's click listener independently, so a jurisdiction whose fill
-      // covers the whole metro would otherwise also answer for taps on the
-      // cameras standing on it, and which of the two ended up in the panel
-      // came down to whichever layer happened to finish loading last.
-      const above = this.interactivePointLayerIds();
-      if (above.length && this.map.queryRenderedFeatures(e.point, { layers: above }).length) {
-        return;
-      }
+      if (this.coveredByPoint(layer, e.point)) return;
 
       // A tap on the ward already showing is the reader putting it back —
       // the one thing focusFeature can't infer, since it has no notion of a
       // second visit. Everything else about selecting (the highlight, the
       // panel, the fit, the thrown lines) belongs to focusFeature, which
       // search and the record list reach too.
-      if (this.selectedPolygon.get(layer.id) === id) {
+      if (this.selectedPolygon?.layerId === layer.id && this.selectedPolygon.featureId === id) {
         this.clearSelection();
         return;
       }
@@ -2137,8 +2304,16 @@ export class MapController {
     // over it. Reading `map.resize()` after onSelect forces the browser to
     // resolve the panel's layout change synchronously, so the fit below is
     // computed against the container's real, final size.
+    // …but only when the panel's width actually changed. MapLibre's resize()
+    // has no unchanged-dimensions fast path: it forces a synchronous layout,
+    // reassigns canvas.width — which reallocates and clears the WebGL drawing
+    // buffer, forcing a full repaint of every layer — and fires a
+    // movestart/move/moveend cascade. Every tap after the first hits the
+    // already-open panel, which is the overwhelmingly common case.
     this.events.onSelect?.(feature, layer);
-    this.map.resize();
+    if (this.map.getCanvas().clientWidth !== this.map.getContainer().clientWidth) {
+      this.map.resize();
+    }
 
     const duration = REDUCED_MOTION ? 0 : 500;
     if (feature.geometry.type === 'Point') {
@@ -2187,24 +2362,32 @@ export class MapController {
    */
   private releaseHighlight() {
     this.selectionEpoch++;
-    for (const [layerId, featureId] of this.selectedPolygon) {
+    const held = this.selectedPolygon;
+    if (held) {
       this.map.setFeatureState(
-        { source: this.sourceId(layerId), id: featureId },
+        { source: this.sourceId(held.layerId), id: held.featureId },
         { selected: false },
       );
+      this.selectedPolygon = null;
     }
-    this.selectedPolygon.clear();
     this.clearRelatedBuildings();
   }
 
-  /** Move a highlight layer's exclusive selection to one feature. */
+  /** Move the highlight to one feature, releasing whatever held it. */
   private markPolygonSelected(layer: ClientLayer, featureId: string) {
-    const src = this.sourceId(layer.id);
-    const current = this.selectedPolygon.get(layer.id);
-    if (current === featureId) return;
-    if (current) this.map.setFeatureState({ source: src, id: current }, { selected: false });
-    this.map.setFeatureState({ source: src, id: featureId }, { selected: true });
-    this.selectedPolygon.set(layer.id, featureId);
+    const held = this.selectedPolygon;
+    if (held?.layerId === layer.id && held.featureId === featureId) return;
+    if (held) {
+      this.map.setFeatureState(
+        { source: this.sourceId(held.layerId), id: held.featureId },
+        { selected: false },
+      );
+    }
+    this.map.setFeatureState(
+      { source: this.sourceId(layer.id), id: featureId },
+      { selected: true },
+    );
+    this.selectedPolygon = { layerId: layer.id, featureId };
   }
 
   flyTo(center: [number, number], zoom = 12) {
@@ -2285,91 +2468,44 @@ export class MapController {
     const token = ++this.selectionEpoch;
     const stale = () => token !== this.selectionEpoch;
 
-    const buildings = await this.ensureDataLoaded(rel.layerId);
+    // Two independent downloads — neither's URL or filter depends on the
+    // other's result — so they go out together. Awaited in series this was two
+    // full round trips before a single line could be thrown, on the first
+    // selection over the worst connection.
+    await Promise.all([
+      this.ensureDataLoaded(rel.layerId),
+      rel.pathsTo ? this.ensureDataLoaded(rel.pathsTo.layerId) : Promise.resolve([]),
+    ]);
     if (stale()) return;
-    const matched = buildings.filter(
-      (f) => f.properties.attributes[rel.joinKey] === jurisdiction.properties.id,
+
+    const selectedId = jurisdiction.properties.id;
+    const matched = this.joinIndex(rel.layerId, rel.joinKey).get(selectedId) ?? [];
+
+    await this.ensureRelatedLayers(layer, rel);
+    if (stale()) return;
+    (this.map.getSource(RELATED_BUILDINGS_SOURCE) as GeoJSONSource | undefined)?.setData(
+      this.flatten(matched) as never,
     );
-
-    const buildingsSrc = this.map.getSource(RELATED_BUILDINGS_SOURCE) as GeoJSONSource | undefined;
-    const buildingsFC = this.flatten(matched);
-    if (buildingsSrc) {
-      buildingsSrc.setData(buildingsFC as never);
-    } else if (matched.length) {
-      this.map.addSource(RELATED_BUILDINGS_SOURCE, { type: 'geojson', data: buildingsFC as never });
-      const buildingColor = this.layerColor(layer);
-      this.map.addLayer({
-        id: RELATED_BUILDINGS_GLOW_LAYER,
-        type: 'circle',
-        source: RELATED_BUILDINGS_SOURCE,
-        paint: {
-          'circle-color': buildingColor,
-          'circle-blur': 0.85,
-          'circle-radius': 20,
-          'circle-opacity': 0.45,
-        },
-      });
-
-      // The same glyph the buildings layer itself draws, so the highlighted
-      // building and the one a reader may already have on screen from that
-      // layer are recognisably the same mark rather than two conventions for
-      // one place. Falls back to a plain disc if the layer names no icon or
-      // the glyph didn't resolve.
-      const buildingLayer = this.layers.find((l) => l.id === rel.layerId);
-      if (buildingLayer) await this.cacheMarkerExpression(buildingLayer);
-      if (stale()) return;
-      const glyph = buildingLayer ? this.markerExpressions.get(buildingLayer.id) : undefined;
-
-      this.map.addLayer(
-        glyph
-          ? {
-              id: RELATED_BUILDINGS_LAYER,
-              type: 'symbol',
-              source: RELATED_BUILDINGS_SOURCE,
-              layout: {
-                'icon-image': glyph as never,
-                // Deliberately larger than the same glyph in its own layer:
-                // this one is the answer to a question the reader just asked.
-                'icon-size': 1.05,
-                'icon-allow-overlap': true,
-              },
-            }
-          : {
-              id: RELATED_BUILDINGS_LAYER,
-              type: 'circle',
-              source: RELATED_BUILDINGS_SOURCE,
-              paint: {
-                'circle-color': buildingColor,
-                'circle-radius': 7,
-                'circle-stroke-color': this.basemapColor,
-                'circle-stroke-width': 2,
-              },
-            },
-      );
-    }
 
     // Joined, not contained — see pathsTo's own comment. Every reader here
     // is one this agency itself told the state it operates, so the line
     // between them carries a document rather than a coincidence of
     // geography. Loaded on demand: the reader may never have ticked this
     // layer, and a selection is a more specific request than a toggle.
-    let readers: LoadedFeature[] = [];
-    if (rel.pathsTo) {
-      const all = await this.ensureDataLoaded(rel.pathsTo.layerId);
-      if (stale()) return;
-      readers = all.filter(
-        (f) =>
-          f.geometry.type === 'Point' &&
-          f.properties.attributes[rel.pathsTo!.joinKey] === jurisdiction.properties.id,
-      );
-    }
+    const readers = rel.pathsTo
+      ? (this.joinIndex(rel.pathsTo.layerId, rel.pathsTo.joinKey).get(selectedId) ?? []).filter(
+          (f) => f.geometry.type === 'Point',
+        )
+      : [];
 
     // One hub, not one spoke per building: every matched building lights up
-    // above, but the lines throw from a single representative address (the
-    // headquarters, where the data distinguishes one — see subStation's own
-    // comment in agency-buildings.mjs), because the filing is the
-    // department's, not any one station's.
-    const hub = matched.find((f) => !f.properties.attributes.subStation) ?? matched[0];
+    // above, but the lines throw from a single representative address, because
+    // the filing is the department's, not any one station's. Which record is
+    // the hub is the registry's call (`hubKey`), not this class's — the next
+    // relation to declare one will join a different vocabulary entirely.
+    const hubKey = rel.hubKey;
+    const hub =
+      (hubKey ? matched.find((f) => !f.properties.attributes[hubKey]) : undefined) ?? matched[0];
     // A department with nothing to throw has to *erase* the last one's lines,
     // not simply decline to draw its own — most jurisdictions reported no
     // reader, so returning early here left the previously selected agency's
@@ -2381,7 +2517,7 @@ export class MapController {
 
     const origin = representativePoint(hub.geometry) as [number, number];
     const targets = readers.map((r) => representativePoint(r.geometry) as [number, number]);
-    this.throwPaths(origin, targets, layer);
+    this.throwPaths(origin, targets);
   }
 
   /**
@@ -2403,10 +2539,8 @@ export class MapController {
   private throwPaths(
     origin: [number, number],
     targets: Array<[number, number]>,
-    layer: ClientLayer,
   ) {
     this.cancelThrow();
-    this.ensureThrowLayers(layer);
 
     const paths = this.map.getSource(RELATED_PATHS_SOURCE) as GeoJSONSource | undefined;
     const impacts = this.map.getSource(RELATED_IMPACT_SOURCE) as GeoJSONSource | undefined;
@@ -2438,6 +2572,12 @@ export class MapController {
     // Ease-out: fast off the mark, settling as it lands.
     const ease = (p: number) => 1 - (1 - p) ** 3;
 
+    // setData is a worker round trip with a re-parse and re-index, not a cheap
+    // buffer write. The rings are empty for the frames before the first line
+    // lands and again after the last has faded, and writing an empty
+    // collection over an already-empty one is pure cost.
+    let ringsWereEmpty = true;
+
     const step = () => {
       const elapsed = performance.now() - start;
 
@@ -2468,7 +2608,10 @@ export class MapController {
       }
 
       paths.setData({ type: 'FeatureCollection', features: lineFeatures } as never);
-      impacts?.setData({ type: 'FeatureCollection', features: ringFeatures } as never);
+      if (ringFeatures.length || !ringsWereEmpty) {
+        impacts?.setData({ type: 'FeatureCollection', features: ringFeatures } as never);
+        ringsWereEmpty = ringFeatures.length === 0;
+      }
 
       if (elapsed < totalMs) {
         this.throwFrame = requestAnimationFrame(step);
@@ -2482,46 +2625,125 @@ export class MapController {
     this.throwFrame = requestAnimationFrame(step);
   }
 
-  /** Create the throw's two sources and layers once, empty. */
-  private ensureThrowLayers(layer: ClientLayer) {
+  /**
+   * Create the three selection-overlay sources and their four layers once,
+   * empty, for the layer that owns the selection.
+   *
+   * One lifecycle, not two: everything downstream — the theme repaint, the
+   * glyph refresh, the frame loop — can then assume the sources exist and only
+   * ever `setData()` them. The earlier arrangement created on first selection
+   * but *destroyed* on every deselect, so every one of those consumers had to
+   * handle both states, and whether the building mark was a symbol or a circle
+   * depended on which selection happened to create it.
+   *
+   * Rebuilt only if a different layer takes the selection, because the
+   * overlay's colour and glyph are that layer's.
+   */
+  private async ensureRelatedLayers(
+    layer: ClientLayer,
+    rel: NonNullable<ClientLayer['relatedBuildings']>,
+  ) {
+    if (this.relatedOverlayOwner === layer.id) return;
+    if (this.relatedOverlayOwner) this.destroyRelatedLayers();
+
     const color = this.layerColor(layer);
-    if (!this.map.getSource(RELATED_PATHS_SOURCE)) {
-      this.map.addSource(RELATED_PATHS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
-      this.map.addLayer(
-        {
-          id: RELATED_PATHS_LAYER,
-          type: 'line',
-          source: RELATED_PATHS_SOURCE,
-          paint: {
-            'line-color': color,
-            'line-width': 1.4,
-            'line-opacity': 0.75,
-            // Still dashed, but now the dashes are the only thing left of
-            // the old hedge: this line joins an agency to a reader it told
-            // the state was its own, so it is a link and may look like one.
-            'line-dasharray': [2, 1.5],
+
+    // The same glyph the related layer itself draws, so the highlighted
+    // building and the one a reader may already have on screen from that layer
+    // are recognisably the same mark rather than two conventions for one
+    // place. Falls back to a plain disc if the layer names no icon or the
+    // glyph didn't resolve.
+    const pointLayer = this.layers.find((l) => l.id === rel.layerId);
+    if (pointLayer) await this.cacheMarkerExpression(pointLayer);
+    const glyph = pointLayer ? this.markerExpressions.get(pointLayer.id) : undefined;
+
+    this.map.addSource(RELATED_BUILDINGS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: RELATED_BUILDINGS_GLOW_LAYER,
+      type: 'circle',
+      source: RELATED_BUILDINGS_SOURCE,
+      paint: {
+        'circle-color': color,
+        'circle-blur': 0.85,
+        'circle-radius': 20,
+        'circle-opacity': 0.45,
+      },
+    });
+    this.map.addLayer(
+      glyph
+        ? {
+            id: RELATED_BUILDINGS_LAYER,
+            type: 'symbol',
+            source: RELATED_BUILDINGS_SOURCE,
+            layout: {
+              'icon-image': glyph as never,
+              // Deliberately larger than the same glyph in its own layer:
+              // this one is the answer to a question the reader just asked.
+              'icon-size': 1.05,
+              'icon-allow-overlap': true,
+            },
+          }
+        : {
+            id: RELATED_BUILDINGS_LAYER,
+            type: 'circle',
+            source: RELATED_BUILDINGS_SOURCE,
+            paint: {
+              'circle-color': color,
+              'circle-radius': 7,
+              'circle-stroke-color': this.basemapColor,
+              'circle-stroke-width': 2,
+            },
           },
-        },
-        this.beneathDots(),
-      );
+    );
+
+    this.map.addSource(RELATED_PATHS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: RELATED_PATHS_LAYER,
+      type: 'line',
+      source: RELATED_PATHS_SOURCE,
+      paint: {
+        'line-color': color,
+        'line-width': 1.4,
+        'line-opacity': 0.75,
+        // Still dashed, but now the dashes are the only thing left of the old
+        // hedge: this line joins an agency to a reader it told the state was
+        // its own, so it is a link and may look like one.
+        'line-dasharray': [2, 1.5],
+      },
+    });
+
+    this.map.addSource(RELATED_IMPACT_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: RELATED_IMPACT_LAYER,
+      type: 'circle',
+      source: RELATED_IMPACT_SOURCE,
+      paint: {
+        // Growth and fade are expressions over the one `t` the loop writes, so
+        // the frame loop never touches paint state.
+        'circle-radius': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 22] as never,
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-color': color,
+        'circle-stroke-width': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 0.5] as never,
+        'circle-stroke-opacity': ['interpolate', ['linear'], ['get', 't'], 0, 0.9, 1, 0] as never,
+      },
+    });
+
+    this.relatedOverlayOwner = layer.id;
+    // Above every registry layer, in the one place that ordering is stated.
+    for (const styleId of OVERLAY_STACK) {
+      if (this.map.getLayer(styleId)) this.map.moveLayer(styleId);
     }
-    if (!this.map.getSource(RELATED_IMPACT_SOURCE)) {
-      this.map.addSource(RELATED_IMPACT_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
-      this.map.addLayer({
-        id: RELATED_IMPACT_LAYER,
-        type: 'circle',
-        source: RELATED_IMPACT_SOURCE,
-        paint: {
-          // Growth and fade are expressions over the one `t` the loop
-          // writes, so the frame loop never touches paint state.
-          'circle-radius': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 22] as never,
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-color': color,
-          'circle-stroke-width': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 0.5] as never,
-          'circle-stroke-opacity': ['interpolate', ['linear'], ['get', 't'], 0, 0.9, 1, 0] as never,
-        },
-      });
+  }
+
+  /** Tear the overlays down entirely. Only for an owner change, and destroy(). */
+  private destroyRelatedLayers() {
+    for (const id of OVERLAY_STACK) {
+      if (this.map.getLayer(id)) this.map.removeLayer(id);
     }
+    for (const id of [RELATED_BUILDINGS_SOURCE, RELATED_PATHS_SOURCE, RELATED_IMPACT_SOURCE]) {
+      if (this.map.getSource(id)) this.map.removeSource(id);
+    }
+    this.relatedOverlayOwner = null;
   }
 
   private cancelThrow() {
@@ -2540,20 +2762,18 @@ export class MapController {
     impacts?.setData(EMPTY_FC as never);
   }
 
-  /** Undo showRelatedBuildings. Called wherever a selection itself clears. */
+  /**
+   * Undo showRelatedBuildings. Called wherever a selection itself clears.
+   *
+   * Empties the overlays rather than destroying them — see ensureRelatedLayers
+   * for why there is only one lifecycle now. An empty source draws nothing and
+   * costs nothing.
+   */
   private clearRelatedBuildings() {
-    this.cancelThrow();
-    for (const id of [
-      RELATED_BUILDINGS_GLOW_LAYER,
-      RELATED_BUILDINGS_LAYER,
-      RELATED_PATHS_LAYER,
-      RELATED_IMPACT_LAYER,
-    ]) {
-      if (this.map.getLayer(id)) this.map.removeLayer(id);
-    }
-    for (const id of [RELATED_BUILDINGS_SOURCE, RELATED_PATHS_SOURCE, RELATED_IMPACT_SOURCE]) {
-      if (this.map.getSource(id)) this.map.removeSource(id);
-    }
+    this.clearThrownPaths();
+    (this.map.getSource(RELATED_BUILDINGS_SOURCE) as GeoJSONSource | undefined)?.setData(
+      EMPTY_FC as never,
+    );
   }
 
   resetView() {
@@ -2575,6 +2795,7 @@ export class MapController {
 
   destroy() {
     this.cancelThrow();
+    this.relatedOverlayOwner = null;
     this.popup?.remove();
     this.hoverPopup?.remove();
     this.map.remove();
