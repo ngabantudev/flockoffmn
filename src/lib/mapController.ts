@@ -1604,6 +1604,22 @@ export class MapController {
     const feature = this.data.get(layerId)?.find((f) => f.properties.id === featureId);
     const layer = this.layers.find((l) => l.id === layerId);
     if (!feature || !layer) return;
+
+    // onSelect first, camera move second — deliberately, not the more obvious
+    // order. onSelect is what opens the detail panel, and the panel is a
+    // sibling flex item that steals width from the map's own container, not
+    // an overlay drawn on top of it (see #detail-panel in MapView.astro).
+    // Computing a fit against the container's width before that reflow
+    // happens fits the *pre-panel*, wider viewport; MapLibre has no way to
+    // retroactively correct an in-flight animation for a container that
+    // resizes out from under it, so the record could land off-centre, or for
+    // a wide polygon, land partly hidden behind the panel that just opened
+    // over it. Reading `map.resize()` after onSelect forces the browser to
+    // resolve the panel's layout change synchronously, so the fit below is
+    // computed against the container's real, final size.
+    this.events.onSelect?.(feature, layer);
+    this.map.resize();
+
     const duration = REDUCED_MOTION ? 0 : 500;
     if (feature.geometry.type === 'Point') {
       this.map.easeTo({
@@ -1625,7 +1641,6 @@ export class MapController {
         { padding: 64, maxZoom: 14, duration },
       );
     }
-    this.events.onSelect?.(feature, layer);
   }
 
   flyTo(center: [number, number], zoom = 12) {
