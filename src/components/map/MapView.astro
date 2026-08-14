@@ -396,49 +396,87 @@ const strings = {
     </div>
   </aside>
 
-  {/* ------------------------------ Map ------------------------------ */}
-  <div class="relative min-h-0 flex-1">
-    <div id="map" class="absolute inset-0" role="application" aria-label={t('mapLabel')}></div>
+  {/*
+    ------------------------------ Map ------------------------------
+    Map and detail panel share a box, so that below `lg` the panel can be
+    sized and positioned against the map rather than against the viewport.
+    A sheet capped at 55dvh is taller than the whole map area once the layer
+    panel above has taken its share, which is not a sheet — it is a cover.
+  */}
+  <div id="map-shell" class="relative flex min-h-0 flex-1 flex-col lg:flex-row">
+    <div class="relative min-h-0 flex-1">
+      <div id="map" class="absolute inset-0" role="application" aria-label={t('mapLabel')}></div>
 
-    <div
-      id="map-status"
-      role="status"
-      aria-live="polite"
-      class="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-ink-900/90 px-3 py-1 text-xs text-ink-200 opacity-0 transition-opacity"
-    >
+      <div
+        id="map-status"
+        role="status"
+        aria-live="polite"
+        class="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-ink-900/90 px-3 py-1 text-xs text-ink-200 opacity-0 transition-opacity"
+      >
+      </div>
+
+      {/*
+        Lifted clear of the detail sheet on the viewports where the sheet
+        floats over the map — see #detail-panel below. --map-sheet-h is 0px
+        whenever no sheet is open, so this is the same 2rem from the bottom it
+        always was.
+      */}
+      <button
+        id="reset-view"
+        type="button"
+        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
+        class="absolute right-2 rounded-md border border-ink-700 bg-ink-900/90 px-2.5 py-1.5 text-xs text-ink-200 hover:text-ink-100 motion-safe:transition-[bottom]"
+      >
+        {t('resetView')}
+      </button>
+
+      {/*
+        On-map keys for colour-coded layers, one bar per visible layer that
+        declares categoryColors. Rebuilt from the layer toggles on every change, so a key can never
+        outlive the layer it explains. aria-hidden because the same table
+        already exists accessibly in the layer panel beside the map — this is
+        the glanceable duplicate, not the record.
+      */}
+      <div
+        id="map-keys"
+        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
+        class="pointer-events-none absolute left-2 z-10 flex w-56 max-w-[70vw] flex-col gap-1.5 motion-safe:transition-[bottom]"
+        aria-hidden="true"
+      >
+      </div>
     </div>
-
-    <button
-      id="reset-view"
-      type="button"
-      class="absolute right-2 bottom-8 rounded-md border border-ink-700 bg-ink-900/90 px-2.5 py-1.5 text-xs text-ink-200 hover:text-ink-100"
-    >
-      {t('resetView')}
-    </button>
 
     {/*
-      On-map keys for colour-coded layers, one bar per visible layer that
-      declares categoryColors. Rebuilt from the layer toggles on every change, so a key can never
-      outlive the layer it explains. aria-hidden because the same table
-      already exists accessibly in the layer panel beside the map — this is
-      the glanceable duplicate, not the record.
-    */}
-    <div
-      id="map-keys"
-      class="pointer-events-none absolute bottom-8 left-2 z-10 flex w-56 max-w-[70vw] flex-col gap-1.5"
-      aria-hidden="true"
-    >
-    </div>
-  </div>
+      --------------------------- Detail panel ---------------------------
+      Two shapes from one element. At `lg` it is a plain flex sibling to the
+      right of the map: the map's own box shrinks to make room, so a fit
+      computed after map.resize() already lands inside what the reader sees.
 
-  {/* --------------------------- Detail panel --------------------------- */}
-  <aside
-    id="detail-panel"
-    aria-label={t('whatThisMeans')}
-    hidden
-    class="scroll-slim z-20 max-h-[55dvh] shrink-0 overflow-y-auto border-t border-ink-800 bg-ink-900 lg:max-h-none lg:w-[24rem] lg:border-t-0 lg:border-l"
-  >
-  </aside>
+      Below `lg` it is a sheet drawn over the bottom of the map instead. It
+      has to be. Stacked in the flow it was a `shrink-0` sibling of a `flex-1`
+      map, and with the layer panel above already claiming up to 45dvh, it
+      left the map exactly nothing: tapping a jurisdiction on a phone
+      collapsed the map to zero height and fitted the record to a canvas that
+      was no longer on screen. Floating it keeps the map at full height, and
+      the controller reserves the sheet's measured height as fit padding
+      (setOverlay/fitPadding in mapController.ts) so a record lands in the
+      strip above the sheet rather than behind it.
+
+      The cap is a share of the map, not of the viewport: 55dvh is taller than
+      the whole map area once the layer panel has taken its share, and a sheet
+      taller than what it floats over is not a sheet. 45% is what leaves a
+      strip the fit can actually use — above that, fitPadding's own clamp
+      starts refusing to reserve the whole sheet and the record creeps back
+      under its top edge.
+    */}
+    <aside
+      id="detail-panel"
+      aria-label={t('whatThisMeans')}
+      hidden
+      class="scroll-slim absolute inset-x-0 bottom-0 z-20 max-h-[45%] shrink-0 overflow-y-auto rounded-t-xl border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] lg:static lg:max-h-none lg:w-[24rem] lg:rounded-none lg:border-t-0 lg:border-l lg:shadow-none"
+    >
+    </aside>
+  </div>
 </div>
 
 <script is:inline type="application/json" id="layer-config" set:html={JSON.stringify(clientLayers)} />
@@ -497,6 +535,12 @@ const strings = {
     onError: (id, message) =>
       status(`${layerById.get(id)?.label ?? id}: ${message}`, 6000),
   });
+
+  // Below `lg` the detail panel is a sheet over the map rather than a sibling
+  // beside it, so the map's own box no longer describes what the reader can
+  // see. This is what lets a fit land above the sheet instead of behind it —
+  // see setOverlay in mapController.ts.
+  controller.setOverlay(detailEl);
 
   /* ----------------------------- Detail panel ---------------------------- */
 

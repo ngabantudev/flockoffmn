@@ -260,6 +260,40 @@
   color: var(--color-ink-300) !important;
   font-size: 11px !important;
 }
+/*
+ * Below `lg` the detail panel is a sheet floating over the bottom of the map
+ * rather than a sibling beside it (see #detail-panel in MapView.astro), which
+ * would otherwise bury MapLibre's own bottom-anchored controls under it. The
+ * scale bar going missing is a nuisance; the attribution going missing is an
+ * OpenStreetMap licence term, so this is not cosmetic. `--map-sheet-h` is
+ * published by MapView from the sheet's measured height and is 0px whenever no
+ * sheet is open, which is what makes one unconditional rule safe.
+ */
+.maplibregl-ctrl-bottom-left,
+.maplibregl-ctrl-bottom-right {
+  bottom: var(--map-sheet-h, 0px);
+  transition: bottom 150ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .maplibregl-ctrl-bottom-left,
+  .maplibregl-ctrl-bottom-right {
+    transition: none;
+  }
+}
+/*
+ * The strip of map left above an open sheet on a phone is a couple of hundred
+ * pixels, and the colour keys were taking a quarter of it to explain a layer
+ * the reader is no longer looking at — they are `aria-hidden` decoration whose
+ * accessible original is the table in the layer panel, so they are the one
+ * thing on the map that can go. The scale bar, the attribution and the reset
+ * button all stay, lifted by the rule above. Falls back to keeping the keys
+ * visible wherever :has() is unsupported, which is the pre-existing behaviour.
+ */
+@media (width < 64rem) {
+  #map-shell:has(#detail-panel:not([hidden])) #map-keys {
+    display: none;
+  }
+}
 .maplibregl-ctrl-attrib a {
   color: var(--color-ink-200) !important;
 }
