@@ -167,12 +167,22 @@ export interface FilterDefinition {
   defaultExcluded?: string[];
 }
 
+/**
+ * How to render one attribute, wherever it is shown.
+ *
+ * A closed union so it cannot be extended on one surface only: both the detail
+ * panel and the map's hover card read the same `detailFields` entry, and
+ * src/lib/detailFields.ts switches over this exhaustively, so adding a member
+ * here fails the build until every surface handles it.
+ */
+export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees';
+
 /** How to render one attribute in the detail panel (spec F5). */
 export interface DetailField {
   key: string;
   label: I18nString;
   /** `date` formats ISO strings; `link` renders an anchor; `text` is default. */
-  format?: 'text' | 'date' | 'link' | 'degrees';
+  format?: DetailFieldFormat;
 }
 
 /**
@@ -407,6 +417,14 @@ export interface LayerDefinition {
    */
   polygonClick?: 'highlight';
   /**
+   * How loudly a selected polygon reads. `full` (the default) is a plain
+   * highlight layer, where the polygon *is* the finding. `subtle` is for a
+   * polygon that is context for something else — the jurisdiction settles back
+   * so the building and the thrown paths it answers with are what the eye goes
+   * to. Only `polygonClick: 'highlight'` layers read this.
+   */
+  selectedEmphasis?: 'full' | 'subtle';
+  /**
    * Draw this point layer's records as a glyph rather than a plain dot.
    *
    * For a layer whose records are a *kind of place* rather than a
@@ -415,12 +433,19 @@ export interface LayerDefinition {
    * says it on the ground.
    *
    * Names a lucide icon export, resolved through MARKER_ICONS in
-   * mapController — never an emoji, and never a bitmap shipped as an asset,
+   * src/lib/icons.ts — never an emoji, and never a bitmap shipped as an asset,
    * for the same reasons impactSpheres' own `icon` field gives. `byValue`
    * varies the glyph by an attribute where the distinction is real and
    * documented (a sheriff's star and a police shield are the two offices'
    * own insignia, not a decorative flourish); `icon` is the fallback for
    * every record whose value isn't listed.
+   *
+   * Note the one qualification this puts on the two-file rule (CLAUDE.md
+   * Part 1 §2): the allow-list is closed on purpose, so every glyph in it
+   * ships to every visitor (§0.7). Naming a glyph it does not already carry
+   * means editing src/lib/icons.ts as well — a third file, and a deliberate
+   * one. Naming a glyph that is not there draws the fallback rather than
+   * pulling an arbitrary module into the bundle.
    *
    * Point layers only. Omit and records draw as the standard dot.
    */
@@ -499,7 +524,18 @@ export interface LayerDefinition {
   relatedBuildings?: {
     /** The point layer to search and highlight. */
     layerId: LayerId;
-    /** Attribute on that point layer holding this polygon's own `id`. */
+    /**
+     * Attribute on THIS layer holding the joining value. Omit and the
+     * record's own `id` is used, which is the common case.
+     *
+     * Present for the same reason hoverCard.related has it: alpr_reported
+     * joins on `agencyName` rather than `jurisdictionId`, because the id only
+     * exists for the 10-county metro while that layer is statewide. A relation
+     * that needs a different near-side key must be able to say so here rather
+     * than in mapController.
+     */
+    fromKey?: string;
+    /** Attribute on that point layer holding the same value. */
     joinKey: string;
     /**
      * Attribute on that point layer marking a record as *subordinate*, used to
@@ -517,8 +553,10 @@ export interface LayerDefinition {
     pathsTo?: {
       /** The point layer whose matching records get a path drawn to them. */
       layerId: LayerId;
+      /** Attribute on THIS layer holding the joining value; defaults to `id`. */
+      fromKey?: string;
       /**
-       * Attribute on THAT point layer holding this polygon's own `id`.
+       * Attribute on THAT point layer holding the joining value.
        *
        * A join, deliberately, and not a spatial test. An earlier version of
        * this drew a path to every camera that merely fell *inside* the

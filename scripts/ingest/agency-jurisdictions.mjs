@@ -117,9 +117,6 @@ async function main() {
     // one" — the attribute name and the detail panel copy both say so.
     const attributes = {
       agencyType: agencyType(name),
-      // The gate the map reads (see the registry's relatedBuildings.pathsTo)
-      // — a bare boolean because it drives behaviour, not copy.
-      alprReportedToBca: Boolean(bcaMatch),
       // What a reader sees. Deliberately not "Yes"/"No": the BCA list is a
       // record of who filed a report, so its absence is an absence of a
       // filing under this name, never a finding that an agency operates no

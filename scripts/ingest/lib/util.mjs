@@ -171,7 +171,13 @@ export function unzip(buffer) {
  * ------------------------------------------------------------------ */
 
 const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
-function decodeXml(s) {
+/**
+ * Decode XML/HTML entities, named and numeric alike. Exported because the
+ * scrapers need it too: a CMS that writes `&#x27;` in one field and `&#39;` in
+ * another is writing the same character, and an agency name that keeps its
+ * entity undecoded silently fails the name join three layers hang on.
+ */
+export function decodeXml(s) {
   return s.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, (_, e) => {
     if (e[0] === '#') {
       const code = e[1] === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);

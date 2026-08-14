@@ -134,12 +134,17 @@ export const LAYERS: LayerDefinition[] = [
     // beneathDots()) keep drawing on top of every polygon here regardless of
     // which one is selected.
     polygonClick: 'highlight',
+    // The polygon is context, not the finding: what lights up on selection is
+    // the building it answers from and the readers it reported, so the ward
+    // settles rather than blazing.
+    selectedEmphasis: 'subtle',
     // What a selected jurisdiction actually highlights: the building(s) it
-    // answers from, per agency-buildings.mjs's own join — and, only where
-    // the BCA's separate published list says this agency reported LPR use,
-    // thin paths to the ALPR cameras that fall inside this polygon. See
-    // relatedBuildings' own comment in types.ts for why containment and
-    // operatorship are kept as two facts rather than implied as one.
+    // answers from, per agency-buildings.mjs's own join, and thin paths to the
+    // readers this agency itself reported to the state under Minn. Stat.
+    // § 13.824. Both are joins on a document, not tests of what falls inside
+    // the boundary — an earlier version drew a path to every camera merely
+    // *contained* by the polygon, which is a claim the data cannot support and
+    // §0.3 forbids. See relatedBuildings' comment in types.ts.
     relatedBuildings: {
       layerId: 'agency_building',
       joinKey: 'jurisdictionId',
@@ -676,6 +681,11 @@ export const LAYERS: LayerDefinition[] = [
           en: 'Readers this department reported, this one among them',
           es: 'Lectores que este departamento reportó, incluido este',
         },
+        // Unreachable in practice, and kept deliberately: this is a self-join,
+        // so the hovered reader is always one of its own matches and the count
+        // is never zero. Retained because the field is required and because
+        // the day this layer is joined to anything else, an empty state that
+        // says what an absence does NOT mean is what §1c asks for.
         empty: {
           en: 'No other filing found under this department’s name.',
           es: 'No se encontró ninguna otra declaración a nombre de este departamento.',
