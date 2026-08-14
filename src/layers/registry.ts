@@ -556,6 +556,20 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'manufacturer', kind: 'enum', label: { en: 'Manufacturer', es: 'Fabricante' } },
       { key: 'cameraType', kind: 'enum', label: { en: 'Camera type', es: 'Tipo de cámara' } },
     ],
+    hoverCard: {
+      fields: ['manufacturer', 'operatorType', 'operator', 'cameraType', 'zone'],
+      // No `related` here, deliberately, and it is the whole difference
+      // between this card and the one on an agency-reported reader. There is
+      // no document joining a crowd-sourced camera to an agency — the
+      // operator field is a word a volunteer typed, which is why the note
+      // says so on every single card rather than only where the field is
+      // blank. A `related` block here would be the containment inference
+      // this project already removed once.
+      note: {
+        en: 'Mapped by volunteers. “Who runs it” is what a mapper wrote down, not a verified contract — and most often nobody wrote anything.',
+        es: 'Mapeado por voluntarios. «Quién lo opera» es lo que anotó un mapeador, no un contrato verificado, y la mayoría de las veces nadie anotó nada.',
+      },
+    },
     detailFields: [
       { key: 'manufacturer', label: { en: 'Manufacturer', es: 'Fabricante' } },
       { key: 'operatorType', label: { en: 'Who runs it', es: 'Quién lo opera' } },
@@ -631,6 +645,38 @@ export const LAYERS: LayerDefinition[] = [
     filters: [
       { key: 'agencyName', kind: 'enum', label: { en: 'Reporting agency', es: 'Agencia informante' } },
     ],
+    hoverCard: {
+      fields: ['agencyName', 'reportedLocation', 'statute'],
+      // The inverse of the station card, and the reason this layer exists:
+      // from a reader, name the department that claimed it and the door it
+      // answers from. Safe to draw because the filing itself makes the link
+      // — the crowd-sourced layer above gets no such block for exactly that
+      // reason.
+      // Joined on the agency's own name rather than its jurisdiction id:
+      // the id only exists for the 10-county metro, and this layer is
+      // statewide, so keying on it would leave every outstate reader
+      // reporting "none" when the department had in fact filed a dozen.
+      related: {
+        layerId: 'alpr_reported',
+        fromKey: 'agencyName',
+        joinKey: 'agencyName',
+        labelKey: 'reportedLocation',
+        linkKey: 'sourceUrl',
+        title: {
+          en: 'Readers this department reported, this one among them',
+          es: 'Lectores que este departamento reportó, incluido este',
+        },
+        empty: {
+          en: 'No other filing found under this department’s name.',
+          es: 'No se encontró ninguna otra declaración a nombre de este departamento.',
+        },
+        max: 4,
+      },
+      note: {
+        en: 'Position is this project’s reading of the words in the filing, resolved against OpenStreetMap roads — not a surveyed coordinate.',
+        es: 'La posición es la lectura que hace este proyecto de las palabras de la declaración, resuelta con las vías de OpenStreetMap; no es una coordenada topográfica.',
+      },
+    },
     action: {
       requestType: 'alpr',
       label: {
