@@ -277,6 +277,16 @@ export class MapController {
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
   /** The one feature-state-highlighted polygon per `polygonClick: 'highlight'` layer, if any. */
   private selectedPolygon = new Map<string, string>();
+  /**
+   * The one hover-previewed polygon per `polygonClick: 'highlight'` layer.
+   * Tracked here rather than as a closure inside bindHighlightSelect so
+   * clearSelection can release it too — a fitBounds/easeTo the reader
+   * triggered by clicking moves the ground out from under a still pointer,
+   * and nothing fires another 'mousemove' to notice until the reader's own
+   * cursor moves again, which would otherwise leave the just-deselected
+   * polygon visibly hovered under a pointer that never left it.
+   */
+  private hoveredPolygon = new Map<string, string>();
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -502,12 +512,30 @@ export class MapController {
       .filter((id) => this.map.getLayer(id));
   }
 
-  /** Undo a tap-to-select: back to the pre-tap camera, detail panel closed. */
+  /**
+   * Undo a tap-to-select: back to the pre-tap camera, detail panel closed,
+   * and any `polygonClick: 'highlight'` ward released. This is the one
+   * shared "undo" both a tap on empty ground and a second tap on an
+   * already-selected ward route through, so a highlighted polygon can never
+   * outlive its own selection — including when the deselecting tap landed
+   * somewhere this layer's own click handler never sees.
+   */
   private clearSelection() {
     if (this.preSelectCamera) {
       this.easeToCamera(this.preSelectCamera, REDUCED_MOTION ? 0 : 500);
       this.preSelectCamera = null;
     }
+    for (const [layerId, featureId] of this.selectedPolygon) {
+      this.map.setFeatureState(
+        { source: this.sourceId(layerId), id: featureId },
+        { selected: false },
+      );
+    }
+    this.selectedPolygon.clear();
+    for (const [layerId, featureId] of this.hoveredPolygon) {
+      this.map.setFeatureState({ source: this.sourceId(layerId), id: featureId }, { hover: false });
+    }
+    this.hoveredPolygon.clear();
     this.events.onSelect?.(null);
   }
 
@@ -1299,31 +1327,41 @@ export class MapController {
 
   /**
    * Ward-map tap for a `polygonClick: 'highlight'` layer: flips one
-   * polygon's feature-state and opens its detail panel, but never moves the
-   * camera — see LayerDefinition.polygonClick's comment for why this layer
-   * needs a different interaction than every other layer's tap-to-focus.
-   * A second tap on the already-selected polygon clears it.
+   * polygon's feature-state, opens its detail panel, and fits the camera to
+   * it — the same move every other layer's tap already makes (focusFeature),
+   * layered under an exclusive per-polygon highlight so the selected ward
+   * itself reads at a glance too, not only the detail panel beside it. A
+   * second tap on the already-selected polygon clears it and returns the
+   * camera the way the panel's own close button does (clearSelection).
    */
   private bindHighlightSelect(layer: ClientLayer, mapLayerId: string) {
     const src = this.sourceId(layer.id);
-    let hoveredId: string | null = null;
 
     // Preview, not selection: moving the pointer off the polygon (or off the
     // map entirely, via mouseleave) clears it with no lasting effect. Only a
-    // click writes state that survives the pointer moving away.
+    // click writes state that survives the pointer moving away. Tracked on
+    // `this.hoveredPolygon` rather than a local variable so clearSelection
+    // can release a stale hover left behind by a camera move the pointer
+    // itself never caused — see that field's own comment.
     this.map.on('mousemove', mapLayerId, (e) => {
       const hit = e.features?.[0];
       const id = (hit?.properties as Record<string, unknown> | undefined)?.id as
         | string
         | undefined;
+      const hoveredId = this.hoveredPolygon.get(layer.id);
       if (id === hoveredId) return;
       if (hoveredId) this.map.setFeatureState({ source: src, id: hoveredId }, { hover: false });
-      hoveredId = id ?? null;
-      if (hoveredId) this.map.setFeatureState({ source: src, id: hoveredId }, { hover: true });
+      if (id) {
+        this.map.setFeatureState({ source: src, id }, { hover: true });
+        this.hoveredPolygon.set(layer.id, id);
+      } else {
+        this.hoveredPolygon.delete(layer.id);
+      }
     });
     this.map.on('mouseleave', mapLayerId, () => {
+      const hoveredId = this.hoveredPolygon.get(layer.id);
       if (hoveredId) this.map.setFeatureState({ source: src, id: hoveredId }, { hover: false });
-      hoveredId = null;
+      this.hoveredPolygon.delete(layer.id);
     });
 
     this.map.on('click', mapLayerId, (e) => {
@@ -1337,14 +1375,20 @@ export class MapController {
 
       if (current === id) {
         this.selectedPolygon.delete(layer.id);
-        this.events.onSelect?.(null);
+        this.clearSelection();
         return;
       }
 
       this.map.setFeatureState({ source: src, id }, { selected: true });
       this.selectedPolygon.set(layer.id, id);
-      const feature = this.data.get(layer.id)?.find((f) => f.properties.id === id);
-      if (feature) this.events.onSelect?.(feature, layer);
+      // Same "remember where I was" move a tapped dot already gets — see
+      // bindInteractions' own comment — so the panel's close button can
+      // still return here even though a ward tap fits bounds, not eases to
+      // a fixed zoom.
+      if (!this.preSelectCamera) {
+        this.preSelectCamera = this.currentCamera();
+      }
+      this.focusFeature(layer.id, id);
     });
   }
 
