@@ -162,10 +162,10 @@ const loaded = await loadAllLayers();
     "type": "Feature",
     "geometry": { "type": "Point", "coordinates": [lng, lat] },
                  // or Polygon / MultiPolygon for zones,
-                 // LineString for camera-to-camera roads
+                 // LineString / MultiLineString for roads
     "properties": {
       "id":          "stable slug, safe to join on",
-      "layer":       "alpr | alpr_corridor | agency_287g | detention_facility |
+      "layer":       "alpr | agency_287g | detention_facility |
                       data_center | redlining | racial_covenant",
       "name":        "institution, facility, or zone — never a person",
       "county":      "county name, or null",

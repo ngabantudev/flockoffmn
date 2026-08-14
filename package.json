@@ -17,7 +17,6 @@
     "data:counties": "node scripts/ingest/counties.mjs",
     "data:jurisdictions": "node scripts/ingest/jurisdictions.mjs",
     "data:alpr": "node scripts/ingest/alpr.mjs",
-    "data:corridors": "node scripts/ingest/corridors.mjs",
     "data:287g": "node scripts/ingest/agencies-287g.mjs",
     "data:detention": "node scripts/ingest/detention.mjs",
     "data:datacenters": "node scripts/ingest/data-centers.mjs",

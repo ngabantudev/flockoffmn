@@ -12,7 +12,6 @@ import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 export const PUBLIC_DATA = path.join(ROOT, 'public/data');
-export const RAW_DIR = path.join(ROOT, 'data/raw');
 
 export const USER_AGENT =
   'flockoff-ingest/0.1 (open-source civic transparency project; contact via repository issues)';

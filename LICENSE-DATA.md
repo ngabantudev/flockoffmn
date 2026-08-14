@@ -22,7 +22,6 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Layer | File | Upstream licence | Practical effect |
 |---|---|---|---|
 | ALPR cameras | `alpr.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike.** Derived databases must stay open under ODbL. Attribution to OpenStreetMap contributors required. |
-| ALPR corridors | `alpr-corridors.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike.** This layer *is* the derived database the row above warns about — built from the camera layer and OpenStreetMap road geometry, so ODbL follows it. Attribution to OpenStreetMap contributors required. |
 | 287(g) agreements | `287g.geojson` | Public domain (US federal work) | Free for any use. |
 | Detention facilities | `detention.geojson` | Public domain (US federal work) | Free for any use. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC 2.5](https://creativecommons.org/licenses/by-nc/2.5/) | **Non-commercial.** Not usable commercially. (The project's pre-2023 terms were CC BY-NC-SA 4.0; the current site states CC BY-NC 2.5.) |
@@ -136,9 +135,9 @@ output of using a database, where the underlying data can't practically be
 re-extracted from the output — only needs attribution. A rendered map image
 (or, as here, a rendered vector tile set meant for direct display) is the
 textbook Produced Work example ODbL's own FAQ uses. That's a genuinely
-different case from this project's ALPR/corridor layers above, which *are*
-Derivative Databases (they keep the queryable OSM road geometry itself,
-joined against camera data) and do inherit share-alike. The basemap doesn't
+different case from this project's ALPR layer above, which *is* a Derivative
+Database (it keeps the queryable OSM point data itself) and does inherit
+share-alike. The basemap doesn't
 carry forward a re-extractable copy of OSM's database — it carries forward a
 rendering of it — so it ships under attribution alone. The source `.osm.pbf`
 extract itself is never modified or redistributed, so no offer-back
