@@ -43,17 +43,19 @@ const STEPS = [
   // Independent of every other layer: MnDOT names the county on each segment,
   // so this needs the county reference only to resolve a GEOID from that name.
   { name: 'aadt', script: 'aadt.mjs' },
-  { name: 'redlining', script: 'redlining.mjs' },
-  // Reads redlining.geojson to measure, every run, how far the Metropolitan
-  // Council's independent digitisation of the same sheet agrees with Mapping
-  // Inequality's — so it has to follow it. See holc-detail.mjs's header.
-  { name: 'holc-detail', script: 'holc-detail.mjs' },
-  // The edge between the 1930s areas and 2020 census tracts. Independent of
-  // both HOLC layers at build time — it is published upstream already — but
-  // it belongs beside them.
+  // Reference only, not a layer — the edge between the 1930s graded areas and
+  // 2020 census tracts, which redlining.mjs reads next to put each area's
+  // tracts and coverage shares on it. See that script's own header for why it
+  // stopped being a drawn layer.
   { name: 'holc-tracts', script: 'holc-tracts.mjs' },
+  { name: 'redlining', script: 'redlining.mjs' },
   { name: 'covenants', script: 'covenants.mjs' },
   { name: 'ej-cumulative', script: 'ej-cumulative.mjs' },
+  // Last of the historical layers, because it reads two of the others:
+  // redlining.geojson for the area label drawn on each block and for the
+  // agreement check it measures every run, and ej-cumulative.geojson for the
+  // 2020 tract boundaries each block resolves against. See its own header.
+  { name: 'holc-detail', script: 'holc-detail.mjs' },
 ];
 
 function run(script) {

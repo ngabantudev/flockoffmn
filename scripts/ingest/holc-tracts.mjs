@@ -1,23 +1,40 @@
 #!/usr/bin/env node
 /**
- * Relation: HOLC graded areas <-> 2020 census tracts.
+ * Reference, not a layer: HOLC graded areas <-> 2020 census tracts.
  *
  * ---------------------------------------------------------------------------
- * WHY THIS IS A LAYER AND NOT A JOIN IN A COMPONENT
+ * WHY THIS EXISTS AT ALL
  * ---------------------------------------------------------------------------
  *
- * The redlining layer is drawn on 1930s boundaries. Every present-day dataset
- * worth laying beside it — the cumulative-stressor tracts, anything from the
+ * The HOLC layers are drawn on 1930s boundaries. Every present-day dataset
+ * worth laying beside them — the cumulative-stressor tracts, anything from the
  * census — is drawn on 2020 tract boundaries. The two do not line up, and the
  * gap between them is where a project like this quietly starts making things
  * up: it is very easy to write "this tract was redlined", ship it, and never
  * record that a tract can be four per cent covered by a D grade and ninety-six
  * per cent covered by nothing at all.
  *
- * So the overlap is published as its own record with its own provenance, per
- * CLAUDE.md §0.1 and §2. Each feature here is one intersection — one HOLC area
- * crossed with one tract — carrying the share of that tract the area covers.
- * A reader can see the sliver and judge it. Nothing downstream has to guess.
+ * So the overlap is ingested with its own provenance, per CLAUDE.md §0.1 and
+ * §2 — the edge is a documented object, not a join improvised in a component.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY IT IS NOT A THIRD MAP TOGGLE
+ * ---------------------------------------------------------------------------
+ *
+ * It shipped briefly as one, and drawn on a map it is very close to useless:
+ * 922 slivers whose shapes are just the redlining areas chopped along tract
+ * lines, saying visually nothing the redlining layer does not already say. Its
+ * value was never the geometry. It is the join key and the coverage share.
+ *
+ * So the geometry is discarded and what survives is the table: for each HOLC
+ * area, which 2020 tracts it touches and how much of each one it covers.
+ * `redlining.mjs` reads it to put that list on each graded area, where the
+ * "81% of this tract" qualifier sits next to the thing it qualifies rather
+ * than on a separate layer a reader has to think to switch on.
+ *
+ * The blocks in `holc-detail.mjs` do not need this file: a block is small
+ * enough to sit inside exactly one tract, so that layer resolves its own tract
+ * directly and gets a clean one-to-one join for free.
  *
  * ---------------------------------------------------------------------------
  * THE EDGE IS THE UPSTREAM'S, NOT OURS
@@ -31,22 +48,22 @@
  * who drew both sides of it is worth more than an undocumented one we derived
  * in an afternoon.
  *
- * What this layer states is geometric and nothing more: this much of this
- * tract sits on ground that carried this grade. It says nothing about who
- * lives in the tract now, and it must never be read as saying that a present-
- * day condition follows from a 1930s line. Where those facts are laid beside
- * each other — this tract's overlap, that tract's stressor count — they are
- * laid beside each other, dated and sourced, and the reader does the
- * arithmetic (§1c).
+ * What this states is geometric and nothing more: this much of this tract sits
+ * on ground that carried this grade. It must never be read as saying that a
+ * present-day condition follows from a 1930s line (§1c).
  */
 
-import { fetchWithRetry, writeLayer, loadCounties, thinGeometry, log, slugId } from './lib/util.mjs';
-import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
+import { fetchWithRetry, PUBLIC_DATA, log } from './lib/util.mjs';
 
 const SOURCE =
   'https://raw.githubusercontent.com/americanpanorama/mapping-inequality-census-crosswalk/main/MIv3Areas_2020TractCrosswalk.geojson';
 
 const REPO = 'https://github.com/americanpanorama/mapping-inequality-census-crosswalk';
+
+const OUT = 'reference/holc-tract-crosswalk.json';
 
 const STATE_USPS = process.env.STATE_USPS ?? 'MN';
 
@@ -57,42 +74,23 @@ const STATE_USPS = process.env.STATE_USPS ?? 'MN';
  */
 const FETCH_TIMEOUT_MS = 600_000;
 
-/** HOLC's four residential grades, in the appraisers' own words. */
-const GRADE_MEANING = {
-  A: 'Graded "Best" — in practice, restricted to white residents.',
-  B: 'Graded "Still Desirable" — expected to hold value.',
-  C: 'Graded "Definitely Declining" — marked down for the arrival of Black, Jewish and immigrant residents.',
-  D: 'Graded "Hazardous" — outlined in red, with lending withheld on explicitly racial grounds.',
-};
-
-const UNGRADED = 'Recorded on the map without a residential grade — commercial, industrial or unclassified land.';
-
 /**
- * Percent of the tract this area covers, as a rounded percentage or null.
+ * Percent of the tract this area covers, or null.
  *
- * The upstream field is a fraction and is occasionally absent. An absent
- * share is published as null rather than zero: "we do not know how much of
- * this tract it covers" and "it covers none of it" are different claims, and
- * only one of them is true here.
+ * The upstream field is a fraction and is occasionally absent. An absent share
+ * is recorded as null rather than zero: "we do not know how much of this tract
+ * it covers" and "it covers none of it" are different claims, and only one of
+ * them is true here.
+ *
+ * Two decimal places rather than one, because at one place the genuine slivers
+ * round to `0` — and a row that exists at all is a row where the areas *do*
+ * overlap, so writing 0 there states the opposite of what the record means.
+ * 0.04% reads as the sliver it is.
  */
 function sharePercent(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
-  return Math.round(n * 1000) / 10;
-}
-
-/**
- * Coarse bands over that share, so the layer can be filtered without a reader
- * having to reason about decimals. The thresholds are a presentation choice
- * and the limitations say so; the underlying percentage ships unmodified
- * alongside them.
- */
-function shareBand(percent) {
-  if (percent === null) return null;
-  if (percent < 5) return 'Under 5% of the tract';
-  if (percent < 25) return '5–25% of the tract';
-  if (percent < 50) return '25–50% of the tract';
-  return 'Over half the tract';
+  return Math.round(n * 10_000) / 100;
 }
 
 function text(value) {
@@ -111,128 +109,86 @@ async function main() {
   const scoped = all.features.filter((f) => f.properties?.state === STATE_USPS);
   if (!scoped.length) throw new Error(`no crosswalk rows found for ${STATE_USPS}`);
 
-  const counties = await loadCounties();
+  /*
+   * area_id -> the tracts it touches, largest share first.
+   *
+   * Keyed on the area rather than the tract because that is the direction the
+   * redlining layer reads it: it has an area in hand and wants to say which of
+   * today's tracts sit on it. The reverse lookup is a one-line invert for any
+   * consumer that wants it, and storing both would be two things to keep in
+   * agreement.
+   */
+  const byArea = {};
+  let untracted = 0;
+  let outOfState = 0;
+  const tracts = new Set();
 
-  const features = scoped.map((f) => {
+  for (const f of scoped) {
     const p = f.properties ?? {};
     const geoid = text(p.GEOID);
-    const grade = text(p.grade);
-    const areaId = p.area_id ?? null;
-    const holcId = text(p.label);
-    const percent = sharePercent(p.pct_tract);
-    const county = findContaining(representativePoint(f.geometry), counties.features);
+    if (!geoid) {
+      untracted++;
+      continue;
+    }
+    // Duluth's map runs to the harbour and the tracts across it are
+    // Wisconsin's. Kept, because the ground was graded — but flagged, because
+    // they will not join to a Minnesota-only present-day dataset, and a
+    // silently unjoinable row is the kind of gap this file exists to expose.
+    if (geoid.slice(0, 2) !== '27') outOfState++;
+    tracts.add(geoid);
 
-    return {
-      type: 'Feature',
-      geometry: thinGeometry(f.geometry),
-      properties: {
-        // One HOLC area can cross several tracts and one tract several areas,
-        // so neither identifier alone is unique — the pair is.
-        id: slugId('holc-tract', STATE_USPS, String(areaId), geoid ?? 'no-tract'),
-        layer: 'holc_tract_overlap',
-        name: `${p.city} — HOLC area ${holcId ?? areaId}${grade ? ` (grade ${grade})` : ''} × tract ${geoid ?? 'unmatched'}`,
-        county: county?.properties.name ?? null,
-        state: STATE_USPS,
-        countyFips: county?.properties.geoid ?? null,
-        confidence: 'confirmed',
-        // The overlap is between a 1930s map and 2020 tract boundaries; the
-        // tract vintage is the one a reader needs to check a present-day join.
-        sourceDate: '2020',
-        attributes: {
-          // --- the 1930s side ---
-          grade,
-          gradeMeaning: grade ? (GRADE_MEANING[grade] ?? UNGRADED) : UNGRADED,
-          category: text(p.cat),
-          city: text(p.city),
-          holcId,
-          // The key back into the redlining layer's own records, and through
-          // it to the appraiser's survey sheet.
-          areaId,
+    const key = String(p.area_id);
+    (byArea[key] ??= []).push({
+      geoid,
+      percentOfTract: sharePercent(p.pct_tract),
+      overlapSqMeters: Number.isFinite(Number(p.calc_area)) ? Math.round(Number(p.calc_area)) : null,
+    });
+  }
 
-          // --- the present-day side ---
-          // 2020 census tract GEOID: the join key every modern tract dataset
-          // in this repo shares, including the cumulative-stressor layer.
-          tractGeoid: geoid,
-          tractSharePercent: percent,
-          tractShareBand: shareBand(percent),
-          overlapSqMeters:
-            Number.isFinite(Number(p.calc_area)) ? Math.round(Number(p.calc_area)) : null,
-        },
-      },
-    };
-  });
+  for (const rows of Object.values(byArea)) {
+    rows.sort((a, b) => (b.percentOfTract ?? 0) - (a.percentOfTract ?? 0));
+  }
 
-  const areas = new Set(features.map((f) => f.properties.attributes.areaId));
-  const tracts = new Set(
-    features.map((f) => f.properties.attributes.tractGeoid).filter(Boolean),
-  );
-  const cities = [...new Set(features.map((f) => f.properties.attributes.city))].sort();
-  const untracted = features.filter((f) => !f.properties.attributes.tractGeoid).length;
-  /*
-   * Minnesota HOLC areas that cross into another state's tracts.
-   *
-   * Duluth's map runs to the harbour and the tracts on the far side of it are
-   * Wisconsin's. The rows are scoped by the *area's* state, so they belong
-   * here; what they will not do is join to a Minnesota-only present-day
-   * dataset, and a silently unjoinable row is exactly the kind of gap this
-   * layer exists to make visible.
-   */
-  const outOfState = features.filter((f) => {
-    const g = f.properties.attributes.tractGeoid;
-    return g && g.slice(0, 2) !== '27';
-  }).length;
-  const unshared = features.filter((f) => f.properties.attributes.tractSharePercent === null).length;
-
+  const areaCount = Object.keys(byArea).length;
   log(
     'holc-tracts',
-    `${features.length} overlaps: ${areas.size} HOLC areas × ${tracts.size} tracts across ${cities.length} cities`,
+    `${scoped.length} overlaps: ${areaCount} HOLC areas × ${tracts.size} tracts`,
   );
-  const byGrade = features.reduce((acc, f) => {
-    const g = f.properties.attributes.grade ?? 'ungraded';
-    acc[g] = (acc[g] ?? 0) + 1;
-    return acc;
-  }, {});
-  log('holc-tracts', `by grade: ${Object.entries(byGrade).map(([k, v]) => `${k}=${v}`).join(', ')}`);
-  if (untracted) log('holc-tracts', `${untracted} rows carry no tract GEOID upstream`);
+  if (untracted) log('holc-tracts', `${untracted} rows carry no tract GEOID upstream — dropped`);
   if (outOfState) log('holc-tracts', `${outOfState} rows overlap a tract outside Minnesota`);
 
-  await writeLayer('holc-tracts', {
-    layer: 'holc_tract_overlap',
-    provenance: {
-      source:
-        'Mapping Inequality census crosswalk, Digital Scholarship Lab, University of Richmond',
-      sourceUrl: REPO,
-      datasetUrl: SOURCE,
-      // The repository README states "This data is licensed under a CC-BY-NC
-      // license" and names no version; the repository carries no LICENSE file.
-      // The parent project's own terms page states CC BY-NC 2.5, so that is
-      // the version recorded here — flagged, not silently assumed.
-      license: 'CC BY-NC (version unstated upstream; parent project states 2.5)',
-      licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
-      attribution:
-        'Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality: Redlining in New Deal America", crosswalked against NHGIS 2020 census tracts by the Digital Scholarship Lab',
-      sourceDate: '2020',
-      refresh: 'rare',
-      tractVintage: '2020 census tracts (NHGIS)',
-      relates: 'redlining -> ej_cumulative, and any other dataset keyed on a 2020 tract GEOID',
-      holcAreaCount: areas.size,
-      tractCount: tracts.size,
-      nationalRowCount: all.features.length,
-    },
-    knownGaps: [
-      'Each record is a geometric overlap and nothing more: this share of this 2020 census tract sits on ground a 1937-era HOLC map graded this way. It is not a statement that anything about the tract today follows from the grade.',
-      'A tract can appear several times, once per HOLC area crossing it, and an area can appear several times, once per tract. Summing shares across records without deduplicating by tract will double-count.',
-      `${untracted} of ${features.length} rows carry no tract GEOID in the upstream file and cannot be joined to present-day tract data. They are published rather than dropped, because a gap in the crosswalk is itself worth seeing.`,
-      `${unshared} rows carry no percent-of-tract figure upstream. That is published as null, not as zero.`,
-      `${outOfState} rows cross the state line — a Minnesota HOLC area overlapping a census tract in a neighbouring state. They are kept, because the ground was graded, but they will not join to a Minnesota-only present-day dataset such as the cumulative-stressor layer.`,
-      'Tract boundaries are 2020 vintage. A join against a dataset built on 2010 tracts, or on block groups, is not valid without a further crosswalk; the Digital Scholarship Lab publishes a 2010 file for that case.',
-      'The percentage bands (under 5%, 5–25%, 25–50%, over half) are this project\'s presentation, not the upstream\'s. The raw percentage ships beside them unmodified.',
-      'The crosswalk covers only ground HOLC graded. A tract with no record here was not necessarily spared housing discrimination — it may simply sit outside every surveyed city, or outside the surveyed part of one.',
-      'The overlap is computed and published upstream against NHGIS boundaries; this project subsets it to Minnesota and renames fields, and does not recompute the intersection.',
-      'The upstream repository has no LICENSE file; its README states only "CC-BY-NC" with no version. No source found for a versioned statement, so the parent Mapping Inequality project\'s CC BY-NC 2.5 terms are applied. Either way it is non-commercial and cannot be redistributed under this project\'s own CC BY 4.0 data terms.',
-    ],
-    features,
-  });
+  const dir = path.join(PUBLIC_DATA, 'reference');
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    path.join(dir, 'holc-tract-crosswalk.json'),
+    JSON.stringify({
+      metadata: {
+        source:
+          'Mapping Inequality census crosswalk, Digital Scholarship Lab, University of Richmond',
+        sourceUrl: REPO,
+        datasetUrl: SOURCE,
+        // The repository README states "This data is licensed under a CC-BY-NC
+        // license" and names no version; the repository carries no LICENSE
+        // file. The parent project's own terms page states CC BY-NC 2.5, so
+        // that is what is recorded — flagged, not silently assumed.
+        license: 'CC BY-NC (version unstated upstream; parent project states 2.5)',
+        licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
+        attribution:
+          'Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality: Redlining in New Deal America", crosswalked against NHGIS 2020 census tracts by the Digital Scholarship Lab',
+        tractVintage: '2020 census tracts (NHGIS)',
+        state: STATE_USPS,
+        areaCount,
+        tractCount: tracts.size,
+        rowsWithoutTract: untracted,
+        rowsOutsideMinnesota: outOfState,
+        nationalRowCount: all.features.length,
+        note: 'Geometric overlap only: this share of this 2020 tract sits on ground a 1930s HOLC map graded this way. Not a claim that anything about the tract today follows from the grade. Shares must not be summed across areas without deduplicating by tract.',
+        lastUpdated: new Date().toISOString(),
+      },
+      byArea,
+    }),
+  );
+  log('holc-tracts', `wrote ${areaCount} areas -> public/data/${OUT}`);
 }
 
 main().catch((err) => {

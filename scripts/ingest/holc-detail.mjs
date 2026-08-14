@@ -43,22 +43,53 @@
  * dated to the programme window and `knownGaps` states the conflict in full.
  *
  * ---------------------------------------------------------------------------
+ * WHAT EACH SOURCE IS ASKED
+ * ---------------------------------------------------------------------------
+ *
+ * The two tracings are not rivals answering one question badly. They answer
+ * different questions, and each block's record is assembled from whichever
+ * source is competent to answer:
+ *
+ *   Met Council  -> what colour is this block? (class, and so the grade)
+ *   Mapping Ineq -> which area is this, and what did the appraiser write?
+ *
+ * So a park inside area D3 reads "Park / Open Space, in HOLC area D3", and
+ * nothing is overruled: the block-level tracing is more specific about the
+ * ground, the neighbourhood tracing supplies the identity that carries the
+ * prose. `miArea` is the label drawn on the map and the route back to the
+ * survey sheet in the redlining layer.
+ *
+ * ---------------------------------------------------------------------------
  * VERIFICATION IS COMPUTED, NOT ASSERTED
  * ---------------------------------------------------------------------------
  *
  * The Met Council's own lineage statement is candid: "This data was digitized
  * from a non-georeferenced, photgraphic [sic] image of the original map. The
  * accuracy is unknown." A layer built on an admittedly unknown georeference
- * needs a check a reader can see, so this ingest performs one: every polygon's
- * representative point is tested against the Mapping Inequality areas already
- * on disk, and the agreement rate between the two independent digitisations is
- * measured and written into the layer's provenance every run.
+ * needs a check somebody can see, so this ingest performs one every run: each
+ * polygon's representative point is tested against the Mapping Inequality
+ * areas already on disk, and the rate at which the two independent tracings
+ * put the same ground in the same class is measured and written into the
+ * layer's provenance and its known gaps.
  *
- * That per-polygon result also ships as an attribute, which is the useful part
- * for a reader: it names the Mapping Inequality area a given block sits in, so
- * the block can be carried back to the appraiser's prose in the other layer.
- * It is a statement about where two maps put a boundary. It is not a claim
- * about anything beyond that.
+ * The measurement stays at layer level rather than being stamped onto every
+ * polygon. Per-block it was two more fields in the panel restating a
+ * distinction the design above already resolves — and most of the 3.8% that
+ * "disagree" are precisely the parks, water and industrial blocks this layer
+ * exists to show, where the finer tracing is not contradicting the coarser one
+ * so much as saying more than it could.
+ *
+ * ---------------------------------------------------------------------------
+ * THE SEAM TO THE PRESENT
+ * ---------------------------------------------------------------------------
+ *
+ * A block is small enough to sit inside exactly one 2020 census tract, so each
+ * one resolves its own `tractGeoid` directly against the tract boundaries the
+ * cumulative-stressor layer already ships. That is a clean one-to-one join and
+ * it is what lets the map put a 1930s grade beside a present-day tract record
+ * at block precision — adjacent, dated, sourced, with nothing computed between
+ * them (§1c). Graded areas, which span several tracts each, get the same link
+ * as a list with coverage shares; see redlining.mjs.
  */
 
 import {
@@ -165,30 +196,22 @@ async function fetchAll() {
   return out;
 }
 
-/**
- * Where the two digitisations agree, per polygon.
- *
- * Deliberately three-valued. "Outside" is not disagreement: Mapping Inequality
- * only drew the graded neighbourhoods, so a Met Council polygon covering
- * ungraded fringe land correctly falls outside every one of them, and folding
- * that into a failure rate would understate the agreement it is meant to
- * measure.
- */
-const AGREEMENT = {
-  same: 'Same class as Mapping Inequality',
-  differs: 'Different class from Mapping Inequality',
-  outside: 'Outside every Mapping Inequality area',
-};
-
 async function main() {
-  const [raw, counties, jurisdictions, redlining] = await Promise.all([
+  const [raw, counties, jurisdictions, redlining, tracts] = await Promise.all([
     fetchAll(),
     loadCounties(),
     loadPublicJson('reference/mn-jurisdictions.geojson', {
       runFirst: 'npm run data:jurisdictions',
     }),
     loadPublicJson('redlining.geojson', { runFirst: 'npm run data:redlining' }),
+    // 2020 census tract boundaries, borrowed from the layer that already
+    // publishes them rather than downloaded twice. Optional: a missing file
+    // costs the tract link, not the layer.
+    loadPublicJson('ej-cumulative.geojson', { optional: true }),
   ]);
+  if (!tracts) {
+    log('holc-detail', 'no tract boundaries on disk — run `npm run data:ej` to add tract links');
+  }
 
   if (raw.length < MIN_EXPECTED) {
     throw new Error(
@@ -219,6 +242,7 @@ async function main() {
     const jurisdiction = findContaining(point, jurisdictions.features);
     const miArea = findContaining(point, redlining.features);
     const miCategory = miArea?.properties.attributes.category ?? null;
+    const tract = tracts ? findContaining(point, tracts.features) : null;
 
     const verdict = !miArea ? 'outside' : miCategory === className ? 'same' : 'differs';
     tally[verdict]++;
@@ -241,14 +265,14 @@ async function main() {
           className,
           grade,
           city: jurisdiction?.properties.basename ?? null,
-
-          // --- how this block compares with the other digitisation ---
-          // A statement about two maps, and nothing more. `miArea` is the
-          // route back to the appraiser's prose, which lives in the redlining
-          // layer and is deliberately not copied here.
+          // The identifier HOLC printed on the area this block sits in —
+          // drawn on the map as its label, and the route back to what the
+          // appraiser wrote, which lives in the redlining layer and is
+          // deliberately not copied here.
           miArea: miArea?.properties.attributes.holcId ?? null,
-          miCategory,
-          miAgreement: AGREEMENT[verdict],
+          // The 2020 tract this block sits in. One block, one tract; the join
+          // key every present-day tract dataset here shares.
+          tractGeoid: tract?.properties.attributes.geoid ?? null,
         }),
       },
     };
@@ -271,6 +295,11 @@ async function main() {
     ...new Set(features.map((f) => f.properties.attributes.city).filter(Boolean)),
   ].sort();
   log('holc-detail', `${cities.length} municipalities touched: ${cities.join(', ')}`);
+
+  const labelled = features.filter((f) => f.properties.attributes.miArea).length;
+  const withTract = features.filter((f) => f.properties.attributes.tractGeoid).length;
+  log('holc-detail', `${labelled}/${features.length} blocks carry a HOLC area label`);
+  log('holc-detail', `${withTract}/${features.length} blocks resolve a 2020 census tract`);
 
   /*
    * The agreement rate, measured this run rather than remembered from a note.
@@ -319,13 +348,33 @@ async function main() {
       crossCheckAgreementPercent: agreementPct,
       crossCheckComparedPolygons: compared,
       crossCheckOutsideAnyGradedArea: tally.outside,
+      blocksWithAreaLabel: labelled,
+      blocksWithTract: withTract,
+      tractVintage: '2020 census tracts, via public/data/ej-cumulative.geojson',
+      // Two publishers appear on every labelled block: the geometry and class
+      // are the Metropolitan Council's, the area identifier is Mapping
+      // Inequality's. Credited separately rather than folded into one line.
+      secondarySources: [
+        {
+          key: 'mapping-inequality',
+          name: 'Mapping Inequality, Digital Scholarship Lab, University of Richmond',
+          url: 'https://dsl.richmond.edu/panorama/redlining/',
+          license: 'CC BY-NC 2.5',
+          licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
+          contributes: {
+            en: 'The HOLC area identifier drawn on each block, and the independently georeferenced areas this layer is checked against.',
+            es: 'El identificador del área HOLC dibujado en cada manzana, y las áreas georreferenciadas de forma independiente con las que se contrasta esta capa.',
+          },
+        },
+      ],
     },
     knownGaps: [
       'Minneapolis and St. Paul only. The Metropolitan Council digitised the Twin Cities sheet; the six other Minnesota cities HOLC surveyed appear in the redlining layer instead, and neither layer covers a city that was never surveyed.',
       'The publisher dates this file to 1934 and its description discusses grades assigned "in 1934". HOLC\'s City Survey Program did not begin until late 1935, so no residential security map can date from 1934 — 1934 is the year the FHA underwriting scheme these grades implement was created. Mapping Inequality dates the Minneapolis map to 1937 and records no year at all for St. Paul. This layer is dated to the programme window rather than repeating either claim as fact.',
       'The Metropolitan Council states plainly that the file "was digitized from a non-georeferenced, photgraphic image of the original map" and that "the accuracy is unknown". Boundaries here are a tracing of a photograph of a hand-drawn sheet, not a survey.',
-      `Every polygon is tested against the independently georeferenced Mapping Inequality areas at build time: ${tally.same} of ${compared} comparable polygons carry the same class, or ${agreementPct}%. A further ${tally.outside} fall outside every graded area, which is expected — Mapping Inequality drew only the graded neighbourhoods, and this sheet was traced to its edges.`,
-      'The file carries one attribute, the class, and no area identifier. There is therefore nothing here for HOLC\'s survey sheets to join to: what the appraiser wrote about an area is in the redlining layer, and a block is linked to it only by which area its centre falls inside.',
+      `Every polygon is tested against the independently georeferenced Mapping Inequality areas at build time: ${tally.same} of ${compared} comparable polygons carry the same class, or ${agreementPct}%. A further ${tally.outside} fall outside every graded area, which is expected — Mapping Inequality drew only the graded neighbourhoods, and this sheet was traced to its edges. Most of the remainder are the parks, water and industrial blocks this layer exists to distinguish, where the finer tracing says more than the neighbourhood outline could rather than contradicting it.`,
+      `The Metropolitan Council file carries one attribute, the class, and no area identifier — so nothing in it can join to HOLC's survey sheets. The area label on each block (${labelled} of ${features.length} have one) is Mapping Inequality's, resolved by which of their graded areas the block's centre falls inside, and it is the route back to what the appraiser wrote. Blocks outside every graded area carry no label.`,
+      `${withTract} of ${features.length} blocks resolve a 2020 census tract, matched by containment against the tract boundaries this project already ships with the cumulative-stressor layer. The tract is a join key for laying present-day data beside the grade. It is not a claim that anything about the tract today follows from the grade.`,
       'Park, open water and undeveloped shading is reproduced as the sheet drew it. That is a claim about the 1930s map, not about present-day land cover — parks have been built and lakes have been filled since.',
       '"Uncertain" is the publisher\'s own value for ground whose colour could not be read off the photograph. It is carried through unresolved rather than assigned a grade.',
     ],

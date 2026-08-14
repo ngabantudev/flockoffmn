@@ -23,7 +23,14 @@
  * lived there.
  */
 
-import { fetchWithRetry, writeLayer, loadCounties, log, slugId } from './lib/util.mjs';
+import {
+  fetchWithRetry,
+  writeLayer,
+  loadCounties,
+  loadPublicJson,
+  log,
+  slugId,
+} from './lib/util.mjs';
 import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
 
 const SOURCE =
@@ -158,6 +165,42 @@ function surveyDateBasis(city, citySurvey) {
   return 'No year recorded, and this map was made outside HOLC\'s City Survey Program. No source found for when it was drawn.';
 }
 
+/**
+ * Which of today's census tracts sit on this graded area, and how much of each.
+ *
+ * The share is the point, not the list. "This tract was redlined" reads the
+ * same whether a D grade covers four per cent of it or ninety, and the second
+ * is a finding while the first is close to noise — so the percentage travels
+ * with the identifier and a reader can see which one they have. Rendered as
+ * text rather than a nested object because the feature schema's attributes are
+ * flat scalars by design (src/layers/types.ts) and a join key that has to be
+ * parsed out of a blob is a join waiting to go wrong; the machine-readable
+ * form is the reference file this is read from.
+ *
+ * Capped, because an area crossing eleven tracts would otherwise write a
+ * paragraph into a detail panel. The count of what was trimmed is kept so the
+ * line never implies the list is complete when it is not.
+ */
+const MAX_TRACTS_LISTED = 6;
+
+function tractList(rows) {
+  if (!rows?.length) return null;
+  const shown = rows.slice(0, MAX_TRACTS_LISTED).map((r) => {
+    if (r.percentOfTract === null) return r.geoid;
+    // A row exists only where the two shapes overlap, so a share that rounds
+    // away must not be printed as "0%" — that says the opposite of what the
+    // record means. Below a tenth of a per cent it is reported as the sliver
+    // it is; above that, one decimal is as fine as anyone needs to read.
+    const share =
+      r.percentOfTract > 0 && r.percentOfTract < 0.1
+        ? '<0.1%'
+        : `${Math.round(r.percentOfTract * 10) / 10}%`;
+    return `${r.geoid} (${share})`;
+  });
+  const hidden = rows.length - shown.length;
+  return hidden > 0 ? `${shown.join('; ')}; +${hidden} more` : shown.join('; ');
+}
+
 /** Trim a free-text survey value to a clean string, or null. Never invents one. */
 function textOrNull(value) {
   if (typeof value !== 'string') return null;
@@ -203,6 +246,15 @@ async function main() {
 
   const counties = await loadCounties();
   const descriptions = await fetchDescriptions();
+  // Optional: the crosswalk is a nice-to-have on a layer whose subject is the
+  // 1930s grade, so a missing reference file costs one attribute rather than
+  // failing the whole layer. build-all runs holc-tracts first.
+  const crosswalk = await loadPublicJson('reference/holc-tract-crosswalk.json', {
+    optional: true,
+  });
+  if (!crosswalk) {
+    log('redlining', 'no tract crosswalk on disk — run `npm run data:holc-tracts` to add tract links');
+  }
 
   const features = scoped.map((f) => {
     const p = f.properties;
@@ -235,6 +287,10 @@ async function main() {
           holcId: p.label ?? null,
           areaId: p.area_id,
           residential: p.residential ?? null,
+          // Today's tracts sitting on this 1930s area, with the share of each
+          // one it covers. Two dated facts about the same ground, adjacent —
+          // and nothing computed between them (§1c).
+          tracts: tractList(crosswalk?.byArea?.[String(p.area_id)]),
           surveyYear: surveyDate(p.city, p.city_survey),
           surveyYearBasis: surveyDateBasis(p.city, p.city_survey),
           // Whether this map came out of HOLC's own City Survey Program or was
@@ -303,6 +359,9 @@ async function main() {
     }; no year for ${undatedCities.join(', ')}`,
   );
 
+  const withTracts = features.filter((f) => f.properties.attributes.tracts).length;
+  log('redlining', `${withTracts}/${features.length} areas carry a 2020 census tract list`);
+
   const namedTally = {};
   for (const f of withSurvey) {
     const named = f.properties.attributes.groupsNamed;
@@ -341,6 +400,23 @@ async function main() {
       // see which cities are actually dated and which are not.
       citySurveyYears: CITY_SURVEY_YEAR,
       citiesWithNoRecordedYear: undatedCities,
+      areasWithTractLink: withTracts,
+      // The tract shares are a second publisher's work joined onto this one's
+      // areas, so they are credited as such rather than folded into the
+      // primary citation.
+      secondarySources: [
+        {
+          key: 'mi-crosswalk',
+          name: 'Mapping Inequality census crosswalk, Digital Scholarship Lab',
+          url: 'https://github.com/americanpanorama/mapping-inequality-census-crosswalk',
+          license: 'CC BY-NC (version unstated upstream; parent project states 2.5)',
+          licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
+          contributes: {
+            en: 'Which 2020 census tracts each graded area overlaps, and how much of each tract it covers.',
+            es: 'Qué secciones censales de 2020 se superponen a cada área calificada, y qué parte de cada sección cubre.',
+          },
+        },
+      ],
     },
     knownGaps: [
       `Only the ${cities.length} Minnesota cities HOLC surveyed appear: ${cities.join(', ')}. A neighbourhood with no polygon was not necessarily spared housing discrimination — it may simply never have been graded.`,
@@ -357,6 +433,8 @@ async function main() {
       '"Groups named" is derived by keyword-matching the survey prose against the appraisers\' own vocabulary. It records that a word was written about an area — not who actually lived there, and not how many.',
       'The survey text quotes 1930s appraisers directly, including racist language and slurs. It is reproduced unaltered because paraphrasing it conceals how explicit the racial criteria were.',
       'The transcribed descriptions carry no separate licence statement of their own; they are treated here under the Mapping Inequality project\'s CC BY-NC 2.5 terms.',
+      'The 2020 census tracts listed on each area are a geometric overlap and nothing more: this share of that tract sits on ground graded this way. It is not a statement that anything about the tract today follows from the grade. The percentage is what makes the difference readable — an area covering four per cent of a tract and one covering ninety are not the same claim.',
+      'Tract shares come from the Digital Scholarship Lab\'s own published crosswalk against NHGIS 2020 boundaries, not from an intersection computed here. Areas crossing more than six tracts have the list trimmed, with the number withheld shown; the full table is in public/data/reference/holc-tract-crosswalk.json.',
       'Racial covenants are a separate record, mapped by Mapping Prejudice at the University of Minnesota, and are linked rather than duplicated here.',
       'This layer is CC BY-NC 2.5 and cannot be redistributed under this project\'s own CC BY 4.0 data terms.',
     ],
