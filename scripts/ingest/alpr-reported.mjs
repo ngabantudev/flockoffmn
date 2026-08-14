@@ -213,16 +213,32 @@ const BCA_NAME_ALIASES = {
   'university minnesota police twin cities': 'university minnesota police',
 };
 
-/** Cache Overpass results per agency so a re-run doesn't re-ask for them. */
+/**
+ * Cache Overpass results per agency so a re-run doesn't re-ask for them.
+ *
+ * The cached search box is recorded beside the roads and checked, because the
+ * box is derived from the jurisdiction polygon: re-running after that layer
+ * refreshes would otherwise resolve this year's filings against last year's
+ * boundary, silently, with the answer already on disk.
+ *
+ * An empty result is never written. Overpass answers a failed or truncated
+ * query with HTTP 200 and no elements, and a cache is forever — one bad
+ * minute would drop every one of an agency's reported readers into
+ * `unresolved` on every future build, and nothing downstream would say why.
+ */
 async function cachedRoads(agencyKey, bbox) {
   const dir = path.join(ROOT, 'data/raw/alpr-reported');
   await mkdir(dir, { recursive: true });
   const file = path.join(dir, `${agencyKey}.json`);
-  if (existsSync(file)) return JSON.parse(await readFile(file, 'utf8'));
+  if (existsSync(file)) {
+    const cached = JSON.parse(await readFile(file, 'utf8'));
+    if (cached.bbox === bbox && cached.elements?.length) return cached;
+  }
 
   const query = `[out:json][timeout:180];way["highway"]["name"](${bbox});out geom;`;
   const data = await queryOverpass('alpr-reported', query, { retries: 1, timeoutMs: 190_000 });
-  await writeFile(file, JSON.stringify(data));
+  if (data.elements?.length) await writeFile(file, JSON.stringify({ ...data, bbox }));
+  else log('alpr-reported', `  ${agencyKey}: Overpass returned no roads — not cached`);
   await new Promise((r) => setTimeout(r, QUERY_GAP_MS));
   return data;
 }

@@ -1781,7 +1781,15 @@ export class MapController {
     // bind their own handlers, and one layer's mouseleave tearing down the
     // shared popup while the other still believed it was showing left the
     // card stuck hidden until the pointer left that record entirely.
+    //
+    // Which is why hiding is conditional on still owning it: the pointer
+    // sliding off a crowd-sourced camera onto the agency-reported reader
+    // underneath fires this layer's `mouseleave` while the card on screen is
+    // already the other layer's, and an unconditional teardown there took the
+    // wrong card down and left the reader hovering a record with nothing shown
+    // until they moved again.
     const hide = () => {
+      if (this.hoverCardId && !this.hoverCardId.startsWith(`${layer.id}:`)) return;
       this.hoverCardId = null;
       this.hoverPopup?.remove();
       this.hoverPopup = null;
@@ -2092,27 +2100,46 @@ export class MapController {
       });
     } else {
       this.visible.delete(layer.id);
+      // A selection outlives its own layer otherwise. The highlight is
+      // feature-state on a style layer that is about to be hidden, but the
+      // overlays hung off it — the related buildings, their glow, the thrown
+      // paths — belong to no registry layer, so applyVisibility never reaches
+      // them and restack() goes on pinning them above everything on the next
+      // toggle. Unticking "police & sheriff jurisdictions" left the ward's
+      // buildings and lines drawn over a map that no longer contained the
+      // ward.
+      if (this.selectedPolygon?.layerId === layer.id || this.relatedOverlayOwner === layer.id) {
+        this.releaseHighlight();
+      }
+      const hoveredId = this.hoveredPolygon.get(layer.id);
+      if (hoveredId) {
+        this.map.setFeatureState({ source: this.sourceId(layer.id), id: hoveredId }, { hover: false });
+        this.hoveredPolygon.delete(layer.id);
+      }
       this.applyVisibility(layer);
     }
   }
 
+  /**
+   * Show or hide every style layer this registry layer owns.
+   *
+   * Derived from the style rather than from a hardcoded suffix list, because
+   * the list is the bug: it has to name every id addLayer can create, and it
+   * silently omitted `-blocks-fill`/`-blocks-outline` — so unticking racial
+   * covenants hid the parcels and left the coarse grid they stand under drawn
+   * at every zoom below `detailFrom`, which is every zoom the map opens at,
+   * with the count beside it reading 0. Nothing failed; the list had simply
+   * drifted from addLayer, and would have drifted again on the next geometry.
+   *
+   * `${id}-` with the hyphen is what makes the prefix test safe between
+   * neighbours like `alpr` and `alpr_reported` — the same test restack() uses,
+   * for the same reason.
+   */
   private applyVisibility(layer: ClientLayer) {
-    const on = this.visible.has(layer.id);
-    for (const suffix of [
-      '-fill',
-      '-outline',
-      '-line-casing',
-      '-line',
-      '-line-hit',
-      '-points-glow',
-      '-points',
-      '-cones',
-      '-labels',
-    ]) {
-      const id = `${layer.id}${suffix}`;
-      if (this.map.getLayer(id)) {
-        this.map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
-      }
+    const visibility = this.visible.has(layer.id) ? 'visible' : 'none';
+    for (const styleLayer of this.map.getStyle().layers ?? []) {
+      if (!styleLayer.id.startsWith(`${layer.id}-`)) continue;
+      this.map.setLayoutProperty(styleLayer.id, 'visibility', visibility);
     }
     this.emitCounts();
   }
