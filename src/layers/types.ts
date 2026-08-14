@@ -13,10 +13,6 @@
 
 export type LayerId =
   | 'alpr'
-  // Derived from `alpr`, not ingested: the stretches of road where readers
-  // stand in a line rather than a cluster. A dot map answers "is there a camera
-  // here"; this answers "how many times does one ordinary trip get logged".
-  | 'alpr_corridor'
   | 'agency_287g'
   | 'detention_facility'
   | 'data_center'
@@ -216,8 +212,7 @@ export interface NearMeSummary {
  * The shelf a layer sits on in the control panel.
  *
  * Seven layers in one flat list is a list nobody reads to the bottom of, and
- * the reader is left to work out for themselves that the cameras and the
- * corridors are the same subject seen twice, or that a 1930s mortgage grade
+ * the reader is left to work out for themselves that a 1930s mortgage grade
  * and a deed clause are both answers to "how did this map get drawn this way".
  * Grouping states that relationship in the panel instead of leaving it
  * implied.
@@ -324,28 +319,6 @@ export interface LayerDefinition {
    */
   bearingKey?: string;
   /**
-   * Where a record's parts sit along its own length, if it has a length.
-   *
-   * A corridor is eleven miles of road with nineteen readers on it, and the
-   * fact that matters is not the total but the spacing — bunched at one
-   * junction is a different claim from one every mile and a half the whole way.
-   * A record that carries those offsets names them here and the detail panel
-   * draws them to scale, with the same text in the record's own summary line so
-   * the drawing is never the only way to get the information.
-   *
-   * Like `bearingKey`, this describes the data rather than one layer's
-   * rendering: any layer whose records have things positioned along them gets
-   * the same treatment by naming the fields.
-   */
-  positions?: {
-    /** Attribute holding offsets in miles from the record's start, ';'-separated. */
-    offsetsKey: string;
-    /** Attribute holding how many things sit at each offset, ';'-separated, same length. */
-    countsKey: string;
-    /** Accessible name for the drawing, e.g. "Readers along this corridor". */
-    label: I18nString;
-  };
-  /**
    * Colour records by a category once they are drawn individually.
    *
    * Only at the closest scale, and deliberately: while the records are still
@@ -436,116 +409,6 @@ export interface LayerDefinition {
     blocksUntil: number;
     /** Zoom at/above which parcels are fully opaque and the grid is gone. */
     detailFrom: number;
-  };
-  /**
-   * Draw a line layer as a living filament: a blurred glow beneath a bright
-   * core.
-   *
-   * Not decoration for its own sake. A corridor is not a route anyone drew — it
-   * is what independent purchases add up to, and it accumulates the way a root
-   * system does, opportunistically and with no plan behind it. A flat drawn
-   * line implies an author. A filament does not, which is the more truthful
-   * picture of how this infrastructure actually arrived.
-   *
-   * Standing still by default — see `pulse` below for the one, narrowly gated,
-   * exception.
-   */
-  filament?: boolean;
-  /**
-   * Fire a brief travelling spark along filament links whose network meets
-   * this size, excluding the cord tier entirely.
-   *
-   * A filament layer once animated a light along every strand, continuously
-   * and unthrottled, and it was pulled for real cost with no fact behind it
-   * (see the removed limitation this replaced, and the controller's own
-   * comment on the two static line layers). This is a narrower claim on
-   * purpose in two ways at once: gated to mesh links at or above
-   * `minConnectedSites` — roughly the denser half, so the sparse rural mesh
-   * and the wide, long cords never animate — and, per eligible link, quiet
-   * most of the time rather than always in motion. A link fires a slow spark
-   * on its own period and rests for the rest of it, the way the axon it's
-   * named for does, so at any instant only a fraction of eligible links are
-   * visibly sparking. Positions update on a throttled interval rather than
-   * every frame, and the whole thing is skipped outright under
-   * `prefers-reduced-motion`. It still carries no fact of its own; colour and
-   * width already say which links matter, and this only dramatises what they
-   * already say.
-   */
-  pulse?: {
-    /**
-     * The `networkColor.key` value a mesh link needs to animate.
-     *
-     * Not a fraction or a percentile computed at runtime — a plain threshold
-     * against the same attribute `networkColor` already ramps by, so the two
-     * stay legible against each other: a strand bright enough to animate is
-     * always at least as bright-coloured as one that is not.
-     */
-    minConnectedSites: number;
-  };
-  /**
-   * Colour a line layer by the size of the connected network each record is in.
-   *
-   * Doing work a line cannot. Two links that meet at a shared record are one
-   * network and two that do not are two, and no drawn line can say which — so
-   * instead they light up together, and the brighter a strand burns the more
-   * records its network joins.
-   *
-   * This once rode along with an animation config, which meant switching the
-   * animation off silently took the colour encoding with it. They are separate
-   * questions and are separate fields.
-   */
-  networkColor?: {
-    /** Attribute holding how many records the feature's network joins. */
-    key: string;
-    /**
-     * The largest network the ramp spreads across.
-     *
-     * A property of this layer's data rather than of the map, which is why it
-     * lives here: cut it to the range the records actually hold or nearly every
-     * one of them lands on the same dim end of the ramp, and the encoding is
-     * thrown away. Leave a little headroom above the largest so a denser
-     * extract, or another state, does not flatten out at the top.
-     */
-    maxRecords: number;
-  };
-  /**
-   * A second, heavier tier of line within the same filament layer.
-   *
-   * A mycelium is not one kind of thread. Fine hyphae fill a patch and fuse
-   * into a dense mesh; thick cords then run across dead ground to join one
-   * patch to the next, and it is the cords that make scattered patches one
-   * organism rather than a scatter of organisms (Fricker et al., *The Mycelium
-   * as a Network*, PMC11687498). The corridor layer has exactly that shape —
-   * a Gabriel mesh of short neighbourhood links, and a spanning tree of long
-   * roads fusing the mesh bodies — and drawing both at one weight would say
-   * they are one kind of claim when they are not.
-   *
-   * So this is not styling for its own sake. The cord tier carries the weaker
-   * claim — a cord says two clusters are on one road network, where a mesh link
-   * says a trip between two cameras is logged twice — but it carries the
-   * finding that only shows at a distance, which is that the cameras of this
-   * state are one connected thing. Hence the weight, and hence the brightness
-   * ramp in the controller: loud where the whole state is in frame and nothing
-   * else on the map is legible, quiet where a city fills the screen and the
-   * mesh is the subject. Cords stay outside the network colour ramp throughout,
-   * so the ramp keeps meaning what it means.
-   *
-   * Omit it and a filament layer is one uniform tier, which is right for any
-   * layer whose lines are all the same kind of statement.
-   */
-  cordTier?: {
-    /** Attribute the two tiers are told apart by. */
-    key: string;
-    /** The value of that attribute on the heavier tier. */
-    value: string;
-    /**
-     * Colour for the heavier tier, off the network ramp.
-     *
-     * Cords cannot ride the ramp: the ramp encodes how many reader locations a
-     * mesh body holds, and a cord belongs to two bodies at once. Giving them a
-     * ramp colour would make up an answer to a question they do not answer.
-     */
-    color: string;
   };
   /**
    * How strongly a line layer is painted, 0–1. Omit for the standard weight.
@@ -665,10 +528,9 @@ export interface LayerCollection {
     geometry:
       | { type: 'Point'; coordinates: [number, number] }
       | { type: 'LineString'; coordinates: number[][] }
-      // Corridors are drawn from real OSM road geometry clipped to the run of
-      // readers, so a single corridor is many disjoint pieces of surveyed road
-      // rather than one continuous line. The gaps are roads we hold no geometry
-      // for, and joining them would assert a road we cannot show.
+      // Some line layers' source geometry is naturally disjoint — multiple
+      // separate stretches of road under one record — rather than one
+      // continuous line.
       | { type: 'MultiLineString'; coordinates: number[][][] }
       | { type: 'Polygon'; coordinates: number[][][] }
       | { type: 'MultiPolygon'; coordinates: number[][][][] };

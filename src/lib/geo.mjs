@@ -101,10 +101,10 @@ export function findContaining(point, features) {
  * Distance to a line
  *
  * Used at build time to decide which road a camera stands beside, and in the
- * browser to answer "how far is that corridor from here". Both go through the
- * same code for the same reason county assignment does: a corridor the ingest
- * built by snapping at 60 m must not be measured by a different rule when a
- * reader asks how close it is.
+ * browser to answer "how far is that road from here". Both go through the
+ * same code for the same reason county assignment does: a line feature the
+ * ingest built by snapping at 60 m must not be measured by a different rule
+ * when a reader asks how close it is.
  * ------------------------------------------------------------------ */
 
 /**
@@ -112,7 +112,7 @@ export function findContaining(point, features) {
  *
  * An equirectangular approximation, which is what makes the segment maths
  * below plain Euclidean geometry. Good to well under a metre over the tens of
- * miles a corridor spans, and every use here is local.
+ * miles a road segment spans, and every use here is local.
  */
 function metresPerDegree(lat) {
   return [111_320 * Math.cos(toRad(lat)), 110_574];

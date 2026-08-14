@@ -52,10 +52,9 @@ const OFFSET_M = Math.round(OFFSET * 111_320);
  * Highway, US=US Highway, MN=MN State Highway, CSAH=County State Aid Highway,
  * CR=County Road, MSAS=Municipal State Aid Street."
  *
- * This is the field the corridor layer does not have and says it does not
- * have: the router that builds those strands does not report road class, and
- * guessing one from a street name was refused there. Here it is published,
- * so it is carried — and only these six, because these six are documented.
+ * Published here because it is documented — and only these six, because
+ * these six are documented. Guessing a road class from a street name is
+ * refused rather than attempted for anything outside this list.
  */
 const ROUTE_CLASSES = [
   ['I', 'Interstate highway'],

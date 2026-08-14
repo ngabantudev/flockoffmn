@@ -1,4 +1,3 @@
-import { CORD_STROKE_DARK } from '~/lib/densityRamp';
 import type { LayerCategory, LayerDefinition } from './types';
 
 /**
@@ -215,7 +214,7 @@ export const LAYERS: LayerDefinition[] = [
     color: '#38bdf8',
     colorLight: '#067baf',
     // Category colour now applies at every zoom (see mapController.ts), and
-    // the most common value by far — "Not recorded", muted slate #64748b —
+    // the rarest value — "Other or unclassified", muted slate #94a3b8 —
     // reads as almost no edge at all against the dark basemap's own
     // near-black background under the default basemap-coloured ring. A fixed
     // white ring keeps every dot legible regardless of which category colour
@@ -226,8 +225,13 @@ export const LAYERS: LayerDefinition[] = [
       key: 'operatorType',
       label: { en: 'Who runs it', es: 'Quién lo opera' },
       colors: [
-        // Muted, and first, because it is the answer four readers in five give.
-        { value: 'Not recorded', color: '#64748b' },
+        // First, because it is the answer four readers in five give — but not
+        // muted. A desaturated grey here used to read as "no camera," the
+        // opposite of what it means: every one of these is a live, recording
+        // reader, just one whose operator nobody has identified yet. A
+        // saturated red keeps that legible at a glance, the way a device's own
+        // recording light would.
+        { value: 'Not recorded', color: '#dc2626' },
         { value: 'Police department', color: '#38bdf8' },
         { value: 'County sheriff', color: '#22d3ee' },
         { value: 'State agency', color: '#a78bfa' },
@@ -303,229 +307,6 @@ export const LAYERS: LayerDefinition[] = [
         en: 'Crowd-sourced and incomplete — the absence of a camera here is not evidence that none exists.',
         es: 'De origen comunitario e incompleto: la ausencia de una cámara aquí no prueba que no exista ninguna.',
       },
-    },
-  },
-
-  {
-    id: 'alpr_corridor',
-    slug: 'alpr-corridors',
-    category: 'surveillance',
-    order: 3,
-    label: {
-      en: 'ALPR paths',
-      es: 'Rutas de ALPR',
-    },
-    summary: {
-      en: 'The roads between the plate readers — the streets joining neighbouring cameras, and the long roads joining one watched cluster to the next.',
-      es: 'Las vías entre los lectores de matrículas: las calles que unen cámaras vecinas y las carreteras largas que unen un grupo vigilado con el siguiente.',
-    },
-    whatThisMeans: {
-      en: 'A map of dots answers one question: is there a camera here. This layer answers another: what connects them. A short, bright line means an everyday drive between two cameras — a few minutes down a city street — gets logged twice. A long, pale line means two watched clusters sit on the same road network, nothing more; it is not a route anyone was seen driving. Follow enough of these lines and separated dots resolve into a handful of networks, some stretching across whole counties. Almost none of it was built that way on purpose: a city police department, a county sheriff, and a private business each bought their own cameras. This layer shows what results when nobody coordinates. The methodology behind every line — what counts as a neighbour, why cords have no length limit, what the colours track — is in "Limitations" below.',
-      es: 'Un mapa de puntos responde a una sola pregunta: ¿hay una cámara aquí? Esta capa responde a otra: ¿qué las conecta? Una línea corta y brillante indica un trayecto cotidiano entre dos cámaras —unos minutos por una calle de la ciudad— que queda registrado dos veces. Una línea larga y pálida indica que dos grupos vigilados comparten la misma red viaria, nada más; no es una ruta que se haya visto recorrer a nadie. Siga suficientes líneas y los puntos aislados se convierten en un puñado de redes, algunas que atraviesan condados enteros. Casi nada de esto se construyó así a propósito: la policía de una ciudad, el alguacil de un condado y una empresa privada compraron sus cámaras por separado. Esta capa muestra lo que resulta cuando nadie coordina. La metodología detrás de cada línea —qué cuenta como vecino, por qué los cordones no tienen límite de longitud, qué rastrean los colores— está en «Limitaciones», más abajo.',
-    },
-    limitations: [
-      {
-        en: 'Derived from the crowd-sourced camera layer, so every gap there compounds here. A reader nobody has mapped is a reader nothing links to, and it moves every strand around it: the neighbour its neighbours would have chosen is missing from the calculation entirely.',
-        es: 'Derivada de la capa de cámaras de origen comunitario, así que cada vacío de aquella se agrava aquí. Un lector que nadie ha mapeado es un lector al que nada se conecta, y desplaza todas las hebras a su alrededor: el vecino que sus vecinos habrían elegido no está en el cálculo.',
-      },
-      {
-        en: 'Two reader locations are linked when no third mapped reader falls inside the circle drawn with the two of them at its ends. A strand says that and only that. It does not say a driver between them is only read twice, that this road is the way anyone actually goes, or that nothing stands in between — only that nothing *mapped* does, which is a claim about the survey and not about the street.',
-        es: 'Dos ubicaciones de lectores se conectan cuando ningún tercer lector mapeado cae dentro del círculo trazado con ambas en sus extremos. Una hebra indica eso y solo eso. No indica que a quien conduzca entre ellas solo se le lea dos veces, ni que esa vía sea el camino que la gente toma, ni que no haya nada en medio: solo que no hay nada *mapeado*, que es una afirmación sobre el inventario y no sobre la calle.',
-      },
-      {
-        en: 'The line is the route a car would drive between the two readers, over OpenStreetMap roads. It respects one-way streets and turn bans, but it knows nothing of traffic, closures or roadworks, and it is the shortest such route rather than the one a local would pick. Distances are miles of driving, which is always more than the distance across the map. Which roads a link follows is recorded; what class of road they are is not, because the router does not report it and a road’s class is not something to guess from its name.',
-        es: 'La línea es la ruta que un coche recorrería entre los dos lectores por vías de OpenStreetMap. Respeta los sentidos únicos y los giros prohibidos, pero no sabe nada del tráfico, los cortes ni las obras, y es la ruta más corta, no la que elegiría alguien de la zona. Las distancias son millas de recorrido, siempre mayores que la distancia sobre el mapa. Se registra qué vías recorre cada conexión, pero no de qué clase son: el enrutador no lo indica y la clase de una vía no es algo que deba deducirse de su nombre.',
-      },
-      {
-        en: 'A thin strand — a neighbourhood link — is drawn only where the drive between two readers is under a mile and a half. That is an editorial choice: past that distance the line stops describing a trip between two cameras and starts describing the empty road between two towns. A reader whose nearest neighbour is further away than that appears in no thin strand at all, so the mesh thins towards rural Minnesota partly because the cameras do and partly because this number says so. The data file counts exactly how many readers the choice drops.',
-        es: 'Una hebra fina —una conexión de vecindario— solo se dibuja donde el trayecto entre dos lectores es de menos de milla y media. Es un criterio editorial: más allá de esa distancia, la línea deja de describir un trayecto entre dos cámaras y pasa a describir la carretera vacía entre dos pueblos. Un lector cuyo vecino más cercano esté más lejos no aparece en ninguna hebra fina, así que la malla se adelgaza hacia la Minnesota rural en parte porque las cámaras lo hacen y en parte porque lo dice esta cifra. El archivo de datos cuenta exactamente cuántos lectores descarta la decisión.',
-      },
-      {
-        en: 'A cord is the weakest claim on this map and it is drawn the widest, which is a real risk of misreading and worth naming plainly. Cords carry no length cap, so some of them are tens of miles of interstate, and width here means structural importance rather than intensity of surveillance: a cord is wide because cutting it would break the network in two, not because more people are watched along it. Nothing is recorded about traffic on a cord, and a cord is emphatically not a route anybody was observed taking. Every cord shows its own length in miles, and a long one should be read as the distance it says it is.',
-        es: 'Un cordón es la afirmación más débil de este mapa y es la que se dibuja más ancha, un riesgo real de malinterpretación que conviene decir con claridad. Los cordones no tienen límite de longitud, así que algunos son decenas de millas de autopista, y aquí la anchura indica importancia estructural, no intensidad de la vigilancia: un cordón es ancho porque cortarlo partiría la red en dos, no porque se vigile a más gente a lo largo de él. No se registra nada sobre el tráfico en un cordón, y un cordón no es en absoluto una ruta que se haya observado que alguien recorra. Cada cordón muestra su propia longitud en millas, y uno largo debe leerse como la distancia que dice ser.',
-      },
-      {
-        en: 'The cords are still a thin set of roads, and the absence of a cord is never evidence that no road runs between two places. Most cords draw one road per join. A second is drawn only where the network is badly folded — two clusters within twelve miles of each other on the ground but more than four times that far apart through the network — and never a third. Where four real roads join two clusters, this map shows one of them, or two. Which road wins is decided by straight-line distance between the nearest readers of the two clusters, then routed; a few joins are missing entirely because no drivable route came back at all, and the data file counts those.',
-        es: 'Los cordones siguen siendo un conjunto reducido de vías, y la ausencia de un cordón nunca prueba que no haya carretera entre dos lugares. La mayoría de los cordones dibujan una vía por unión. Solo se dibuja una segunda donde la red está muy plegada —dos grupos a menos de doce millas sobre el terreno pero a más del cuádruple de esa distancia a través de la red— y nunca una tercera. Donde cuatro vías reales unen dos grupos, este mapa muestra una, o dos. Qué vía gana lo decide la distancia en línea recta entre los lectores más cercanos de ambos grupos, y luego se calcula la ruta; algunas uniones faltan del todo porque no se obtuvo ninguna ruta transitable, y el archivo de datos las cuenta.',
-      },
-      {
-        en: 'Colour is the body of mesh, not the road, and it counts thin strands only. Two thin strands in the same shade are joined through a chain of neighbourhood links, and the shade says how many reader locations that chain holds — cords are excluded from the count, or every strand in Minnesota would be the same shade and the encoding would say nothing. A body of mesh is a chain of mapped links under the distance limit above, so it is as much a product of those two choices as of the cameras: one unmapped reader, or one link a hundred yards over the limit, can be the difference between two bodies and one.',
-        es: 'El color indica el cuerpo de malla, no la vía, y solo cuenta las hebras finas. Dos hebras finas del mismo tono están unidas por una cadena de conexiones de vecindario, y el tono indica cuántas ubicaciones de lectores tiene esa cadena; los cordones quedan fuera del recuento, o todas las hebras de Minnesota tendrían el mismo tono y la codificación no diría nada. Un cuerpo de malla es una cadena de conexiones mapeadas por debajo del límite de distancia anterior, así que depende tanto de esas dos decisiones como de las cámaras: un lector sin mapear, o una conexión que supere el límite por cien metros, puede ser la diferencia entre dos cuerpos y uno.',
-      },
-      {
-        en: 'Some links are not drawn at all. A reader with no neighbour within a mile and a half by road has nothing to link to; a pair with no mapped road between them cannot be routed; and a pair whose drive is more than three times the distance across the map — a river, a rail yard, a freeway with no crossing — is refused, because at that point the line stops describing the pair and starts describing the detour. The counts are in the data file’s known gaps, and every one of those readers is still on the camera layer.',
-        es: 'Algunas conexiones no se dibujan. Un lector sin ningún vecino a menos de milla y media por carretera no tiene con qué conectarse; un par sin vías mapeadas entre ambos no puede enrutarse; y un par cuyo recorrido supera el triple de la distancia sobre el mapa —un río, una playa de vías, una autopista sin cruce— se descarta, porque en ese punto la línea deja de describir el par y pasa a describir el rodeo. Los recuentos están en los vacíos conocidos del archivo de datos, y todos esos lectores siguen en la capa de cámaras.',
-      },
-      {
-        en: 'A reader location is one or more cameras within 75 m of each other, and a camera is placed on the nearest drivable road, which at a crossroads can be decided by a couple of metres. Which way each camera faces is on the camera layer; this layer does not claim that a single trip is read by every camera it passes.',
-        es: 'Una ubicación de lector es una o más cámaras a menos de 75 m entre sí, y cada cámara se sitúa en la vía transitable más cercana, lo que en un cruce puede decidirse por un par de metros. Hacia dónde apunta cada cámara está en la capa de cámaras; esta capa no afirma que un solo trayecto sea leído por todas las cámaras que pasa.',
-      },
-      {
-        en: 'Operator is recorded for only a minority of readers, so the agencies named on a link are a floor and never the full list. Naming an operator says who is recorded as running a reader — not who can search what it collects, which is a separate question this layer holds no data on.',
-        es: 'El operador solo consta en una minoría de los lectores, así que las agencias nombradas en una conexión son un mínimo y nunca la lista completa. Nombrar a un operador indica quién figura como responsable de un lector, no quién puede consultar lo que recopila, que es una cuestión distinta sobre la que esta capa no tiene datos.',
-      },
-    ],
-    impactSpheres: [
-      {
-        icon: 'Route',
-        color: '#38bdf8',
-        title: { en: 'Movement & routine', es: 'Movimiento y rutina' },
-        body: {
-          en: 'The Supreme Court has twice grappled with what happens once public movements are strung together. In Carpenter v. United States, it held that pulling days of cell-tower records is a search requiring a warrant, because aggregation produces a "detailed, encyclopedic" record that no single data point does. A network built from individually public plate reads raises the same question.',
-          es: 'El Tribunal Supremo se ha enfrentado dos veces a lo que ocurre cuando se encadenan movimientos públicos. En Carpenter v. United States, resolvió que obtener varios días de registros de antenas de telefonía es una pesquisa que exige una orden judicial, porque la acumulación produce un registro «detallado y enciclopédico» que ningún dato aislado ofrece. Una red construida a partir de lecturas de matrícula individualmente públicas plantea la misma pregunta.',
-        },
-        citation: 'Carpenter v. United States, 585 U.S. 296 (2018)',
-        citationUrl: 'https://www.supremecourt.gov/opinions/17pdf/16-402_h315.pdf',
-      },
-      {
-        icon: 'Fingerprint',
-        color: '#f43f5e',
-        title: { en: 'Immigration status', es: 'Estatus migratorio' },
-        body: {
-          en: 'This is not hypothetical. A public-records request to the Danville, Illinois police turned up more than 4,000 lookups against a nationwide plate-reader network in which officers gave "immigration," "ICE," or "ICE WARRANT" as the reason — despite state law and the vendor’s own policy prohibiting it. Minnesota law requires a warrant before a reader is used to track someone; how many queries against Minnesota cameras actually clear that bar is not public information.',
-          es: 'Esto no es hipotético. Una solicitud de registros públicos a la policía de Danville, Illinois, reveló más de 4.000 consultas contra una red nacional de lectores de matrícula en las que los agentes indicaron «immigration», «ICE» o «ICE WARRANT» como motivo, pese a que la ley estatal y la propia política del proveedor lo prohíben. La ley de Minnesota exige una orden judicial antes de usar un lector para rastrear a alguien; cuántas consultas contra cámaras de Minnesota realmente cumplen ese requisito no es información pública.',
-        },
-        citation: '404 Media (2025)',
-        citationUrl:
-          'https://www.404media.co/ice-taps-into-nationwide-ai-enabled-camera-network-data-shows/',
-        citation2: 'Minn. Stat. § 13.824',
-        citation2Url: 'https://www.revisor.mn.gov/statutes/cite/13.824',
-      },
-      {
-        icon: 'Speech',
-        color: '#a78bfa',
-        title: { en: 'Association & speech', es: 'Asociación y expresión' },
-        body: {
-          en: 'Knowing you might be watched changes behaviour even when you have broken no law. After the 2013 NSA surveillance revelations became public, traffic to sensitive Wikipedia topics fell nearly 30 percent — a drop researchers linked to awareness of monitoring, not any change in the underlying law.',
-          es: 'Saber que podría estar siendo observado cambia el comportamiento incluso sin haber infringido ninguna ley. Tras hacerse públicas las revelaciones de vigilancia de la NSA en 2013, el tráfico hacia temas sensibles de Wikipedia cayó casi un 30 %, una caída que los investigadores vincularon a la conciencia de estar siendo vigilado, no a ningún cambio en la ley.',
-        },
-        citation: 'Penney, "Chilling Effects: Online Surveillance and Wikipedia Use," 31 Berkeley Tech. L.J. 117 (2016)',
-        citationUrl: 'https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2769645',
-      },
-      {
-        icon: 'Landmark',
-        color: '#c084fc',
-        title: { en: 'Finance & housing', es: 'Finanzas y vivienda' },
-        body: {
-          en: 'Where this kind of infrastructure clusters today is not disconnected from where lending was denied in the 1930s. This map’s own Redlining layer, drawn from the same historical HOLC survey data, traces where those two patterns still overlap in Minnesota.',
-          es: 'Dónde se concentra este tipo de infraestructura hoy no está desconectado de dónde se negó el crédito en los años 30. La capa de Redlining de este mismo mapa, elaborada a partir de los mismos registros históricos de HOLC, traza dónde esos dos patrones todavía se superponen en Minnesota.',
-        },
-        citation: 'Sources — Redlining (HOLC), this site',
-        // Resolved to the locale-specific /sources path at render time — see
-        // MapView.astro, which is the only place that knows the locale.
-        citationUrl: 'internal:sources',
-      },
-    ],
-    geometry: 'line',
-    color: '#818cf8',
-    colorLight: '#5160f5',
-    filament: true,
-    positions: {
-      offsetsKey: 'siteOffsets',
-      countsKey: 'siteReaders',
-      label: {
-        en: 'The two reader locations this road runs between',
-        es: 'Las dos ubicaciones de lectores que une esta vía',
-      },
-    },
-    networkColor: {
-      key: 'connectedSites',
-      // The largest network in the current Minnesota extract is 101 reader
-      // locations. A little over that, so a denser extract does not clip.
-      maxRecords: 120,
-    },
-    cordTier: {
-      key: 'kind',
-      value: 'cord',
-      // This layer has networkColor set, so mapController.ts actually
-      // colours the cord from the density ramp at the current basemap's
-      // dark/light state (CORD_STROKE_DARK/_LIGHT) — this value is a
-      // fallback for the type, not what's actually drawn. See the comment
-      // where cordColor is resolved in mapController.ts.
-      color: CORD_STROKE_DARK,
-    },
-    // No pulse: the travelling-spark animation is disabled for this layer.
-    // Mesh links and cords are drawn as static lines only.
-    action: {
-      requestType: 'alpr',
-      label: {
-        en: 'Ask about these cameras',
-        es: 'Preguntar por estas cámaras',
-      },
-      fallbackBody: 'countySheriff',
-    },
-    dataPath: '/data/alpr-corridors.geojson',
-    csvPath: null,
-    provenance: {
-      source: 'Derived from the ALPR layer; roads routed by OSRM over OpenStreetMap',
-      sourceUrl: 'https://deflock.me',
-      license: 'ODbL 1.0',
-      licenseUrl: 'https://opendatacommons.org/licenses/odbl/1-0/',
-      attribution: '© OpenStreetMap contributors, ODbL — mapped by DeFlock volunteers',
-      sourceDate: null,
-      lastUpdated: null,
-      refresh: 'frequent',
-    },
-    // No filters. The one this layer had was road class, and the router that
-    // replaced the hand-built road graph does not report it — see the
-    // limitation above. A filter offering a field the data no longer carries
-    // is worse than no filter.
-    filters: [],
-    detailFields: [
-      // First, because it decides how everything under it should be read: a
-      // mile and a half of city street and ninety miles of interstate are both
-      // "a strand" and are not both the same statement.
-      { key: 'tier', label: { en: 'Kind of strand', es: 'Tipo de hebra' } },
-      {
-        key: 'readerCount',
-        label: { en: 'Readers at the two ends', es: 'Lectores en los dos extremos' },
-      },
-      {
-        key: 'linkMiles',
-        label: { en: 'Road between them (miles)', es: 'Vía entre ambos (millas)' },
-      },
-      {
-        key: 'straightMiles',
-        label: { en: 'Straight-line distance (miles)', es: 'Distancia en línea recta (millas)' },
-      },
-      {
-        key: 'connectedSites',
-        label: {
-          en: 'Reader locations in this connected network',
-          es: 'Ubicaciones de lectores en esta red conectada',
-        },
-      },
-      {
-        key: 'bringsInSites',
-        label: {
-          en: 'Reader locations cut off if this strand went (0 = a loop covers it)',
-          es: 'Ubicaciones de lectores aisladas si desapareciera esta hebra (0 = la cubre un bucle)',
-        },
-      },
-      {
-        key: 'operatorCount',
-        label: { en: 'Operators recorded here', es: 'Operadores registrados aquí' },
-      },
-      { key: 'operators', label: { en: 'Who runs these readers', es: 'Quién opera estos lectores' } },
-      {
-        key: 'unattributedReaders',
-        label: { en: 'Readers with no operator recorded', es: 'Lectores sin operador registrado' },
-      },
-      { key: 'roadsAlong', label: { en: 'Roads it follows', es: 'Vías que recorre' } },
-    ],
-    nearMe: {
-      mode: 'nearest',
-      title: { en: 'The camera-to-camera road nearest you', es: 'La vía entre cámaras más cercana' },
-      empty: {
-        en: 'No mapped link is near this point. That means no pair of mapped readers has a routed road near here — not that the roads here are unwatched.',
-        es: 'No hay ninguna conexión mapeada cerca de este punto. Eso significa que ningún par de lectores mapeados tiene una vía calculada por aquí, no que estas carreteras no estén vigiladas.',
-      },
-      detail: ['readerCount', 'linkMiles', 'straightMiles', 'operators'],
-      caveat: {
-        en: 'Built from crowd-sourced camera records. This page measures the routed road between two readers. Treat it as the shape of the thing, not a measurement.',
-        es: 'Construido a partir de registros comunitarios de cámaras. Esta página mide la vía calculada entre dos lectores. Considérelo la forma del fenómeno, no una medición.',
-      },
-      wide: true,
     },
   },
 
