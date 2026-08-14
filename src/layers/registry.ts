@@ -81,7 +81,6 @@ export const LAYERS: LayerDefinition[] = [
     // The frame every other layer is read against: which agency answers for
     // the ground under a given camera.
     defaultOn: true,
-    order: 10,
     label: {
       en: 'Police & sheriff jurisdictions',
       es: 'Jurisdicciones policiales y de alguaciles',
@@ -144,6 +143,11 @@ export const LAYERS: LayerDefinition[] = [
     relatedBuildings: {
       layerId: 'agency_building',
       joinKey: 'jurisdictionId',
+      // Throw from the headquarters where the inventory distinguishes one: a
+      // § 13.824 filing is the department's, not any one precinct's, so the
+      // lines leave the address that answers for the department rather than
+      // whichever substation the ingest happened to emit first.
+      hubKey: 'subStation',
       // Only to readers this agency itself reported to the state — never to
       // whatever happens to sit inside the boundary. See pathsTo's own
       // comment in types.ts for why that distinction is the whole point.
@@ -227,7 +231,6 @@ export const LAYERS: LayerDefinition[] = [
     // "who is responsible for this ground" without it; a reader who wants
     // the specific door switches this on.
     defaultOn: false,
-    order: 11,
     label: {
       en: 'Police & sheriff buildings',
       es: 'Edificios policiales y de alguaciles',
@@ -267,7 +270,11 @@ export const LAYERS: LayerDefinition[] = [
       icon: 'Landmark',
       byValue: {
         key: 'agencyType',
-        icons: { Police: 'Shield', Sheriff: 'Star', Military: 'Landmark' },
+        // Military and Other both fall through to the `icon` above: this map
+        // has no claim to make about the difference between a National Guard
+        // facility and an unclassified one, and inventing an insignia for it
+        // would be decoration.
+        icons: { Police: 'Shield', Sheriff: 'Star' },
       },
     },
     hoverCard: {
@@ -290,6 +297,11 @@ export const LAYERS: LayerDefinition[] = [
           en: 'No ALPR filing found for this department. That means none was found under this name — not that it operates none.',
           es: 'No se encontró ninguna declaración de ALPR para este departamento. Eso significa que no se encontró bajo este nombre, no que no opere ninguno.',
         },
+        linkLabel: {
+          en: 'The filing these come from',
+          es: 'La declaración de la que provienen',
+        },
+        moreLabel: { en: '+{n} more', es: '+{n} más' },
         max: 4,
       },
       // The honest answer to "where's the contract?". No vendor contract is
@@ -350,7 +362,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'agency_287g',
     slug: '287g',
     category: 'enforcement',
-    order: 1,
     label: {
       en: '287(g) agency agreements',
       es: 'Acuerdos de agencias 287(g)',
@@ -442,7 +453,6 @@ export const LAYERS: LayerDefinition[] = [
     // The map's subject. On since long before this field existed, when the
     // whole surveillance category was switched on by category.
     defaultOn: true,
-    order: 2,
     label: {
       en: 'ALPR / Flock cameras',
       es: 'Cámaras ALPR / Flock',
@@ -605,7 +615,6 @@ export const LAYERS: LayerDefinition[] = [
     category: 'surveillance',
     // The readers the thrown lines land on. Off, they would land on nothing.
     defaultOn: true,
-    order: 3,
     label: {
       en: 'ALPR readers agencies reported',
       es: 'Lectores ALPR reportados por agencias',
@@ -671,6 +680,11 @@ export const LAYERS: LayerDefinition[] = [
           en: 'No other filing found under this department’s name.',
           es: 'No se encontró ninguna otra declaración a nombre de este departamento.',
         },
+        linkLabel: {
+          en: 'The filing these come from',
+          es: 'La declaración de la que provienen',
+        },
+        moreLabel: { en: '+{n} more', es: '+{n} más' },
         max: 4,
       },
       note: {
@@ -731,7 +745,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'redlining',
     slug: 'redlining',
     category: 'historical',
-    order: 4,
     label: {
       en: 'Redlining zones (HOLC)',
       es: 'Zonas de redlining (HOLC)',
@@ -894,7 +907,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'detention_facility',
     slug: 'detention',
     category: 'enforcement',
-    order: 5,
     label: {
       en: 'ICE-contract detention facilities',
       es: 'Centros de detención con contrato de ICE',
@@ -976,7 +988,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'data_center',
     slug: 'data-centers',
     category: 'infrastructure',
-    order: 6,
     label: {
       en: 'Data centers',
       es: 'Centros de datos',
@@ -1114,7 +1125,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'aadt',
     slug: 'traffic-volume',
     category: 'infrastructure',
-    order: 8,
     label: {
       en: 'Roadway traffic volume',
       es: 'Volumen de tráfico vial',
@@ -1241,7 +1251,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'racial_covenant',
     slug: 'covenants',
     category: 'historical',
-    order: 7,
     label: {
       en: 'Racial covenants',
       es: 'Convenios raciales',
@@ -1345,7 +1354,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'ej_cumulative',
     slug: 'ej-cumulative',
     category: 'environment',
-    order: 9,
     label: { en: 'Cumulative Stressors', es: 'Factores de estrés acumulativos' },
     summary: {
       en: 'How many environmental and health stressors burden each census tract today, from MPCA’s draft CI-MAP.',

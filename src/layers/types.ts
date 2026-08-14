@@ -457,6 +457,16 @@ export interface LayerDefinition {
       labelKey: string;
       /** Attribute on the other layer holding a citation URL, if it has one. */
       linkKey?: string;
+      /**
+       * The citation link's text. Declared per entry rather than fixed in the
+       * controller because it is a claim about what the other layer's document
+       * *is* — a § 13.824 filing here, but a contract, a roll call or a permit
+       * for the next relation — and because a string baked into the map code
+       * never reaches the Spanish locale.
+       */
+      linkLabel: I18nString;
+      /** Overflow line for records past `max`. `{n}` is replaced with the count. */
+      moreLabel: I18nString;
       title: I18nString;
       /**
        * Shown when nothing joins. Says what an absence does and does not
@@ -491,6 +501,19 @@ export interface LayerDefinition {
     layerId: LayerId;
     /** Attribute on that point layer holding this polygon's own `id`. */
     joinKey: string;
+    /**
+     * Attribute on that point layer marking a record as *subordinate*, used to
+     * pick which of the matched records the paths throw from: the first record
+     * that does NOT carry it wins, falling back to the first match.
+     *
+     * Every matched record lights up either way; only the line origin is at
+     * stake. Declared here rather than decided in mapController because it is
+     * this relation's vocabulary — `subStation` distinguishes a precinct from
+     * its headquarters, and the next relation to want a hub (a county board and
+     * its facilities, a district and its contract sites) will name something
+     * else entirely. Omit it and the paths throw from the first match.
+     */
+    hubKey?: string;
     pathsTo?: {
       /** The point layer whose matching records get a path drawn to them. */
       layerId: LayerId;
@@ -663,17 +686,6 @@ export interface LayerDefinition {
    * neither summarised there nor downloaded by that page.
    */
   nearMe?: NearMeSummary;
-  /**
-   * Roadmap position (spec §12).
-   *
-   * Despite the name, nothing reads this to lay out the panel: the layer
-   * list renders in the order `LAYERS` declares its entries, grouped by
-   * category, and the map's draw order comes from `stackRank`, which is the
-   * category's own position. So moving a layer within its section means
-   * moving its entry in the array — changing this number alone does
-   * nothing, which is worth knowing before trying it.
-   */
-  order: number;
 }
 
 /** Shape of every file in /public/data. */
