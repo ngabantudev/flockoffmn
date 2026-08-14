@@ -25,6 +25,10 @@ export type LayerId =
   // precincts are five separate points here). See
   // scripts/ingest/agency-buildings.mjs.
   | 'agency_building'
+  // Readers the operating agency itself reported to the state under Minn.
+  // Stat. § 13.824 — the only camera records on this map whose operator is
+  // documented rather than guessed. See scripts/ingest/alpr-reported.mjs.
+  | 'alpr_reported'
   | 'data_center'
   // How much traffic each stretch of road carries on an average day. The
   // substrate the cameras are bolted to, and deliberately not a surveillance
@@ -428,18 +432,22 @@ export interface LayerDefinition {
     /** Attribute on that point layer holding this polygon's own `id`. */
     joinKey: string;
     pathsTo?: {
-      /** The point layer whose contained records get a path drawn to them. */
+      /** The point layer whose matching records get a path drawn to them. */
       layerId: LayerId;
       /**
-       * Attribute on THIS polygon layer that must be truthy for paths to
-       * draw at all — a documented fact (e.g. "this agency reported using
-       * this technology to the state") distinct from, and not implied by,
-       * the geographic containment the path itself draws. Containment alone
-       * — a device happens to sit inside a boundary — is not evidence of
-       * who runs it, so this field exists to keep the two claims separate
-       * even though both end up drawn on the same selection.
+       * Attribute on THAT point layer holding this polygon's own `id`.
+       *
+       * A join, deliberately, and not a spatial test. An earlier version of
+       * this drew a path to every camera that merely fell *inside* the
+       * selected boundary, which is a claim the data cannot support: a
+       * reader within a city's limits may belong to an HOA, a business, the
+       * state, or a neighbouring task force, and our crowd-sourced camera
+       * layer records an operator for almost none of them. A drawn line
+       * between two things says they are connected, so it may only be drawn
+       * where a document connects them — here, a filing in which the agency
+       * itself told the state it operates a reader at that location.
        */
-      gateKey: string;
+      joinKey: string;
     };
   };
   /**
@@ -595,7 +603,16 @@ export interface LayerDefinition {
    * neither summarised there nor downloaded by that page.
    */
   nearMe?: NearMeSummary;
-  /** Roadmap position (spec §12), used to order the layer list. */
+  /**
+   * Roadmap position (spec §12).
+   *
+   * Despite the name, nothing reads this to lay out the panel: the layer
+   * list renders in the order `LAYERS` declares its entries, grouped by
+   * category, and the map's draw order comes from `stackRank`, which is the
+   * category's own position. So moving a layer within its section means
+   * moving its entry in the array — changing this number alone does
+   * nothing, which is worth knowing before trying it.
+   */
   order: number;
 }
 
