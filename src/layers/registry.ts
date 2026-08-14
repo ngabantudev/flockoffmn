@@ -221,11 +221,12 @@ export const LAYERS: LayerDefinition[] = [
     id: 'agency_building',
     slug: 'agency-buildings',
     category: 'enforcement',
-    // On with the jurisdictions it belongs to: the polygon says who answers
-    // for this ground, this says the door they answer from, and the hover
-    // card on that door is where a reader finds what the agency filed. All
-    // of it is unreachable if the reader has to know to switch it on first.
-    defaultOn: true,
+    // Off by default. Statewide this is thousands of points, and at the
+    // opening view they crowd the marks the map is actually about — the
+    // cameras and the agreements. The jurisdiction polygon already answers
+    // "who is responsible for this ground" without it; a reader who wants
+    // the specific door switches this on.
+    defaultOn: false,
     order: 11,
     label: {
       en: 'Police & sheriff buildings',
