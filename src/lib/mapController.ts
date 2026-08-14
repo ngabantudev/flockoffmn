@@ -63,6 +63,8 @@ export interface ClientLayer {
   };
   /** Write an attribute's value on each polygon, the way the source document did. */
   labelBy?: { key: string };
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  polygonClick?: 'highlight';
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -152,6 +154,15 @@ const DEFAULT_CONE_ARC = 50;
 /** Written onto the cone features by us; not an upstream field. */
 const BEARING_PROP = '__bearing';
 const CONE_PROP = '__cone';
+
+/**
+ * Fill for a `polygonClick: 'highlight'` layer's un-tapped polygons — a
+ * ward map before anyone has picked a ward. Legible against either basemap
+ * but deliberately duller than any layer's own accent colour, so the one
+ * polygon a reader has actually selected is the only one that reads as data.
+ */
+const NEUTRAL_POLYGON_DARK = '#64748b';
+const NEUTRAL_POLYGON_LIGHT = '#94a3b8';
 
 /** Written onto derived grid blocks by us; not an upstream field. */
 const BLOCK_COUNT_PROP = '__blockCount';
@@ -264,6 +275,8 @@ export class MapController {
   private cachedBasemapColor = basemapBackgroundColor(this.basemapDark);
   /** Where the reader was before a tapped record moved the camera to it. */
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
+  /** The one feature-state-highlighted polygon per `polygonClick: 'highlight'` layer, if any. */
+  private selectedPolygon = new Map<string, string>();
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -775,23 +788,45 @@ export class MapController {
     // Never clustered. The source holds one feature per record at every zoom,
     // which is what lets the record list, the counter and the dots agree
     // without the special-casing a clustered source used to need.
-    this.map.addSource(src, { type: 'geojson', data: this.flatten(features) });
+    //
+    // promoteId lets MapLibre's feature-state track a record by the same
+    // stable id the rest of the app already uses, rather than an internal
+    // index that would drift if the source ever reloads in a different
+    // order. Only polygonClick: 'highlight' layers read feature-state today,
+    // but every source carries a unique id already, so setting this once
+    // here costs nothing for the layers that don't.
+    this.map.addSource(src, { type: 'geojson', data: this.flatten(features), promoteId: 'id' });
 
     if (layer.geometry === 'polygon') {
       const under = this.beneathDots();
+      const highlightMode = layer.polygonClick === 'highlight';
       // Polygons colour by declared category where the registry names one, so
-      // the legend swatches and the ground read from the same table. Otherwise
-      // keep the historical-document behaviour: the colour the source printed
-      // on the original sheet where we have it, then the layer's own.
+      // the legend swatches and the ground read from the same table. A
+      // highlight-mode layer instead stays one neutral tone until a tap sets
+      // its feature-state, at which point it alone switches to the layer's
+      // own colour — see NEUTRAL_POLYGON_DARK/LIGHT's comment. Otherwise keep
+      // the historical-document behaviour: the colour the source printed on
+      // the original sheet where we have it, then the layer's own.
       const polygonColor = (
-        layer.categoryColors
+        highlightMode
           ? [
-              'match',
-              ['get', layer.categoryColors.key],
-              ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
-              layer.categoryColors.fallback,
+              'case',
+              [
+                'any',
+                ['boolean', ['feature-state', 'selected'], false],
+                ['boolean', ['feature-state', 'hover'], false],
+              ],
+              this.layerColor(layer),
+              this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
             ]
-          : ['coalesce', ['get', 'holcFill'], this.layerColor(layer)]
+          : layer.categoryColors
+            ? [
+                'match',
+                ['get', layer.categoryColors.key],
+                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+                layer.categoryColors.fallback,
+              ]
+            : ['coalesce', ['get', 'holcFill'], this.layerColor(layer)]
       ) as unknown as maplibregl.ExpressionSpecification;
 
       // The grid stands under the parcels and fades out exactly as they fade
@@ -871,17 +906,29 @@ export class MapController {
             // the accessible record list reads every parcel at every zoom, so
             // the parcel itself has to still be there to fade back in, not
             // be swapped out for the grid and reinstated later.
-            'fill-opacity': layer.blockAggregate
-              ? ([
-                  'interpolate',
-                  ['linear'],
-                  ['zoom'],
-                  layer.blockAggregate.blocksUntil,
-                  0,
-                  layer.blockAggregate.detailFrom,
+            'fill-opacity': highlightMode
+              ? // A blank ward stays a light wash; hovering previews the
+                // selected look at reduced strength; the tapped one holds
+                // the ground the way any other layer's 0.42 does.
+                ([
+                  'case',
+                  ['boolean', ['feature-state', 'selected'], false],
                   0.42,
+                  ['boolean', ['feature-state', 'hover'], false],
+                  0.28,
+                  0.16,
                 ] as unknown as maplibregl.ExpressionSpecification)
-              : 0.42,
+              : layer.blockAggregate
+                ? ([
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    layer.blockAggregate.blocksUntil,
+                    0,
+                    layer.blockAggregate.detailFrom,
+                    0.42,
+                  ] as unknown as maplibregl.ExpressionSpecification)
+                : 0.42,
           },
         },
         under,
@@ -893,7 +940,19 @@ export class MapController {
           source: src,
           paint: {
             'line-color': polygonColor,
-            'line-width': 1.1,
+            // A hovered ward's border thickens a little, a tapped one thickens
+            // further, so the state reads at a glance even for a reader who
+            // can't tell the fill colours apart.
+            'line-width': highlightMode
+              ? ([
+                  'case',
+                  ['boolean', ['feature-state', 'selected'], false],
+                  2.5,
+                  ['boolean', ['feature-state', 'hover'], false],
+                  1.8,
+                  1.1,
+                ] as unknown as maplibregl.ExpressionSpecification)
+              : 1.1,
             'line-opacity': layer.blockAggregate
               ? ([
                   'interpolate',
@@ -1217,6 +1276,10 @@ export class MapController {
 
   private bindInteractions(layer: ClientLayer, mapLayerId: string) {
     this.cursorOn(mapLayerId);
+    if (layer.polygonClick === 'highlight') {
+      this.bindHighlightSelect(layer, mapLayerId);
+      return;
+    }
     this.map.on('click', mapLayerId, (e) => {
       const hit = e.features?.[0];
       if (!hit) return;
@@ -1231,6 +1294,57 @@ export class MapController {
         this.preSelectCamera = this.currentCamera();
       }
       this.focusFeature(layer.id, id);
+    });
+  }
+
+  /**
+   * Ward-map tap for a `polygonClick: 'highlight'` layer: flips one
+   * polygon's feature-state and opens its detail panel, but never moves the
+   * camera — see LayerDefinition.polygonClick's comment for why this layer
+   * needs a different interaction than every other layer's tap-to-focus.
+   * A second tap on the already-selected polygon clears it.
+   */
+  private bindHighlightSelect(layer: ClientLayer, mapLayerId: string) {
+    const src = this.sourceId(layer.id);
+    let hoveredId: string | null = null;
+
+    // Preview, not selection: moving the pointer off the polygon (or off the
+    // map entirely, via mouseleave) clears it with no lasting effect. Only a
+    // click writes state that survives the pointer moving away.
+    this.map.on('mousemove', mapLayerId, (e) => {
+      const hit = e.features?.[0];
+      const id = (hit?.properties as Record<string, unknown> | undefined)?.id as
+        | string
+        | undefined;
+      if (id === hoveredId) return;
+      if (hoveredId) this.map.setFeatureState({ source: src, id: hoveredId }, { hover: false });
+      hoveredId = id ?? null;
+      if (hoveredId) this.map.setFeatureState({ source: src, id: hoveredId }, { hover: true });
+    });
+    this.map.on('mouseleave', mapLayerId, () => {
+      if (hoveredId) this.map.setFeatureState({ source: src, id: hoveredId }, { hover: false });
+      hoveredId = null;
+    });
+
+    this.map.on('click', mapLayerId, (e) => {
+      const hit = e.features?.[0];
+      if (!hit) return;
+      const id = (hit.properties as Record<string, unknown>)?.id as string;
+      if (!id) return;
+
+      const current = this.selectedPolygon.get(layer.id);
+      if (current) this.map.setFeatureState({ source: src, id: current }, { selected: false });
+
+      if (current === id) {
+        this.selectedPolygon.delete(layer.id);
+        this.events.onSelect?.(null);
+        return;
+      }
+
+      this.map.setFeatureState({ source: src, id }, { selected: true });
+      this.selectedPolygon.set(layer.id, id);
+      const feature = this.data.get(layer.id)?.find((f) => f.properties.id === id);
+      if (feature) this.events.onSelect?.(feature, layer);
     });
   }
 
