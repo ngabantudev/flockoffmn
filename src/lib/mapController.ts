@@ -11,6 +11,7 @@ import {
   MN_BOUNDS,
 } from './mapStyle';
 import { bboxOf, representativePoint, pointInGeometry } from './geo.mjs';
+import { Shield, Star, Landmark, Building2, type IconNode } from 'lucide';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
@@ -65,6 +66,8 @@ export interface ClientLayer {
   labelBy?: { key: string };
   /** See LayerDefinition's own comment in layers/types.ts. */
   polygonClick?: 'highlight';
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  markerIcon?: { icon: string; byValue?: { key: string; icons: Record<string, string> } };
   /** See LayerDefinition's own comment in layers/types.ts. */
   relatedBuildings?: {
     layerId: LayerId;
@@ -248,6 +251,14 @@ const RELATED_BUILDINGS_LAYER = 'related-buildings';
 const RELATED_PATHS_SOURCE = 'src-related-paths';
 const RELATED_PATHS_LAYER = 'related-paths';
 
+/**
+ * Every icon a `markerIcon` entry can name, by the string the registry
+ * writes — the same closed-set-by-name arrangement IMPACT_SPHERE_ICONS uses
+ * in MapView, and for the same reason: the registry stays a data file, and a
+ * name it makes up resolves to nothing rather than to an arbitrary import.
+ */
+const MARKER_ICONS: Record<string, IconNode> = { Shield, Star, Landmark, Building2 };
+
 // Registers the pmtiles:// URL scheme with MapLibre so baseStyle()'s vector
 // source can reference the self-hosted archive directly (see mapStyle.ts's
 // header comment). Module-level, not per-instance: addProtocol is global
@@ -297,6 +308,12 @@ export class MapController {
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
   /** The one feature-state-highlighted polygon per `polygonClick: 'highlight'` layer, if any. */
   private selectedPolygon = new Map<string, string>();
+  /**
+   * Resolved `markerIcon` expression per layer, filled in by loadLayer
+   * before it draws. Cached because building it decodes an SVG per icon, and
+   * because addLayer — which needs it — is synchronous.
+   */
+  private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
   /**
    * The one hover-previewed polygon per `polygonClick: 'highlight'` layer.
    * Tracked here rather than as a closure inside bindHighlightSelect so
@@ -682,6 +699,115 @@ export class MapController {
   private coneSourceId = (layerId: string) => `src-${layerId}-cones`;
 
   /**
+   * A lucide glyph, rasterised into a map image in the layer's own colour.
+   *
+   * Same reasoning as ensureConeSprite above — generated rather than shipped,
+   * cached under a theme-suffixed id because the bitmap bakes its colour in,
+   * and drawn on a disc so a line-art glyph stays legible over an arbitrary
+   * basemap instead of dissolving into whatever is under it.
+   *
+   * Async where the cone is not: an SVG has to decode through an Image
+   * before a canvas will draw it. Callers await this before adding the
+   * symbol layer that references the id, so MapLibre never renders a frame
+   * against a missing image.
+   */
+  private async ensureMarkerIcon(layer: ClientLayer, iconName: string): Promise<string | null> {
+    const node = MARKER_ICONS[iconName];
+    if (!node) return null;
+    const id = `${layer.id}-icon-${iconName}-${this.basemapDark ? 'dark' : 'light'}`;
+    if (this.map.hasImage(id)) return id;
+
+    const pixelRatio = 2;
+    const px = 30 * pixelRatio;
+    const color = this.layerColor(layer);
+    const inner = px * 0.62;
+
+    // lucide ships each icon as [tag, attrs][]; rebuild it as standalone SVG
+    // markup rather than through createElement so this stays a string the
+    // canvas can decode without ever attaching a node to the document.
+    const body = node
+      .map(
+        ([tag, attrs]) =>
+          `<${tag} ${Object.entries(attrs)
+            .map(([k, v]) => `${k}="${String(v)}"`)
+            .join(' ')}/>`,
+      )
+      .join('');
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${inner}" height="${inner}" viewBox="0 0 24 24"` +
+      ` fill="none" stroke="${color}" stroke-width="2.25" stroke-linecap="round"` +
+      ` stroke-linejoin="round">${body}</svg>`;
+
+    const img = new Image();
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    try {
+      await img.decode();
+    } catch {
+      return null;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = px;
+    canvas.height = px;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    // The disc the glyph sits on: the basemap's own background, ringed in
+    // the layer colour — the same casing logic a point layer's dots already
+    // use (see pointStrokeColor), so a glyph and a dot read as the same
+    // family of mark rather than two unrelated styles.
+    const centre = px / 2;
+    ctx.beginPath();
+    ctx.arc(centre, centre, px * 0.46, 0, Math.PI * 2);
+    ctx.fillStyle = this.basemapColor;
+    ctx.fill();
+    ctx.lineWidth = px * 0.06;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.drawImage(img, centre - inner / 2, centre - inner / 2, inner, inner);
+
+    this.map.addImage(id, ctx.getImageData(0, 0, px, px), { pixelRatio });
+    return id;
+  }
+
+  /** Resolve this layer's glyph expression once, into markerExpressions. */
+  private async cacheMarkerExpression(layer: ClientLayer) {
+    if (!layer.markerIcon || this.markerExpressions.has(layer.id)) return;
+    const expression = await this.markerIconExpression(layer);
+    if (expression) this.markerExpressions.set(layer.id, expression);
+  }
+
+  /**
+   * Load every glyph a `markerIcon` layer can draw, and return the MapLibre
+   * expression that picks one per record. Null if the layer declares none,
+   * or if not one of its named icons resolved — in which case the caller
+   * falls back to plain dots rather than drawing a layer of blanks.
+   */
+  private async markerIconExpression(
+    layer: ClientLayer,
+  ): Promise<maplibregl.ExpressionSpecification | string | null> {
+    const spec = layer.markerIcon;
+    if (!spec) return null;
+
+    const fallbackId = await this.ensureMarkerIcon(layer, spec.icon);
+    if (!spec.byValue) return fallbackId;
+
+    const pairs: string[] = [];
+    for (const [value, iconName] of Object.entries(spec.byValue.icons)) {
+      const id = await this.ensureMarkerIcon(layer, iconName);
+      if (id) pairs.push(value, id);
+    }
+    if (!pairs.length) return fallbackId;
+    if (!fallbackId) return null;
+    return [
+      'match',
+      ['get', spec.byValue.key],
+      ...pairs,
+      fallbackId,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
    * The lowest of our own dot layers currently on the map, if any.
    *
    * An arrival point, not the final order. A line layer added over the
@@ -835,6 +961,9 @@ export class MapController {
       this.rawData.set(layer.id, features);
       this.data.set(layer.id, features);
       await this.ready();
+      // Glyphs before the layer that references them: MapLibre would warn and
+      // draw nothing for an icon-image whose image is still decoding.
+      await this.cacheMarkerExpression(layer);
       // Whatever the filters already say, not the whole layer. The controls are
       // on the page before the data is, so a reader can tick a value under a
       // layer that is still switched off — and if the first paint ignored that
@@ -1270,6 +1399,37 @@ export class MapController {
           ] as unknown as maplibregl.ExpressionSpecification,
         },
       });
+    }
+
+    // A glyph layer stands in for the dots entirely where the registry names
+    // one — not alongside them, which would ring every icon with a coloured
+    // disc it already has. Still `${layer.id}-points`, because that id is
+    // what applyVisibility, restack and bindInteractions all address.
+    const markerExpression = this.markerExpressions.get(layer.id);
+    if (markerExpression) {
+      this.map.addLayer({
+        id: `${layer.id}-points`,
+        type: 'symbol',
+        source: src,
+        layout: {
+          'icon-image': markerExpression as never,
+          // Held well under 1 so a street of stations doesn't become a wall
+          // of overlapping badges; grows a little into close zooms where a
+          // reader is looking at one building rather than a district.
+          'icon-size': [
+            'interpolate', ['linear'], ['zoom'],
+            tier.emergeFrom, 0.45,
+            tier.pointsFrom, 0.7,
+            15, 0.85,
+          ] as unknown as maplibregl.ExpressionSpecification,
+          // A building is at an address whether or not a neighbouring label
+          // wants the space, and the accessible record list reads all of
+          // them regardless — so never drop one for collision.
+          'icon-allow-overlap': true,
+        },
+      });
+      this.bindInteractions(layer, `${layer.id}-points`);
+      return;
     }
 
     this.map.addLayer({
@@ -1792,17 +1952,42 @@ export class MapController {
           'circle-opacity': 0.45,
         },
       });
-      this.map.addLayer({
-        id: RELATED_BUILDINGS_LAYER,
-        type: 'circle',
-        source: RELATED_BUILDINGS_SOURCE,
-        paint: {
-          'circle-color': buildingColor,
-          'circle-radius': 7,
-          'circle-stroke-color': this.basemapColor,
-          'circle-stroke-width': 2,
-        },
-      });
+
+      // The same glyph the buildings layer itself draws, so the highlighted
+      // building and the one a reader may already have on screen from that
+      // layer are recognisably the same mark rather than two conventions for
+      // one place. Falls back to a plain disc if the layer names no icon or
+      // the glyph didn't resolve.
+      const buildingLayer = this.layers.find((l) => l.id === rel.layerId);
+      if (buildingLayer) await this.cacheMarkerExpression(buildingLayer);
+      const glyph = buildingLayer ? this.markerExpressions.get(buildingLayer.id) : undefined;
+
+      this.map.addLayer(
+        glyph
+          ? {
+              id: RELATED_BUILDINGS_LAYER,
+              type: 'symbol',
+              source: RELATED_BUILDINGS_SOURCE,
+              layout: {
+                'icon-image': glyph as never,
+                // Deliberately larger than the same glyph in its own layer:
+                // this one is the answer to a question the reader just asked.
+                'icon-size': 1.05,
+                'icon-allow-overlap': true,
+              },
+            }
+          : {
+              id: RELATED_BUILDINGS_LAYER,
+              type: 'circle',
+              source: RELATED_BUILDINGS_SOURCE,
+              paint: {
+                'circle-color': buildingColor,
+                'circle-radius': 7,
+                'circle-stroke-color': this.basemapColor,
+                'circle-stroke-width': 2,
+              },
+            },
+      );
     }
 
     // Paths are the weaker, second claim — see pathsTo's own comment — and

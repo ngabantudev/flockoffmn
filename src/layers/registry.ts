@@ -726,6 +726,26 @@ export const LAYERS: LayerDefinition[] = [
     geometry: 'point',
     color: '#f59e0b',
     colorLight: '#b45309',
+    // A station house is a kind of place, not a measurement, so it gets a
+    // glyph rather than a dot — and the two offices get their own insignia,
+    // which is a real distinction in Minnesota law rather than decoration: a
+    // sheriff is an elected county officer, a police chief is a municipal
+    // appointee, and which one answers for a building changes who a records
+    // request is addressed to.
+    markerIcon: {
+      icon: 'Landmark',
+      byValue: {
+        key: 'agencyType',
+        icons: { Police: 'Shield', Sheriff: 'Star', Military: 'Landmark' },
+      },
+    },
+    filters: [
+      {
+        key: 'agencyType',
+        kind: 'enum',
+        label: { en: 'Agency type', es: 'Tipo de agencia' },
+      },
+    ],
     action: {
       requestType: 'inventory',
       label: {
@@ -747,8 +767,8 @@ export const LAYERS: LayerDefinition[] = [
       lastUpdated: null,
       refresh: 'periodic',
     },
-    filters: [],
     detailFields: [
+      { key: 'agencyType', label: { en: 'Agency type', es: 'Tipo de agencia' } },
       { key: 'address', label: { en: 'Address', es: 'Dirección' } },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'subStation', label: { en: 'Precinct / substation', es: 'Recinto / subestación' } },

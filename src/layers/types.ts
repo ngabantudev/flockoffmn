@@ -386,6 +386,28 @@ export interface LayerDefinition {
    */
   polygonClick?: 'highlight';
   /**
+   * Draw this point layer's records as a glyph rather than a plain dot.
+   *
+   * For a layer whose records are a *kind of place* rather than a
+   * measurement — a station house, not a reading — a dot says only "something
+   * is here" and leaves the reader to consult the legend for what. A glyph
+   * says it on the ground.
+   *
+   * Names a lucide icon export, resolved through MARKER_ICONS in
+   * mapController — never an emoji, and never a bitmap shipped as an asset,
+   * for the same reasons impactSpheres' own `icon` field gives. `byValue`
+   * varies the glyph by an attribute where the distinction is real and
+   * documented (a sheriff's star and a police shield are the two offices'
+   * own insignia, not a decorative flourish); `icon` is the fallback for
+   * every record whose value isn't listed.
+   *
+   * Point layers only. Omit and records draw as the standard dot.
+   */
+  markerIcon?: {
+    icon: string;
+    byValue?: { key: string; icons: Record<string, string> };
+  };
+  /**
    * Selecting a `polygonClick: 'highlight'` polygon also highlights the
    * matching records of a point layer — the building(s) this jurisdiction
    * answers from, not the ground it covers — and, optionally, draws paths to

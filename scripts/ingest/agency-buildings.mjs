@@ -50,6 +50,21 @@ function norm(s) {
   return (s ?? '').trim().toLowerCase();
 }
 
+/**
+ * Which office this building belongs to, read off the name the source itself
+ * publishes. Deliberately the same coarse buckets agency-jurisdictions.mjs
+ * uses, so a polygon and the buildings inside it never disagree about what
+ * kind of agency they describe — and so the map can draw each office's own
+ * insignia (see the registry's markerIcon). Not an assertion beyond what the
+ * name says.
+ */
+function agencyType(name) {
+  if (/national guard|air force|army|military/i.test(name)) return 'Military';
+  if (/sheriff/i.test(name)) return 'Sheriff';
+  if (/police|public safety/i.test(name)) return 'Police';
+  return 'Other';
+}
+
 async function loadJurisdictions() {
   const p = path.join(PUBLIC_DATA, 'agency-jurisdictions.geojson');
   const raw = await readFile(p, 'utf8').catch(() => {
@@ -106,6 +121,7 @@ async function main() {
         confidence: 'confirmed',
         sourceDate: null,
         attributes: {
+          agencyType: agencyType(jurisdiction?.properties.name ?? rawName),
           address: (f.properties.ADDRESS ?? '').trim() || null,
           city: (f.properties.CITY ?? '').trim() || null,
           subStation,
