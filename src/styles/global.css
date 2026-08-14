@@ -289,8 +289,26 @@
  * button all stay, lifted by the rule above. Falls back to keeping the keys
  * visible wherever :has() is unsupported, which is the pre-existing behaviour.
  */
-@media (width < 64rem) {
+/*
+ * The two panels dock at different widths — see #detail-panel in
+ * MapView.astro for why — so the rules that belong to "the detail panel is a
+ * sheet" and "the layers list is a drawer" are keyed to different queries
+ * rather than sharing one.
+ */
+@media (width < 80rem) {
   #map-shell:has(#detail-panel:not([hidden])) #map-keys {
+    display: none;
+  }
+}
+@media (width < 64rem) {
+  /*
+   * The layers list is a drawer below `lg` — see #controls in MapView.astro.
+   * Closed is the default, and the state lives in an attribute rather than a
+   * class so the same markup is the open sidebar at `lg` with no JS involved
+   * in the difference. Nothing is lost to a visitor without scripting that
+   * was not already lost: the map itself is a canvas this file cannot draw.
+   */
+  #layer-drawer:not([data-open]) {
     display: none;
   }
 }
