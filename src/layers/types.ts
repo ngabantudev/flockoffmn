@@ -261,6 +261,23 @@ export interface LayerDefinition {
   slug: string;
   /** Which section of the layer panel this belongs under. */
   category: LayerCategoryId;
+  /**
+   * Draw this layer on first load, without the reader ticking anything.
+   *
+   * The map used to switch on whatever sat in the `surveillance` category,
+   * which read as a rule but was really a coincidence — it broke the moment
+   * a layer outside that category needed to be on, and a layer added inside
+   * it appeared on the map by default whether or not anyone meant it to. So
+   * it is stated per layer instead.
+   *
+   * A layer earns this by being *context for the others* rather than a
+   * finding of its own: which agency answers for this ground, and where it
+   * answers from, are the frame a reader needs before any camera on the map
+   * means anything. Anything a reader would go looking for deliberately
+   * stays off — every default-on layer is bytes downloaded and ground
+   * covered for someone who never asked for it.
+   */
+  defaultOn?: boolean;
   label: I18nString;
   /** One line, plain language — shown in the layer toggle list. */
   summary: I18nString;

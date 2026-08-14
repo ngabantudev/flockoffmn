@@ -18,6 +18,7 @@ const loaded = await loadAllLayers();
 const clientLayers = loaded.map(({ definition: d, collection }) => ({
   id: d.id,
   category: d.category,
+  defaultOn: d.defaultOn ?? false,
   label: pick(d.label, locale),
   summary: pick(d.summary, locale),
   whatThisMeans: pick(d.whatThisMeans, locale),
@@ -302,7 +303,7 @@ const strings = {
                               type="checkbox"
                               id={`layer-${layer.id}`}
                               data-layer-toggle={layer.id}
-                              checked={layer.category === 'surveillance' || layer.id === 'agency_jurisdiction'}
+                              checked={layer.defaultOn}
                               class="mt-0.5 h-4 w-4 shrink-0 accent-current"
                               style={`color:var(--layer-color-${layer.id})`}
                             />
@@ -867,10 +868,10 @@ const strings = {
     });
   });
 
-  // Surveillance apparatus and the jurisdiction layer ship pre-checked in the
-  // markup, unlike every other registry layer — but a `change` event only
-  // fires on user interaction, never for a checkbox's initial `checked`
-  // attribute, so whatever starts checked has to be turned on here explicitly.
+  // Layers the registry marks `defaultOn` ship pre-checked in the markup —
+  // but a `change` event only fires on user interaction, never for a
+  // checkbox's initial `checked` attribute, so whatever starts checked has
+  // to be turned on here explicitly.
   document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
     if (!input.checked) return;
     const layer = layerById.get(input.dataset.layerToggle!);

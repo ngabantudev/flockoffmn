@@ -20,6 +20,8 @@ import type { FeatureProperties, LayerId } from '~/layers/types';
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
 export interface ClientLayer {
   id: LayerId;
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  defaultOn?: boolean;
   label: string;
   summary: string;
   whatThisMeans: string;

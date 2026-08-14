@@ -78,6 +78,9 @@ export const LAYERS: LayerDefinition[] = [
     id: 'agency_jurisdiction',
     slug: 'agency-jurisdictions',
     category: 'enforcement',
+    // The frame every other layer is read against: which agency answers for
+    // the ground under a given camera.
+    defaultOn: true,
     order: 10,
     label: {
       en: 'Police & sheriff jurisdictions',
@@ -218,6 +221,11 @@ export const LAYERS: LayerDefinition[] = [
     id: 'agency_building',
     slug: 'agency-buildings',
     category: 'enforcement',
+    // On with the jurisdictions it belongs to: the polygon says who answers
+    // for this ground, this says the door they answer from, and the hover
+    // card on that door is where a reader finds what the agency filed. All
+    // of it is unreachable if the reader has to know to switch it on first.
+    defaultOn: true,
     order: 11,
     label: {
       en: 'Police & sheriff buildings',
@@ -430,6 +438,9 @@ export const LAYERS: LayerDefinition[] = [
     id: 'alpr',
     slug: 'alpr',
     category: 'surveillance',
+    // The map's subject. On since long before this field existed, when the
+    // whole surveillance category was switched on by category.
+    defaultOn: true,
     order: 2,
     label: {
       en: 'ALPR / Flock cameras',
@@ -577,6 +588,8 @@ export const LAYERS: LayerDefinition[] = [
     id: 'alpr_reported',
     slug: 'alpr-reported',
     category: 'surveillance',
+    // The readers the thrown lines land on. Off, they would land on nothing.
+    defaultOn: true,
     order: 3,
     label: {
       en: 'ALPR readers agencies reported',
