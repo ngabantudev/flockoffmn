@@ -556,6 +556,96 @@ export const LAYERS: LayerDefinition[] = [
   },
 
   {
+    id: 'agency_jurisdiction',
+    slug: 'agency-jurisdictions',
+    category: 'enforcement',
+    order: 10,
+    label: {
+      en: 'Police & sheriff jurisdictions',
+      es: 'Jurisdicciones policiales y de alguaciles',
+    },
+    summary: {
+      en: 'Which police department or sheriff’s office answers for each block of the Twin Cities metro.',
+      es: 'Qué departamento de policía u oficina del alguacil responde por cada zona del área metropolitana de Twin Cities.',
+    },
+    whatThisMeans: {
+      en: 'Every 911 call is routed by a table — the Master Street Address Guide (MSAG) — that assigns each address to one law enforcement agency. The Metropolitan Emergency Services Board (MESB) publishes that assignment as a map: one polygon per agency, covering its full response area. This is the ground an agency answers for, not an internal subdivision — Minneapolis’s own five numbered police precincts, for instance, are folded into one polygon here, because the point of this layer is the boundary a records request or a council question is actually addressed to, not how a department organises its own patrol shifts.',
+      es: 'Cada llamada al 911 se enruta mediante una tabla — la Guía Maestra de Direcciones (MSAG) — que asigna cada dirección a una agencia de aplicación de la ley. La Junta de Servicios de Emergencia Metropolitana (MESB) publica esa asignación como un mapa: un polígono por agencia, que cubre toda su área de respuesta. Este es el territorio del que responde una agencia, no una subdivisión interna — los cinco recintos numerados de la policía de Minneapolis, por ejemplo, quedan agrupados en un solo polígono aquí, porque el propósito de esta capa es el límite al que realmente se dirige una solicitud de registros o una pregunta ante el concejo, no cómo organiza un departamento sus propios turnos de patrulla.',
+    },
+    limitations: [
+      {
+        en: 'Covers the 10-county Twin Cities metro region only — MESB’s own service area. Minnesota DPS is building a statewide version under its NG911 GIS program; it was not yet public as of this layer’s last refresh.',
+        es: 'Cubre solo la región metropolitana de Twin Cities de 10 condados — el área de servicio propia de MESB. El DPS de Minnesota está construyendo una versión estatal bajo su programa NG911 GIS; no era pública aún en la última actualización de esta capa.',
+      },
+      {
+        en: 'A polygon is where an agency answers 911 calls, not a map of where its officers actually patrol day to day.',
+        es: 'Un polígono es el área donde una agencia responde llamadas al 911, no un mapa de dónde patrullan realmente sus oficiales día a día.',
+      },
+      {
+        en: 'This is agency-level jurisdiction, not an internal subdivision. A department that organises itself into precincts, districts, or beats does not have those drawn separately here.',
+        es: 'Esto es jurisdicción a nivel de agencia, no una subdivisión interna. Un departamento que se organiza en recintos, distritos o zonas de patrulla no los tiene dibujados por separado aquí.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#64748b',
+    colorLight: '#334155',
+    filters: [
+      {
+        key: 'agencyType',
+        kind: 'enum',
+        label: { en: 'Agency type', es: 'Tipo de agencia' },
+      },
+    ],
+    // The name MESB routes 911 calls under, drawn on the ground the way the
+    // source's own dispatch table names it.
+    labelBy: { key: 'name' },
+    action: {
+      // Reuses the existing generic surveillance-inventory request template —
+      // right for any agency, not specific to 287(g) or ALPR.
+      requestType: 'inventory',
+      label: {
+        en: 'Ask what surveillance tech this agency runs',
+        es: 'Preguntar qué tecnología de vigilancia usa esta agencia',
+      },
+      // The record is the agency, so it is also the body to write to.
+      fallbackBody: 'name',
+    },
+    dataPath: '/data/agency-jurisdictions.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Metropolitan Emergency Services Board — Law Enforcement Agency areas',
+      sourceUrl: 'https://gisdata.mn.gov/dataset/org-mn-mesb-bdry-law',
+      license: 'Public government data — no formal reuse licence published (MESB disclaims warranty)',
+      licenseUrl: null,
+      attribution:
+        'Metropolitan Emergency Services Board, MESB Region PSAPs and Emergency Response Agencies',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    detailFields: [
+      { key: 'agencyType', label: { en: 'Agency type', es: 'Tipo de agencia' } },
+      { key: 'county', label: { en: 'County', es: 'Condado' } },
+    ],
+    nearMe: {
+      mode: 'contains',
+      title: {
+        en: 'Your local police or sheriff’s jurisdiction',
+        es: 'Su jurisdicción policial o del alguacil local',
+      },
+      empty: {
+        en: 'This point falls outside the 10-county metro region this layer covers.',
+        es: 'Este punto está fuera de la región metropolitana de 10 condados que cubre esta capa.',
+      },
+      detail: ['agencyType'],
+      caveat: {
+        en: 'This is the agency’s full jurisdiction, not an internal precinct or patrol district.',
+        es: 'Esta es la jurisdicción completa de la agencia, no un recinto o distrito de patrulla interno.',
+      },
+    },
+  },
+
+  {
     id: 'data_center',
     slug: 'data-centers',
     category: 'infrastructure',

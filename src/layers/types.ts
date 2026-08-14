@@ -15,6 +15,11 @@ export type LayerId =
   | 'alpr'
   | 'agency_287g'
   | 'detention_facility'
+  // Every agency's own jurisdiction, not an internal subdivision like
+  // Minneapolis's numbered precincts — the boundary a records request or a
+  // council question actually has to be addressed to. See
+  // scripts/ingest/agency-jurisdictions.mjs for the metro-only scope and why.
+  | 'agency_jurisdiction'
   | 'data_center'
   // How much traffic each stretch of road carries on an average day. The
   // substrate the cameras are bolted to, and deliberately not a surveillance
