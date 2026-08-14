@@ -34,3 +34,10 @@ pnpm-debug.log*
 # OSM extract, planetiler itself, and the built .pmtiles archive. The archive
 # ships to R2, not to git — see scripts/tiles/build-basemap.mjs's header.
 .tiles-build/
+
+# Ingest scratch space: raw upstream responses cached so a re-run doesn't
+# re-ask volunteer-run infrastructure for data it already has (currently the
+# per-agency Overpass road extracts alpr-reported.mjs geocodes against, which
+# run to a few hundred megabytes). Reproducible from the network by deleting
+# it and re-running the ingest; the *outputs* in public/data/ are what ships.
+data/raw/

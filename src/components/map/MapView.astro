@@ -18,6 +18,7 @@ const loaded = await loadAllLayers();
 const clientLayers = loaded.map(({ definition: d, collection }) => ({
   id: d.id,
   category: d.category,
+  defaultOn: d.defaultOn ?? false,
   label: pick(d.label, locale),
   summary: pick(d.summary, locale),
   whatThisMeans: pick(d.whatThisMeans, locale),
@@ -55,6 +56,25 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   labelBy: d.labelBy,
+  polygonClick: d.polygonClick,
+  selectedEmphasis: d.selectedEmphasis,
+  markerIcon: d.markerIcon,
+  hoverCard: d.hoverCard
+    ? {
+        fields: d.hoverCard.fields,
+        related: d.hoverCard.related
+          ? {
+              ...d.hoverCard.related,
+              title: pick(d.hoverCard.related.title, locale),
+              empty: pick(d.hoverCard.related.empty, locale),
+              linkLabel: pick(d.hoverCard.related.linkLabel, locale),
+              moreLabel: pick(d.hoverCard.related.moreLabel, locale),
+            }
+          : undefined,
+        note: d.hoverCard.note ? pick(d.hoverCard.note, locale) : undefined,
+      }
+    : undefined,
+  relatedBuildings: d.relatedBuildings,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
     : undefined,
@@ -102,12 +122,12 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
 /*
   The panel, one shelf per kind of subject.
 
-  Ordering inside a section stays the registry's `order`, because that ordering
-  is already an argument about what to read first; the sections only decide
-  which layers stand next to which. A layer naming a category this file has
-  never heard of would otherwise vanish out of the panel while remaining on the
-  map, which is exactly the silent kind of wrong the registry is meant to
-  prevent — so it stops the build instead.
+  Ordering inside a section stays the order the registry declares its entries
+  in, because that ordering is already an argument about what to read first;
+  the sections only decide which layers stand next to which. A layer naming a
+  category this file has never heard of would otherwise vanish out of the panel
+  while remaining on the map, which is exactly the silent kind of wrong the
+  registry is meant to prevent — so it stops the build instead.
 */
 const known = new Set(LAYER_CATEGORIES.map((c) => c.id));
 const orphan = clientLayers.find((l) => !known.has(l.category));
@@ -286,7 +306,7 @@ const strings = {
                               type="checkbox"
                               id={`layer-${layer.id}`}
                               data-layer-toggle={layer.id}
-                              checked={layer.category === 'surveillance'}
+                              checked={layer.defaultOn}
                               class="mt-0.5 h-4 w-4 shrink-0 accent-current"
                               style={`color:var(--layer-color-${layer.id})`}
                             />
@@ -427,15 +447,12 @@ const strings = {
 
 <script>
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
-  import { compassLabel } from '~/lib/geo.mjs';
+  import { formatValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
-  import { createElement, Route, Fingerprint, Speech, Landmark, type IconNode } from 'lucide';
-
-  /**
-   * Every icon an `impactSpheres` entry can name, by the string the registry
-   * writes. Never emoji — see the type's own comment in layers/types.ts.
-   */
-  const IMPACT_SPHERE_ICONS: Record<string, IconNode> = { Route, Fingerprint, Speech, Landmark };
+  import { createElement } from 'lucide';
+  // The same closed allow-list the map's own marker glyphs resolve through —
+  // see its comment for why there is one map and not two.
+  import { MARKER_ICONS } from '~/lib/icons';
 
   type Jurisdiction = {
     geoid: string;
@@ -524,7 +541,7 @@ const strings = {
       card.style.borderLeftColor = sphere.color;
 
       const heading = el('div', 'flex items-center gap-1.5');
-      const iconNode = IMPACT_SPHERE_ICONS[sphere.icon];
+      const iconNode = MARKER_ICONS[sphere.icon];
       if (iconNode) {
         const icon = createElement(iconNode) as unknown as SVGElement;
         icon.setAttribute('aria-hidden', 'true');
@@ -550,25 +567,6 @@ const strings = {
       wrap.append(card);
     }
     return wrap;
-  }
-
-  function formatValue(value: unknown, format?: string): string | null {
-    if (value === null || value === undefined || value === '') return null;
-    if (format === 'date') {
-      const d = new Date(String(value));
-      return Number.isNaN(d.getTime())
-        ? String(value)
-        : d.toLocaleDateString(document.documentElement.lang, {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          });
-    }
-    if (format === 'degrees') {
-      const compass = compassLabel(value);
-      return compass ? `${value}° (${compass})` : `${value}°`;
-    }
-    return String(value);
   }
 
   /** Substitute {placeholders} in a dictionary string. */
@@ -851,10 +849,10 @@ const strings = {
     });
   });
 
-  // Surveillance apparatus ships pre-checked in the markup, unlike every
-  // other registry layer's group — but a `change` event only fires on user
-  // interaction, never for a checkbox's initial `checked` attribute, so
-  // whatever starts checked has to be turned on here explicitly.
+  // Layers the registry marks `defaultOn` ship pre-checked in the markup —
+  // but a `change` event only fires on user interaction, never for a
+  // checkbox's initial `checked` attribute, so whatever starts checked has
+  // to be turned on here explicitly.
   document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
     if (!input.checked) return;
     const layer = layerById.get(input.dataset.layerToggle!);

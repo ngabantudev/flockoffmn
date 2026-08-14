@@ -15,6 +15,20 @@ export type LayerId =
   | 'alpr'
   | 'agency_287g'
   | 'detention_facility'
+  // Every agency's own jurisdiction, not an internal subdivision like
+  // Minneapolis's numbered precincts — the boundary a records request or a
+  // council question actually has to be addressed to. See
+  // scripts/ingest/agency-jurisdictions.mjs for the metro-only scope and why.
+  | 'agency_jurisdiction'
+  // One point per building, not per agency — resolves the very subdivision
+  // agency_jurisdiction folds into one polygon (Minneapolis's five numbered
+  // precincts are five separate points here). See
+  // scripts/ingest/agency-buildings.mjs.
+  | 'agency_building'
+  // Readers the operating agency itself reported to the state under Minn.
+  // Stat. § 13.824 — the only camera records on this map whose operator is
+  // documented rather than guessed. See scripts/ingest/alpr-reported.mjs.
+  | 'alpr_reported'
   | 'data_center'
   // How much traffic each stretch of road carries on an average day. The
   // substrate the cameras are bolted to, and deliberately not a surveillance
@@ -153,12 +167,22 @@ export interface FilterDefinition {
   defaultExcluded?: string[];
 }
 
+/**
+ * How to render one attribute, wherever it is shown.
+ *
+ * A closed union so it cannot be extended on one surface only: both the detail
+ * panel and the map's hover card read the same `detailFields` entry, and
+ * src/lib/detailFields.ts switches over this exhaustively, so adding a member
+ * here fails the build until every surface handles it.
+ */
+export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees';
+
 /** How to render one attribute in the detail panel (spec F5). */
 export interface DetailField {
   key: string;
   label: I18nString;
   /** `date` formats ISO strings; `link` renders an anchor; `text` is default. */
-  format?: 'text' | 'date' | 'link' | 'degrees';
+  format?: DetailFieldFormat;
 }
 
 /**
@@ -247,6 +271,23 @@ export interface LayerDefinition {
   slug: string;
   /** Which section of the layer panel this belongs under. */
   category: LayerCategoryId;
+  /**
+   * Draw this layer on first load, without the reader ticking anything.
+   *
+   * The map used to switch on whatever sat in the `surveillance` category,
+   * which read as a rule but was really a coincidence — it broke the moment
+   * a layer outside that category needed to be on, and a layer added inside
+   * it appeared on the map by default whether or not anyone meant it to. So
+   * it is stated per layer instead.
+   *
+   * A layer earns this by being *context for the others* rather than a
+   * finding of its own: which agency answers for this ground, and where it
+   * answers from, are the frame a reader needs before any camera on the map
+   * means anything. Anything a reader would go looking for deliberately
+   * stays off — every default-on layer is bytes downloaded and ground
+   * covered for someone who never asked for it.
+   */
+  defaultOn?: boolean;
   label: I18nString;
   /** One line, plain language — shown in the layer toggle list. */
   summary: I18nString;
@@ -355,6 +396,180 @@ export interface LayerDefinition {
   labelBy?: {
     /** Attribute holding the text to draw. */
     key: string;
+  };
+  /**
+   * How a click on this polygon layer behaves.
+   *
+   * Every polygon layer's click flies the camera to the record and opens its
+   * detail (see MapController.focusFeature) — the right feel for "here is a
+   * finding" surfaced from a search or a filter, and `'highlight'` keeps that.
+   * What it changes is the ground the reader sees it against: polygons render
+   * in one neutral, uncoloured fill by default rather than a category colour,
+   * hovering previews one in the layer's own colour, and a tap commits that —
+   * fill, thicker outline, and the fit — until a second tap on the same
+   * polygon, or a tap on empty ground, releases it. Ward-map browsing: the
+   * one polygon under the pointer or selected is the only one that ever reads
+   * as data.
+   *
+   * Omit for a plain polygon layer, which just draws every record in its
+   * category or source colour with no hover/selection state of its own. Only
+   * `geometry: 'polygon'` layers read this field.
+   */
+  polygonClick?: 'highlight';
+  /**
+   * How loudly a selected polygon reads. `full` (the default) is a plain
+   * highlight layer, where the polygon *is* the finding. `subtle` is for a
+   * polygon that is context for something else — the jurisdiction settles back
+   * so the building and the thrown paths it answers with are what the eye goes
+   * to. Only `polygonClick: 'highlight'` layers read this.
+   */
+  selectedEmphasis?: 'full' | 'subtle';
+  /**
+   * Draw this point layer's records as a glyph rather than a plain dot.
+   *
+   * For a layer whose records are a *kind of place* rather than a
+   * measurement — a station house, not a reading — a dot says only "something
+   * is here" and leaves the reader to consult the legend for what. A glyph
+   * says it on the ground.
+   *
+   * Names a lucide icon export, resolved through MARKER_ICONS in
+   * src/lib/icons.ts — never an emoji, and never a bitmap shipped as an asset,
+   * for the same reasons impactSpheres' own `icon` field gives. `byValue`
+   * varies the glyph by an attribute where the distinction is real and
+   * documented (a sheriff's star and a police shield are the two offices'
+   * own insignia, not a decorative flourish); `icon` is the fallback for
+   * every record whose value isn't listed.
+   *
+   * Note the one qualification this puts on the two-file rule (CLAUDE.md
+   * Part 1 §2): the allow-list is closed on purpose, so every glyph in it
+   * ships to every visitor (§0.7). Naming a glyph it does not already carry
+   * means editing src/lib/icons.ts as well — a third file, and a deliberate
+   * one. Naming a glyph that is not there draws the fallback rather than
+   * pulling an arbitrary module into the bundle.
+   *
+   * Point layers only. Omit and records draw as the standard dot.
+   */
+  markerIcon?: {
+    icon: string;
+    byValue?: { key: string; icons: Record<string, string> };
+  };
+  /**
+   * A card shown on hover, summarising a record without selecting it.
+   *
+   * Strictly a shortcut to what the detail panel already says — a reader
+   * skimming a street of stations should not have to click each one to learn
+   * which of them reported surveillance equipment. It is `aria-hidden` for
+   * that reason: the DOM record list beside the map is the accessible
+   * interface (spec §4), and a hover-only surface that screen readers
+   * announced would be a second, worse copy of it rather than an addition.
+   *
+   * `related` is the point of the thing: it counts records of another layer
+   * that join to this one, so the card can answer "and what did this agency
+   * report?" from the same document the other layer is built from. It never
+   * infers the link — see relatedBuildings.pathsTo's comment for why that
+   * distinction matters here specifically.
+   */
+  hoverCard?: {
+    /** Attribute keys to list. Labels are reused from `detailFields`. */
+    fields: string[];
+    related?: {
+      layerId: LayerId;
+      /** Attribute on THIS layer holding the joining value. */
+      fromKey: string;
+      /** Attribute on the other layer holding the same value. */
+      joinKey: string;
+      /** Attribute on the other layer to list. */
+      labelKey: string;
+      /** Attribute on the other layer holding a citation URL, if it has one. */
+      linkKey?: string;
+      /**
+       * The citation link's text. Declared per entry rather than fixed in the
+       * controller because it is a claim about what the other layer's document
+       * *is* — a § 13.824 filing here, but a contract, a roll call or a permit
+       * for the next relation — and because a string baked into the map code
+       * never reaches the Spanish locale.
+       */
+      linkLabel: I18nString;
+      /** Overflow line for records past `max`. `{n}` is replaced with the count. */
+      moreLabel: I18nString;
+      title: I18nString;
+      /**
+       * Shown when nothing joins. Says what an absence does and does not
+       * mean, because on this subject a blank card is itself a claim.
+       */
+      empty: I18nString;
+      /** Cap the list; the rest are summarised as a count. */
+      max?: number;
+    };
+    /**
+     * A closing line, for a fact about the record that is an absence rather
+     * than a value — the sort of thing a field list cannot express.
+     */
+    note?: I18nString;
+  };
+  /**
+   * Selecting a `polygonClick: 'highlight'` polygon also highlights the
+   * matching records of a point layer — the building(s) this jurisdiction
+   * answers from, not the ground it covers — and, optionally, draws paths to
+   * a third layer's records that join back to the selected polygon.
+   *
+   * Those paths are never an assertion that the building operates the
+   * device — see `pathsTo.joinKey`'s own comment for why, and
+   * scripts/ingest/agency-buildings.mjs / agencies-lpr-bca.mjs for where the
+   * two facts they actually rest on come from. The join is what makes a path
+   * publishable at all: a line is only worth asking a reader to look at once
+   * a cited document connects the two ends, never because one happens to
+   * fall inside the other.
+   */
+  relatedBuildings?: {
+    /** The point layer to search and highlight. */
+    layerId: LayerId;
+    /**
+     * Attribute on THIS layer holding the joining value. Omit and the
+     * record's own `id` is used, which is the common case.
+     *
+     * Present for the same reason hoverCard.related has it: alpr_reported
+     * joins on `agencyName` rather than `jurisdictionId`, because the id only
+     * exists for the 10-county metro while that layer is statewide. A relation
+     * that needs a different near-side key must be able to say so here rather
+     * than in mapController.
+     */
+    fromKey?: string;
+    /** Attribute on that point layer holding the same value. */
+    joinKey: string;
+    /**
+     * Attribute on that point layer marking a record as *subordinate*, used to
+     * pick which of the matched records the paths throw from: the first record
+     * that does NOT carry it wins, falling back to the first match.
+     *
+     * Every matched record lights up either way; only the line origin is at
+     * stake. Declared here rather than decided in mapController because it is
+     * this relation's vocabulary — `subStation` distinguishes a precinct from
+     * its headquarters, and the next relation to want a hub (a county board and
+     * its facilities, a district and its contract sites) will name something
+     * else entirely. Omit it and the paths throw from the first match.
+     */
+    hubKey?: string;
+    pathsTo?: {
+      /** The point layer whose matching records get a path drawn to them. */
+      layerId: LayerId;
+      /** Attribute on THIS layer holding the joining value; defaults to `id`. */
+      fromKey?: string;
+      /**
+       * Attribute on THAT point layer holding the joining value.
+       *
+       * A join, deliberately, and not a spatial test. An earlier version of
+       * this drew a path to every camera that merely fell *inside* the
+       * selected boundary, which is a claim the data cannot support: a
+       * reader within a city's limits may belong to an HOA, a business, the
+       * state, or a neighbouring task force, and our crowd-sourced camera
+       * layer records an operator for almost none of them. A drawn line
+       * between two things says they are connected, so it may only be drawn
+       * where a document connects them — here, a filing in which the agency
+       * itself told the state it operates a reader at that location.
+       */
+      joinKey: string;
+    };
   };
   /**
    * The zooms across which this layer's records emerge.
@@ -509,8 +724,6 @@ export interface LayerDefinition {
    * neither summarised there nor downloaded by that page.
    */
   nearMe?: NearMeSummary;
-  /** Roadmap position (spec §12), used to order the layer list. */
-  order: number;
 }
 
 /** Shape of every file in /public/data. */
