@@ -205,21 +205,53 @@ const strings = {
 `} />
 
 <div class="relative flex h-full min-h-0 flex-col lg:flex-row">
-  {/* ---------------------------- Controls ---------------------------- */}
+  {/*
+    ---------------------------- Controls ----------------------------
+    At `lg` this is the full-height sidebar it has always been. Below `lg`
+    only the search row stays in the flow; the layers list drops out of it
+    into #layer-drawer, an overlay hung under the search row.
+
+    It was costing the map too much to keep. In the flow the list never
+    compressed below about 256px — a search box and five group rows is what
+    it is — so on a 320x568 phone the nav and this panel took 61% of the
+    screen before the map was dealt in, leaving 223px of map. Landscape was
+    worse: 162px. The map is the page, and it was the only region yielding.
+  */}
   <aside
     id="controls"
     aria-label={t('layers')}
-    class="scroll-slim z-20 flex max-h-[45dvh] shrink-0 flex-col overflow-y-auto border-b border-ink-800 bg-ink-900 lg:max-h-none lg:w-84 lg:border-r lg:border-b-0"
+    class="scroll-slim relative z-30 flex shrink-0 flex-col border-b border-ink-800 bg-ink-900 lg:w-84 lg:overflow-y-auto lg:border-r lg:border-b-0"
   >
     <div class="border-b border-ink-800 p-3">
-      <label for="map-search" class="sr-only">{t('searchLabel')}</label>
-      <input
-        id="map-search"
-        type="search"
-        autocomplete="off"
-        placeholder={t('searchPlaceholder')}
-        class="w-full rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
-      />
+      <div class="flex items-center gap-2">
+        <label for="map-search" class="sr-only">{t('searchLabel')}</label>
+        <input
+          id="map-search"
+          type="search"
+          autocomplete="off"
+          placeholder={t('searchPlaceholder')}
+          class="min-w-0 flex-1 rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
+        />
+        {/*
+          A closed drawer still has to report itself, the same rule the layer
+          sections already follow — the map opens with records on it and
+          something visible has to claim responsibility for them. Hence the
+          count rather than a bare icon.
+        */}
+        <button
+          id="layers-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="layer-drawer"
+          class="flex shrink-0 items-center gap-1.5 rounded-md border border-ink-700 bg-ink-850 px-2.5 py-2 text-sm text-ink-200 hover:text-ink-100 lg:hidden"
+        >
+          {t('layers')}
+          <span class="font-mono text-[11px] text-ink-400">
+            <span data-layers-on>0</span>
+            <span class="sr-only"> {t('layersOn')}</span>
+          </span>
+        </button>
+      </div>
       <ul
         id="search-results"
         class="mt-1.5 hidden max-h-56 overflow-y-auto rounded-md border border-ink-700 bg-ink-850 text-sm"
@@ -228,7 +260,10 @@ const strings = {
       </ul>
     </div>
 
-    <div class="p-3">
+    <div
+      id="layer-drawer"
+      class="scroll-slim absolute inset-x-0 top-full z-30 max-h-[70dvh] overflow-y-auto border-b border-ink-800 bg-ink-900 p-3 shadow-[0_8px_24px_rgb(0_0_0/0.35)] lg:static lg:max-h-none lg:overflow-visible lg:border-b-0 lg:shadow-none"
+    >
       <div class="mb-2 flex items-baseline justify-between">
         <h2 class="text-xs font-semibold tracking-wider text-ink-400 uppercase">{t('layers')}</h2>
         <button
@@ -396,49 +431,94 @@ const strings = {
     </div>
   </aside>
 
-  {/* ------------------------------ Map ------------------------------ */}
-  <div class="relative min-h-0 flex-1">
-    <div id="map" class="absolute inset-0" role="application" aria-label={t('mapLabel')}></div>
+  {/*
+    ------------------------------ Map ------------------------------
+    Map and detail panel share a box, so that below `lg` the panel can be
+    sized and positioned against the map rather than against the viewport.
+    A sheet capped at 55dvh is taller than the whole map area once the layer
+    panel above has taken its share, which is not a sheet — it is a cover.
+  */}
+  <div id="map-shell" class="relative flex min-h-0 flex-1 flex-col xl:flex-row">
+    <div class="relative min-h-0 flex-1">
+      <div id="map" class="absolute inset-0" role="application" aria-label={t('mapLabel')}></div>
 
-    <div
-      id="map-status"
-      role="status"
-      aria-live="polite"
-      class="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-ink-900/90 px-3 py-1 text-xs text-ink-200 opacity-0 transition-opacity"
-    >
+      <div
+        id="map-status"
+        role="status"
+        aria-live="polite"
+        class="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 rounded-full bg-ink-900/90 px-3 py-1 text-xs text-ink-200 opacity-0 transition-opacity"
+      >
+      </div>
+
+      {/*
+        Lifted clear of the detail sheet on the viewports where the sheet
+        floats over the map — see #detail-panel below. --map-sheet-h is 0px
+        whenever no sheet is open, so this is the same 2rem from the bottom it
+        always was.
+      */}
+      <button
+        id="reset-view"
+        type="button"
+        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
+        class="absolute right-2 rounded-md border border-ink-700 bg-ink-900/90 px-2.5 py-1.5 text-xs text-ink-200 hover:text-ink-100 motion-safe:transition-[bottom]"
+      >
+        {t('resetView')}
+      </button>
+
+      {/*
+        On-map keys for colour-coded layers, one bar per visible layer that
+        declares categoryColors. Rebuilt from the layer toggles on every change, so a key can never
+        outlive the layer it explains. aria-hidden because the same table
+        already exists accessibly in the layer panel beside the map — this is
+        the glanceable duplicate, not the record.
+      */}
+      <div
+        id="map-keys"
+        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
+        class="pointer-events-none absolute left-2 z-10 flex w-56 max-w-[70vw] flex-col gap-1.5 motion-safe:transition-[bottom]"
+        aria-hidden="true"
+      >
+      </div>
     </div>
-
-    <button
-      id="reset-view"
-      type="button"
-      class="absolute right-2 bottom-8 rounded-md border border-ink-700 bg-ink-900/90 px-2.5 py-1.5 text-xs text-ink-200 hover:text-ink-100"
-    >
-      {t('resetView')}
-    </button>
 
     {/*
-      On-map keys for colour-coded layers, one bar per visible layer that
-      declares categoryColors. Rebuilt from the layer toggles on every change, so a key can never
-      outlive the layer it explains. aria-hidden because the same table
-      already exists accessibly in the layer panel beside the map — this is
-      the glanceable duplicate, not the record.
-    */}
-    <div
-      id="map-keys"
-      class="pointer-events-none absolute bottom-8 left-2 z-10 flex w-56 max-w-[70vw] flex-col gap-1.5"
-      aria-hidden="true"
-    >
-    </div>
-  </div>
+      --------------------------- Detail panel ---------------------------
+      Two shapes from one element. At `xl` it is a plain flex sibling to the
+      right of the map: the map's own box shrinks to make room, so a fit
+      computed after map.resize() already lands inside what the reader sees.
 
-  {/* --------------------------- Detail panel --------------------------- */}
-  <aside
-    id="detail-panel"
-    aria-label={t('whatThisMeans')}
-    hidden
-    class="scroll-slim z-20 max-h-[55dvh] shrink-0 overflow-y-auto border-t border-ink-800 bg-ink-900 lg:max-h-none lg:w-[24rem] lg:border-t-0 lg:border-l"
-  >
-  </aside>
+      Below `xl` it is a sheet drawn over the bottom of the map instead. It
+      has to be. Stacked in the flow it was a `shrink-0` sibling of a `flex-1`
+      map, and with the layer panel above already claiming up to 45dvh, it
+      left the map exactly nothing: tapping a jurisdiction on a phone
+      collapsed the map to zero height and fitted the record to a canvas that
+      was no longer on screen. Floating it keeps the map at full height, and
+      the controller reserves the sheet's measured height as fit padding
+      (setOverlay/fitPadding in mapController.ts) so a record lands in the
+      strip above the sheet rather than behind it.
+
+      `xl` and not `lg`, unlike the layer drawer beside it, because these two
+      panels cost the map different things. The layer sidebar can afford to
+      arrive at 1024px; a second fixed 24rem column at that width cannot —
+      336px of layers plus 384px of detail left a 304px map on a 1024px
+      screen, which is a sliver, not a map. Between 1024 and 1280 the layers
+      dock and the detail still floats.
+
+      The cap is a share of the map, not of the viewport: 55dvh is taller than
+      the whole map area once the layer panel has taken its share, and a sheet
+      taller than what it floats over is not a sheet. 45% is what leaves a
+      strip the fit can actually use — above that, fitPadding's own clamp
+      starts refusing to reserve the whole sheet and the record creeps back
+      under its top edge.
+    */}
+    <aside
+      id="detail-panel"
+      aria-label={t('whatThisMeans')}
+      hidden
+      class="scroll-slim absolute inset-x-0 bottom-0 z-20 max-h-[45%] shrink-0 overflow-y-auto rounded-t-xl border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] xl:static xl:max-h-none xl:w-[24rem] xl:rounded-none xl:border-t-0 xl:border-l xl:shadow-none"
+    >
+    </aside>
+  </div>
 </div>
 
 <script is:inline type="application/json" id="layer-config" set:html={JSON.stringify(clientLayers)} />
@@ -497,6 +577,12 @@ const strings = {
     onError: (id, message) =>
       status(`${layerById.get(id)?.label ?? id}: ${message}`, 6000),
   });
+
+  // Below `lg` the detail panel is a sheet over the map rather than a sibling
+  // beside it, so the map's own box no longer describes what the reader can
+  // see. This is what lets a fit land above the sheet instead of behind it —
+  // see setOverlay in mapController.ts.
+  controller.setOverlay(detailEl);
 
   /* ----------------------------- Detail panel ---------------------------- */
 
@@ -838,6 +924,11 @@ const strings = {
         dot?.classList.toggle('opacity-25', !toggle.checked);
       }
     });
+    // What the closed drawer reports on a phone — the same tally the group
+    // rows carry, summed, so the button is never a bare icon over a map full
+    // of records nothing on screen accounts for.
+    const total = document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]:checked').length;
+    for (const el of document.querySelectorAll('[data-layers-on]')) el.textContent = String(total);
     refreshMapKeys();
   }
 
@@ -1063,10 +1154,38 @@ const strings = {
     window.setTimeout(() => searchResults.classList.add('hidden'), 180);
   });
 
+  /* --------------------------- Layers drawer --------------------------- */
+
+  // Below `lg` the layers list is an overlay under the search row rather than
+  // a block of the page the map has to share height with — see #controls.
+  // Above `lg` the same element is the sidebar, always shown, and the button
+  // driving this is display:none, so the attribute is simply ignored there.
+  const layerDrawer = document.getElementById('layer-drawer')!;
+  const layersToggle = document.getElementById('layers-toggle')!;
+
+  function setDrawerOpen(open: boolean) {
+    layerDrawer.toggleAttribute('data-open', open);
+    layersToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  layersToggle.addEventListener('click', () => {
+    setDrawerOpen(!layerDrawer.hasAttribute('data-open'));
+  });
+
+  // A tap on the map is the reader going back to the map. Leaving the drawer
+  // up over what they just tapped is the one thing it must not do.
+  mapEl.addEventListener('pointerdown', () => setDrawerOpen(false));
+
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !detailEl.hidden) {
-      detailEl.hidden = true;
+    if (e.key !== 'Escape') return;
+    // Innermost first: the drawer is drawn over the panel, so one Escape
+    // should dismiss what is actually on top rather than both at once.
+    if (layerDrawer.hasAttribute('data-open')) {
+      setDrawerOpen(false);
+      layersToggle.focus();
+      return;
     }
+    if (!detailEl.hidden) detailEl.hidden = true;
   });
 
   /* ------------------------------ Start-up ------------------------------ */

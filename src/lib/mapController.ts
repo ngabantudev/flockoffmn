@@ -153,6 +153,37 @@ const REDUCED_MOTION =
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /**
+ * Below this map width, a fit uses the narrow margin instead of the roomy one.
+ * 64px a side is a comfortable frame on a laptop and two thirds of the picture
+ * on a phone.
+ */
+const NARROW_MAP_PX = 640;
+
+/** The margin a fit falls back to on a map narrower than NARROW_MAP_PX. */
+const NARROW_FIT_PADDING = 40;
+
+/** No fit may spend more than this share of an axis on padding. */
+const MAX_PADDING_SHARE = 0.6;
+
+/**
+ * Fit padding for one axis, clamped so it cannot swallow the frame it pads.
+ *
+ * `fitBounds` derives its zoom from whatever room is left after padding, so
+ * padding that approaches the canvas's own size drives that room towards zero
+ * and the zoom towards the minimum. Unclamped, a phone-sized map reserving
+ * space for the detail sheet framed a single city at zoom 9 and a county at
+ * zoom 7 — a fit so wide the record it was fitting was a speck. Scales the
+ * pair down together so a reserved sheet stays reserved in proportion.
+ */
+function fitAxisPadding(start: number, end: number, extent: number): [number, number] {
+  const budget = extent * MAX_PADDING_SHARE;
+  const total = start + end;
+  if (total <= budget) return [start, end];
+  const scale = budget / total;
+  return [Math.floor(start * scale), Math.floor(end * scale)];
+}
+
+/**
  * Where a layer's records emerge, from the zooms it names.
  *
  * Records fade in across these rather than switching on at a single cut, so a
@@ -436,6 +467,10 @@ export class MapController {
    * polygon visibly hovered under a pointer that never left it.
    */
   private hoveredPolygon: { layerId: string; featureId: string } | null = null;
+  /** Page chrome that can float over the map. See setOverlay. */
+  private overlay: HTMLElement | null = null;
+  private overlaySize: ResizeObserver | null = null;
+  private overlayShown: MutationObserver | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -2193,6 +2228,93 @@ export class MapController {
   /** Where the reader was before a filter first moved the camera. */
   private preFilterCamera: { center: [number, number]; zoom: number } | null = null;
 
+  /**
+   * Name the one piece of page chrome that is allowed to float over the map.
+   *
+   * Below `lg` the detail panel is a sheet drawn on top of the map's own box
+   * rather than a flex sibling beside it (see #detail-panel in MapView.astro),
+   * so the map is a full-height container whose bottom third the reader cannot
+   * see. `map.resize()` is no help — the container never changed size — and
+   * MapLibre has no notion of an obstruction, so every fit would centre its
+   * record behind the sheet. Handing the element over rather than a pixel
+   * constant means the reservation is measured from the sheet actually on
+   * screen: it follows the panel's content, the reader's font size and a
+   * rotation, and it collapses to nothing on desktop by construction, where
+   * the same element is a sibling the map's box already excludes.
+   */
+  setOverlay(el: HTMLElement | null) {
+    this.overlaySize?.disconnect();
+    this.overlayShown?.disconnect();
+    this.overlay = el;
+    this.publishObstruction();
+    if (!el) return;
+    // Observed rather than measured once: the sheet's height moves with its
+    // content, the reader's font size, a rotation, and the `hidden` attribute
+    // that opens and closes it. Two observers because neither sees the other's
+    // half — ResizeObserver is not required to report an element that has gone
+    // `display: none`, which is precisely the moment the reservation has to
+    // return to zero.
+    this.overlaySize = new ResizeObserver(() => this.publishObstruction());
+    this.overlaySize.observe(el);
+    this.overlayShown = new MutationObserver(() => this.publishObstruction());
+    this.overlayShown.observe(el, { attributes: true, attributeFilter: ['hidden', 'class'] });
+  }
+
+  /**
+   * Republish the obstruction as `--map-sheet-h` on the document root, for the
+   * page's own bottom-anchored furniture: the scale bar, the reset button, the
+   * colour keys, and the OpenStreetMap attribution whose visibility is a
+   * licence term rather than a nicety. All of it would otherwise sit under the
+   * sheet. Deliberately the same measurement fitPadding reserves, so the
+   * pixels CSS moves chrome by and the pixels the camera holds back cannot
+   * drift apart. The root is the right scope because the consumers straddle
+   * the map container — some are MapLibre's, inside it; some are the page's,
+   * beside it.
+   */
+  private publishObstruction() {
+    document.documentElement.style.setProperty(
+      '--map-sheet-h',
+      `${this.bottomObstruction()}px`,
+    );
+  }
+
+  /**
+   * How many pixels at the bottom of the map are covered by `overlay`, in the
+   * map's own coordinates. Zero when there is no overlay, when it is hidden,
+   * and — the desktop case — when it sits beside the map rather than over it.
+   */
+  private bottomObstruction(): number {
+    const el = this.overlay;
+    if (!el || el.hidden || el.offsetParent === null) return 0;
+    const map = this.map.getContainer().getBoundingClientRect();
+    const panel = el.getBoundingClientRect();
+    const overlaps =
+      panel.left < map.right &&
+      panel.right > map.left &&
+      panel.top < map.bottom &&
+      panel.bottom > map.top;
+    if (!overlaps) return 0;
+    return Math.max(0, Math.min(map.bottom - panel.top, map.height));
+  }
+
+  /**
+   * Padding for a fit, in the map's own pixels: an even margin on every side,
+   * plus whatever the detail sheet is covering along the bottom.
+   *
+   * Every fit in this class goes through here so the framing of a record, a
+   * searched-for boundary and the reset view are decided in one place rather
+   * than by four literals that drift apart.
+   */
+  private fitPadding(base = 64): maplibregl.PaddingOptions {
+    const canvas = this.map.getCanvas();
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const pad = width < NARROW_MAP_PX ? Math.min(base, NARROW_FIT_PADDING) : base;
+    const [left, right] = fitAxisPadding(pad, pad, width);
+    const [top, bottom] = fitAxisPadding(pad, pad + this.bottomObstruction(), height);
+    return { top, right, bottom, left };
+  }
+
   /** A plain, serialisable snapshot of the camera. */
   private currentCamera(): { center: [number, number]; zoom: number } {
     const c = this.map.getCenter();
@@ -2299,7 +2421,11 @@ export class MapController {
             [minLng, minLat],
             [maxLng, maxLat],
           ],
-      { padding: 48, maxZoom: 13, duration: REDUCED_MOTION ? 0 : 600 },
+      // maxZoom stays here, unlike the fits in focusFeature and
+      // showJurisdiction: those always have a real extent to fill, while a
+      // filter can narrow a layer to one point, whose bbox has no width at
+      // all. An unclamped fit on that is a street-level view of a single dot.
+      { padding: this.fitPadding(48), maxZoom: 13, duration: REDUCED_MOTION ? 0 : 600 },
     );
   }
 
@@ -2383,16 +2509,35 @@ export class MapController {
     // buffer, forcing a full repaint of every layer — and fires a
     // movestart/move/moveend cascade. Every tap after the first hits the
     // already-open panel, which is the overwhelmingly common case.
+    //
+    // Both axes are tested, not just the width the desktop panel takes: the
+    // container can lose height too — a rotation, a phone's address bar
+    // collapsing, a `dvh` unit resolving to something new — and a fit computed
+    // against a canvas taller than its own container lands the record below
+    // the frame. On mobile the detail sheet itself no longer changes either
+    // dimension (it floats over the map; see setOverlay), so this correctly
+    // does nothing there and fitPadding does the work instead.
     this.events.onSelect?.(feature, layer);
-    if (this.map.getCanvas().clientWidth !== this.map.getContainer().clientWidth) {
+    const canvas = this.map.getCanvas();
+    const container = this.map.getContainer();
+    if (
+      canvas.clientWidth !== container.clientWidth ||
+      canvas.clientHeight !== container.clientHeight
+    ) {
       this.map.resize();
     }
 
     const duration = REDUCED_MOTION ? 0 : 500;
     if (feature.geometry.type === 'Point') {
+      // A point has no extent to fit, so it is centred — but centred in the
+      // part of the map the reader can see, which is the frame less whatever
+      // the detail sheet covers. Half the obstruction, because the offset
+      // moves the target away from the container's centre and the visible
+      // strip's centre sits exactly that far above it.
       this.map.easeTo({
         center: representativePoint(feature.geometry) as [number, number],
         zoom: Math.max(this.map.getZoom(), 13),
+        offset: [0, -this.bottomObstruction() / 2],
         duration,
       });
     } else {
@@ -2400,13 +2545,19 @@ export class MapController {
       // piece of it and hides the length, which is the one thing the record
       // exists to convey, so fit the whole extent instead. Polygons get the
       // same treatment for the same reason.
+      //
+      // No maxZoom: a fit's whole job is to fill the frame with the record,
+      // and a ceiling stops it short of that for exactly the records that need
+      // it most. Veterans Affairs Police, the smallest jurisdiction on the
+      // map, clamped at zoom 14 and drew as a box across a quarter of the
+      // width, indistinguishable at a glance from a fit that had failed.
       const [minLng, minLat, maxLng, maxLat] = bboxOf(feature.geometry);
       this.map.fitBounds(
         [
           [minLng, minLat],
           [maxLng, maxLat],
         ],
-        { padding: 64, maxZoom: 14, duration },
+        { padding: this.fitPadding(), duration },
       );
     }
 
@@ -2517,13 +2668,15 @@ export class MapController {
       );
     }
 
+    // Same framing a tapped record gets, for the same reason — see
+    // focusFeature on why no maxZoom, and fitPadding on the sheet reservation.
     const [minLng, minLat, maxLng, maxLat] = bboxOf(feature.geometry);
     this.map.fitBounds(
       [
         [minLng, minLat],
         [maxLng, maxLat],
       ],
-      { padding: 48, maxZoom: 13, duration: REDUCED_MOTION ? 0 : 600 },
+      { padding: this.fitPadding(48), duration: REDUCED_MOTION ? 0 : 600 },
     );
   }
 
@@ -2867,7 +3020,10 @@ export class MapController {
   }
 
   resetView() {
-    this.map.fitBounds(MN_BOUNDS, { padding: 24, duration: REDUCED_MOTION ? 0 : 500 });
+    this.map.fitBounds(MN_BOUNDS, {
+      padding: this.fitPadding(24),
+      duration: REDUCED_MOTION ? 0 : 500,
+    });
   }
 
   /** A transient marker showing the point a "near me" lookup was run from. */
@@ -2884,6 +3040,7 @@ export class MapController {
   }
 
   destroy() {
+    this.setOverlay(null);
     this.cancelThrow();
     this.popup?.remove();
     this.hoverPopup?.remove();
