@@ -261,6 +261,37 @@ export const LAYERS: LayerDefinition[] = [
         icons: { Police: 'Shield', Sheriff: 'Star', Military: 'Landmark' },
       },
     },
+    hoverCard: {
+      fields: ['agencyType', 'address', 'city', 'subStation'],
+      // Joined on the department, not the building: the filing under Minn.
+      // Stat. § 13.824 is the agency's, so every station of a department
+      // shows the same readers rather than pretending one door owns some
+      // subset of them.
+      related: {
+        layerId: 'alpr_reported',
+        fromKey: 'jurisdictionId',
+        joinKey: 'jurisdictionId',
+        labelKey: 'reportedLocation',
+        linkKey: 'sourceUrl',
+        title: {
+          en: 'ALPR readers this department reported to the state',
+          es: 'Lectores ALPR que este departamento reportó al estado',
+        },
+        empty: {
+          en: 'No ALPR filing found for this department. That means none was found under this name — not that it operates none.',
+          es: 'No se encontró ninguna declaración de ALPR para este departamento. Eso significa que no se encontró bajo este nombre, no que no opere ninguno.',
+        },
+        max: 4,
+      },
+      // The honest answer to "where's the contract?". No vendor contract is
+      // published in any dataset this project ingests, so rather than leave
+      // a reader assuming one is missing by oversight, the card says the
+      // record does not exist here and points at the way to get it (§0.6).
+      note: {
+        en: 'No vendor contract is published in this data. Click the station, then “Ask what surveillance tech this agency runs” to request it.',
+        es: 'Ningún contrato con proveedores está publicado en estos datos. Haga clic en la estación y luego en «Preguntar qué tecnología de vigilancia usa esta agencia» para solicitarlo.',
+      },
+    },
     filters: [
       {
         key: 'agencyType',

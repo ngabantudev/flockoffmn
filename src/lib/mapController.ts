@@ -68,6 +68,21 @@ export interface ClientLayer {
   polygonClick?: 'highlight';
   /** See LayerDefinition's own comment in layers/types.ts. */
   markerIcon?: { icon: string; byValue?: { key: string; icons: Record<string, string> } };
+  /** See LayerDefinition's own comment in layers/types.ts. Strings already localised. */
+  hoverCard?: {
+    fields: string[];
+    related?: {
+      layerId: LayerId;
+      fromKey: string;
+      joinKey: string;
+      labelKey: string;
+      linkKey?: string;
+      title: string;
+      empty: string;
+      max?: number;
+    };
+    note?: string;
+  };
   /** See LayerDefinition's own comment in layers/types.ts. */
   relatedBuildings?: {
     layerId: LayerId;
@@ -337,6 +352,8 @@ export class MapController {
   private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
   /** rAF handle for the path-throw animation, so a new selection can cancel the last. */
   private throwFrame: number | null = null;
+  /** Separate from `popup`, which is the "near me" marker and must survive a hover. */
+  private hoverPopup: maplibregl.Popup | null = null;
   /**
    * The one hover-previewed polygon per `polygonClick: 'highlight'` layer.
    * Tracked here rather than as a closure inside bindHighlightSelect so
@@ -987,6 +1004,12 @@ export class MapController {
       // Glyphs before the layer that references them: MapLibre would warn and
       // draw nothing for an icon-image whose image is still decoding.
       await this.cacheMarkerExpression(layer);
+      // A hover card that counts another layer's records has to have them, or
+      // it would report "none reported" for a layer that simply hasn't
+      // downloaded — a false absence, on the one subject where an absence is
+      // itself read as a finding. Not awaited: the card guards on this too,
+      // and a hover is many seconds away from a layer switching on.
+      if (layer.hoverCard?.related) void this.ensureDataLoaded(layer.hoverCard.related.layerId);
       // Whatever the filters already say, not the whole layer. The controls are
       // on the page before the data is, so a reader can tick a value under a
       // layer that is still switched off — and if the first paint ignored that
@@ -1536,8 +1559,163 @@ export class MapController {
     });
   }
 
+  /**
+   * Show a layer's `hoverCard` while the pointer is over one of its records.
+   *
+   * Rebuilt only when the record under the pointer actually changes, not on
+   * every mousemove — a pointer crossing a dense street of stations fires
+   * hundreds of events, and the card's contents depend on the record, not
+   * the pixel. Content is assembled as DOM nodes with `textContent` rather
+   * than an HTML string, so a value out of a data file can never be markup.
+   */
+  private bindHoverCard(layer: ClientLayer, mapLayerId: string) {
+    if (!layer.hoverCard) return;
+    let shownId: string | null = null;
+
+    const hide = () => {
+      shownId = null;
+      this.hoverPopup?.remove();
+      this.hoverPopup = null;
+    };
+
+    this.map.on('mousemove', mapLayerId, (e) => {
+      const hit = e.features?.[0];
+      const id = (hit?.properties as Record<string, unknown> | undefined)?.id as
+        | string
+        | undefined;
+      if (!id) return hide();
+      // A selected record already has the full panel open beside the map;
+      // a card repeating it would just cover the ground the reader is
+      // looking at.
+      if (this.selectedPolygon.get(layer.id) === id) return hide();
+      if (id === shownId) {
+        this.hoverPopup?.setLngLat(e.lngLat);
+        return;
+      }
+      const feature = this.data.get(layer.id)?.find((f) => f.properties.id === id);
+      if (!feature) return hide();
+
+      shownId = id;
+      const card = this.buildHoverCard(layer, feature);
+      if (!this.hoverPopup) {
+        this.hoverPopup = new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 14,
+          maxWidth: '20rem',
+          className: 'hover-card',
+        });
+      }
+      this.hoverPopup.setLngLat(e.lngLat).setDOMContent(card).addTo(this.map);
+    });
+
+    this.map.on('mouseleave', mapLayerId, hide);
+  }
+
+  /** Assemble one hover card. See bindHoverCard for why this is DOM, not HTML. */
+  private buildHoverCard(layer: ClientLayer, feature: LoadedFeature): HTMLElement {
+    const spec = layer.hoverCard!;
+    const attrs = feature.properties.attributes as Record<string, unknown>;
+    const root = document.createElement('div');
+    // The record list beside the map is the accessible interface (spec §4);
+    // this is a pointer-only shortcut to it, so it is not announced twice.
+    root.setAttribute('aria-hidden', 'true');
+    root.className = 'space-y-1.5 text-[12px] leading-snug';
+
+    const title = document.createElement('p');
+    title.className = 'font-semibold text-[13px]';
+    title.textContent = feature.properties.name;
+    root.append(title);
+
+    const labelFor = (key: string) =>
+      layer.detailFields.find((f) => f.key === key)?.label ?? key;
+
+    for (const key of spec.fields) {
+      const value = attrs[key];
+      if (value === null || value === undefined || value === '') continue;
+      const row = document.createElement('p');
+      const label = document.createElement('span');
+      label.className = 'opacity-60';
+      label.textContent = `${labelFor(key)}: `;
+      row.append(label, document.createTextNode(String(value)));
+      root.append(row);
+    }
+
+    const rel = spec.related;
+    if (rel) {
+      const heading = document.createElement('p');
+      heading.className = 'pt-1 font-semibold';
+      const joinValue = attrs[rel.fromKey];
+      // Records are only counted where this record actually carries the
+      // joining value; a building with no jurisdiction has no filing to
+      // show, which is different from a department that filed nothing.
+      const loaded = this.data.has(rel.layerId);
+      const matches =
+        joinValue == null || !loaded
+          ? []
+          : (this.data.get(rel.layerId) ?? []).filter(
+              (f) => f.properties.attributes[rel.joinKey] === joinValue,
+            );
+
+      if (!loaded) {
+        // Say nothing rather than the wrong thing: until the other layer is
+        // in hand, "none reported" would be a claim we cannot make yet.
+        heading.textContent = rel.title;
+        const pending = document.createElement('p');
+        pending.className = 'opacity-70';
+        pending.textContent = '…';
+        root.append(heading, pending);
+      } else if (!matches.length) {
+        heading.textContent = rel.title;
+        const empty = document.createElement('p');
+        empty.className = 'opacity-70';
+        empty.textContent = rel.empty;
+        root.append(heading, empty);
+      } else {
+        heading.textContent = `${rel.title} (${matches.length})`;
+        root.append(heading);
+        const list = document.createElement('ul');
+        list.className = 'list-disc space-y-0.5 pl-4 opacity-80';
+        for (const m of matches.slice(0, rel.max ?? 4)) {
+          const li = document.createElement('li');
+          li.textContent = String(m.properties.attributes[rel.labelKey] ?? '');
+          list.append(li);
+        }
+        root.append(list);
+        const hidden = matches.length - (rel.max ?? 4);
+        if (hidden > 0) {
+          const more = document.createElement('p');
+          more.className = 'opacity-60';
+          more.textContent = `+${hidden} more`;
+          root.append(more);
+        }
+        const href = rel.linkKey
+          ? (matches[0].properties.attributes[rel.linkKey] as string | null)
+          : null;
+        if (href) {
+          const cite = document.createElement('a');
+          cite.href = href;
+          cite.target = '_blank';
+          cite.rel = 'noopener noreferrer';
+          cite.className = 'underline';
+          cite.textContent = 'The filing these come from';
+          root.append(cite);
+        }
+      }
+    }
+
+    if (spec.note) {
+      const note = document.createElement('p');
+      note.className = 'pt-1 opacity-60';
+      note.textContent = spec.note;
+      root.append(note);
+    }
+    return root;
+  }
+
   private bindInteractions(layer: ClientLayer, mapLayerId: string) {
     this.cursorOn(mapLayerId);
+    this.bindHoverCard(layer, mapLayerId);
     if (layer.polygonClick === 'highlight') {
       this.bindHighlightSelect(layer, mapLayerId);
       return;
@@ -2235,7 +2413,9 @@ export class MapController {
   }
 
   destroy() {
+    this.cancelThrow();
     this.popup?.remove();
+    this.hoverPopup?.remove();
     this.map.remove();
   }
 }
