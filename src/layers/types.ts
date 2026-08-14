@@ -35,6 +35,12 @@ export type LayerId =
   // record: it counts vehicles passing a point, never which ones.
   | 'aadt'
   | 'redlining'
+  // The same HOLC sheet as `redlining`, redrawn block by block by the
+  // Metropolitan Council — two cities instead of eight, no area identifier and
+  // so no appraiser's prose, but roughly seventy times the resolution and the
+  // lakes and parks excluded rather than swallowed. Neither layer supersedes
+  // the other; see scripts/ingest/holc-detail.mjs.
+  | 'holc_appraisal_detail'
   // The only layer whose upstream source is a transaction between named
   // private individuals. It is published parcel by parcel — the lot shape,
   // the deed year and the clause — with every name, address and parcel
@@ -396,6 +402,19 @@ export interface LayerDefinition {
   labelBy?: {
     /** Attribute holding the text to draw. */
     key: string;
+    /**
+     * Zoom below which labels are not placed at all. Omit to label at every
+     * zoom the layer draws at, which is right where records are few.
+     *
+     * This exists because collision placement is not free: MapLibre shapes
+     * glyphs for every candidate in view before deciding which fit, so a layer
+     * labelling one identifier per *block* rather than per area offers
+     * thousands of candidates across a metro to draw a few dozen. That work is
+     * discarded every frame, on a project that targets old phones (§0.7).
+     * Setting this to the zoom where a label first becomes readable costs
+     * nothing visible — below it the labels were being suppressed anyway.
+     */
+    minzoom?: number;
   };
   /**
    * How a click on this polygon layer behaves.

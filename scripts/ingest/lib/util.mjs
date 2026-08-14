@@ -117,6 +117,74 @@ export async function queryOverpass(scope, query, { retries = 1, timeoutMs = 190
 }
 
 /* ------------------------------------------------------------------ *
+ * ArcGIS feature services
+ *
+ * Half the layers here come from an ArcGIS REST endpoint, and every one of
+ * them needs the same two things: how many records the service holds, and all
+ * of them in pages. That was three private copies before this existed
+ * (aadt.mjs, data-centers.mjs, holc-detail.mjs), and the copies had already
+ * drifted — one guards the reported count, one interpolates a bare `null` into
+ * its progress log, and only one refuses to publish when the pages do not add
+ * up to the total. A partial layer is the worst failure this pipeline has:
+ * missing ground reads as absence of the thing, not as a broken download.
+ * ------------------------------------------------------------------ */
+
+/** How many records a service reports. Throws rather than return a soft null. */
+export async function arcgisCount(service, { timeoutMs = 45_000 } = {}) {
+  const params = new URLSearchParams({ where: '1=1', returnCountOnly: 'true', f: 'json' });
+  const res = await fetchWithRetry(`${service}/query?${params}`, { timeoutMs });
+  const { count } = await res.json();
+  if (!Number.isFinite(count)) throw new Error(`${service} did not report a record count`);
+  return count;
+}
+
+/**
+ * Page through a service and return the features.
+ *
+ * A short page is not proof of the end: if the server's own `maxRecordCount`
+ * is below `pageSize` then every page is short, and a run that stopped at the
+ * first one would publish a fraction of the layer. So `exceededTransferLimit`
+ * is honoured where the service sends it, and callers that pass `expected`
+ * get the total verified before anything is written.
+ *
+ * @param {string} scope       log prefix
+ * @param {string} service     feature service layer URL, without `/query`
+ * @param {object} opts
+ * @param {Record<string,string>} opts.params  query params beyond paging
+ * @param {number} opts.pageSize
+ * @param {number|null} opts.expected  record count to verify against, if known
+ */
+export async function arcgisQueryAll(
+  scope,
+  service,
+  { params = {}, pageSize = 1000, expected = null, timeoutMs = 120_000 } = {},
+) {
+  const out = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const query = new URLSearchParams({
+      where: '1=1',
+      f: 'geojson',
+      ...params,
+      resultRecordCount: String(pageSize),
+      resultOffset: String(offset),
+    });
+    const res = await fetchWithRetry(`${service}/query?${query}`, { timeoutMs });
+    const page = await res.json();
+    const got = page?.features ?? [];
+    out.push(...got);
+    log(scope, `  fetched ${out.length}${expected === null ? '' : `/${expected}`}`);
+    if (!got.length) break;
+    if (!page?.properties?.exceededTransferLimit && got.length < pageSize) break;
+  }
+  if (expected !== null && out.length !== expected) {
+    throw new Error(
+      `fetched ${out.length} records but ${service} reports ${expected} — refusing to publish a partial layer`,
+    );
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ *
  * Minimal ZIP reader
  *
  * Census and ICE both ship data as .zip/.xlsx. Rather than take on a
@@ -384,6 +452,63 @@ export async function writeLayer(slug, { layer, provenance, knownGaps = [], feat
   }
 
   return collection;
+}
+
+/**
+ * Trim a value to a non-empty string, or null.
+ *
+ * The plainest of the trim-to-null helpers, and the one most scripts want. It
+ * treats only whitespace as empty — the variants that also read "-", "n/a" or
+ * "none" as empty encode a specific publisher's habits and stay local to the
+ * script that met that publisher.
+ */
+export function text(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Drop the keys with nothing in them.
+ *
+ * A null attribute still costs its key and six bytes of `":null,"` in the
+ * file, and every consumer here — the filter builder, the detail panel, the
+ * map's own expressions — already treats a missing key and a null one the
+ * same way. On a layer with tens of thousands of records that is most of a
+ * megabyte to say nothing, which the browser then parses before it can draw.
+ */
+export function without(attributes) {
+  return Object.fromEntries(Object.entries(attributes).filter(([, v]) => v !== null));
+}
+
+/**
+ * Write a reference file: an index other ingests read, not a map layer.
+ *
+ * Shares writeLayer's rule about the clock, and for the same reason — the
+ * weekly refresh workflow decides whether to open a pull request by asking
+ * `git diff --quiet -- public/data`, so a file that restamps `lastUpdated` on
+ * every run makes that diff permanently noisy and commits a fresh copy each
+ * week to report that nothing changed.
+ */
+export async function writeReference(relPath, { metadata, ...payload }) {
+  const target = path.join(PUBLIC_DATA, relPath);
+  await mkdir(path.dirname(target), { recursive: true });
+
+  const doc = { metadata: { ...metadata, lastUpdated: new Date().toISOString() }, ...payload };
+  const withoutClock = ({ metadata: { lastUpdated: _ignored, ...meta }, ...rest }) =>
+    JSON.stringify({ metadata: meta, ...rest });
+
+  try {
+    const previous = JSON.parse(await readFile(target, 'utf8'));
+    if (withoutClock(previous) === withoutClock(doc)) {
+      log(relPath, `unchanged since ${previous.metadata.lastUpdated}`);
+      return previous;
+    }
+  } catch {
+    // No previous file, or one we cannot parse. Write a fresh one.
+  }
+
+  await writeFile(target, JSON.stringify(doc));
+  log(relPath, `wrote public/data/${relPath}`);
+  return doc;
 }
 
 /** Load the county reference index built by counties.mjs. */
