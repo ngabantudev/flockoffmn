@@ -1,0 +1,65 @@
+name: Verify
+
+# The gate that makes merging to `main` safe to be automatic.
+#
+# `main` is the Cloudflare Pages production branch, so a merge publishes to
+# flockoffmn.org with no further step. That is the intended workflow — every
+# PR is its own preview, and the merge is the release. What was missing is
+# anything standing between the two: the only check on a PR was Cloudflare's
+# own build, and `npm run build` is `astro build` alone, which does not
+# typecheck. A commit that fails `npm run check` builds clean, deploys green,
+# and lands on the live site. Measured, not assumed: a planted
+# `const n: number = "not a number"` gives 1 error from `npm run check` and a
+# successful 16-page build from `npm run build`.
+#
+# CLAUDE.md already says `npm run check` must stay at 0 errors. Until now that
+# was holding on the discipline of whoever was at the keyboard, which §0.8
+# ("assume no maintainer") says is exactly the kind of thing to write down as
+# a rule a machine enforces.
+#
+# Deliberately only the two commands the repo already documents in Part 2 —
+# no new dependency, no new tool to learn, nothing that fails for a reason a
+# stranger rebuilding this in ten years cannot look up. `npm run data` is not
+# here on purpose: it hits live upstream sources, so a federal portal having
+# a bad afternoon would block an unrelated CSS fix. The scheduled
+# refresh-data workflow owns that, and it already runs `npm run build`
+# against whatever it pulls.
+
+on:
+  pull_request:
+  # Also on pushes to main, so a merge that somehow arrives without a passing
+  # PR — an admin override, a direct commit, a rebase that changed the
+  # content — still gets told on rather than sliding through unexamined.
+  push:
+    branches: [main]
+
+# A force-push to a PR branch makes the run already in flight irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Before the build, so a type error is reported as a type error rather
+      # than as whatever it happens to break downstream.
+      - name: Typecheck
+        run: npm run check
+
+      - name: Build
+        run: npm run build
