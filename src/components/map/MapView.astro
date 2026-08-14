@@ -57,6 +57,19 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   labelBy: d.labelBy,
   polygonClick: d.polygonClick,
   markerIcon: d.markerIcon,
+  hoverCard: d.hoverCard
+    ? {
+        fields: d.hoverCard.fields,
+        related: d.hoverCard.related
+          ? {
+              ...d.hoverCard.related,
+              title: pick(d.hoverCard.related.title, locale),
+              empty: pick(d.hoverCard.related.empty, locale),
+            }
+          : undefined,
+        note: d.hoverCard.note ? pick(d.hoverCard.note, locale) : undefined,
+      }
+    : undefined,
   relatedBuildings: d.relatedBuildings,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }

@@ -412,6 +412,50 @@ export interface LayerDefinition {
     byValue?: { key: string; icons: Record<string, string> };
   };
   /**
+   * A card shown on hover, summarising a record without selecting it.
+   *
+   * Strictly a shortcut to what the detail panel already says — a reader
+   * skimming a street of stations should not have to click each one to learn
+   * which of them reported surveillance equipment. It is `aria-hidden` for
+   * that reason: the DOM record list beside the map is the accessible
+   * interface (spec §4), and a hover-only surface that screen readers
+   * announced would be a second, worse copy of it rather than an addition.
+   *
+   * `related` is the point of the thing: it counts records of another layer
+   * that join to this one, so the card can answer "and what did this agency
+   * report?" from the same document the other layer is built from. It never
+   * infers the link — see relatedBuildings.pathsTo's comment for why that
+   * distinction matters here specifically.
+   */
+  hoverCard?: {
+    /** Attribute keys to list. Labels are reused from `detailFields`. */
+    fields: string[];
+    related?: {
+      layerId: LayerId;
+      /** Attribute on THIS layer holding the joining value. */
+      fromKey: string;
+      /** Attribute on the other layer holding the same value. */
+      joinKey: string;
+      /** Attribute on the other layer to list. */
+      labelKey: string;
+      /** Attribute on the other layer holding a citation URL, if it has one. */
+      linkKey?: string;
+      title: I18nString;
+      /**
+       * Shown when nothing joins. Says what an absence does and does not
+       * mean, because on this subject a blank card is itself a claim.
+       */
+      empty: I18nString;
+      /** Cap the list; the rest are summarised as a count. */
+      max?: number;
+    };
+    /**
+     * A closing line, for a fact about the record that is an absence rather
+     * than a value — the sort of thing a field list cannot express.
+     */
+    note?: I18nString;
+  };
+  /**
    * Selecting a `polygonClick: 'highlight'` polygon also highlights the
    * matching records of a point layer — the building(s) this jurisdiction
    * answers from, not the ground it covers — and, optionally, draws paths to
