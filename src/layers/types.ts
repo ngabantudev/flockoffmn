@@ -364,18 +364,20 @@ export interface LayerDefinition {
   /**
    * How a click on this polygon layer behaves.
    *
-   * Every other layer's click flies the camera to the record and opens its
+   * Every polygon layer's click flies the camera to the record and opens its
    * detail (see MapController.focusFeature) — the right feel for "here is a
-   * finding" surfaced from a search or a filter. `'highlight'` is for a
-   * boundary layer meant to be browsed in place, ward-map style: polygons
-   * render in one neutral, uncoloured fill until tapped, a tap switches that
-   * one polygon to the layer's own colour and opens the detail panel without
-   * moving the camera, and a second tap on the same polygon clears it. Ten
-   * jurisdictions explored in a row never reset the reader's own pan and
-   * zoom the way ten camera taps would.
+   * finding" surfaced from a search or a filter, and `'highlight'` keeps that.
+   * What it changes is the ground the reader sees it against: polygons render
+   * in one neutral, uncoloured fill by default rather than a category colour,
+   * hovering previews one in the layer's own colour, and a tap commits that —
+   * fill, thicker outline, and the fit — until a second tap on the same
+   * polygon, or a tap on empty ground, releases it. Ward-map browsing: the
+   * one polygon under the pointer or selected is the only one that ever reads
+   * as data.
    *
-   * Omit for the default, camera-moving behaviour every other polygon layer
-   * uses. Only `geometry: 'polygon'` layers read this field.
+   * Omit for a plain polygon layer, which just draws every record in its
+   * category or source colour with no hover/selection state of its own. Only
+   * `geometry: 'polygon'` layers read this field.
    */
   polygonClick?: 'highlight';
   /**

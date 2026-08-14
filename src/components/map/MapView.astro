@@ -287,7 +287,7 @@ const strings = {
                               type="checkbox"
                               id={`layer-${layer.id}`}
                               data-layer-toggle={layer.id}
-                              checked={layer.category === 'surveillance'}
+                              checked={layer.category === 'surveillance' || layer.id === 'agency_jurisdiction'}
                               class="mt-0.5 h-4 w-4 shrink-0 accent-current"
                               style={`color:var(--layer-color-${layer.id})`}
                             />
@@ -852,10 +852,10 @@ const strings = {
     });
   });
 
-  // Surveillance apparatus ships pre-checked in the markup, unlike every
-  // other registry layer's group — but a `change` event only fires on user
-  // interaction, never for a checkbox's initial `checked` attribute, so
-  // whatever starts checked has to be turned on here explicitly.
+  // Surveillance apparatus and the jurisdiction layer ship pre-checked in the
+  // markup, unlike every other registry layer — but a `change` event only
+  // fires on user interaction, never for a checkbox's initial `checked`
+  // attribute, so whatever starts checked has to be turned on here explicitly.
   document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
     if (!input.checked) return;
     const layer = layerById.get(input.dataset.layerToggle!);

@@ -608,8 +608,8 @@ export const LAYERS: LayerDefinition[] = [
     // The name MESB routes 911 calls under, drawn on the ground the way the
     // source's own dispatch table names it.
     labelBy: { key: 'name' },
-    // Ward-map browsing: tap a jurisdiction and it alone lights up, the
-    // camera stays put, and ALPR dots (added after this layer — see
+    // Ward-map browsing: hovering previews a jurisdiction, a tap commits it
+    // and fits the camera to it, and ALPR dots (added after this layer — see
     // beneathDots()) keep drawing on top of every polygon here regardless of
     // which one is selected.
     polygonClick: 'highlight',
