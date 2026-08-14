@@ -613,6 +613,20 @@ export const LAYERS: LayerDefinition[] = [
     // beneathDots()) keep drawing on top of every polygon here regardless of
     // which one is selected.
     polygonClick: 'highlight',
+    // What a selected jurisdiction actually highlights: the building(s) it
+    // answers from, per agency-buildings.mjs's own join — and, only where
+    // the BCA's separate published list says this agency reported LPR use,
+    // thin paths to the ALPR cameras that fall inside this polygon. See
+    // relatedBuildings' own comment in types.ts for why containment and
+    // operatorship are kept as two facts rather than implied as one.
+    relatedBuildings: {
+      layerId: 'agency_building',
+      joinKey: 'jurisdictionId',
+      pathsTo: {
+        layerId: 'alpr',
+        gateKey: 'alprReportedToBca',
+      },
+    },
     action: {
       // Reuses the existing generic surveillance-inventory request template —
       // right for any agency, not specific to 287(g) or ALPR.
@@ -640,6 +654,25 @@ export const LAYERS: LayerDefinition[] = [
     detailFields: [
       { key: 'agencyType', label: { en: 'Agency type', es: 'Tipo de agencia' } },
       { key: 'county', label: { en: 'County', es: 'Condado' } },
+      {
+        key: 'alprReportStatus',
+        label: {
+          en: 'ALPR use reported to the state',
+          es: 'Uso de lectores de placas informado al estado',
+        },
+      },
+      {
+        key: 'alprDeviceLocations',
+        label: {
+          en: 'Device locations, as the agency reported them',
+          es: 'Ubicaciones de dispositivos, según lo informado por la agencia',
+        },
+      },
+      {
+        key: 'alprBcaSourceUrl',
+        label: { en: 'BCA report', es: 'Informe del BCA' },
+        format: 'link',
+      },
     ],
     nearMe: {
       mode: 'contains',
@@ -656,6 +689,78 @@ export const LAYERS: LayerDefinition[] = [
         en: 'This is the agency’s full jurisdiction, not an internal precinct or patrol district.',
         es: 'Esta es la jurisdicción completa de la agencia, no un recinto o distrito de patrulla interno.',
       },
+    },
+  },
+
+  {
+    id: 'agency_building',
+    slug: 'agency-buildings',
+    category: 'enforcement',
+    order: 11,
+    label: {
+      en: 'Police & sheriff buildings',
+      es: 'Edificios policiales y de alguaciles',
+    },
+    summary: {
+      en: 'Station and precinct addresses for Minnesota law enforcement agencies, one point per building.',
+      es: 'Direcciones de estaciones y recintos de agencias policiales de Minnesota, un punto por edificio.',
+    },
+    whatThisMeans: {
+      en: 'Minnesota keeps a statewide inventory of active law enforcement facility locations, built with local officials and updated on a rolling basis. Unlike the jurisdiction layer, which folds a department’s whole area into one polygon, this is one point per building — so Minneapolis’s five numbered precincts and headquarters each appear separately, and so does every substation a larger department runs. Selecting a jurisdiction on the map highlights the building or buildings it answers from.',
+      es: 'Minnesota mantiene un inventario estatal de ubicaciones activas de instalaciones policiales, elaborado con funcionarios locales y actualizado de forma continua. A diferencia de la capa de jurisdicciones, que agrupa toda el área de un departamento en un solo polígono, aquí hay un punto por edificio — así que los cinco recintos numerados y la sede de Minneapolis aparecen por separado, al igual que cada subestación de un departamento más grande. Seleccionar una jurisdicción en el mapa resalta el edificio o edificios desde los que responde.',
+    },
+    limitations: [
+      {
+        en: 'Covers all of Minnesota, but only buildings whose agency also appears in the 10-county metro jurisdiction layer can be highlighted by selecting a jurisdiction; the rest are shown on their own with no polygon to link them to.',
+        es: 'Cubre todo Minnesota, pero solo los edificios cuya agencia también aparece en la capa de jurisdicciones del área metropolitana de 10 condados pueden resaltarse al seleccionar una jurisdicción; el resto se muestra por separado, sin polígono al que vincularlo.',
+      },
+      {
+        en: 'A handful of jurisdictions — chiefly federal or military installations — have no building on record in this dataset at all.',
+        es: 'Un puñado de jurisdicciones — principalmente instalaciones federales o militares — no tienen ningún edificio registrado en este conjunto de datos.',
+      },
+      {
+        en: 'This is a continually-edited reference inventory maintained by local officials, not a survey with a fixed vintage; a recently opened, closed, or renamed building may lag here.',
+        es: 'Este es un inventario de referencia editado continuamente por funcionarios locales, no una encuesta con una fecha fija; un edificio recientemente abierto, cerrado o renombrado puede no reflejarse aquí de inmediato.',
+      },
+    ],
+    geometry: 'point',
+    color: '#f59e0b',
+    colorLight: '#b45309',
+    action: {
+      requestType: 'inventory',
+      label: {
+        en: 'Ask what surveillance tech this agency runs',
+        es: 'Preguntar qué tecnología de vigilancia usa esta agencia',
+      },
+      fallbackBody: 'name',
+    },
+    dataPath: '/data/agency-buildings.geojson',
+    csvPath: '/data/agency-buildings.csv',
+    provenance: {
+      source: 'Minnesota Law Enforcement Locations — U-Spatial, University of Minnesota',
+      sourceUrl: 'https://gisdata.mn.gov/dataset/struc-law-enforce-mn',
+      license:
+        'No formal licence published; U-Spatial/USGS disclaim warranty, acknowledgement appreciated',
+      licenseUrl: null,
+      attribution: 'U-Spatial, University of Minnesota; U.S. Geological Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [],
+    detailFields: [
+      { key: 'address', label: { en: 'Address', es: 'Dirección' } },
+      { key: 'city', label: { en: 'City', es: 'Ciudad' } },
+      { key: 'subStation', label: { en: 'Precinct / substation', es: 'Recinto / subestación' } },
+    ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'Nearest police or sheriff building', es: 'Edificio policial más cercano' },
+      empty: {
+        en: 'No building in this dataset is near this point.',
+        es: 'Ningún edificio de este conjunto de datos está cerca de este punto.',
+      },
+      detail: ['address'],
     },
   },
 

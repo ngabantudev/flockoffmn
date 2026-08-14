@@ -20,6 +20,11 @@ export type LayerId =
   // council question actually has to be addressed to. See
   // scripts/ingest/agency-jurisdictions.mjs for the metro-only scope and why.
   | 'agency_jurisdiction'
+  // One point per building, not per agency — resolves the very subdivision
+  // agency_jurisdiction folds into one polygon (Minneapolis's five numbered
+  // precincts are five separate points here). See
+  // scripts/ingest/agency-buildings.mjs.
+  | 'agency_building'
   | 'data_center'
   // How much traffic each stretch of road carries on an average day. The
   // substrate the cameras are bolted to, and deliberately not a surveillance
@@ -380,6 +385,41 @@ export interface LayerDefinition {
    * `geometry: 'polygon'` layers read this field.
    */
   polygonClick?: 'highlight';
+  /**
+   * Selecting a `polygonClick: 'highlight'` polygon also highlights the
+   * matching records of a point layer — the building(s) this jurisdiction
+   * answers from, not the ground it covers — and, optionally, draws paths to
+   * a third layer's records that fall geographically inside the selected
+   * polygon.
+   *
+   * Those paths are never an assertion that the building operates the
+   * device — see `pathsTo.gateKey`'s own comment for why, and
+   * scripts/ingest/agency-buildings.mjs / agencies-lpr-bca.mjs for where the
+   * two facts they actually rest on come from. This is why `gateKey` is
+   * required rather than always drawing paths for every selection: a path is
+   * only worth asking a reader to look at once a separate, cited document
+   * establishes the agency uses the technology at all.
+   */
+  relatedBuildings?: {
+    /** The point layer to search and highlight. */
+    layerId: LayerId;
+    /** Attribute on that point layer holding this polygon's own `id`. */
+    joinKey: string;
+    pathsTo?: {
+      /** The point layer whose contained records get a path drawn to them. */
+      layerId: LayerId;
+      /**
+       * Attribute on THIS polygon layer that must be truthy for paths to
+       * draw at all — a documented fact (e.g. "this agency reported using
+       * this technology to the state") distinct from, and not implied by,
+       * the geographic containment the path itself draws. Containment alone
+       * — a device happens to sit inside a boundary — is not evidence of
+       * who runs it, so this field exists to keep the two claims separate
+       * even though both end up drawn on the same selection.
+       */
+      gateKey: string;
+    };
+  };
   /**
    * The zooms across which this layer's records emerge.
    *

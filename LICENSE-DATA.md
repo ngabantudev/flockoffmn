@@ -24,7 +24,9 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | ALPR cameras | `alpr.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike.** Derived databases must stay open under ODbL. Attribution to OpenStreetMap contributors required. |
 | 287(g) agreements | `287g.geojson` | Public domain (US federal work) | Free for any use. |
 | Detention facilities | `detention.geojson` | Public domain (US federal work) | Free for any use. |
-| Police & sheriff jurisdictions | `agency-jurisdictions.geojson` | No formal licence published; MESB disclaims warranty | Attribute MESB. Metro region only — see the layer's `knownGaps`. |
+| Police & sheriff jurisdictions | `agency-jurisdictions.geojson` | No formal licence published; MESB disclaims warranty | Attribute MESB. Metro region only — see the layer's `knownGaps`. Carries a cross-referenced fact from a second Tier 1 source (BCA) as an attribute; see below. |
+| Police & sheriff buildings | `agency-buildings.geojson` | No formal licence published; U-Spatial/USGS disclaim warranty | Attribute U-Spatial (University of Minnesota) and USGS. |
+| BCA reported-LPR-use agencies (reference) | `reference/bca-alpr-agencies.json` | Public government data (Minn. Stat. ch. 13) | Free for any use. Not a public map layer — joined into the jurisdiction layer's attributes. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC 2.5](https://creativecommons.org/licenses/by-nc/2.5/) | **Non-commercial.** Not usable commercially. (The project's pre-2023 terms were CC BY-NC-SA 4.0; the current site states CC BY-NC 2.5.) |
 | Racial covenants | `covenants.geojson` | [CC0 1.0](https://creativecommons.org/public-domain/cc0/) | Free for any use. Citation requested by the upstream project, not required by the licence. What we publish is the parcel outlines with all personal fields stripped, not the full upstream research file (see below). |
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
@@ -43,7 +45,10 @@ Reproduce these when redistributing the corresponding layer:
 - **Cameras** — © OpenStreetMap contributors, ODbL. Mapped by DeFlock volunteers.
 - **287(g), detention** — U.S. Immigration and Customs Enforcement.
 - **Police & sheriff jurisdictions** — Metropolitan Emergency Services Board,
-  MESB Region PSAPs and Emergency Response Agencies.
+  MESB Region PSAPs and Emergency Response Agencies. ALPR-reporting status
+  cross-referenced from the Minnesota Bureau of Criminal Apprehension.
+- **Police & sheriff buildings** — U-Spatial, University of Minnesota;
+  U.S. Geological Survey.
 - **Redlining** — Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality:
   Redlining in New Deal America," *American Panorama*, ed. Robert K. Nelson and
   Edward L. Ayers.
