@@ -118,10 +118,6 @@ export const es: Record<string, string> = {
   useThisBody: 'Dirigir la carta a esta oficina',
   addressedTo: 'La carta de abajo ahora va dirigida a {entity}.',
 
-  positionsScale:
-    'Dibujado a escala sobre {total} millas. Un punto más grande significa más en un mismo lugar.',
-  positionsSummary: '{count} marcas a lo largo de {total} millas, a {offsets} millas del inicio.',
-
   confidenceConfirmed: 'Confirmado: documentado en un registro público oficial.',
   confidenceReported: 'Reportado: proviene de permisos o registros secundarios que pueden estar desactualizados.',
   confidenceProbabilistic: 'Probabilístico: de origen comunitario; puede haberse movido o retirado.',

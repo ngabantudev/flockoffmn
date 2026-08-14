@@ -6,11 +6,6 @@ dist/
 # dependencies
 node_modules/
 
-# Cached upstream responses. The corridor build keeps the road tiles it fetched
-# so a re-run does not ask a volunteer-run Overpass mirror for them again; they
-# are reproducible from the ingest and are not part of the published data.
-data/raw/
-
 # logs
 npm-debug.log*
 yarn-debug.log*

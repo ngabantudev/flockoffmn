@@ -11,13 +11,6 @@ import {
   MN_BOUNDS,
 } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
-import {
-  GLOW_STOPS,
-  THREAD_STOPS_DARK,
-  THREAD_STOPS_LIGHT,
-  CORD_STROKE_DARK,
-  CORD_STROKE_LIGHT,
-} from './densityRamp';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
@@ -57,8 +50,6 @@ export interface ClientLayer {
   stackRank: number;
   /** Attribute holding a compass bearing, if the layer records one. */
   bearingKey?: string;
-  /** Offsets of a record's parts along its own length, if it has a length. */
-  positions?: { offsetsKey: string; countsKey: string; label: string };
   /** The zooms across which this layer's records emerge. */
   scale?: { speckleFrom?: number; emergeFrom: number; pointsFrom: number };
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
@@ -72,14 +63,6 @@ export interface ClientLayer {
   };
   /** Write an attribute's value on each polygon, the way the source document did. */
   labelBy?: { key: string };
-  /** Draw this line layer as a glowing filament. */
-  filament?: boolean;
-  /** Colour this line layer by the size of each record's connected network. */
-  networkColor?: { key: string; maxRecords: number };
-  /** A second, heavier tier of line inside the same filament layer. */
-  cordTier?: { key: string; value: string; color: string };
-  /** Fire a brief travelling spark along filament mesh links at or above this network size. */
-  pulse?: { minConnectedSites: number };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -127,28 +110,6 @@ const REDUCED_MOTION =
 
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-/** Below this, a filament's own links are a couple of pixels of haze — nothing to spend a pulse on. */
-const PULSE_MIN_ZOOM = 7;
-/** How often the pulse positions actually update, not how often a frame is requested — see setupPulse's own comment. */
-const PULSE_TICK_MS = 90;
-/**
- * How often a given link fires a pulse, start to end, before going quiet.
- *
- * A link is not a river with something always flowing down it; it fires and
- * rests, the way the axon it's named after does. Most of the period is
- * silence — only PULSE_TRAVEL_MS of it is a visible spark — so at any given
- * moment only a fraction of eligible links are showing one at all, and each
- * feature's own stable per-path offset (below) keeps firings scattered in
- * time rather than every link lighting up in lockstep.
- */
-const PULSE_PERIOD_MS = 8000;
-/** Time for one pulse to cross its own link once it fires — a slow, followable crawl. */
-const PULSE_TRAVEL_MS = 2400;
-/** A near-white spark — the pulse dramatises the strand's own colour, so it stays neutral rather than picking a hue of its own. */
-const PULSE_COLOR = '#f4fbf2';
-
-
-
 /**
  * Where a layer's records emerge, from the zooms it names.
  *
@@ -194,48 +155,6 @@ const CONE_PROP = '__cone';
 
 /** Written onto derived grid blocks by us; not an upstream field. */
 const BLOCK_COUNT_PROP = '__blockCount';
-
-/**
- * How brightly a link burns, by the size of the connected network it belongs to.
- *
- * Colour is doing work a line cannot. Two links that meet at a shared reader
- * are one network and two that do not are two, and no drawn line can say which
- * — so instead they light up together, and the brighter a strand is the more
- * reader locations its network holds.
- *
- * The stops are cut to the range the data actually holds, and that range is
- * a finding in its own right. Under the old
- * nearest-neighbour model the largest network in Minnesota was nine reader
- * locations and there were 354 of them: linking each reader to exactly one
- * neighbour cannot help but shatter a map into pieces, and the pieces were an
- * artefact of the question. Linking readers that have nothing between them
- * instead, the same cameras form 150 networks and the largest is 101 reader
- * locations — the Twin Cities are one connected body, which the earlier map
- * could not have shown however it was coloured.
- *
- * The spread is wide now: half of all strands sit in a network of 19 or more,
- * a fifth in the 101. The curve keeps climbing past the largest so a denser
- * extract, or another state, does not flatten out at the top.
- */
-// No default `stops` on purpose: every call site now has a real, current-theme
-// choice to make (THREAD_STOPS_DARK/_LIGHT depending on the basemap; GLOW_STOPS
-// where the caller wants the full wash instead) — a silent default would be
-// exactly how this went theme-blind the first time.
-const networkColor = (key: string, maxRecords: number, stops: Array<[number, string]>) =>
-  [
-    'interpolate',
-    ['linear'],
-    ['get', key],
-    ...stops.flatMap(([at, color], i) => [
-      // Anchored so the smallest network lands on the first legible colour
-      // rather than on the background. Most networks are small, so the bottom
-      // of this ramp is what the reader sees most of and it has to work alone.
-      i === 0
-        ? 2
-        : Math.round(((at - stops[0][0]) / (1 - stops[0][0])) * (maxRecords - 2)) + 2,
-      color,
-    ]),
-  ] as unknown as maplibregl.ExpressionSpecification;
 
 const normaliseDegrees = (d: number) => ((d % 360) + 360) % 360;
 
@@ -321,9 +240,9 @@ export class MapController {
   private events: ControllerEvents;
 
   /**
-   * As loaded from disk. `data` holds what the current linking radius derives
-   * from it, so the record list, the counter, search, the detail panel and the
-   * map are all reading the same corridors the reader is looking at.
+   * As loaded from disk, so the record list, the counter, search, the detail
+   * panel and the map are all reading the same records the reader is
+   * looking at.
    */
   private rawData = new Map<string, LoadedFeature[]>();
   private data = new Map<string, LoadedFeature[]>();
@@ -337,9 +256,8 @@ export class MapController {
    * Whether the *current basemap* is dark, not the site theme — they're
    * independent (lib/theme.ts). Drives every basemap-dependent paint
    * property — a layer's own colour/colorLight, casings drawn in the
-   * basemap's own background, the density ramp's thread/cord colours — both
-   * at initial layer creation and on repaint when the map style changes;
-   * see repaintThemedLayers().
+   * basemap's own background — both at initial layer creation and on repaint
+   * when the map style changes; see repaintThemedLayers().
    */
   private basemapDark = MAP_STYLES[initialMapStyle()].dark;
   /** See the `basemapColor` getter's comment — kept in sync by setBasemap(), the only place `basemapDark` changes. */
@@ -506,11 +424,10 @@ export class MapController {
   /**
    * Re-keys every basemap-dependent paint property after `basemapDark`
    * changes: a colour chosen while dark was current — a layer's own
-   * identity colour, a casing drawn in the basemap's own background, or the
-   * density ramp's thread/cord colours — doesn't update itself just because
-   * the basemap did. Only colour properties are re-set; width/opacity/blur
-   * are zoom- or data-driven, not background-driven, and were already
-   * correct.
+   * identity colour, or a casing drawn in the basemap's own background —
+   * doesn't update itself just because the basemap did. Only colour
+   * properties are re-set; width/opacity/blur are zoom- or data-driven, not
+   * background-driven, and were already correct.
    *
    * Cone sprites are handled differently: they're cached bitmap images
    * (ensureConeSprite), not a paint property, so there's nothing here to
@@ -552,7 +469,7 @@ export class MapController {
         }
       }
 
-      if (this.map.getLayer(`${layer.id}-line`) && !layer.networkColor) {
+      if (this.map.getLayer(`${layer.id}-line`)) {
         this.map.setPaintProperty(`${layer.id}-line`, 'line-color', this.layerColor(layer));
         if (this.map.getLayer(`${layer.id}-line-casing`)) {
           this.map.setPaintProperty(`${layer.id}-line-casing`, 'line-color', this.basemapColor);
@@ -562,28 +479,6 @@ export class MapController {
       if (layer.bearingKey && this.map.getSource(this.coneSourceId(layer.id))) {
         this.refresh(layer.id);
       }
-
-      if (!layer.networkColor || !this.map.getLayer(`${layer.id}-line`)) continue;
-
-      const threadStops = this.basemapDark ? THREAD_STOPS_DARK : THREAD_STOPS_LIGHT;
-      const cordColor = layer.networkColor
-        ? this.basemapDark
-          ? CORD_STROKE_DARK
-          : CORD_STROKE_LIGHT
-        : layer.cordTier?.color;
-      const thread = networkColor(layer.networkColor.key, layer.networkColor.maxRecords, threadStops);
-      const glow = networkColor(layer.networkColor.key, layer.networkColor.maxRecords, GLOW_STOPS);
-
-      const cord = layer.cordTier;
-      const byTier = (mesh: unknown, cordValue: unknown) =>
-        (cord
-          ? ['case', ['==', ['get', cord.key], cord.value], cordValue, mesh]
-          : mesh) as unknown as maplibregl.ExpressionSpecification;
-      const threadByTier = cord ? byTier(thread, cordColor) : thread;
-      const glowByTier = cord ? byTier(glow, cordColor) : glow;
-
-      this.map.setPaintProperty(`${layer.id}-line`, 'line-color', threadByTier);
-      this.map.setPaintProperty(`${layer.id}-line-casing`, 'line-color', glowByTier);
     }
   }
 
@@ -727,11 +622,11 @@ export class MapController {
   /**
    * The lowest of our own dot layers currently on the map, if any.
    *
-   * An arrival point, not the final order. A corridor added over the cameras
-   * would draw across the dots standing along it, and its click target —
-   * deliberately 20px wide so a line can be tapped — would swallow every click
-   * meant for a camera, so areas and lines land beneath the dots already
-   * present rather than on top of them.
+   * An arrival point, not the final order. A line layer added over the
+   * cameras would draw across the dots standing along it, and its click
+   * target — deliberately 20px wide so a line can be tapped — would swallow
+   * every click meant for a camera, so areas and lines land beneath the dots
+   * already present rather than on top of them.
    *
    * What this cannot do is reason about layers that are not on the map yet,
    * which is every layer a reader has not ticked. `restack()` settles the
@@ -1043,312 +938,92 @@ export class MapController {
       const under = this.beneathDots();
       // Three layers for one line. The casing is what makes a thin coloured
       // line legible over a dark basemap without drawing it fat enough to
-      // imply a width the data does not have — a corridor is a stretch of
-      // road, not a band of ground.
-      // Colour carries the connection where a line cannot be drawn. Which
-      // ramp is legible depends on the *basemap*, not the site theme — see
-      // this.basemapDark's comment — and repaintThemedLayers() re-sets this
-      // same line-color if the basemap changes after this layer is added.
-      const threadStops = this.basemapDark ? THREAD_STOPS_DARK : THREAD_STOPS_LIGHT;
-      const thread = layer.networkColor
-        ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords, threadStops)
-        : (this.layerColor(layer) as unknown as maplibregl.ExpressionSpecification);
-      // The halo gets the full density ramp, cool end included, so a corridor
-      // reads as the same palette the rest of the map uses for density,
-      // carried by the street shape rather than a blob over the ground. The
-      // core below stays on THREAD_STOPS_*: a halo is a wash, so the low end's
-      // near-zero contrast is fine, but the thin core is the one legible mark
-      // on a mesh body and needs the ramp that clears 3:1 against the map.
-      const glow = layer.networkColor
-        ? networkColor(layer.networkColor.key, layer.networkColor.maxRecords, GLOW_STOPS)
-        : thread;
-
-      if (layer.filament) {
-        /*
-         * Two tiers, where the layer carries two kinds of line.
-         *
-         * The mesh is the fine tissue: short, dense, coloured by the ramp. The
-         * cords are the trunks that fuse one patch of mesh to the next — wide,
-         * pale, one colour, and drawn underneath so the mesh always sits on top
-         * of them.
-         *
-         * `byTier` returns the cord value where a layer declares a cord tier
-         * and the mesh value everywhere else, so a filament layer with only
-         * one kind of line is left exactly as it was.
-         */
-        const cord = layer.cordTier;
-        const byTier = (mesh: unknown, cordValue: unknown) =>
-          (cord
-            ? ['case', ['==', ['get', cord.key], cord.value], cordValue, mesh]
-            : mesh) as unknown as maplibregl.ExpressionSpecification;
-        // Cords stay off the network ramp: it says how many reader locations a
-        // mesh body holds, and a cord belongs to two bodies at once. Where a
-        // layer's cord rides the ramp (has networkColor, true of every cord
-        // tier so far), colour comes from this.basemapDark rather than
-        // layer.cordTier.color — it's exactly as background-dependent as the
-        // mesh's colour is (see densityRamp.ts's CORD_STROKE_DARK/_LIGHT), so
-        // a value read once from static registry config would go stale the
-        // same way the mesh's did. cord.color stays the real answer for a
-        // hypothetical filament layer with a cord tier but no network ramp.
-        const cordColor = layer.networkColor
-          ? this.basemapDark
-            ? CORD_STROKE_DARK
-            : CORD_STROKE_LIGHT
-          : cord?.color;
-        const threadByTier = cord ? byTier(thread, cordColor) : thread;
-        const glowByTier = cord ? byTier(glow, cordColor) : glow;
-        // Painted first within the layer, so the mesh sits on top of the trunk
-        // rather than the other way round. MapLibre sorts ascending.
-        const sortByTier = byTier(1, 0);
-
-        /*
-         * Both tiers' widths and opacities, as one ramp over zoom.
-         *
-         * The zoom interpolation has to be the outer expression and there may
-         * only be one of them: a `case` picking between two zoom ramps looks
-         * like the obvious way to write this and MapLibre rejects it outright,
-         * taking the whole layer down with it rather than falling back. So the
-         * zoom ramp is on the outside and each of its stops is where the two
-         * tiers differ.
-         *
-         * A stop is `[zoom, mesh, cord]`. With no cord tier declared the inner
-         * choice collapses to the mesh number and this is an ordinary zoom
-         * ramp, which is what every other filament layer gets.
-         */
-        const byZoomAndTier = (stops: Array<[number, number, number]>) =>
-          [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            ...stops.flatMap(([at, mesh, cordValue]) => [at, byTier(mesh, cordValue)]),
-          ] as unknown as maplibregl.ExpressionSpecification;
-
-        // A soft halo, wide and heavily blurred, so the thread looks like it is
-        // lit from inside rather than drawn on top of the map.
-        this.map.addLayer(
-          {
-            id: `${layer.id}-line-casing`,
-            type: 'line',
-            source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
-            paint: {
-              'line-color': glowByTier,
-              // On a cord the halo is not the supporting half, it is the strand.
-              // Almost all of a cord's visible presence is here, in something
-              // with no edge to it, which is why it holds a touch more than the
-              // mesh's halo at state zoom and why the core it wraps is so faint.
-              // Cord component lifted a step brighter than it first shipped at —
-              // still well short of the mesh's own halo, and blur and width
-              // below are untouched, so a cord still reads as grown rather
-              // than drawn. This is illumination, not the crispness that was
-              // tried and rejected (see the core layer's own comment below).
-              'line-opacity': byZoomAndTier([
-                [5, 0.2, 0.27],
-                [9, 0.2, 0.23],
-                [13, 0.2, 0.13],
-              ]),
-              /*
-               * Blur is paid per pixel covered, and this layer now covers a
-               * great deal more of them: every link is drawn whole where half
-               * of them used to be short stubs, so the same glow costs roughly
-               * twice what it did. Halved here and narrowed, which on a dense
-               * metro block is the difference between a haze and a legible
-               * thread anyway — the old figures were tuned when there were
-               * fewer lines to pile on top of each other.
-               *
-               * Cords are blurred far harder than the mesh, and that single
-               * number is most of what makes them read as tissue rather than as
-               * a road atlas. A cord follows a highway for tens of miles, and
-               * drawn crisply that is exactly what it looks like — a route
-               * somebody planned, which is the one thing it is not. Spread past
-               * its own width it stops having an edge, and something without an
-               * edge reads as grown rather than drawn. It is also the honest
-               * picture: a cord is the shortest road that happened to connect
-               * two clusters nobody coordinated, and a soft strand claims about
-               * as much precision as that deserves.
-               *
-               * Past zoom 13 the cord's blur comes back down, and this is the
-               * one number in the layer set for the machine rather than for the
-               * reader. Blur is paid per pixel covered and cords are 2,900 miles
-               * of line against the mesh's 600, so at a wide blur they are
-               * something like eight times the mesh's fill cost — while sitting
-               * at a tenth of its opacity, on the one view where the mesh is
-               * densest and the map has the most else to draw. Coming down
-               * costs a cord nothing anybody can see at that zoom and gives the
-               * frame back to the tier being looked at.
-               */
-              'line-blur': byZoomAndTier([
-                [5, 2, 7],
-                [11, 5, 14],
-                [13, 7, 12],
-                [16, 9, 6],
-              ]),
-              // The map opens on the whole state, where the median corridor is
-              // under three pixels long. A thread that is also thin there is a
-              // thread nobody can find, so the glow starts wide and the line
-              // grows into it rather than out of nothing.
-              // The cord's halo narrows past zoom 13 for the same reason its
-              // blur does, and the two together are what keep a metro view
-              // cheap: width and blur both multiply the pixels a cord costs.
-              'line-width': byZoomAndTier([
-                [5, 6, 9],
-                [11, 9, 15],
-                [13, 11, 14],
-                [16, 16, 10],
-              ]),
-            },
-          },
-          under,
-        );
-        // The core, thin and bright, sitting inside the halo. Two layers is the
-        // whole filament: there was a third that animated a travelling light
-        // along each strand, and it looked good, but it cost a gradient texture
-        // per band per tile on every frame it moved. Colour already carries the
-        // finding the movement was decorating, and it carries it while standing
-        // still.
-        this.map.addLayer(
-          {
-            id: `${layer.id}-line`,
-            type: 'line',
-            source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round', 'line-sort-key': sortByTier },
-            paint: {
-              'line-color': threadByTier,
-              /*
-               * A cord's core is kept well under the mesh's, and narrow.
-               *
-               * The instinct when a cord is hard to make out is to turn it up,
-               * and that was tried: at full strength the cords are perfectly
-               * visible and the map turns into a road atlas with some cameras
-               * on it. A bright hard line is the most authored mark there is,
-               * and a cord is the least authored thing here — the shortest road
-               * that happens to join two clusters nobody planned together.
-               *
-               * So the core is a filament inside the glow rather than a line
-               * with a glow around it. Presence comes from width and from the
-               * heavily blurred halo above; this only keeps the strand from
-               * dissolving into pure haze at the centre. It stays under the
-               * mesh at every zoom, because the mesh is the stronger claim and
-               * should always be the brighter mark.
-               *
-               * It does still lift where the whole state is in frame. At that
-               * zoom the mesh is a few pixels of haze and the cords are the
-               * only structure carrying the finding that these cameras are one
-               * connected thing. No cord's data changes across the ramp — the
-               * miles on the strand and the panel read the same at every zoom.
-               */
-              // Lowered across the board to make the whole layer read as
-              // lighter and less insistent against the basemap; the mesh/cord
-              // relationship (cord stays under the mesh at every zoom) and
-              // blur/width are otherwise untouched, so this stays the soft
-              // filament inside the glow rather than the hard line that was
-              // tried and rejected — just a fainter one.
-              'line-opacity': byZoomAndTier([
-                [5, 0.36, 0.25],
-                [9, 0.36, 0.2],
-                [13, 0.36, 0.1],
-              ]),
-              'line-width': byZoomAndTier([
-                [5, 2.6, 2.4],
-                [11, 3.2, 4],
-                [13, 3.7, 3.8],
-                [16, 5, 3],
-              ]),
-            },
-          },
-          under,
-        );
-
-        if (layer.pulse && !REDUCED_MOTION) {
-          this.setupPulse(layer, features);
-        }
-      } else {
-        /*
-         * Width from the data, where the layer says a magnitude drives it.
-         *
-         * `['zoom']` may only appear at the top of an expression, so the zoom
-         * ramp stays outermost and each of its stops multiplies that zoom's
-         * base width by the data ramp. Without a `weightBy` this collapses to
-         * the plain numbers every other line layer has always had.
-         *
-         * A missing or null magnitude reads as zero rather than breaking the
-         * layer: `interpolate` demands a number, and one unrecorded value
-         * taking the whole layer down with it is not a trade worth making.
-         */
-        const weight = layer.weightBy;
-        const at = (base: number) =>
-          (weight
-            ? [
-                '*',
-                base,
-                [
-                  'interpolate',
-                  ['linear'],
-                  ['to-number', ['coalesce', ['get', weight.key], 0]],
-                  ...weight.stops.flat(),
-                ],
-              ]
-            : base) as unknown as maplibregl.ExpressionSpecification;
-
-        /*
-         * Opacity, ramped by zoom where the layer asks to be quieter.
-         *
-         * A statewide layer is densest at the zoom where its lines are
-         * thinnest, so the view that shows the most of it is the view where it
-         * drowns everything else. The ramp spends the low end well under the
-         * declared value and only reaches it close in, where a segment is one
-         * line against open ground and has to be followable.
-         *
-         * A layer that declares nothing keeps the exact constant every plain
-         * line layer has always had, ramp included — which is to say none.
-         */
-        const fade = (fixed: number, declared: number | undefined) =>
-          (declared === undefined
-            ? fixed
-            : [
+      // imply a width the data does not have.
+      /*
+       * Width from the data, where the layer says a magnitude drives it.
+       *
+       * `['zoom']` may only appear at the top of an expression, so the zoom
+       * ramp stays outermost and each of its stops multiplies that zoom's
+       * base width by the data ramp. Without a `weightBy` this collapses to
+       * the plain numbers every other line layer has always had.
+       *
+       * A missing or null magnitude reads as zero rather than breaking the
+       * layer: `interpolate` demands a number, and one unrecorded value
+       * taking the whole layer down with it is not a trade worth making.
+       */
+      const weight = layer.weightBy;
+      const at = (base: number) =>
+        (weight
+          ? [
+              '*',
+              base,
+              [
                 'interpolate',
                 ['linear'],
-                ['zoom'],
-                6,
-                declared * 0.5,
-                11,
-                declared * 0.78,
-                14,
-                declared,
-              ]) as unknown as maplibregl.ExpressionSpecification;
+                ['to-number', ['coalesce', ['get', weight.key], 0]],
+                ...weight.stops.flat(),
+              ],
+            ]
+          : base) as unknown as maplibregl.ExpressionSpecification;
 
-        this.map.addLayer(
-          {
-            id: `${layer.id}-line-casing`,
-            type: 'line',
-            source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-            paint: {
-              'line-color': this.basemapColor,
-              // The casing tracks the core rather than staying put: a dark halo
-              // at full strength under a half-strength line reads as a shadow
-              // with nothing casting it.
-              'line-opacity': fade(0.85, layer.opacity && layer.opacity * 0.94),
-              'line-width': ['interpolate', ['linear'], ['zoom'], 6, at(3.5), 11, at(6), 16, at(11)],
-            },
+      /*
+       * Opacity, ramped by zoom where the layer asks to be quieter.
+       *
+       * A statewide layer is densest at the zoom where its lines are
+       * thinnest, so the view that shows the most of it is the view where it
+       * drowns everything else. The ramp spends the low end well under the
+       * declared value and only reaches it close in, where a segment is one
+       * line against open ground and has to be followable.
+       *
+       * A layer that declares nothing keeps the exact constant every plain
+       * line layer has always had, ramp included — which is to say none.
+       */
+      const fade = (fixed: number, declared: number | undefined) =>
+        (declared === undefined
+          ? fixed
+          : [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              6,
+              declared * 0.5,
+              11,
+              declared * 0.78,
+              14,
+              declared,
+            ]) as unknown as maplibregl.ExpressionSpecification;
+
+      this.map.addLayer(
+        {
+          id: `${layer.id}-line-casing`,
+          type: 'line',
+          source: src,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': this.basemapColor,
+            // The casing tracks the core rather than staying put: a dark halo
+            // at full strength under a half-strength line reads as a shadow
+            // with nothing casting it.
+            'line-opacity': fade(0.85, layer.opacity && layer.opacity * 0.94),
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, at(3.5), 11, at(6), 16, at(11)],
           },
-          under,
-        );
-        this.map.addLayer(
-          {
-            id: `${layer.id}-line`,
-            type: 'line',
-            source: src,
-            layout: { 'line-cap': 'round', 'line-join': 'round' },
-            paint: {
-              'line-color': this.layerColor(layer),
-              'line-opacity': fade(0.9, layer.opacity),
-              'line-width': ['interpolate', ['linear'], ['zoom'], 6, at(1.6), 11, at(3), 16, at(6)],
-            },
+        },
+        under,
+      );
+      this.map.addLayer(
+        {
+          id: `${layer.id}-line`,
+          type: 'line',
+          source: src,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': this.layerColor(layer),
+            'line-opacity': fade(0.9, layer.opacity),
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, at(1.6), 11, at(3), 16, at(6)],
           },
-          under,
-        );
-      }
+        },
+        under,
+      );
       // A line is a hard thing to hit with a finger. This one is invisible and
       // exists only to widen the target; a zero-opacity layer is still
       // queryable, so click and hover behave as they do on every other layer.
@@ -1395,8 +1070,8 @@ export class MapController {
           // Bearings are compass headings, so the cone turns with the map
           // rather than staying fixed on the screen.
           'icon-rotation-alignment': 'map',
-          // Cameras sit tightly along a corridor; hiding the ones that collide
-          // would misrepresent how many are there.
+          // Cameras can sit tightly clustered along a road; hiding the ones
+          // that collide would misrepresent how many are there.
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
           'icon-size': [
@@ -1531,143 +1206,6 @@ export class MapController {
     this.bindInteractions(layer, `${layer.id}-points`);
   }
 
-  /**
-   * The travelling spark `layer.pulse` asks for — each eligible mesh link
-   * fires a slow spark on its own period and rests for the remainder of it,
-   * on a shared throttled clock rather than a MapLibre paint-property
-   * animation.
-   *
-   * Deliberately not `line-dasharray` or `line-gradient` driven by a ticking
-   * paint property: both force MapLibre to rebuild a texture every time they
-   * change, which is the exact per-tile, per-frame cost the layer's own
-   * limitations text says this map paid once already and stopped paying. A
-   * plain GeoJSON point source, replaced a few times a second on one shared
-   * timer, is the cheap side of that trade — no texture, no per-tile work,
-   * and the cost is bounded by the eligible-feature count below rather than
-   * by zoom or tile count. The fire/rest duty cycle then cuts that cost
-   * again: most ticks, most eligible links contribute no feature at all.
-   */
-  private setupPulse(layer: ClientLayer, features: LoadedFeature[]) {
-    const pulse = layer.pulse;
-    const cord = layer.cordTier;
-    if (!pulse) return;
-
-    type Path = { coords: [number, number][]; cumulative: number[]; length: number; offset: number };
-    const paths: Path[] = [];
-    for (const f of features) {
-      if (f.geometry.type !== 'LineString') continue;
-      // Cords never pulse, regardless of their connectedSites value — they
-      // don't carry one (see cordTier's own comment), and a pulse crawling
-      // tens of miles of interstate is the "road atlas" look this layer's
-      // colour ramp deliberately stays away from.
-      if (cord && f.properties.attributes[cord.key] === cord.value) continue;
-      const key = layer.networkColor?.key;
-      const size = key ? Number(f.properties.attributes[key]) : NaN;
-      if (!(size >= pulse.minConnectedSites)) continue;
-
-      const coords = f.geometry.coordinates as [number, number][];
-      if (coords.length < 2) continue;
-      const cumulative = [0];
-      for (let i = 1; i < coords.length; i++) {
-        const [x1, y1] = coords[i - 1];
-        const [x2, y2] = coords[i];
-        cumulative.push(cumulative[i - 1] + Math.hypot(x2 - x1, y2 - y1));
-      }
-      const length = cumulative[cumulative.length - 1];
-      if (length <= 0) continue;
-      // A stable phase per feature, not a random one — reruns of the same
-      // page load should not visibly desync from one another, and a hash of
-      // the feature's own id costs nothing to recompute.
-      let hash = 0;
-      const id = String(f.properties.id ?? '');
-      for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-      paths.push({ coords, cumulative, length, offset: (hash % 1000) / 1000 });
-    }
-    // No silent cap today — 501 of this layer's current 982 mesh links clear
-    // the median threshold above, well inside what one throttled setData
-    // call handles, but the number is worth a comment given it drives a
-    // running JS loop: if it's ever near the low thousands, cap paths.length
-    // here rather than let the per-tick work grow unbounded.
-
-    if (paths.length === 0) return;
-
-    const pulseSrc = `src-${layer.id}-pulse`;
-    this.map.addSource(pulseSrc, { type: 'geojson', data: EMPTY_FC });
-    this.map.addLayer({
-      id: `${layer.id}-pulse-glow`,
-      type: 'circle',
-      source: pulseSrc,
-      minzoom: PULSE_MIN_ZOOM,
-      paint: {
-        'circle-color': PULSE_COLOR,
-        'circle-blur': 1.2,
-        'circle-opacity': 0.5,
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], PULSE_MIN_ZOOM, 5, 14, 11, 16, 16],
-      },
-    });
-    this.map.addLayer({
-      id: `${layer.id}-pulse`,
-      type: 'circle',
-      source: pulseSrc,
-      minzoom: PULSE_MIN_ZOOM,
-      paint: {
-        'circle-color': PULSE_COLOR,
-        'circle-blur': 0.3,
-        'circle-opacity': 0.9,
-        'circle-radius': ['interpolate', ['linear'], ['zoom'], PULSE_MIN_ZOOM, 2, 14, 3.5, 16, 5],
-      },
-    });
-
-    const pointAt = (path: Path, t: number): [number, number] => {
-      const target = t * path.length;
-      let i = 1;
-      while (i < path.cumulative.length - 1 && path.cumulative[i] < target) i++;
-      const segStart = path.cumulative[i - 1];
-      const segLen = path.cumulative[i] - segStart || 1;
-      const segT = (target - segStart) / segLen;
-      const [x1, y1] = path.coords[i - 1];
-      const [x2, y2] = path.coords[i];
-      return [x1 + (x2 - x1) * segT, y1 + (y2 - y1) * segT];
-    };
-
-    let lastTick = 0;
-    let startedAt: number | null = null;
-    const tick = (now: number) => {
-      if (!this.visible.has(layer.id)) {
-        requestAnimationFrame(tick);
-        return;
-      }
-      if (startedAt === null) startedAt = now;
-      // Throttled to a fraction of screen refresh rate on purpose — an
-      // "electrical pulse" reads as continuous well under 60fps, and this is
-      // the whole point of the cost fix: the old animation's expense was
-      // paying for a redraw every frame, not for having one at all.
-      if (now - lastTick >= PULSE_TICK_MS && this.map.getZoom() >= PULSE_MIN_ZOOM) {
-        lastTick = now;
-        const elapsed = now - startedAt;
-        const travelFraction = PULSE_TRAVEL_MS / PULSE_PERIOD_MS;
-        const features: Feature[] = [];
-        for (const path of paths) {
-          const phase = (elapsed / PULSE_PERIOD_MS + path.offset) % 1;
-          // Most of the period is rest, not travel — only draw a feature for
-          // a link that is actually mid-fire this tick, so the map shows a
-          // few sparse, slow sparks rather than every eligible link glowing
-          // at once.
-          if (phase >= travelFraction) continue;
-          features.push({
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: pointAt(path, phase / travelFraction) },
-            properties: {},
-          });
-        }
-        const fc: FeatureCollection = { type: 'FeatureCollection', features };
-        (this.map.getSource(pulseSrc) as GeoJSONSource | undefined)?.setData(fc);
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }
-
   private cursorOn(layerId: string) {
     this.map.on('mouseenter', layerId, () => {
       this.map.getCanvas().style.cursor = 'pointer';
@@ -1725,8 +1263,6 @@ export class MapController {
       '-points',
       '-cones',
       '-labels',
-      '-pulse-glow',
-      '-pulse',
     ]) {
       const id = `${layer.id}${suffix}`;
       if (this.map.getLayer(id)) {
@@ -1918,8 +1454,8 @@ export class MapController {
         duration,
       });
     } else {
-      // A corridor can be eleven miles long. Centring it at a fixed zoom shows
-      // a piece of it and hides the length, which is the one thing the record
+      // A line record can be miles long. Centring it at a fixed zoom shows a
+      // piece of it and hides the length, which is the one thing the record
       // exists to convey, so fit the whole extent instead. Polygons get the
       // same treatment for the same reason.
       const [minLng, minLat, maxLng, maxLat] = bboxOf(feature.geometry);
