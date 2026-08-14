@@ -265,7 +265,9 @@ async function main() {
 
   const features = [];
   const unresolved = [];
+  const seenIds = new Set();
   let notAnIntersection = 0;
+  let duplicateFilings = 0;
 
   for (const [i, agency] of scoped.entries()) {
     const rawKey = norm(agency.name);
@@ -332,12 +334,25 @@ async function main() {
         continue;
       }
 
+      // The BCA's published list repeats a handful of corners verbatim under
+      // the same agency. Two features with one id is a duplicate record, not
+      // a second reader: it double-counts the layer, prints the corner twice
+      // in the agency's own hover card, and — because the map source promotes
+      // `id` to the feature id — makes MapLibre's feature-state ambiguous.
+      // The filing is still the filing; it is one location, reported once.
+      const id = slugId('alpr-reported', agency.name, reported);
+      if (seenIds.has(id)) {
+        duplicateFilings++;
+        continue;
+      }
+      seenIds.add(id);
+
       ok++;
       features.push({
         type: 'Feature',
         geometry: { type: 'Point', coordinates: junction.point },
         properties: {
-          id: slugId('alpr-reported', agency.name, reported),
+          id,
           layer: 'alpr_reported',
           name: `Reported ALPR — ${reported}`,
           county: jurisdiction?.properties.county ?? building?.properties.county ?? null,
@@ -369,7 +384,7 @@ async function main() {
   const totalReported = scoped.reduce((n, a) => n + a.deviceLocations.length, 0);
   log(
     'alpr-reported',
-    `placed ${features.length} of ${totalReported} reported locations (${unresolved.length} unresolved, ${notAnIntersection} not intersections)`,
+    `placed ${features.length} of ${totalReported} reported locations (${unresolved.length} unresolved, ${notAnIntersection} not intersections, ${duplicateFilings} repeated verbatim in the source)`,
   );
 
   await writeLayer('alpr-reported', {
@@ -400,7 +415,7 @@ async function main() {
     knownGaps: [
       'Only agencies that filed a report with the BCA appear. An agency missing here may not have filed, or may operate only vehicle-mounted readers, which are not fixed locations — it is not evidence the agency operates none.',
       'Positions are resolved from the words in each filing against OpenStreetMap road geometry. The filing is the record; the coordinate is this project’s reading of it, and is marked `locatedBy: osm-intersection` on every feature.',
-      `${totalReported - features.length} of ${totalReported} reported locations could not be placed and are deliberately omitted rather than approximated: street addresses and landmark names this method cannot resolve, filings naming roads that do not exist or do not meet — including outright typos in the published list — and a few agencies whose filed name matches neither the jurisdiction nor the building inventory, leaving nowhere to search. Every one of them is listed in reference/alpr-reported-unresolved.json.`,
+      `${unresolved.length} of ${totalReported} reported locations could not be placed and are deliberately omitted rather than approximated: street addresses and landmark names this method cannot resolve, filings naming roads that do not exist or do not meet — including outright typos in the published list — and a few agencies whose filed name matches neither the jurisdiction nor the building inventory, leaving nowhere to search. Every one of them is listed in reference/alpr-reported-unresolved.json.`,
       'A reported location is where the agency says a reader is, not a guarantee it is still there or was ever installed.',
     ],
     features,

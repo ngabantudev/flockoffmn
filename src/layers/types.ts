@@ -476,16 +476,15 @@ export interface LayerDefinition {
    * Selecting a `polygonClick: 'highlight'` polygon also highlights the
    * matching records of a point layer — the building(s) this jurisdiction
    * answers from, not the ground it covers — and, optionally, draws paths to
-   * a third layer's records that fall geographically inside the selected
-   * polygon.
+   * a third layer's records that join back to the selected polygon.
    *
    * Those paths are never an assertion that the building operates the
-   * device — see `pathsTo.gateKey`'s own comment for why, and
+   * device — see `pathsTo.joinKey`'s own comment for why, and
    * scripts/ingest/agency-buildings.mjs / agencies-lpr-bca.mjs for where the
-   * two facts they actually rest on come from. This is why `gateKey` is
-   * required rather than always drawing paths for every selection: a path is
-   * only worth asking a reader to look at once a separate, cited document
-   * establishes the agency uses the technology at all.
+   * two facts they actually rest on come from. The join is what makes a path
+   * publishable at all: a line is only worth asking a reader to look at once
+   * a cited document connects the two ends, never because one happens to
+   * fall inside the other.
    */
   relatedBuildings?: {
     /** The point layer to search and highlight. */

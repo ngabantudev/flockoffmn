@@ -972,7 +972,6 @@ export const LAYERS: LayerDefinition[] = [
     },
   },
 
-
   {
     id: 'data_center',
     slug: 'data-centers',
