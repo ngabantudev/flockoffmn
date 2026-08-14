@@ -42,8 +42,20 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
       <span>{t('siteName')}</span>
     </a>
 
-    <nav aria-label="Primary" class="order-3 w-full sm:order-0 sm:w-auto sm:flex-1">
-      <ul class="scroll-slim flex items-center gap-0.5 overflow-x-auto text-sm">
+    {/*
+      The link list scrolls sideways rather than wrapping — 725px of labels
+      into 288px on a 320px phone, and wrapping them onto three rows would
+      spend 90px of a 568px screen on navigation. Everything is reachable by
+      swiping; what was missing was any sign of it. A label sliced mid-word
+      at the right edge reads as a layout bug, not as an invitation, so the
+      fades below mark whichever side still has links on it.
+    */}
+    <nav
+      aria-label="Primary"
+      data-nav-overflow="none"
+      class="relative order-3 w-full sm:order-0 sm:w-auto sm:flex-1"
+    >
+      <ul data-nav-scroller class="scroll-slim flex items-center gap-0.5 overflow-x-auto text-sm">
         {
           links.map((link) => (
             <li class="shrink-0">
@@ -87,4 +99,37 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     </div>
   </div>
 </header>
+
+<script>
+  /*
+   * Which side of the primary nav still has links on it, as an attribute the
+   * stylesheet can hang a fade on.
+   *
+   * A scroll listener rather than a scroll-driven animation: the CSS version
+   * needs `scroll-timeline` and `timeline-scope`, which Firefox still does
+   * not ship, and it would be the one piece of the site whose affordance
+   * quietly went missing in a whole browser. This is a handful of lines that
+   * work everywhere and will keep working.
+   */
+  for (const nav of document.querySelectorAll<HTMLElement>('[data-nav-overflow]')) {
+    const scroller = nav.querySelector<HTMLElement>('[data-nav-scroller]');
+    if (!scroller) continue;
+
+    const sync = () => {
+      // A pixel of slack: fractional layout leaves scrollLeft a hair short of
+      // the true end on a fair number of zoom levels and device ratios, which
+      // would otherwise pin the trailing fade on permanently.
+      const atStart = scroller.scrollLeft <= 1;
+      const atEnd = scroller.scrollLeft >= scroller.scrollWidth - scroller.clientWidth - 1;
+      nav.dataset.navOverflow = atStart && atEnd ? 'none' : atStart ? 'end' : atEnd ? 'start' : 'both';
+    };
+
+    sync();
+    scroller.addEventListener('scroll', sync, { passive: true });
+    // Not a window resize listener: the row this sits in rewraps at `sm`, and
+    // the labels themselves change length when the reader switches locale, so
+    // the box being watched has to be the scroller itself.
+    new ResizeObserver(sync).observe(scroller);
+  }
+</script>
 

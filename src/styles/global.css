@@ -223,6 +223,44 @@
 }
 
 /*
+ * Edge fades for the primary nav's sideways scroll — see Nav.astro, which
+ * sets data-nav-overflow to the side(s) with links still on them. Drawn on
+ * the non-scrolling wrapper so they stay pinned to the edges instead of
+ * riding along with the content, and in the header's own background colour
+ * so a label passing under one dissolves rather than dimming.
+ */
+[data-nav-overflow]::before,
+[data-nav-overflow]::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  width: 2rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+[data-nav-overflow]::before {
+  left: 0;
+  background: linear-gradient(to right, var(--color-ink-900), transparent);
+}
+[data-nav-overflow]::after {
+  right: 0;
+  background: linear-gradient(to left, var(--color-ink-900), transparent);
+}
+[data-nav-overflow='start']::before,
+[data-nav-overflow='both']::before,
+[data-nav-overflow='end']::after,
+[data-nav-overflow='both']::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-nav-overflow]::before,
+  [data-nav-overflow]::after {
+    transition: none;
+  }
+}
+
+/*
  * MapLibre overrides. The library ships a light-theme popup and control set;
  * these keep it inside the project's palette and contrast floor.
  */
