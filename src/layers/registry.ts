@@ -64,6 +64,24 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
 ];
 
 /**
+ * The colours HOLC printed on its own map sheets, read from Mapping
+ * Inequality's fill values.
+ *
+ * Two layers draw the same 1930s document — the graded neighbourhood areas and
+ * the block-by-block tracing of the colour inside them — and they have to agree
+ * on screen or the claim that they are two readings of one sheet fails at a
+ * glance. Written once so an edit cannot desynchronise them.
+ */
+const HOLC_GRADE_COLORS = {
+  A: '#76a865',
+  B: '#7cb5bd',
+  C: '#ffff00',
+  D: '#d9838d',
+  /** Non-residential land, recorded on some sheets without a residential grade. */
+  E: '#fefefe',
+} as const;
+
+/**
  * The layer registry — the single source of truth for what the map shows.
  *
  * Adding a layer means: write an ingest script that emits a LayerCollection to
@@ -792,6 +810,14 @@ export const LAYERS: LayerDefinition[] = [
         en: '"Groups named" is derived by keyword-matching the appraisers\' own vocabulary against their prose. It records that a word was written about an area — not who actually lived there, and not how many. Any percentage is the appraiser\'s estimate, not a census.',
         es: '«Grupos nombrados» se deriva buscando el vocabulario de los propios tasadores en su prosa. Registra que se escribió una palabra sobre un área, no quién vivía allí realmente ni cuántas personas. Cualquier porcentaje es la estimación del tasador, no un censo.',
       },
+      {
+        en: 'Only two of the eight Minnesota maps carry a year upstream — Minneapolis 1937 and Duluth 1936. For the rest no year is recorded at all, so they are dated only to HOLC’s survey window or, where the map was made outside that programme, not dated. Each area says which of the three it is.',
+        es: 'Solo dos de los ocho mapas de Minnesota traen un año en la fuente: Minneapolis 1937 y Duluth 1936. Para el resto no se registra ningún año, así que se fechan solo dentro del periodo de encuestas de HOLC o, si el mapa se hizo fuera de ese programa, no se fechan. Cada área indica cuál de los tres casos es.',
+      },
+      {
+        en: 'The census tracts listed on an area are a geometric overlap and nothing more: this share of that tract sits on ground graded this way. The percentage is what makes the difference readable — covering four per cent of a tract and covering ninety are not the same claim, and neither says anything follows from the grade.',
+        es: 'Las secciones censales listadas en un área son una superposición geométrica y nada más: esa proporción de la sección se asienta sobre terreno calificado así. El porcentaje es lo que hace legible la diferencia — cubrir el cuatro por ciento de una sección y cubrir el noventa no son la misma afirmación, y ninguna implica que algo se derive de la calificación.',
+      },
     ],
     geometry: 'polygon',
     color: '#c084fc',
@@ -799,15 +825,9 @@ export const LAYERS: LayerDefinition[] = [
     categoryColors: {
       key: 'grade',
       label: { en: 'HOLC grade', es: 'Calificación HOLC' },
-      // The colours HOLC printed on the original sheets, read from the source
-      // data's own fill values, so the map reads like the document it is.
-      colors: [
-        { value: 'A', color: '#76a865' },
-        { value: 'B', color: '#7cb5bd' },
-        { value: 'C', color: '#ffff00' },
-        { value: 'D', color: '#d9838d' },
-        { value: 'E', color: '#fefefe' },
-      ],
+      // The colours HOLC printed on the original sheets, so the map reads like
+      // the document it is. Shared with the block-by-block layer.
+      colors: Object.entries(HOLC_GRADE_COLORS).map(([value, color]) => ({ value, color })),
       fallback: '#9ca3af',
     },
     // The identifier HOLC printed on each zone — "A1", "D4" — drawn on the
@@ -860,6 +880,28 @@ export const LAYERS: LayerDefinition[] = [
         kind: 'enum',
         label: { en: 'Groups named in the survey', es: 'Grupos nombrados en la encuesta' },
       },
+      {
+        key: 'dating',
+        kind: 'enum',
+        label: { en: 'How the date is known', es: 'Cómo se conoce la fecha' },
+        // The bilingual sentences live here rather than on all 168 features:
+        // three strings written once beat three English strings shipped per
+        // record and rendered under a Spanish label.
+        valueDescriptions: {
+          'Year recorded upstream': {
+            en: 'Mapping Inequality records a year for this city’s map. Only Minneapolis (1937) and Duluth (1936) have one.',
+            es: 'Mapping Inequality registra un año para el mapa de esta ciudad. Solo Minneapolis (1937) y Duluth (1936) lo tienen.',
+          },
+          'Survey-programme window only': {
+            en: 'No year is recorded for this city. The map was made under HOLC’s City Survey Program, which ran from late 1935 to 1940, and can be dated no more closely than that.',
+            es: 'No hay año registrado para esta ciudad. El mapa se hizo bajo el City Survey Program de HOLC, que funcionó desde finales de 1935 hasta 1940, y no puede fecharse con más precisión.',
+          },
+          'No year recorded': {
+            en: 'No year recorded, and this map was made outside HOLC’s City Survey Program altogether. No source found for when it was drawn.',
+            es: 'Sin año registrado, y este mapa se hizo completamente fuera del City Survey Program de HOLC. No se encontró ninguna fuente sobre cuándo se dibujó.',
+          },
+        },
+      },
     ],
     detailFields: [
       { key: 'grade', label: { en: 'HOLC grade', es: 'Calificación HOLC' } },
@@ -897,6 +939,17 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'surveyForm', label: { en: 'Survey form', es: 'Formulario de la encuesta' } },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'holcId', label: { en: 'HOLC area ID', es: 'ID del área HOLC' } },
+      // The year itself is the record's source date and the panel already
+      // renders it; this says how firmly it is known, which the date alone
+      // cannot.
+      { key: 'dating', label: { en: 'How the date is known', es: 'Cómo se conoce la fecha' } },
+      {
+        key: 'tracts',
+        label: {
+          en: 'Census tracts today, and how much of each this area covers',
+          es: 'Secciones censales actuales, y qué parte de cada una cubre esta área',
+        },
+      },
     ],
     nearMe: {
       mode: 'contains',
@@ -909,6 +962,202 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Este punto no está dentro de un área calificada por HOLC. Solo se evaluaron ocho ciudades de Minnesota, así que esto no prueba que la zona quedara libre de discriminación en la vivienda.',
       },
       detail: ['grade', 'gradeMeaning'],
+      wide: true,
+    },
+  },
+
+  {
+    id: 'holc_appraisal_detail',
+    slug: 'holc-detail',
+    category: 'historical',
+    label: {
+      en: 'HOLC appraisal, block by block',
+      es: 'Tasación HOLC, manzana por manzana',
+    },
+    summary: {
+      en: 'The same Twin Cities sheet the redlining layer draws, retraced by the Metropolitan Council at the scale the colour was actually applied.',
+      es: 'La misma lámina de las Ciudades Gemelas que dibuja la capa de redlining, retrazada por el Metropolitan Council a la escala en que se aplicó el color.',
+    },
+    whatThisMeans: {
+      en: 'HOLC’s appraisers coloured their Minneapolis and St. Paul map block by block. The redlining layer beside this one shows the neighbourhood areas they outlined; this shows where the colour itself stopped. It is the same document at about seventy times the resolution — and because it follows the shading rather than the outline, it leaves out the lakes, parks and undeveloped land that a neighbourhood boundary necessarily swallows. Roughly an eighth of the ground on this sheet turns out to be water or parkland that was never graded at all. What it cannot tell you is what the appraiser wrote: the Metropolitan Council’s file carries a class and nothing else, no area identifier for a survey sheet to attach to. Each block therefore records which of the other layer’s areas it sits inside, so the prose is one tap away.',
+      es: 'Los tasadores de HOLC colorearon su mapa de Minneapolis y St. Paul manzana por manzana. La capa de redlining muestra las áreas de barrio que delinearon; esta muestra dónde se detuvo el color. Es el mismo documento con unas setenta veces más resolución y, como sigue el sombreado en vez del contorno, deja fuera los lagos, parques y terrenos sin urbanizar que un límite de barrio necesariamente engloba. Alrededor de una octava parte del terreno de esta lámina resulta ser agua o parque que nunca fue calificado. Lo que no puede decirle es qué escribió el tasador: el archivo del Metropolitan Council solo lleva una clase, sin identificador de área al que adjuntar una hoja de encuesta. Por eso cada manzana registra en qué área de la otra capa se encuentra, y la prosa queda a un toque de distancia.',
+    },
+    limitations: [
+      {
+        en: 'The Minneapolis–St. Paul sheet only. The other six Minnesota cities HOLC surveyed appear in the redlining layer instead. The sheet was drawn to its own edges rather than to city limits, so a handful of blocks fall in adjoining jurisdictions — Fort Snelling, Maplewood, Lilydale — and the City filter names them as what they are rather than folding them into a city they are not in.',
+        es: 'Solo la lámina de Minneapolis–St. Paul. Las otras seis ciudades de Minnesota que HOLC evaluó aparecen en la capa de redlining. La lámina se dibujó hasta sus propios bordes, no hasta los límites municipales, así que unas pocas manzanas caen en jurisdicciones vecinas — Fort Snelling, Maplewood, Lilydale — y el filtro de ciudad las nombra como lo que son en lugar de asignarlas a una ciudad en la que no están.',
+      },
+      {
+        en: 'The publisher dates this file to 1934. HOLC’s survey programme did not begin until late 1935, and Mapping Inequality dates the Minneapolis map to 1937 and records no year at all for St. Paul. 1934 is the year the federal underwriting scheme was created, not the year this sheet was drawn.',
+        es: 'El editor fecha este archivo en 1934. El programa de encuestas de HOLC no comenzó hasta finales de 1935, y Mapping Inequality fecha el mapa de Minneapolis en 1937 y no registra ningún año para St. Paul. 1934 es el año en que se creó el esquema federal de suscripción, no el año en que se dibujó esta lámina.',
+      },
+      {
+        en: 'The Metropolitan Council states that the file was digitised from a non-georeferenced photograph of the original map and that its accuracy is unknown. Every polygon is nonetheless checked at build time against the independently georeferenced Mapping Inequality areas, and the measured agreement rate ships with the download.',
+        es: 'El Metropolitan Council afirma que el archivo se digitalizó a partir de una fotografía no georreferenciada del mapa original y que su exactitud es desconocida. Aun así, cada polígono se contrasta al compilar con las áreas georreferenciadas de Mapping Inequality, y la tasa de coincidencia medida se publica con la descarga.',
+      },
+      {
+        en: 'The Metropolitan Council file has no area identifier and no survey sheet. The HOLC area label drawn on each block comes from Mapping Inequality, matched by which of their graded areas the block’s centre falls inside — it is the route back to what the appraiser wrote, which is in the redlining layer. Blocks beyond the graded areas carry no label.',
+        es: 'El archivo del Metropolitan Council no tiene identificador de área ni hoja de encuesta. La etiqueta de área HOLC dibujada en cada manzana proviene de Mapping Inequality, según en qué área calificada cae su centro: es la vía de vuelta a lo que escribió el tasador, que está en la capa de redlining. Las manzanas fuera de las áreas calificadas no llevan etiqueta.',
+      },
+      {
+        en: 'The 2020 census tract on each block is a join key for laying present-day data beside the grade — not a claim that anything about the tract today follows from it. Graded areas in the redlining layer carry the same link as a list, with the share of each tract they cover.',
+        es: 'La sección censal de 2020 en cada manzana es una clave de unión para poner datos actuales junto a la calificación, no una afirmación de que algo de la sección hoy se derive de ella. Las áreas calificadas de la capa de redlining llevan el mismo vínculo como lista, con la proporción de cada sección que cubren.',
+      },
+      {
+        en: 'Parks, water and undeveloped land are drawn as the 1930s sheet drew them. That is a record of the old map, not of present-day land cover.',
+        es: 'Los parques, el agua y el terreno sin urbanizar se dibujan como los dibujó la lámina de los años 30. Es un registro del mapa antiguo, no de la cobertura del suelo actual.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#a855f7',
+    colorLight: '#7e22ce',
+    categoryColors: {
+      key: 'className',
+      label: { en: 'Class on the 1930s sheet', es: 'Clase en la lámina de los años 30' },
+      /*
+       * The four graded classes take HOLC's own printed colours, the same
+       * values the redlining layer reads out of Mapping Inequality's fills, so
+       * the two layers of the same document agree on screen.
+       *
+       * The five non-residential classes have no source colour to take: the
+       * publisher's service ships a single flat symbol and no per-class
+       * palette. These are ours, deliberately desaturated so that "not a
+       * grade" reads as not a grade rather than as a fifth grade.
+       */
+      colors: [
+        { value: 'Best', color: HOLC_GRADE_COLORS.A },
+        { value: 'Still Desirable', color: HOLC_GRADE_COLORS.B },
+        { value: 'Definitely Declining', color: HOLC_GRADE_COLORS.C },
+        { value: 'Hazardous', color: HOLC_GRADE_COLORS.D },
+        { value: 'Business and Industrial', color: '#9ca3af' },
+        { value: 'Park / Open Space', color: '#6b7f6b' },
+        { value: 'Open Water', color: '#7d9db8' },
+        { value: 'Undeveloped', color: '#b8ae9c' },
+        { value: 'Uncertain', color: '#6b7280' },
+      ],
+      fallback: '#6b7280',
+    },
+    // Deliberately no `polygonClick: 'highlight'`. That mode draws polygons in
+    // one neutral fill until hovered, which is right for browsing wards and
+    // wrong here: this layer's whole claim is that it reproduces the colouring
+    // of a specific sheet, and a reader has to be able to see the sheet.
+    //
+    // The identifier HOLC printed on the surrounding area, drawn on the ground
+    // the way the original sheet drew it — see limitations for where it comes
+    // from and why some blocks have none. `minzoom` because this labels
+    // *blocks*: one area's identifier is carried by hundreds of polygons
+    // ("C3" on 682 of them), and below street zoom every one of those is a
+    // collision candidate placed and then discarded.
+    labelBy: { key: 'miArea', minzoom: 12 },
+    // No `related` join here, deliberately. The tract's present-day burden
+    // band is stamped on each block at ingest instead: fetching the whole
+    // cumulative-stressor layer (3.6 MB, 683 KB gzipped) the moment a reader
+    // toggled this one on, to render one of four words, doubled the cost of
+    // switching the layer on for an enum. See holc-detail.mjs.
+    hoverCard: {
+      fields: ['className', 'grade', 'miArea', 'tractBurdenBand'],
+      note: {
+        en: 'Traced from a photograph of the original map. Two dated records of the same ground, eighty years apart — the map sets them side by side and draws no conclusion between them.',
+        es: 'Trazado a partir de una fotografía del mapa original. Dos registros fechados del mismo terreno, con ochenta años de diferencia: el mapa los pone uno junto al otro y no extrae ninguna conclusión.',
+      },
+    },
+    dataPath: '/data/holc-detail.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Historic HOLC Neighborhood Appraisal, Metropolitan Council',
+      sourceUrl: 'https://gis.data.mn.gov/datasets/d801b130d3f640c4832d3af7abee5b2c_0/explore',
+      license: 'Public domain (Minn. Stat. ch. 13)',
+      licenseUrl: 'https://www.revisor.mn.gov/statutes/cite/13',
+      attribution:
+        'Metropolitan Council, "Historic Home Owners\' Loan Corporation Neighborhood Appraisal Map"',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'rare',
+    },
+    filters: [
+      {
+        key: 'className',
+        kind: 'enum',
+        label: { en: 'Class on the sheet', es: 'Clase en la lámina' },
+        // The nine meanings live here rather than on every polygon: nine
+        // strings across 11,561 records was most of two megabytes to say one
+        // of nine things. See GRADE_OF_CLASS in scripts/ingest/holc-detail.mjs.
+        valueDescriptions: {
+          Best: {
+            en: 'Grade A. “Best” — new and homogeneous; in practice, restricted to white residents.',
+            es: 'Calificación A. «Mejor»: nuevo y homogéneo; en la práctica, restringido a residentes blancos.',
+          },
+          'Still Desirable': {
+            en: 'Grade B. “Still Desirable” — expected to hold value, but past its newest years.',
+            es: 'Calificación B. «Aún deseable»: se esperaba que mantuviera su valor, pero ya no era nuevo.',
+          },
+          'Definitely Declining': {
+            en: 'Grade C. “Definitely Declining” — marked down for what HOLC called the “infiltration” of Black, Jewish and immigrant residents.',
+            es: 'Calificación C. «En claro declive»: degradado por lo que HOLC llamó la «infiltración» de residentes negros, judíos e inmigrantes.',
+          },
+          Hazardous: {
+            en: 'Grade D. “Hazardous” — outlined in red, with lending withheld on explicitly racial grounds.',
+            es: 'Calificación D. «Peligroso»: delineado en rojo, con el crédito negado por motivos explícitamente raciales.',
+          },
+          'Business and Industrial': {
+            en: 'Shaded as commercial or industrial land rather than given a residential grade.',
+            es: 'Sombreado como suelo comercial o industrial en lugar de recibir una calificación residencial.',
+          },
+          'Park / Open Space': {
+            en: 'Parkland on the original sheet — never graded, and excluded from the neighbourhood outlines in the other layer.',
+            es: 'Parque en la lámina original: nunca calificado, y excluido de los contornos de barrio de la otra capa.',
+          },
+          'Open Water': {
+            en: 'Lake or river on the original sheet — never graded, though a neighbourhood outline may cover it.',
+            es: 'Lago o río en la lámina original: nunca calificado, aunque un contorno de barrio pueda cubrirlo.',
+          },
+          Undeveloped: {
+            en: 'Shaded as undeveloped land, with no grade applied.',
+            es: 'Sombreado como terreno sin urbanizar, sin calificación aplicada.',
+          },
+          Uncertain: {
+            en: 'The colour here could not be read off the photographed sheet. Left unresolved rather than guessed.',
+            es: 'El color aquí no pudo leerse en la lámina fotografiada. Se deja sin resolver en lugar de adivinarlo.',
+          },
+        },
+      },
+      { key: 'city', kind: 'enum', label: { en: 'City', es: 'Ciudad' } },
+    ],
+    detailFields: [
+      { key: 'className', label: { en: 'Class on the sheet', es: 'Clase en la lámina' } },
+      { key: 'grade', label: { en: 'HOLC grade', es: 'Calificación HOLC' } },
+      {
+        key: 'miArea',
+        label: {
+          en: 'HOLC area this block sits in',
+          es: 'Área HOLC en la que está esta manzana',
+        },
+      },
+      { key: 'city', label: { en: 'City', es: 'Ciudad' } },
+      { key: 'tractGeoid', label: { en: '2020 census tract', es: 'Sección censal 2020' } },
+      {
+        key: 'tractBurdenBand',
+        label: {
+          en: 'That tract’s cumulative burden today (MPCA draft)',
+          es: 'Carga acumulativa actual de esa sección (borrador MPCA)',
+        },
+      },
+    ],
+    nearMe: {
+      mode: 'contains',
+      title: {
+        en: 'What this exact block was coloured',
+        es: 'De qué color se pintó exactamente esta manzana',
+      },
+      empty: {
+        en: 'This point is outside the Minneapolis–St. Paul sheet. Only those two cities were retraced at this scale; the redlining layer covers six more.',
+        es: 'Este punto está fuera de la lámina de Minneapolis–St. Paul. Solo esas dos ciudades se retrazaron a esta escala; la capa de redlining cubre seis más.',
+      },
+      detail: ['className', 'grade', 'miArea', 'tractGeoid'],
+      caveat: {
+        en: 'Traced from a photograph of a hand-drawn 1930s map. The publisher states the accuracy is unknown.',
+        es: 'Trazado a partir de una fotografía de un mapa dibujado a mano en los años 30. El editor indica que la exactitud es desconocida.',
+      },
       wide: true,
     },
   },

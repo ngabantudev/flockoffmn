@@ -25,6 +25,8 @@
     "data:detention": "node scripts/ingest/detention.mjs",
     "data:datacenters": "node scripts/ingest/data-centers.mjs",
     "data:redlining": "node scripts/ingest/redlining.mjs",
+    "data:holc-detail": "node scripts/ingest/holc-detail.mjs",
+    "data:holc-tracts": "node scripts/ingest/holc-tracts.mjs",
     "pages:dev": "wrangler pages dev dist",
     "pages:preview": "npm run build && wrangler pages deploy dist --project-name=flockoffmn --branch=preview",
     "pages:publish": "npm run build && wrangler pages deploy dist --project-name=flockoffmn --branch=main",

@@ -68,7 +68,7 @@ export interface ClientLayer {
     fallback: string;
   };
   /** Write an attribute's value on each polygon, the way the source document did. */
-  labelBy?: { key: string };
+  labelBy?: { key: string; minzoom?: number };
   /** See LayerDefinition's own comment in layers/types.ts. */
   polygonClick?: 'highlight';
   /** See LayerDefinition's own comment in layers/types.ts. */
@@ -1507,6 +1507,10 @@ export class MapController {
           id: `${layer.id}-labels`,
           type: 'symbol',
           source: src,
+          // Declared per layer because it is a property of how many records
+          // the layer labels, not of labelling: 168 areas can be placed at any
+          // zoom, 8,844 blocks cannot. See labelBy.minzoom in types.ts.
+          ...(layer.labelBy.minzoom === undefined ? {} : { minzoom: layer.labelBy.minzoom }),
           layout: {
             'text-field': ['to-string', ['coalesce', ['get', layer.labelBy.key], '']],
             'text-size': ['interpolate', ['linear'], ['zoom'], 9, 10, 14, 18],
