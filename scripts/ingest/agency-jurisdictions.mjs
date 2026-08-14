@@ -22,9 +22,17 @@
  * a person.
  */
 
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { writeLayer, loadCounties, log, slugId, fetchWithRetry, PUBLIC_DATA } from './lib/util.mjs';
+import {
+  writeLayer,
+  loadCounties,
+  log,
+  slugId,
+  fetchWithRetry,
+  normaliseAgency,
+  agencyType,
+  loadPublicJson,
+  thinGeometry,
+} from './lib/util.mjs';
 import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
 
 // Cataloged on the Minnesota Geospatial Commons; this is the service its own
@@ -40,37 +48,6 @@ function cleanName(raw) {
 }
 
 /**
- * Coarse type read off the plain-English tail of MESB's own name string.
- * Not an assertion about the agency beyond what its own listed name says.
- */
-function agencyType(name) {
-  if (/national guard|air force/i.test(name)) return 'Military';
-  if (/sheriff/i.test(name)) return 'Sheriff';
-  if (/police|public safety/i.test(name)) return 'Police';
-  return 'Other';
-}
-
-/**
- * Fold "St." vs "Saint", "Department", "Office" and "Public Safety" so
- * MESB's routing name and the BCA's legal-name style land on the same key.
- * Same purpose as util.mjs's normaliseCounty, for a different vocabulary.
- */
-function normaliseAgency(name) {
-  return (name ?? '')
-    .toLowerCase()
-    .replace(/'s\b/g, '')
-    .replace(/\bdepartment\b/g, '')
-    .replace(/\boffice\b/g, '')
-    .replace(/\bof\b/g, '')
-    .replace(/\bpublic safety\b/g, 'police')
-    .replace(/\bsaint\b/g, 'st')
-    .replace(/\bst\.?\b/g, 'st')
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/**
  * BCA's published list of agencies that reported LPR use under Minn. Stat.
  * § 13.824, subd. 8 — see agencies-lpr-bca.mjs for how it's built and why
  * this stays a reference file rather than a layer of its own. Missing (the
@@ -79,16 +56,14 @@ function normaliseAgency(name) {
  * script's output.
  */
 async function loadBcaAgencies() {
-  const p = path.join(PUBLIC_DATA, 'reference/bca-alpr-agencies.json');
-  try {
-    const parsed = JSON.parse(await readFile(p, 'utf8'));
-    const byName = new Map(parsed.agencies.map((a) => [normaliseAgency(a.name), a]));
-    log('agency-jurisdictions', `loaded ${byName.size} BCA-reported agencies for cross-reference`);
-    return { byName, sourceUrl: parsed.metadata.sourceUrl };
-  } catch {
+  const parsed = await loadPublicJson('reference/bca-alpr-agencies.json', { optional: true });
+  if (!parsed) {
     log('agency-jurisdictions', 'no BCA reference file found — run agencies-lpr-bca.mjs first for ALPR cross-reference');
     return { byName: new Map(), sourceUrl: null };
   }
+  const byName = new Map(parsed.agencies.map((a) => [normaliseAgency(a.name), a]));
+  log('agency-jurisdictions', `loaded ${byName.size} BCA-reported agencies for cross-reference`);
+  return { byName, sourceUrl: parsed.metadata.sourceUrl };
 }
 
 /** Resolve the upstream item's last-modified date from its AGOL record. */
@@ -120,9 +95,13 @@ async function main() {
   if (!raw.features?.length) throw new Error('MESB service returned no jurisdiction polygons');
   log('agency-jurisdictions', `fetched ${raw.features.length} agency polygons from MESB`);
 
-  const counties = await loadCounties();
-  const sourceDate = await fetchLastModified();
-  const bca = await loadBcaAgencies();
+  // Two file reads and one network round trip, none of which depends on
+  // another's result — serialising them costs an RTT of wall clock per run.
+  const [counties, sourceDate, bca] = await Promise.all([
+    loadCounties(),
+    fetchLastModified(),
+    loadBcaAgencies(),
+  ]);
 
   const features = raw.features.map((f) => {
     const name = cleanName(f.properties.law_gis ?? f.properties.Law_GIS);
@@ -157,7 +136,13 @@ async function main() {
 
     return {
       type: 'Feature',
-      geometry: f.geometry,
+      // MESB publishes these at full float precision — 99 polygons, 105k
+      // vertices, 4.2 MB. This layer is on at first paint, so those bytes land
+      // on every visitor before they have asked for anything, on the phones
+      // §0.7 is written for. Thinned to ~1 m, which is far finer than a 911
+      // response boundary is authored at, the same file is under a third the
+      // size and looks identical.
+      geometry: thinGeometry(f.geometry),
       properties: {
         id: slugId('agency-jurisdiction', name),
         layer: 'agency_jurisdiction',

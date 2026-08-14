@@ -382,11 +382,7 @@ export async function writeLayer(slug, { layer, provenance, knownGaps = [], feat
 
 /** Load the county reference index built by counties.mjs. */
 export async function loadCounties() {
-  const p = path.join(PUBLIC_DATA, 'reference/mn-counties.geojson');
-  if (!existsSync(p)) {
-    throw new Error('county reference missing — run `npm run data:counties` first');
-  }
-  return JSON.parse(await readFile(p, 'utf8'));
+  return loadPublicJson('reference/mn-counties.geojson', { runFirst: 'npm run data:counties' });
 }
 
 /** Normalise "St. Louis County" / "ST LOUIS CO." / "Saint Louis" -> "st louis". */
@@ -403,6 +399,108 @@ export function normaliseCounty(name) {
     .replace(/[^a-z0-9 ]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Fold "St." vs "Saint", "Department", "Office" and "Public Safety" so MESB's
+ * 911-routing name, the BCA's legal-name style, and the U-Spatial building
+ * inventory's name all land on the same key.
+ *
+ * Same shape as normaliseCounty above, different vocabulary — and NOT
+ * interchangeable with it: normaliseCounty strips `\bcounty\b`, which would
+ * destroy "Dakota County Sheriff". The jurisdiction ↔ building ↔ BCA-filing
+ * join that every agency layer hangs on is computed here, once, because three
+ * scripts performing the same join with three private copies is how the copies
+ * drift apart without anyone noticing.
+ */
+export function normaliseAgency(name) {
+  return (name ?? '')
+    .toLowerCase()
+    .replace(/'s\b/g, '')
+    .replace(/\bdepartment\b/g, '')
+    .replace(/\boffice\b/g, '')
+    .replace(/\bof\b/g, '')
+    .replace(/\bpublic safety\b/g, 'police')
+    .replace(/\bsaint\b/g, 'st')
+    .replace(/\bst\.?\b/g, 'st')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Coarse office type read off the plain-English tail of the agency's own
+ * published name. Not an assertion about the agency beyond what its name says.
+ *
+ * Shared so a polygon and the buildings inside it cannot disagree about what
+ * kind of agency they describe — an invariant a second copy cannot hold, and
+ * did not: the two private copies of this function had already drifted on
+ * `army|military` before they were merged here. The value drives a user-facing
+ * filter and the registry's markerIcon.byValue glyph choice, so a divergence
+ * is visible on the map.
+ */
+export function agencyType(name) {
+  if (/national guard|air force|army|military/i.test(name)) return 'Military';
+  if (/sheriff/i.test(name)) return 'Sheriff';
+  if (/police|public safety/i.test(name)) return 'Police';
+  return 'Other';
+}
+
+/**
+ * Read a JSON file out of public/data/, with an error that names the ingest to
+ * run instead of a bare ENOENT. `optional` returns null for a missing file —
+ * for a cross-reference whose absence should degrade one field rather than
+ * fail the whole build over an unrelated script's output.
+ */
+export async function loadPublicJson(relPath, { optional = false, runFirst } = {}) {
+  const p = path.join(PUBLIC_DATA, relPath);
+  if (!existsSync(p)) {
+    if (optional) return null;
+    throw new Error(`${relPath} missing — run \`${runFirst ?? 'npm run data'}\` first`);
+  }
+  try {
+    return JSON.parse(await readFile(p, 'utf8'));
+  } catch (err) {
+    if (optional) return null;
+    throw err;
+  }
+}
+
+/**
+ * Round a coordinate ring to ~1 m and drop vertices the rounding made
+ * identical. Upstream services publish full IEEE-754 precision — 15
+ * significant digits, roughly a nanometre — on boundaries that were never
+ * authored anywhere near that finely, and every one of those digits is bytes
+ * a visitor on a phone pays for. 5 decimal places is ~1.1 m.
+ */
+export function thinRing(ring) {
+  const out = [];
+  for (const [lng, lat] of ring) {
+    const p = [Math.round(lng * 1e5) / 1e5, Math.round(lat * 1e5) / 1e5];
+    const last = out.at(-1);
+    if (!last || last[0] !== p[0] || last[1] !== p[1]) out.push(p);
+  }
+  return out;
+}
+
+/**
+ * thinRing applied through whatever nesting a GeoJSON geometry uses. Points
+ * are returned untouched — a single coordinate pair is not where the bytes
+ * are, and rounding it would move a mapped location for no gain.
+ */
+export function thinGeometry(geometry) {
+  if (!geometry) return geometry;
+  const { type, coordinates } = geometry;
+  if (type === 'LineString' || type === 'MultiPoint') {
+    return { ...geometry, coordinates: thinRing(coordinates) };
+  }
+  if (type === 'Polygon' || type === 'MultiLineString') {
+    return { ...geometry, coordinates: coordinates.map(thinRing) };
+  }
+  if (type === 'MultiPolygon') {
+    return { ...geometry, coordinates: coordinates.map((poly) => poly.map(thinRing)) };
+  }
+  return geometry;
 }
 
 export function slugId(...parts) {

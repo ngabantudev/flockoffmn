@@ -52,9 +52,9 @@ function deviceLocations(bodyHtml) {
     bodyHtml,
   );
   if (!section) return [];
-  const items = [...section[1].matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => stripTags(m[1]));
-  const clean = items.filter((s) => s && !/^n\/?a$/i.test(s));
-  return clean;
+  return [...section[1].matchAll(/<li>([\s\S]*?)<\/li>/g)]
+    .map((m) => stripTags(m[1]))
+    .filter((s) => s && !/^n\/?a$/i.test(s));
 }
 
 async function main() {

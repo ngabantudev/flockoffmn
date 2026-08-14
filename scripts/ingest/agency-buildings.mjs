@@ -19,9 +19,16 @@
  * reliably.
  */
 
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fetchWithRetry, loadCounties, writeLayer, log, slugId, PUBLIC_DATA } from './lib/util.mjs';
+import {
+  fetchWithRetry,
+  loadCounties,
+  writeLayer,
+  log,
+  slugId,
+  normaliseAgency,
+  agencyType,
+  loadPublicJson,
+} from './lib/util.mjs';
 import { findContaining } from '../../src/lib/geo.mjs';
 
 const SERVICE =
@@ -29,48 +36,29 @@ const SERVICE =
 const DATASET_PAGE = 'https://gisdata.mn.gov/dataset/struc-law-enforce-mn';
 
 /**
- * Hand-verified aliases for jurisdictions whose MESB routing name doesn't
- * literally match this dataset's NAME_STD — usually because the department's
- * legal name is "Department of Public Safety" or similar and MESB's own
- * 911-routing table shortens it to "Police". Checked one at a time against
- * the source data, not fuzzy-matched, so a name that isn't here just has no
- * building on record rather than a guessed one.
+ * Keyed by this dataset's normalised NAME_STD, valued by our own normalised
+ * jurisdiction name. Only the departments whose two names stay different
+ * *after* util.mjs's normaliseAgency has folded "Department", "Office" and
+ * "Public Safety" — an earlier version of this table carried four more
+ * entries that the shared normaliser already resolves, which is what a
+ * hand-maintained list costs when it compensates for a weaker key.
+ *
+ * Checked one at a time against the source data, not fuzzy-matched, so a name
+ * that isn't here just has no building on record rather than a guessed one.
  */
 const NAME_ALIASES = {
-  'dakota county sheriff': 'dakota county law enforcement',
-  'richfield police': 'richfield department of public safety',
-  'new brighton police': 'new brighton department of public safety - police',
-  'minnetrista police': 'minnetrista public safety',
-  'west hennepin police': 'west hennepin public safety',
-  'university of minnesota police': 'university of minnesota department of public safety',
-  'metropolitan airports commission police': 'minneapolis saint paul international airport police',
+  'dakota county law enforcement': 'dakota county sheriff',
+  // "New Brighton Department of Public Safety - Police" folds to a doubled
+  // word, because normaliseAgency rewrites "public safety" to "police" and
+  // this name carries both.
+  'new brighton police police': 'new brighton police',
+  'minneapolis st paul international airport police': 'metropolitan airports commission police',
 };
 
-function norm(s) {
-  return (s ?? '').trim().toLowerCase();
-}
-
-/**
- * Which office this building belongs to, read off the name the source itself
- * publishes. Deliberately the same coarse buckets agency-jurisdictions.mjs
- * uses, so a polygon and the buildings inside it never disagree about what
- * kind of agency they describe — and so the map can draw each office's own
- * insignia (see the registry's markerIcon). Not an assertion beyond what the
- * name says.
- */
-function agencyType(name) {
-  if (/national guard|air force|army|military/i.test(name)) return 'Military';
-  if (/sheriff/i.test(name)) return 'Sheriff';
-  if (/police|public safety/i.test(name)) return 'Police';
-  return 'Other';
-}
-
 async function loadJurisdictions() {
-  const p = path.join(PUBLIC_DATA, 'agency-jurisdictions.geojson');
-  const raw = await readFile(p, 'utf8').catch(() => {
-    throw new Error('agency-jurisdictions.geojson missing — run that ingest first');
+  return loadPublicJson('agency-jurisdictions.geojson', {
+    runFirst: 'node scripts/ingest/agency-jurisdictions.mjs',
   });
-  return JSON.parse(raw);
 }
 
 async function main() {
@@ -86,23 +74,17 @@ async function main() {
   if (!raw.features?.length) throw new Error('U-Spatial service returned no buildings');
   log('agency-buildings', `fetched ${raw.features.length} Minnesota law-enforcement buildings`);
 
-  const jurisdictions = await loadJurisdictions();
-  const byNormName = new Map(jurisdictions.features.map((f) => [norm(f.properties.name), f]));
-  // Reverse index: a building dataset name resolves back to our own name if
-  // it appears as an alias's target.
-  const aliasTargetToOurName = new Map(
-    Object.entries(NAME_ALIASES).map(([ourNorm, theirNorm]) => [theirNorm, ourNorm]),
+  const [jurisdictions, counties] = await Promise.all([loadJurisdictions(), loadCounties()]);
+  const byNormName = new Map(
+    jurisdictions.features.map((f) => [normaliseAgency(f.properties.name), f]),
   );
-
-  const counties = await loadCounties();
 
   const features = [];
   const unmatchedNames = new Set();
   for (const f of raw.features) {
     const rawName = f.properties.NAME_STD ?? '';
-    const key = norm(rawName);
-    const jurisdiction =
-      byNormName.get(key) ?? byNormName.get(aliasTargetToOurName.get(key) ?? '__none__');
+    const key = normaliseAgency(rawName);
+    const jurisdiction = byNormName.get(key) ?? byNormName.get(NAME_ALIASES[key]);
 
     // ArcGIS will happily return an attribute row with no shape. Skip it
     // rather than destructuring null and failing the whole ingest over one
