@@ -55,7 +55,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   },
   {
     id: 'enforcement',
-    label: { en: 'Immigration Enforcement', es: 'Control migratorio' },
+    label: { en: 'Enforcement', es: 'Aplicación de la ley' },
     summary: {
       en: 'What the recording is for: the agencies that have signed up to act, and the places people are held.',
       es: 'Para qué sirve la grabación: las agencias que se comprometieron a actuar y los lugares donde se retiene a personas.',
