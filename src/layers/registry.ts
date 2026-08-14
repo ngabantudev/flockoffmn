@@ -585,6 +585,10 @@ export const LAYERS: LayerDefinition[] = [
         en: 'This is agency-level jurisdiction, not an internal subdivision. A department that organises itself into precincts, districts, or beats does not have those drawn separately here.',
         es: 'Esto es jurisdicción a nivel de agencia, no una subdivisión interna. Un departamento que se organiza en recintos, distritos o zonas de patrulla no los tiene dibujados por separado aquí.',
       },
+      {
+        en: 'Checked against Census city boundaries: most single-city departments track their city\'s limits almost exactly, but not all. A few, like St. Anthony, also serve a second contracting city under agreement. Four — Lakes Area, South Lake Minnetonka, West Hennepin, and Centennial Lakes police — are joint departments shared by several small cities and match no single municipality. Four more are institutional forces that sit inside or across city lines rather than being a city themselves: University of Minnesota, Metropolitan Airports Commission, Veterans Affairs, and Minnesota State Fair police.',
+        es: 'Comparado con los límites municipales del Censo: la mayoría de los departamentos de una sola ciudad siguen los límites de su ciudad casi con exactitud, pero no todos. Algunos, como St. Anthony, también atienden a una segunda ciudad bajo contrato. Cuatro — Lakes Area, South Lake Minnetonka, West Hennepin y Centennial Lakes police — son departamentos conjuntos compartidos por varias ciudades pequeñas y no coinciden con ningún municipio único. Otros cuatro son fuerzas institucionales que se ubican dentro o a través de los límites municipales en lugar de ser una ciudad en sí: la policía de la Universidad de Minnesota, la Comisión Metropolitana de Aeropuertos, Asuntos de Veteranos y la Feria Estatal de Minnesota.',
+      },
     ],
     geometry: 'polygon',
     color: '#64748b',
