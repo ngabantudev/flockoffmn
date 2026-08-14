@@ -44,6 +44,14 @@ const STEPS = [
   // so this needs the county reference only to resolve a GEOID from that name.
   { name: 'aadt', script: 'aadt.mjs' },
   { name: 'redlining', script: 'redlining.mjs' },
+  // Reads redlining.geojson to measure, every run, how far the Metropolitan
+  // Council's independent digitisation of the same sheet agrees with Mapping
+  // Inequality's — so it has to follow it. See holc-detail.mjs's header.
+  { name: 'holc-detail', script: 'holc-detail.mjs' },
+  // The edge between the 1930s areas and 2020 census tracts. Independent of
+  // both HOLC layers at build time — it is published upstream already — but
+  // it belongs beside them.
+  { name: 'holc-tracts', script: 'holc-tracts.mjs' },
   { name: 'covenants', script: 'covenants.mjs' },
   { name: 'ej-cumulative', script: 'ej-cumulative.mjs' },
 ];

@@ -29,6 +29,8 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | BCA reported-LPR-use agencies (reference) | `reference/bca-alpr-agencies.json` | Public government data (Minn. Stat. ch. 13) | Free for any use. Not a public map layer — joined into the jurisdiction layer's attributes. |
 | ALPR readers agencies reported | `alpr-reported.geojson` | Public government data (Minn. Stat. ch. 13) for the filings; [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) for the road geometry used to place them | Attribute the BCA **and** OpenStreetMap contributors. The positions are derived against OSM road geometry, so ODbL attribution travels with them. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC 2.5](https://creativecommons.org/licenses/by-nc/2.5/) | **Non-commercial.** Not usable commercially. (The project's pre-2023 terms were CC BY-NC-SA 4.0; the current site states CC BY-NC 2.5.) |
+| HOLC appraisal, block by block | `holc-detail.geojson` | Public domain under the [Minnesota Government Data Practices Act](https://www.revisor.mn.gov/statutes/cite/13) | Free for any use. The **only** HOLC layer here without a non-commercial restriction — see below for why the two are kept as separate files rather than merged. |
+| Redlined ground by census tract | `holc-tracts.geojson` | CC BY-NC, version unstated upstream (repo has no `LICENSE` file; the parent project states [2.5](https://creativecommons.org/licenses/by-nc/2.5/)) | **Non-commercial.** Same terms as the redlining layer it extends. |
 | Racial covenants | `covenants.geojson` | [CC0 1.0](https://creativecommons.org/public-domain/cc0/) | Free for any use. Citation requested by the upstream project, not required by the licence. What we publish is the parcel outlines with all personal fields stripped, not the full upstream research file (see below). |
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | Cumulative impacts (MPCA) | `ej-cumulative.geojson` | No formal licence published; public government data under [Minn. Stat. ch. 13](https://www.revisor.mn.gov/statutes/cite/13) | Attribute MPCA. Draft data (CI-MAP, December 2025); see the layer's `knownGaps`. |
@@ -56,6 +58,11 @@ Reproduce these when redistributing the corresponding layer:
 - **Redlining** — Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality:
   Redlining in New Deal America," *American Panorama*, ed. Robert K. Nelson and
   Edward L. Ayers.
+- **HOLC appraisal, block by block** — Metropolitan Council, "Historic Home
+  Owners' Loan Corporation Neighborhood Appraisal Map."
+- **Redlined ground by census tract** — Robert K. Nelson, LaDale Winling, et al.,
+  "Mapping Inequality: Redlining in New Deal America," crosswalked against NHGIS
+  2020 census tracts by the Digital Scholarship Lab, University of Richmond.
 - **Racial covenants** — Corey, Michael; Petersen, Penny; Delegard, Kirsten;
   Gillette, Rebecca; Mattke, Ryan; Ehrman-Solberg, Kevin; Mills, Marguerite;
   crowdsourcing community mapmakers. (2026). *U.S. Racial Covenants Series*,
@@ -96,6 +103,36 @@ laundering it into a single confident number.
 That reasoning is ours, not legal advice. **If you redistribute this layer
 commercially, the four trackers' terms are yours to resolve, not ours** — the
 non-commercial restriction inherited from FracTracker already bites first.
+
+## The two HOLC layers
+
+`redlining.geojson` and `holc-detail.geojson` are two independent digitisations
+of the same 1930s appraisal map, and they are kept as two files on purpose.
+
+Mapping Inequality drew the graded neighbourhood *areas* across eight Minnesota
+cities, each carrying the identifier HOLC printed on it — which is what lets the
+transcribed appraiser survey sheets attach to them. That prose is the
+evidentiary core of the layer and nothing else here can substitute for it. The
+Metropolitan Council traced the *colour* on the Minneapolis–St. Paul sheet block
+by block: two cities instead of eight, one attribute and no area identifier, but
+roughly seventy times the resolution, and lakes and parks excluded rather than
+absorbed into a neighbourhood outline.
+
+Merging them would cost something concrete rather than merely being untidy. The
+Met Council file is public domain under Minn. Stat. ch. 13; Mapping Inequality's
+is CC BY-NC. Under the combining rule above, one merged file would be governed by
+the more restrictive term, so a merge would place public-domain government data
+under a non-commercial restriction permanently and for no gain. It would also
+destroy the distinction between a graded *area* and a block fragment, which is
+what makes "how many areas were graded D" answerable.
+
+So each block in `holc-detail.geojson` instead records which Mapping Inequality
+area its centre falls inside, and whether the two maps put it in the same class.
+`scripts/ingest/holc-detail.mjs` measures that agreement rate on every run and
+writes it into the file's own provenance, because the Metropolitan Council's
+metadata states plainly that its source image was non-georeferenced and its
+accuracy unknown — a claim that deserves a check a reader can see rather than a
+number someone typed once.
 
 ## The covenant parcels
 

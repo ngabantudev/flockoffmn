@@ -66,6 +66,33 @@ const CATEGORY_FALLBACK = 'No grade recorded on the original survey sheet.';
 const NARRATIVE_FORM_ID = 1;
 
 /**
+ * The year of each city's map sheet, as Mapping Inequality's own city register
+ * records it.
+ *
+ * The polygon file carries no year at all, and neither does the area
+ * description file, so a layer built from them alone can only say "the 1930s".
+ * The project does publish the year per city — its map viewer routes on it —
+ * and for two Minnesota cities it is known. For the other six the register's
+ * value is literally "19XX": Mapping Inequality does not know either.
+ *
+ * That distinction is worth carrying. "1937" and "sometime in the HOLC City
+ * Survey period" are different statements, and a reader comparing this layer
+ * against a covenant recorded in 1934 or a Metropolitan Council file stamped
+ * 1934 needs to know which one they have. An unknown year is published as
+ * unknown rather than rounded to a decade that reads like a finding.
+ *
+ * Checked against the register on 2026-08-14. Cities absent from this map get
+ * no year, which is the same thing the register says about them.
+ */
+const CITY_SURVEY_YEAR = {
+  Duluth: '1936',
+  Minneapolis: '1937',
+};
+
+/** What HOLC's City Survey Program window was, for cities with no recorded year. */
+const PROGRAM_WINDOW = '1935–1940';
+
+/**
  * Groups the appraisers named, matched against their own vocabulary.
  *
  * This is a keyword match over the survey text, not a demographic measurement
@@ -105,6 +132,30 @@ function groupsNamed(ad) {
   if (!text) return null;
   const hits = GROUP_PATTERNS.filter(([, re]) => re.test(text)).map(([label]) => label);
   return hits.length ? hits.join('; ') : null;
+}
+
+/**
+ * What we can honestly say about when a city's map was drawn.
+ *
+ * Three cases, kept apart on purpose: a documented year, a city surveyed under
+ * the City Survey Program whose year nobody has recorded, and a city whose map
+ * was made outside that programme entirely and carries no date either. Only
+ * the first is a date. The other two say so.
+ */
+function surveyDate(city, citySurvey) {
+  if (CITY_SURVEY_YEAR[city]) return CITY_SURVEY_YEAR[city];
+  return citySurvey ? PROGRAM_WINDOW : null;
+}
+
+/** How the date was arrived at, shown beside it rather than left to be inferred. */
+function surveyDateBasis(city, citySurvey) {
+  if (CITY_SURVEY_YEAR[city]) {
+    return 'Year recorded for this city by Mapping Inequality.';
+  }
+  if (citySurvey) {
+    return 'Mapping Inequality records no year for this city. Dated only to HOLC\'s City Survey Program, which ran from late 1935 to 1940.';
+  }
+  return 'No year recorded, and this map was made outside HOLC\'s City Survey Program. No source found for when it was drawn.';
 }
 
 /** Trim a free-text survey value to a clean string, or null. Never invents one. */
@@ -172,8 +223,10 @@ async function main() {
         state: STATE_USPS,
         countyFips: county?.properties.geoid ?? null,
         confidence: 'confirmed',
-        // The HOLC surveys were carried out in the late 1930s.
-        sourceDate: '1930s',
+        // The city's own year where one is recorded, the programme window
+        // where it is not, and null where even that does not apply. Never a
+        // decade standing in for a date nobody has. See CITY_SURVEY_YEAR.
+        sourceDate: surveyDate(p.city, p.city_survey),
         attributes: {
           grade,
           gradeMeaning: grade ? (GRADE_MEANING[grade] ?? CATEGORY_FALLBACK) : CATEGORY_FALLBACK,
@@ -182,6 +235,13 @@ async function main() {
           holcId: p.label ?? null,
           areaId: p.area_id,
           residential: p.residential ?? null,
+          surveyYear: surveyDate(p.city, p.city_survey),
+          surveyYearBasis: surveyDateBasis(p.city, p.city_survey),
+          // Whether this map came out of HOLC's own City Survey Program or was
+          // drawn for the agency some other way. The four Minnesota cities
+          // outside the programme use their own idiosyncratic category
+          // vocabulary — "Good", "Fair", "Poor" — rather than the A-D grades.
+          citySurveyProgram: p.city_survey ? 'Yes' : 'No',
 
           // --- transcribed survey sheet, when one exists for this area ---
           // Absent fields stay null: a box the appraiser left blank is not a
@@ -227,6 +287,22 @@ async function main() {
   const missingCities = cities.filter((c) => !surveyCities.includes(c));
   log('redlining', `${withSurvey.length}/${features.length} areas have a transcribed survey sheet`);
 
+  const datedCities = cities.filter((c) => CITY_SURVEY_YEAR[c]);
+  const undatedCities = cities.filter((c) => !CITY_SURVEY_YEAR[c]);
+  const nonProgramCities = [
+    ...new Set(
+      features
+        .filter((f) => f.properties.attributes.citySurveyProgram === 'No')
+        .map((f) => f.properties.attributes.city),
+    ),
+  ].sort();
+  log(
+    'redlining',
+    `years recorded upstream: ${
+      datedCities.map((c) => `${c}=${CITY_SURVEY_YEAR[c]}`).join(', ') || 'none'
+    }; no year for ${undatedCities.join(', ')}`,
+  );
+
   const namedTally = {};
   for (const f of withSurvey) {
     const named = f.properties.attributes.groupsNamed;
@@ -261,10 +337,18 @@ async function main() {
       refresh: 'rare',
       nationalAreaCount: all.features.length,
       areasWithSurvey: withSurvey.length,
+      // Per-city years as the upstream register records them, so a reader can
+      // see which cities are actually dated and which are not.
+      citySurveyYears: CITY_SURVEY_YEAR,
+      citiesWithNoRecordedYear: undatedCities,
     },
     knownGaps: [
       `Only the ${cities.length} Minnesota cities HOLC surveyed appear: ${cities.join(', ')}. A neighbourhood with no polygon was not necessarily spared housing discrimination — it may simply never have been graded.`,
       'Boundaries are georeferenced from hand-drawn 1930s map sheets and are approximate.',
+      `Only ${datedCities.length} of the ${cities.length} Minnesota maps carry a year upstream — ${
+        datedCities.map((c) => `${c} ${CITY_SURVEY_YEAR[c]}`).join(', ')
+      }. For ${undatedCities.join(', ')} Mapping Inequality records no year at all, so those areas are dated only to HOLC's City Survey Program window (${PROGRAM_WINDOW}) or, where the map was made outside that programme, not dated at all. Any other date attached to these maps elsewhere — including the 1934 stamped on the Metropolitan Council's Twin Cities file — is not supported by the upstream record.`,
+      `${nonProgramCities.length} of the ${cities.length} cities — ${nonProgramCities.join(', ')} — were mapped outside HOLC's City Survey Program and use their own category words ("Good", "Fair", "Poor", "Outlying") rather than the A–D grades. They are shown with whatever grade letter the upstream file assigns, which for these cities is frequently none.`,
       `${withSurvey.length} of ${features.length} areas have a transcribed survey sheet${
         missingCities.length ? `; none survives for ${missingCities.join(', ')}` : ''
       }. An area with no sheet is a gap in the record, not evidence that nothing was written.`,

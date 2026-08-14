@@ -120,6 +120,11 @@ async function main() {
         confidence: 'confirmed',
         sourceDate: '2025',
         attributes: {
+          // The 2020 tract GEOID, published as an attribute rather than left
+          // buried in the record id: it is the key the HOLC crosswalk layer
+          // joins on, and a join key that only exists as a substring of
+          // something else is a join waiting to be parsed wrong.
+          geoid,
           burdenBand: band(stressorCount, countyMedian, stateMedian),
           stressorCount,
           countyMedian,

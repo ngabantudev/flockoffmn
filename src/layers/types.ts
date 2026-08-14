@@ -35,6 +35,18 @@ export type LayerId =
   // record: it counts vehicles passing a point, never which ones.
   | 'aadt'
   | 'redlining'
+  // The same HOLC sheet as `redlining`, redrawn block by block by the
+  // Metropolitan Council — two cities instead of eight, no area identifier and
+  // so no appraiser's prose, but roughly seventy times the resolution and the
+  // lakes and parks excluded rather than swallowed. Neither layer supersedes
+  // the other; see scripts/ingest/holc-detail.mjs.
+  | 'holc_appraisal_detail'
+  // A relation, not a place: one record per HOLC area crossed with one 2020
+  // census tract, carrying the share of the tract the area covers. It is what
+  // lets a 1930s boundary be laid beside a present-day tract dataset without
+  // anyone quietly rounding "partly" to "yes". See
+  // scripts/ingest/holc-tracts.mjs.
+  | 'holc_tract_overlap'
   // The only layer whose upstream source is a transaction between named
   // private individuals. It is published parcel by parcel — the lot shape,
   // the deed year and the clause — with every name, address and parcel
