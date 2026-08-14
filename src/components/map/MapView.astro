@@ -55,6 +55,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   labelBy: d.labelBy,
+  polygonClick: d.polygonClick,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
     : undefined,

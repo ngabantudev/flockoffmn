@@ -591,8 +591,13 @@ export const LAYERS: LayerDefinition[] = [
       },
     ],
     geometry: 'polygon',
-    color: '#64748b',
-    colorLight: '#334155',
+    // Doubles as the selected-jurisdiction highlight colour (see
+    // polygonClick below) — every polygon starts a neutral, uncoloured grey
+    // and only the tapped one switches to this, so it needs to read clearly
+    // against both the muted default and a basemap, not just tile neatly
+    // into the rest of the enforcement palette the way a normal fill would.
+    color: '#f59e0b',
+    colorLight: '#b45309',
     filters: [
       {
         key: 'agencyType',
@@ -603,6 +608,11 @@ export const LAYERS: LayerDefinition[] = [
     // The name MESB routes 911 calls under, drawn on the ground the way the
     // source's own dispatch table names it.
     labelBy: { key: 'name' },
+    // Ward-map browsing: tap a jurisdiction and it alone lights up, the
+    // camera stays put, and ALPR dots (added after this layer — see
+    // beneathDots()) keep drawing on top of every polygon here regardless of
+    // which one is selected.
+    polygonClick: 'highlight',
     action: {
       // Reuses the existing generic surveillance-inventory request template —
       // right for any agency, not specific to 287(g) or ALPR.
