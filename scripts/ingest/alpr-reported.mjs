@@ -33,7 +33,16 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { queryOverpass, writeLayer, log, slugId, PUBLIC_DATA, ROOT } from './lib/util.mjs';
+import {
+  queryOverpass,
+  writeLayer,
+  log,
+  slugId,
+  normaliseAgency,
+  loadPublicJson,
+  PUBLIC_DATA,
+  ROOT,
+} from './lib/util.mjs';
 import { bboxOf, haversineMeters } from '../../src/lib/geo.mjs';
 
 /** Metres within which two roads count as meeting. */
@@ -86,7 +95,7 @@ const ABBREVIATIONS = [
  * resolve. Folded to the numeral form because that is what OSM uses.
  */
 const ORDINAL_WORDS = [
-  'zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh',
+  'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh',
   'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth',
   'fifteenth', 'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth',
 ];
@@ -104,8 +113,7 @@ function normaliseStreet(raw) {
   t = t.replace(/\b(state|minnesota|mn)\s+(?=highway|trunk)/g, '');
   for (const [re, to] of ABBREVIATIONS) t = t.replace(re, to);
   for (const [i, word] of ORDINAL_WORDS.entries()) {
-    if (i === 0) continue;
-    t = t.replace(new RegExp(`\\b${word}\\b`, 'g'), ordinalNumeral(i));
+    t = t.replace(new RegExp(`\\b${word}\\b`, 'g'), ordinalNumeral(i + 1));
   }
   // Single-letter directionals last, so "Ave. W" is already "avenue w".
   t = t.replace(/\bn\b/g, 'north').replace(/\bs\b/g, 'south');
@@ -199,31 +207,11 @@ function junctionOf(aWays, bWays) {
  * unresolved rather than attached to a guess.
  */
 const BCA_NAME_ALIASES = {
-  // Keys and values are already normalised — norm() drops "of", so these
+  // Keys and values are already normalised — normaliseAgency() drops "of", so these
   // read a little oddly next to the names as printed.
   'msp airport police': 'metropolitan airports commission police',
   'university minnesota police twin cities': 'university minnesota police',
 };
-
-const norm = (s) =>
-  (s ?? '')
-    .toLowerCase()
-    .replace(/'s\b/g, '')
-    .replace(/\bdepartment\b/g, '')
-    .replace(/\boffice\b/g, '')
-    .replace(/\bof\b/g, '')
-    .replace(/\bpublic safety\b/g, 'police')
-    .replace(/\bsaint\b/g, 'st')
-    .replace(/\bst\.?\b/g, 'st')
-    .replace(/[^a-z0-9 ]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-async function loadJson(rel) {
-  const p = path.join(PUBLIC_DATA, rel);
-  if (!existsSync(p)) throw new Error(`${rel} missing — run its ingest first`);
-  return JSON.parse(await readFile(p, 'utf8'));
-}
 
 /** Cache Overpass results per agency so a re-run doesn't re-ask for them. */
 async function cachedRoads(agencyKey, bbox) {
@@ -244,18 +232,24 @@ async function cachedRoads(agencyKey, bbox) {
  * ------------------------------------------------------------------ */
 
 async function main() {
-  const bcaPath = path.join(PUBLIC_DATA, 'reference/bca-alpr-agencies.json');
-  if (!existsSync(bcaPath)) {
-    throw new Error('BCA reference missing — run `npm run data:agencies-lpr-bca` first');
-  }
-  const bca = JSON.parse(await readFile(bcaPath, 'utf8'));
-  const jurisdictions = await loadJson('agency-jurisdictions.geojson');
-  const buildings = await loadJson('agency-buildings.geojson');
+  // Independent reads of three files already on disk; nothing here depends on
+  // another's result.
+  const [bca, jurisdictions, buildings] = await Promise.all([
+    loadPublicJson('reference/bca-alpr-agencies.json', {
+      runFirst: 'npm run data:agencies-lpr-bca',
+    }),
+    loadPublicJson('agency-jurisdictions.geojson', {
+      runFirst: 'node scripts/ingest/agency-jurisdictions.mjs',
+    }),
+    loadPublicJson('agency-buildings.geojson', {
+      runFirst: 'node scripts/ingest/agency-buildings.mjs',
+    }),
+  ]);
 
-  const jurisByName = new Map(jurisdictions.features.map((f) => [norm(f.properties.name), f]));
+  const jurisByName = new Map(jurisdictions.features.map((f) => [normaliseAgency(f.properties.name), f]));
   const buildingByName = new Map();
   for (const f of buildings.features) {
-    const key = norm(f.properties.attributes.jurisdictionName ?? f.properties.name);
+    const key = normaliseAgency(f.properties.attributes.jurisdictionName ?? f.properties.name);
     if (!buildingByName.has(key)) buildingByName.set(key, f);
   }
 
@@ -270,7 +264,7 @@ async function main() {
   let duplicateFilings = 0;
 
   for (const [i, agency] of scoped.entries()) {
-    const rawKey = norm(agency.name);
+    const rawKey = normaliseAgency(agency.name);
     const key = BCA_NAME_ALIASES[rawKey] ?? rawKey;
     const jurisdiction = jurisByName.get(key);
     const building = buildingByName.get(key);
