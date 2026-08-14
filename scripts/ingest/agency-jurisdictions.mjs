@@ -22,7 +22,9 @@
  * a person.
  */
 
-import { writeLayer, loadCounties, log, slugId, fetchWithRetry } from './lib/util.mjs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { writeLayer, loadCounties, log, slugId, fetchWithRetry, PUBLIC_DATA } from './lib/util.mjs';
 import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
 
 // Cataloged on the Minnesota Geospatial Commons; this is the service its own
@@ -46,6 +48,47 @@ function agencyType(name) {
   if (/sheriff/i.test(name)) return 'Sheriff';
   if (/police|public safety/i.test(name)) return 'Police';
   return 'Other';
+}
+
+/**
+ * Fold "St." vs "Saint", "Department", "Office" and "Public Safety" so
+ * MESB's routing name and the BCA's legal-name style land on the same key.
+ * Same purpose as util.mjs's normaliseCounty, for a different vocabulary.
+ */
+function normaliseAgency(name) {
+  return (name ?? '')
+    .toLowerCase()
+    .replace(/'s\b/g, '')
+    .replace(/\bdepartment\b/g, '')
+    .replace(/\boffice\b/g, '')
+    .replace(/\bof\b/g, '')
+    .replace(/\bpublic safety\b/g, 'police')
+    .replace(/\bsaint\b/g, 'st')
+    .replace(/\bst\.?\b/g, 'st')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * BCA's published list of agencies that reported LPR use under Minn. Stat.
+ * § 13.824, subd. 8 — see agencies-lpr-bca.mjs for how it's built and why
+ * this stays a reference file rather than a layer of its own. Missing (the
+ * BCA ingest hasn't run) is not fatal: every jurisdiction just reads as
+ * not-yet-checked rather than failing the whole build over an unrelated
+ * script's output.
+ */
+async function loadBcaAgencies() {
+  const p = path.join(PUBLIC_DATA, 'reference/bca-alpr-agencies.json');
+  try {
+    const parsed = JSON.parse(await readFile(p, 'utf8'));
+    const byName = new Map(parsed.agencies.map((a) => [normaliseAgency(a.name), a]));
+    log('agency-jurisdictions', `loaded ${byName.size} BCA-reported agencies for cross-reference`);
+    return { byName, sourceUrl: parsed.metadata.sourceUrl };
+  } catch {
+    log('agency-jurisdictions', 'no BCA reference file found — run agencies-lpr-bca.mjs first for ALPR cross-reference');
+    return { byName: new Map(), sourceUrl: null };
+  }
 }
 
 /** Resolve the upstream item's last-modified date from its AGOL record. */
@@ -79,12 +122,38 @@ async function main() {
 
   const counties = await loadCounties();
   const sourceDate = await fetchLastModified();
+  const bca = await loadBcaAgencies();
 
   const features = raw.features.map((f) => {
     const name = cleanName(f.properties.law_gis ?? f.properties.Law_GIS);
     // A representative interior point, not the polygon itself, decides the
     // county tag — same rule redlining.mjs uses for its zones.
     const county = findContaining(representativePoint(f.geometry), counties.features);
+
+    const bcaMatch = bca.byName.get(normaliseAgency(name));
+    // Two independent Tier 1 documents, placed side by side rather than
+    // fused into one claim (spec §1c): MESB draws the boundary, the BCA
+    // separately says whether this agency reported LPR use under statute.
+    // false means "not found on the BCA list", not "confirmed not to use
+    // one" — the attribute name and the detail panel copy both say so.
+    const attributes = {
+      agencyType: agencyType(name),
+      // The gate the map reads (see the registry's relatedBuildings.pathsTo)
+      // — a bare boolean because it drives behaviour, not copy.
+      alprReportedToBca: Boolean(bcaMatch),
+      // What a reader sees. Deliberately not "Yes"/"No": the BCA list is a
+      // record of who filed a report, so its absence is an absence of a
+      // filing under this name, never a finding that an agency operates no
+      // ALPR. Saying "No" would assert exactly the thing this project
+      // cannot back (spec §1c).
+      alprReportStatus: bcaMatch
+        ? 'Reported ALPR use to the BCA under Minn. Stat. § 13.824'
+        : 'No ALPR report found under this agency name — not a finding that it operates none',
+      alprDeviceLocations: bcaMatch?.deviceLocations?.length
+        ? bcaMatch.deviceLocations.join('; ')
+        : null,
+      alprBcaSourceUrl: bcaMatch ? bca.sourceUrl : null,
+    };
 
     return {
       type: 'Feature',
@@ -98,9 +167,7 @@ async function main() {
         countyFips: county?.properties.geoid ?? null,
         confidence: 'confirmed',
         sourceDate,
-        attributes: {
-          agencyType: agencyType(name),
-        },
+        attributes,
       },
     };
   });
@@ -127,11 +194,27 @@ async function main() {
         'Metropolitan Emergency Services Board, MESB Region PSAPs and Emergency Response Agencies',
       sourceDate,
       refresh: 'periodic',
+      secondarySources: bca.sourceUrl
+        ? [
+            {
+              key: 'bca',
+              name: 'Minnesota Bureau of Criminal Apprehension',
+              url: bca.sourceUrl,
+              license: 'Public government data (Minn. Stat. ch. 13)',
+              licenseUrl: null,
+              contributes: {
+                en: 'Whether the agency reported LPR use to the state under Minn. Stat. § 13.824, subd. 8, and any device locations it listed.',
+                es: 'Si la agencia informó el uso de lectores de placas al estado bajo Minn. Stat. § 13.824, subd. 8, y las ubicaciones de dispositivos que declaró.',
+              },
+            },
+          ]
+        : [],
     },
     knownGaps: [
       "Covers the 10-county Twin Cities metro region only — MESB's own service area. Minnesota DPS/ECN is building a statewide version under the NG911 GIS program; it is not yet public. See https://ng911gis-minnesota.hub.arcgis.com.",
       "Polygons are each agency's full jurisdiction, derived from the 911 call-routing table (MSAG) — not an internal subdivision. Minneapolis's own five numbered police precincts, for example, are not broken out here; the city appears as one polygon.",
       'A polygon marks where an agency answers calls, not where its officers actually patrol day to day.',
+      'ALPR reporting status is cross-referenced against the BCA’s published list by agency name. A jurisdiction marked as not reported may simply format its name differently than the BCA does — see agencies-lpr-bca.mjs — rather than confirming it has no ALPR devices.',
     ],
     features,
   });

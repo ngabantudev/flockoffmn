@@ -10,7 +10,7 @@ import {
   METRO_CENTER,
   MN_BOUNDS,
 } from './mapStyle';
-import { bboxOf, representativePoint } from './geo.mjs';
+import { bboxOf, representativePoint, pointInGeometry } from './geo.mjs';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
@@ -65,6 +65,12 @@ export interface ClientLayer {
   labelBy?: { key: string };
   /** See LayerDefinition's own comment in layers/types.ts. */
   polygonClick?: 'highlight';
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  relatedBuildings?: {
+    layerId: LayerId;
+    joinKey: string;
+    pathsTo?: { layerId: LayerId; gateKey: string };
+  };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -227,6 +233,20 @@ const JURISDICTION_SOURCE = 'src-jurisdiction';
 const JURISDICTION_LAYER = 'jurisdiction-outline';
 /** Neutral against every layer colour: this is a frame, not a finding. */
 const JURISDICTION_COLOR = '#94a3b8';
+
+/**
+ * The building(s) a selected `relatedBuildings` polygon answers from, and
+ * the paths to whatever a `pathsTo` relation draws — see that field's own
+ * comment in types.ts. One source and one layer of each, reused and
+ * `setData()`-ed on every selection change, the same way JURISDICTION_SOURCE
+ * above is: there is only ever one polygon selected at a time, so there is
+ * only ever one set of buildings and paths to show for it.
+ */
+const RELATED_BUILDINGS_SOURCE = 'src-related-buildings';
+const RELATED_BUILDINGS_GLOW_LAYER = 'related-buildings-glow';
+const RELATED_BUILDINGS_LAYER = 'related-buildings';
+const RELATED_PATHS_SOURCE = 'src-related-paths';
+const RELATED_PATHS_LAYER = 'related-paths';
 
 // Registers the pmtiles:// URL scheme with MapLibre so baseStyle()'s vector
 // source can reference the self-hosted archive directly (see mapStyle.ts's
@@ -536,6 +556,7 @@ export class MapController {
       this.map.setFeatureState({ source: this.sourceId(layerId), id: featureId }, { hover: false });
     }
     this.hoveredPolygon.clear();
+    this.clearRelatedBuildings();
     this.events.onSelect?.(null);
   }
 
@@ -776,6 +797,32 @@ export class MapController {
     };
   }
 
+  /**
+   * Fetch a layer's records into `this.data` without drawing it as a map
+   * layer or touching `this.visible` — for a cross-layer lookup
+   * (relatedBuildings) that needs a record from a layer the reader may never
+   * have switched on. A building the reader can't otherwise see is still the
+   * right thing to highlight from a jurisdiction they did select; a whole
+   * second point layer silently appearing on the map because of that
+   * selection would not be.
+   */
+  private async ensureDataLoaded(layerId: LayerId): Promise<LoadedFeature[]> {
+    if (this.data.has(layerId)) return this.data.get(layerId) ?? [];
+    const layer = this.layers.find((l) => l.id === layerId);
+    if (!layer) return [];
+    try {
+      const res = await fetch(layer.dataPath);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const collection = await res.json();
+      const features: LoadedFeature[] = collection.features ?? [];
+      this.rawData.set(layerId, features);
+      this.data.set(layerId, features);
+      return features;
+    } catch {
+      return [];
+    }
+  }
+
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
   async loadLayer(layer: ClientLayer): Promise<void> {
     if (this.data.has(layer.id) || this.loading.has(layer.id)) return;
@@ -935,13 +982,17 @@ export class MapController {
             // the parcel itself has to still be there to fade back in, not
             // be swapped out for the grid and reinstated later.
             'fill-opacity': highlightMode
-              ? // A blank ward stays a light wash; hovering previews the
-                // selected look at reduced strength; the tapped one holds
-                // the ground the way any other layer's 0.42 does.
+              ? // A blank ward stays a light wash. Hover and selected sit
+                // close together on purpose — for a `relatedBuildings` layer
+                // the polygon is context, not the finding; the thing that
+                // actually lights up on selection is the building itself
+                // (see showRelatedBuildings), so the polygon settles rather
+                // than blazing full-strength the way a plain highlight layer
+                // still would (see the outline width below for that case).
                 ([
                   'case',
                   ['boolean', ['feature-state', 'selected'], false],
-                  0.42,
+                  layer.relatedBuildings ? 0.24 : 0.42,
                   ['boolean', ['feature-state', 'hover'], false],
                   0.28,
                   0.16,
@@ -975,7 +1026,7 @@ export class MapController {
               ? ([
                   'case',
                   ['boolean', ['feature-state', 'selected'], false],
-                  2.5,
+                  layer.relatedBuildings ? 1.6 : 2.5,
                   ['boolean', ['feature-state', 'hover'], false],
                   1.8,
                   1.1,
@@ -1389,6 +1440,10 @@ export class MapController {
         this.preSelectCamera = this.currentCamera();
       }
       this.focusFeature(layer.id, id);
+      if (layer.relatedBuildings) {
+        const feature = this.data.get(layer.id)?.find((f) => f.properties.id === id);
+        if (feature) void this.showRelatedBuildings(feature, layer);
+      }
     });
   }
 
@@ -1700,6 +1755,121 @@ export class MapController {
   clearJurisdiction() {
     if (this.map.getLayer(JURISDICTION_LAYER)) this.map.removeLayer(JURISDICTION_LAYER);
     if (this.map.getSource(JURISDICTION_SOURCE)) this.map.removeSource(JURISDICTION_SOURCE);
+  }
+
+  /**
+   * What a selected `relatedBuildings` polygon actually highlights — see
+   * that field's own comment in types.ts. Building(s) draw regardless of
+   * whether the reader has that point layer switched on (a selection is a
+   * more specific, deliberate request than a layer toggle); paths draw only
+   * to records the reader can already see, so a path never points at a dot
+   * that isn't there.
+   */
+  private async showRelatedBuildings(jurisdiction: LoadedFeature, layer: ClientLayer) {
+    const rel = layer.relatedBuildings;
+    if (!rel) return;
+
+    const buildings = await this.ensureDataLoaded(rel.layerId);
+    const matched = buildings.filter(
+      (f) => f.properties.attributes[rel.joinKey] === jurisdiction.properties.id,
+    );
+
+    const buildingsSrc = this.map.getSource(RELATED_BUILDINGS_SOURCE) as GeoJSONSource | undefined;
+    const buildingsFC = this.flatten(matched);
+    if (buildingsSrc) {
+      buildingsSrc.setData(buildingsFC as never);
+    } else if (matched.length) {
+      this.map.addSource(RELATED_BUILDINGS_SOURCE, { type: 'geojson', data: buildingsFC as never });
+      const buildingColor = this.layerColor(layer);
+      this.map.addLayer({
+        id: RELATED_BUILDINGS_GLOW_LAYER,
+        type: 'circle',
+        source: RELATED_BUILDINGS_SOURCE,
+        paint: {
+          'circle-color': buildingColor,
+          'circle-blur': 0.85,
+          'circle-radius': 20,
+          'circle-opacity': 0.45,
+        },
+      });
+      this.map.addLayer({
+        id: RELATED_BUILDINGS_LAYER,
+        type: 'circle',
+        source: RELATED_BUILDINGS_SOURCE,
+        paint: {
+          'circle-color': buildingColor,
+          'circle-radius': 7,
+          'circle-stroke-color': this.basemapColor,
+          'circle-stroke-width': 2,
+        },
+      });
+    }
+
+    // Paths are the weaker, second claim — see pathsTo's own comment — and
+    // gated on both a documented fact (gateKey) and the camera layer
+    // actually being visible, so a path is never drawn to a dot the reader
+    // can't also see for themselves.
+    const cameras =
+      rel.pathsTo && jurisdiction.properties.attributes[rel.pathsTo.gateKey] && this.visible.has(rel.pathsTo.layerId)
+        ? (this.data.get(rel.pathsTo.layerId) ?? []).filter(
+            (f) => f.geometry.type === 'Point' && pointInGeometry(f.geometry.coordinates, jurisdiction.geometry),
+          )
+        : [];
+
+    // One hub, not one spoke per building: every matched building lights up
+    // above, but a path fans out from a single representative address (the
+    // headquarters, where the data distinguishes one — see subStation's own
+    // comment in agency-buildings.mjs) so the drawing reads as "these
+    // cameras sit inside this jurisdiction", not as five separate claims
+    // from five separate doors.
+    const hub = matched.find((f) => !f.properties.attributes.subStation) ?? matched[0];
+
+    const pathsSrc = this.map.getSource(RELATED_PATHS_SOURCE) as GeoJSONSource | undefined;
+    const pathFeatures =
+      hub && cameras.length
+        ? cameras.map((cam) => ({
+            type: 'Feature' as const,
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: [representativePoint(hub.geometry), representativePoint(cam.geometry)],
+            },
+            properties: {},
+          }))
+        : [];
+    const pathsFC = { type: 'FeatureCollection' as const, features: pathFeatures };
+    if (pathsSrc) {
+      pathsSrc.setData(pathsFC as never);
+    } else if (pathFeatures.length) {
+      this.map.addSource(RELATED_PATHS_SOURCE, { type: 'geojson', data: pathsFC as never });
+      this.map.addLayer(
+        {
+          id: RELATED_PATHS_LAYER,
+          type: 'line',
+          source: RELATED_PATHS_SOURCE,
+          paint: {
+            'line-color': this.layerColor(layer),
+            'line-width': 1.2,
+            'line-opacity': 0.55,
+            // Dashed on purpose: a solid line reads as a wire, a confirmed
+            // link between two things. This is a location, not a link — the
+            // camera sits inside the boundary, which is all a dashed "within"
+            // line claims. See pathsTo's own comment in types.ts.
+            'line-dasharray': [2, 2],
+          },
+        },
+        this.beneathDots(),
+      );
+    }
+  }
+
+  /** Undo showRelatedBuildings. Called wherever a selection itself clears. */
+  private clearRelatedBuildings() {
+    for (const id of [RELATED_BUILDINGS_GLOW_LAYER, RELATED_BUILDINGS_LAYER, RELATED_PATHS_LAYER]) {
+      if (this.map.getLayer(id)) this.map.removeLayer(id);
+    }
+    for (const id of [RELATED_BUILDINGS_SOURCE, RELATED_PATHS_SOURCE]) {
+      if (this.map.getSource(id)) this.map.removeSource(id);
+    }
   }
 
   resetView() {
