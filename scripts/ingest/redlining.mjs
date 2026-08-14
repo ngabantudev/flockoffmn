@@ -189,12 +189,11 @@ function tractList(rows) {
     if (r.percentOfTract === null) return r.geoid;
     // A row exists only where the two shapes overlap, so a share that rounds
     // away must not be printed as "0%" — that says the opposite of what the
-    // record means. Below a tenth of a per cent it is reported as the sliver
-    // it is; above that, one decimal is as fine as anyone needs to read.
+    // record means. Anything under a tenth of a per cent is reported as the
+    // sliver it is, zero included: a rounded-to-zero share is still an
+    // overlap. Above that, one decimal is as fine as anyone needs to read.
     const share =
-      r.percentOfTract > 0 && r.percentOfTract < 0.1
-        ? '<0.1%'
-        : `${Math.round(r.percentOfTract * 10) / 10}%`;
+      r.percentOfTract < 0.1 ? '<0.1%' : `${Math.round(r.percentOfTract * 10) / 10}%`;
     return `${r.geoid} (${share})`;
   });
   const hidden = rows.length - shown.length;

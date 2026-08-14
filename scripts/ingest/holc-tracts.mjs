@@ -88,6 +88,14 @@ const FETCH_TIMEOUT_MS = 600_000;
  * 0.04% reads as the sliver it is.
  */
 function sharePercent(value) {
+  // `Number(null)` and `Number('')` are both a finite 0, which would publish an
+  // absent share as "covers none of this tract" — the one thing a crosswalk row
+  // cannot mean, since the row exists because the two shapes overlap. Today the
+  // seven Minnesota rows with no share are also the seven with no GEOID and are
+  // dropped before they reach this, so the guard changes nothing; it is here so
+  // that an upstream that starts omitting the share on a joinable row reports
+  // "not known" rather than a confident zero.
+  if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.round(n * 10_000) / 100;
@@ -150,6 +158,19 @@ async function main() {
   }
 
   const areaCount = Object.keys(byArea).length;
+  /*
+   * An empty table is worse than a missing file, and it is the failure an
+   * upstream field rename produces: every row loses its GEOID, the loop drops
+   * them all, a structurally valid crosswalk with nothing in it is written,
+   * and redlining.mjs publishes with every tract link null — without warning,
+   * because its "no crosswalk on disk" branch never fires for a file that
+   * exists. So this fails loudly instead.
+   */
+  if (!areaCount) {
+    throw new Error(
+      `parsed ${scoped.length} ${STATE_USPS} rows but none carried a tract GEOID — the upstream field names have probably changed`,
+    );
+  }
   log(
     'holc-tracts',
     `${scoped.length} overlaps: ${areaCount} HOLC areas × ${tracts.size} tracts`,

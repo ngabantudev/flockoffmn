@@ -155,6 +155,27 @@ const GRADE_OF_CLASS = {
 };
 
 /**
+ * A HOLC area identifier, or null.
+ *
+ * Mapping Inequality's `label` field is the identifier printed on the sheet for
+ * the graded areas — "A2", "D3", and occasionally a lettered subdivision like
+ * "C18a". For the one polygon per city that collects all the commercial and
+ * industrial ground it is not an identifier at all: the label is the words
+ * "Business and Industrial", because HOLC printed no number there.
+ *
+ * Passing that straight through put a category word into a field the panel
+ * renders as "HOLC area this block sits in" and the map draws as a label, on
+ * 1,128 of 11,561 blocks — and made LICENSE-DATA.md's description of what this
+ * file borrows from Mapping Inequality wrong for a ninth of it. A block on
+ * ground HOLC never numbered gets no identifier, which is what the sheet says.
+ */
+function areaIdentifier(label) {
+  return typeof label === 'string' && /^[A-E]\d+[a-z]?$/.test(label.trim())
+    ? label.trim()
+    : null;
+}
+
+/**
  * Drop the keys with nothing in them.
  *
  * Same reasoning as aadt.mjs's helper of the same name: a null attribute still
@@ -184,21 +205,48 @@ async function fetchPage(offset) {
   return res.json();
 }
 
-async function fetchAll() {
+/** How many polygons the service says it holds, so paging can be checked. */
+async function totalCount() {
+  const params = new URLSearchParams({ where: '1=1', returnCountOnly: 'true', f: 'json' });
+  const res = await fetchWithRetry(`${SERVICE}/query?${params}`, { timeoutMs: 45_000 });
+  const count = (await res.json())?.count;
+  if (!Number.isFinite(count)) throw new Error('service did not report a record count');
+  return count;
+}
+
+/**
+ * Page through the service, checked against its own count.
+ *
+ * A short page is not proof of the end. If the server's `maxRecordCount` is
+ * below our page size every page is short and the run would stop after the
+ * first one, and an ArcGIS instance that answers 200 with an error body past a
+ * high offset would end the loop mid-map. Either publishes a partial HOLC
+ * sheet, where the missing half reads as ungraded ground rather than as an
+ * error — so `exceededTransferLimit` is honoured where the service sends it,
+ * and the total is verified at the end regardless.
+ */
+async function fetchAll(total) {
   const out = [];
   for (let offset = 0; ; offset += PAGE) {
     const page = await fetchPage(offset);
     const got = page?.features ?? [];
     out.push(...got);
-    log('holc-detail', `  fetched ${out.length} polygons`);
-    if (got.length < PAGE) break;
+    log('holc-detail', `  fetched ${out.length}/${total} polygons`);
+    if (!got.length) break;
+    if (!page?.properties?.exceededTransferLimit && got.length < PAGE) break;
+  }
+  if (out.length !== total) {
+    throw new Error(
+      `fetched ${out.length} polygons but the service reports ${total} — refusing to publish a partial map`,
+    );
   }
   return out;
 }
 
 async function main() {
+  const total = await totalCount();
   const [raw, counties, jurisdictions, redlining, tracts] = await Promise.all([
-    fetchAll(),
+    fetchAll(total),
     loadCounties(),
     loadPublicJson('reference/mn-jurisdictions.geojson', {
       runFirst: 'npm run data:jurisdictions',
@@ -269,7 +317,7 @@ async function main() {
           // drawn on the map as its label, and the route back to what the
           // appraiser wrote, which lives in the redlining layer and is
           // deliberately not copied here.
-          miArea: miArea?.properties.attributes.holcId ?? null,
+          miArea: areaIdentifier(miArea?.properties.attributes.holcId),
           // The 2020 tract this block sits in. One block, one tract; the join
           // key every present-day tract dataset here shares.
           tractGeoid: tract?.properties.attributes.geoid ?? null,
@@ -373,7 +421,7 @@ async function main() {
       'The publisher dates this file to 1934 and its description discusses grades assigned "in 1934". HOLC\'s City Survey Program did not begin until late 1935, so no residential security map can date from 1934 — 1934 is the year the FHA underwriting scheme these grades implement was created. Mapping Inequality dates the Minneapolis map to 1937 and records no year at all for St. Paul. This layer is dated to the programme window rather than repeating either claim as fact.',
       'The Metropolitan Council states plainly that the file "was digitized from a non-georeferenced, photgraphic image of the original map" and that "the accuracy is unknown". Boundaries here are a tracing of a photograph of a hand-drawn sheet, not a survey.',
       `Every polygon is tested against the independently georeferenced Mapping Inequality areas at build time: ${tally.same} of ${compared} comparable polygons carry the same class, or ${agreementPct}%. A further ${tally.outside} fall outside every graded area, which is expected — Mapping Inequality drew only the graded neighbourhoods, and this sheet was traced to its edges. Most of the remainder are the parks, water and industrial blocks this layer exists to distinguish, where the finer tracing says more than the neighbourhood outline could rather than contradicting it.`,
-      `The Metropolitan Council file carries one attribute, the class, and no area identifier — so nothing in it can join to HOLC's survey sheets. The area label on each block (${labelled} of ${features.length} have one) is Mapping Inequality's, resolved by which of their graded areas the block's centre falls inside, and it is the route back to what the appraiser wrote. Blocks outside every graded area carry no label.`,
+      `The Metropolitan Council file carries one attribute, the class, and no area identifier — so nothing in it can join to HOLC's survey sheets. The area label on each block (${labelled} of ${features.length} have one) is Mapping Inequality's, resolved by which of their graded areas the block's centre falls inside, and it is the route back to what the appraiser wrote. A block carries no label if it falls outside every graded area, or on the commercial and industrial ground HOLC numbered nothing on — the appraisers printed no identifier there, and this does not invent one.`,
       `${withTract} of ${features.length} blocks resolve a 2020 census tract, matched by containment against the tract boundaries this project already ships with the cumulative-stressor layer. The tract is a join key for laying present-day data beside the grade. It is not a claim that anything about the tract today follows from the grade.`,
       'Park, open water and undeveloped shading is reproduced as the sheet drew it. That is a claim about the 1930s map, not about present-day land cover — parks have been built and lakes have been filled since.',
       '"Uncertain" is the publisher\'s own value for ground whose colour could not be read off the photograph. It is carried through unresolved rather than assigned a grade.',

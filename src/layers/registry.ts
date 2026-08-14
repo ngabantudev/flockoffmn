@@ -951,8 +951,8 @@ export const LAYERS: LayerDefinition[] = [
     },
     limitations: [
       {
-        en: 'Minneapolis and St. Paul only. The other six Minnesota cities HOLC surveyed appear in the redlining layer instead.',
-        es: 'Solo Minneapolis y St. Paul. Las otras seis ciudades de Minnesota que HOLC evaluó aparecen en la capa de redlining.',
+        en: 'The Minneapolis–St. Paul sheet only. The other six Minnesota cities HOLC surveyed appear in the redlining layer instead. The sheet was drawn to its own edges rather than to city limits, so a handful of blocks fall in adjoining jurisdictions — Fort Snelling, Maplewood, Lilydale — and the City filter names them as what they are rather than folding them into a city they are not in.',
+        es: 'Solo la lámina de Minneapolis–St. Paul. Las otras seis ciudades de Minnesota que HOLC evaluó aparecen en la capa de redlining. La lámina se dibujó hasta sus propios bordes, no hasta los límites municipales, así que unas pocas manzanas caen en jurisdicciones vecinas — Fort Snelling, Maplewood, Lilydale — y el filtro de ciudad las nombra como lo que son en lugar de asignarlas a una ciudad en la que no están.',
       },
       {
         en: 'The publisher dates this file to 1934. HOLC’s survey programme did not begin until late 1935, and Mapping Inequality dates the Minneapolis map to 1937 and records no year at all for St. Paul. 1934 is the year the federal underwriting scheme was created, not the year this sheet was drawn.',
@@ -1010,12 +1010,17 @@ export const LAYERS: LayerDefinition[] = [
     // of a specific sheet, and a reader has to be able to see the sheet.
     //
     // The identifier HOLC printed on the surrounding area, drawn on the ground
-    // the way the original sheet drew it — the same treatment the redlining
-    // layer gives its areas, so the two readings of one document label
-    // themselves identically. It is Mapping Inequality's identifier resolved
-    // by containment; blocks outside every graded area simply go unlabelled,
-    // and MapLibre hides colliding labels at distant zooms rather than
-    // stacking eleven thousand of them.
+    // the way the original sheet drew it.
+    //
+    // Not the same thing the redlining layer does, and worth being clear about
+    // the difference: that layer has one feature per area and so draws each
+    // identifier once, while this one labels *blocks*, so a single area's
+    // identifier is carried by hundreds of polygons ("C3" on 682 of them).
+    // MapLibre's collision handling is what makes that readable rather than a
+    // wall — it draws whichever labels fit and hides the rest, so an area
+    // reads as its identifier repeated across its own ground and closing in
+    // resolves more of them. Blocks on ground HOLC never numbered, and blocks
+    // outside every graded area, carry no identifier and go unlabelled.
     labelBy: { key: 'miArea' },
     hoverCard: {
       fields: ['className', 'grade', 'miArea', 'city'],
