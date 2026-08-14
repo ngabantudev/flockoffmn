@@ -27,6 +27,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Police & sheriff jurisdictions | `agency-jurisdictions.geojson` | No formal licence published; MESB disclaims warranty | Attribute MESB. Metro region only — see the layer's `knownGaps`. Carries a cross-referenced fact from a second Tier 1 source (BCA) as an attribute; see below. |
 | Police & sheriff buildings | `agency-buildings.geojson` | No formal licence published; U-Spatial/USGS disclaim warranty | Attribute U-Spatial (University of Minnesota) and USGS. |
 | BCA reported-LPR-use agencies (reference) | `reference/bca-alpr-agencies.json` | Public government data (Minn. Stat. ch. 13) | Free for any use. Not a public map layer — joined into the jurisdiction layer's attributes. |
+| ALPR readers agencies reported | `alpr-reported.geojson` | Public government data (Minn. Stat. ch. 13) for the filings; [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) for the road geometry used to place them | Attribute the BCA **and** OpenStreetMap contributors. The positions are derived against OSM road geometry, so ODbL attribution travels with them. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC 2.5](https://creativecommons.org/licenses/by-nc/2.5/) | **Non-commercial.** Not usable commercially. (The project's pre-2023 terms were CC BY-NC-SA 4.0; the current site states CC BY-NC 2.5.) |
 | Racial covenants | `covenants.geojson` | [CC0 1.0](https://creativecommons.org/public-domain/cc0/) | Free for any use. Citation requested by the upstream project, not required by the licence. What we publish is the parcel outlines with all personal fields stripped, not the full upstream research file (see below). |
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
@@ -49,6 +50,9 @@ Reproduce these when redistributing the corresponding layer:
   cross-referenced from the Minnesota Bureau of Criminal Apprehension.
 - **Police & sheriff buildings** — U-Spatial, University of Minnesota;
   U.S. Geological Survey.
+- **ALPR readers agencies reported** — Minnesota Bureau of Criminal
+  Apprehension, published under Minn. Stat. § 13.824; positions resolved
+  against © OpenStreetMap contributors, ODbL.
 - **Redlining** — Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality:
   Redlining in New Deal America," *American Panorama*, ed. Robert K. Nelson and
   Edward L. Ayers.

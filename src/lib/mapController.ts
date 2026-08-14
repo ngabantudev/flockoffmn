@@ -10,7 +10,7 @@ import {
   METRO_CENTER,
   MN_BOUNDS,
 } from './mapStyle';
-import { bboxOf, representativePoint, pointInGeometry } from './geo.mjs';
+import { bboxOf, representativePoint } from './geo.mjs';
 import { Shield, Star, Landmark, Building2, type IconNode } from 'lucide';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
@@ -72,7 +72,7 @@ export interface ClientLayer {
   relatedBuildings?: {
     layerId: LayerId;
     joinKey: string;
-    pathsTo?: { layerId: LayerId; gateKey: string };
+    pathsTo?: { layerId: LayerId; joinKey: string };
   };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
@@ -250,6 +250,27 @@ const RELATED_BUILDINGS_GLOW_LAYER = 'related-buildings-glow';
 const RELATED_BUILDINGS_LAYER = 'related-buildings';
 const RELATED_PATHS_SOURCE = 'src-related-paths';
 const RELATED_PATHS_LAYER = 'related-paths';
+const RELATED_IMPACT_SOURCE = 'src-related-impacts';
+const RELATED_IMPACT_LAYER = 'related-impacts';
+
+/**
+ * The line-throw on selecting a jurisdiction, in milliseconds.
+ *
+ * Each line is thrown from the agency's own building to one reader that
+ * agency reported operating, and lands with a ring at both ends. Staggered
+ * rather than simultaneous so a reader can count them — the number of
+ * readers one department reported is the finding, and fifteen lines arriving
+ * at once is a single event where fifteen arriving in sequence is fifteen.
+ *
+ * Strictly bounded: every line has landed by THROW_MS + the largest stagger,
+ * the rings fade over IMPACT_MS, and the loop then stops itself. Nothing
+ * here animates at rest — see the `pulse` field's own comment in
+ * layers/types.ts for the earlier, unbounded animation this deliberately
+ * does not repeat.
+ */
+const THROW_MS = 420;
+const THROW_STAGGER_MS = 70;
+const IMPACT_MS = 520;
 
 /**
  * Every icon a `markerIcon` entry can name, by the string the registry
@@ -314,6 +335,8 @@ export class MapController {
    * because addLayer — which needs it — is synchronous.
    */
   private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
+  /** rAF handle for the path-throw animation, so a new selection can cancel the last. */
+  private throwFrame: number | null = null;
   /**
    * The one hover-previewed polygon per `polygonClick: 'highlight'` layer.
    * Tracked here rather than as a closure inside bindHighlightSelect so
@@ -1581,17 +1604,15 @@ export class MapController {
       const id = (hit.properties as Record<string, unknown>)?.id as string;
       if (!id) return;
 
-      const current = this.selectedPolygon.get(layer.id);
-      if (current) this.map.setFeatureState({ source: src, id: current }, { selected: false });
-
-      if (current === id) {
-        this.selectedPolygon.delete(layer.id);
+      // A tap on the ward already showing is the reader putting it back —
+      // the one thing focusFeature can't infer, since it has no notion of a
+      // second visit. Everything else about selecting (the highlight, the
+      // panel, the fit, the thrown lines) belongs to focusFeature, which
+      // search and the record list reach too.
+      if (this.selectedPolygon.get(layer.id) === id) {
         this.clearSelection();
         return;
       }
-
-      this.map.setFeatureState({ source: src, id }, { selected: true });
-      this.selectedPolygon.set(layer.id, id);
       // Same "remember where I was" move a tapped dot already gets — see
       // bindInteractions' own comment — so the panel's close button can
       // still return here even though a ward tap fits bounds, not eases to
@@ -1600,10 +1621,6 @@ export class MapController {
         this.preSelectCamera = this.currentCamera();
       }
       this.focusFeature(layer.id, id);
-      if (layer.relatedBuildings) {
-        const feature = this.data.get(layer.id)?.find((f) => f.properties.id === id);
-        if (feature) void this.showRelatedBuildings(feature, layer);
-      }
     });
   }
 
@@ -1856,6 +1873,25 @@ export class MapController {
         { padding: 64, maxZoom: 14, duration },
       );
     }
+
+    // Selection behaviour lives here rather than in the map's own click
+    // handler because this is the one funnel every route to a record passes
+    // through — a tap on the map, a search result, a row in the accessible
+    // record list. Putting it on the click alone meant a jurisdiction picked
+    // from search opened its panel but never highlighted its ward or threw
+    // its lines, which is the same selection reached a different way.
+    if (layer.polygonClick === 'highlight') this.markPolygonSelected(layer, featureId);
+    if (layer.relatedBuildings) void this.showRelatedBuildings(feature, layer);
+  }
+
+  /** Move a highlight layer's exclusive selection to one feature. */
+  private markPolygonSelected(layer: ClientLayer, featureId: string) {
+    const src = this.sourceId(layer.id);
+    const current = this.selectedPolygon.get(layer.id);
+    if (current === featureId) return;
+    if (current) this.map.setFeatureState({ source: src, id: current }, { selected: false });
+    this.map.setFeatureState({ source: src, id: featureId }, { selected: true });
+    this.selectedPolygon.set(layer.id, featureId);
   }
 
   flyTo(center: [number, number], zoom = 12) {
@@ -1990,69 +2026,193 @@ export class MapController {
       );
     }
 
-    // Paths are the weaker, second claim — see pathsTo's own comment — and
-    // gated on both a documented fact (gateKey) and the camera layer
-    // actually being visible, so a path is never drawn to a dot the reader
-    // can't also see for themselves.
-    const cameras =
-      rel.pathsTo && jurisdiction.properties.attributes[rel.pathsTo.gateKey] && this.visible.has(rel.pathsTo.layerId)
-        ? (this.data.get(rel.pathsTo.layerId) ?? []).filter(
-            (f) => f.geometry.type === 'Point' && pointInGeometry(f.geometry.coordinates, jurisdiction.geometry),
-          )
-        : [];
+    // Joined, not contained — see pathsTo's own comment. Every reader here
+    // is one this agency itself told the state it operates, so the line
+    // between them carries a document rather than a coincidence of
+    // geography. Loaded on demand: the reader may never have ticked this
+    // layer, and a selection is a more specific request than a toggle.
+    let readers: LoadedFeature[] = [];
+    if (rel.pathsTo) {
+      const all = await this.ensureDataLoaded(rel.pathsTo.layerId);
+      readers = all.filter(
+        (f) =>
+          f.geometry.type === 'Point' &&
+          f.properties.attributes[rel.pathsTo!.joinKey] === jurisdiction.properties.id,
+      );
+    }
 
     // One hub, not one spoke per building: every matched building lights up
-    // above, but a path fans out from a single representative address (the
+    // above, but the lines throw from a single representative address (the
     // headquarters, where the data distinguishes one — see subStation's own
-    // comment in agency-buildings.mjs) so the drawing reads as "these
-    // cameras sit inside this jurisdiction", not as five separate claims
-    // from five separate doors.
+    // comment in agency-buildings.mjs), because the filing is the
+    // department's, not any one station's.
     const hub = matched.find((f) => !f.properties.attributes.subStation) ?? matched[0];
+    if (!hub || !readers.length) return;
 
-    const pathsSrc = this.map.getSource(RELATED_PATHS_SOURCE) as GeoJSONSource | undefined;
-    const pathFeatures =
-      hub && cameras.length
-        ? cameras.map((cam) => ({
-            type: 'Feature' as const,
-            geometry: {
-              type: 'LineString' as const,
-              coordinates: [representativePoint(hub.geometry), representativePoint(cam.geometry)],
-            },
-            properties: {},
-          }))
-        : [];
-    const pathsFC = { type: 'FeatureCollection' as const, features: pathFeatures };
-    if (pathsSrc) {
-      pathsSrc.setData(pathsFC as never);
-    } else if (pathFeatures.length) {
-      this.map.addSource(RELATED_PATHS_SOURCE, { type: 'geojson', data: pathsFC as never });
+    const origin = representativePoint(hub.geometry) as [number, number];
+    const targets = readers.map((r) => representativePoint(r.geometry) as [number, number]);
+    this.throwPaths(origin, targets, layer);
+  }
+
+  /**
+   * Throw a line from the agency's building to each reader it reported, and
+   * ring both ends as each lands.
+   *
+   * Written for cost, because it is the only thing on this map that moves.
+   * The whole animation is two small GeoJSON sources — at most a few dozen
+   * two-point lines and the same number of rings — updated from a single
+   * requestAnimationFrame loop that stops itself the moment the last ring
+   * has faded. Nothing is added or removed per frame, no layer is
+   * re-created, and the ring's growth and fade are expressions over one
+   * property so MapLibre interpolates them on the GPU rather than this loop
+   * recomputing paint state. At rest the cost is zero.
+   *
+   * Under `prefers-reduced-motion` there is no loop at all: the finished
+   * lines are drawn once and no rings are shown.
+   */
+  private throwPaths(
+    origin: [number, number],
+    targets: Array<[number, number]>,
+    layer: ClientLayer,
+  ) {
+    this.cancelThrow();
+    this.ensureThrowLayers(layer);
+
+    const paths = this.map.getSource(RELATED_PATHS_SOURCE) as GeoJSONSource | undefined;
+    const impacts = this.map.getSource(RELATED_IMPACT_SOURCE) as GeoJSONSource | undefined;
+    if (!paths) return;
+
+    const line = (to: [number, number]) => ({
+      type: 'Feature' as const,
+      geometry: { type: 'LineString' as const, coordinates: [origin, to] },
+      properties: {},
+    });
+
+    if (REDUCED_MOTION) {
+      paths.setData({ type: 'FeatureCollection', features: targets.map(line) } as never);
+      impacts?.setData(EMPTY_FC as never);
+      return;
+    }
+
+    // Deterministic per-target stagger rather than Math.random(): the order
+    // is arbitrary either way, and this keeps a re-selection of the same
+    // jurisdiction looking the same as the first time.
+    const shots = targets.map((target, i) => ({
+      target,
+      delay: i * THROW_STAGGER_MS,
+      landedAt: null as number | null,
+    }));
+    const lastStart = shots.length ? shots[shots.length - 1].delay : 0;
+    const totalMs = lastStart + THROW_MS + IMPACT_MS;
+    const start = performance.now();
+    // Ease-out: fast off the mark, settling as it lands.
+    const ease = (p: number) => 1 - (1 - p) ** 3;
+
+    const step = () => {
+      const elapsed = performance.now() - start;
+
+      const lineFeatures = [];
+      const ringFeatures = [];
+      for (const shot of shots) {
+        const p = Math.min(1, Math.max(0, (elapsed - shot.delay) / THROW_MS));
+        if (p <= 0) continue;
+        const k = ease(p);
+        lineFeatures.push(
+          line([
+            origin[0] + (shot.target[0] - origin[0]) * k,
+            origin[1] + (shot.target[1] - origin[1]) * k,
+          ]),
+        );
+        if (p >= 1) {
+          if (shot.landedAt === null) shot.landedAt = elapsed;
+          const t = Math.min(1, (elapsed - shot.landedAt) / IMPACT_MS);
+          if (t < 1) {
+            // Both ends react: one ring where the line struck, one back at
+            // the building that threw it.
+            ringFeatures.push(
+              { type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: shot.target }, properties: { t } },
+              { type: 'Feature' as const, geometry: { type: 'Point' as const, coordinates: origin }, properties: { t } },
+            );
+          }
+        }
+      }
+
+      paths.setData({ type: 'FeatureCollection', features: lineFeatures } as never);
+      impacts?.setData({ type: 'FeatureCollection', features: ringFeatures } as never);
+
+      if (elapsed < totalMs) {
+        this.throwFrame = requestAnimationFrame(step);
+      } else {
+        // Settle on the finished state and stop. Nothing animates at rest.
+        paths.setData({ type: 'FeatureCollection', features: targets.map(line) } as never);
+        impacts?.setData(EMPTY_FC as never);
+        this.throwFrame = null;
+      }
+    };
+    this.throwFrame = requestAnimationFrame(step);
+  }
+
+  /** Create the throw's two sources and layers once, empty. */
+  private ensureThrowLayers(layer: ClientLayer) {
+    const color = this.layerColor(layer);
+    if (!this.map.getSource(RELATED_PATHS_SOURCE)) {
+      this.map.addSource(RELATED_PATHS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
       this.map.addLayer(
         {
           id: RELATED_PATHS_LAYER,
           type: 'line',
           source: RELATED_PATHS_SOURCE,
           paint: {
-            'line-color': this.layerColor(layer),
-            'line-width': 1.2,
-            'line-opacity': 0.55,
-            // Dashed on purpose: a solid line reads as a wire, a confirmed
-            // link between two things. This is a location, not a link — the
-            // camera sits inside the boundary, which is all a dashed "within"
-            // line claims. See pathsTo's own comment in types.ts.
-            'line-dasharray': [2, 2],
+            'line-color': color,
+            'line-width': 1.4,
+            'line-opacity': 0.75,
+            // Still dashed, but now the dashes are the only thing left of
+            // the old hedge: this line joins an agency to a reader it told
+            // the state was its own, so it is a link and may look like one.
+            'line-dasharray': [2, 1.5],
           },
         },
         this.beneathDots(),
       );
     }
+    if (!this.map.getSource(RELATED_IMPACT_SOURCE)) {
+      this.map.addSource(RELATED_IMPACT_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+      this.map.addLayer({
+        id: RELATED_IMPACT_LAYER,
+        type: 'circle',
+        source: RELATED_IMPACT_SOURCE,
+        paint: {
+          // Growth and fade are expressions over the one `t` the loop
+          // writes, so the frame loop never touches paint state.
+          'circle-radius': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 22] as never,
+          'circle-color': 'rgba(0,0,0,0)',
+          'circle-stroke-color': color,
+          'circle-stroke-width': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 0.5] as never,
+          'circle-stroke-opacity': ['interpolate', ['linear'], ['get', 't'], 0, 0.9, 1, 0] as never,
+        },
+      });
+    }
+  }
+
+  private cancelThrow() {
+    if (this.throwFrame !== null) {
+      cancelAnimationFrame(this.throwFrame);
+      this.throwFrame = null;
+    }
   }
 
   /** Undo showRelatedBuildings. Called wherever a selection itself clears. */
   private clearRelatedBuildings() {
-    for (const id of [RELATED_BUILDINGS_GLOW_LAYER, RELATED_BUILDINGS_LAYER, RELATED_PATHS_LAYER]) {
+    this.cancelThrow();
+    for (const id of [
+      RELATED_BUILDINGS_GLOW_LAYER,
+      RELATED_BUILDINGS_LAYER,
+      RELATED_PATHS_LAYER,
+      RELATED_IMPACT_LAYER,
+    ]) {
       if (this.map.getLayer(id)) this.map.removeLayer(id);
     }
-    for (const id of [RELATED_BUILDINGS_SOURCE, RELATED_PATHS_SOURCE]) {
+    for (const id of [RELATED_BUILDINGS_SOURCE, RELATED_PATHS_SOURCE, RELATED_IMPACT_SOURCE]) {
       if (this.map.getSource(id)) this.map.removeSource(id);
     }
   }
