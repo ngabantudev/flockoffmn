@@ -25,6 +25,18 @@ const STEPS = [
   // index that turns a point into the government that has to answer for it.
   { name: 'jurisdictions', script: 'jurisdictions.mjs' },
   { name: '287g', script: 'agencies-287g.mjs' },
+  // Reference only, not a layer — writes the BCA cross-reference
+  // agency-jurisdictions.mjs reads next. See that script's own comment.
+  { name: 'agencies-lpr-bca', script: 'agencies-lpr-bca.mjs' },
+  // Needs the county reference to tag each polygon's county, and the BCA
+  // reference just above to cross-reference reported ALPR use.
+  { name: 'agency-jurisdictions', script: 'agency-jurisdictions.mjs' },
+  // Needs agency-jurisdictions.geojson to join each building to its agency's
+  // canonical name — see that script's own comment on why it runs after.
+  { name: 'agency-buildings', script: 'agency-buildings.mjs' },
+  // Needs the BCA reference for the filings, the jurisdictions and buildings
+  // to anchor each agency's road search, so it follows all three.
+  { name: 'alpr-reported', script: 'alpr-reported.mjs' },
   { name: 'alpr', script: 'alpr.mjs' },
   { name: 'detention', script: 'detention.mjs' },
   { name: 'data-centers', script: 'data-centers.mjs' },

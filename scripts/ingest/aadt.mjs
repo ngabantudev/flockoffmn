@@ -18,7 +18,14 @@
  * licence restriction, so we query it directly rather than scraping a viewer.
  */
 
-import { fetchWithRetry, writeLayer, loadCounties, normaliseCounty, log } from './lib/util.mjs';
+import {
+  fetchWithRetry,
+  writeLayer,
+  loadCounties,
+  normaliseCounty,
+  thinRing,
+  log,
+} from './lib/util.mjs';
 
 const SERVICE =
   'https://webgis.dot.state.mn.us/65agsf1/rest/services/sdw_incdt/AADT_SEGMENT_CURRENT/FeatureServer/0';
@@ -93,26 +100,21 @@ function roadClass(routeLabel) {
   return hit ? hit[1] : 'Other or unclassified route';
 }
 
-/** Round to ~1 m and drop vertices the rounding made identical. */
-function thin(ring) {
-  const out = [];
-  for (const [lng, lat] of ring) {
-    const p = [Math.round(lng * 1e5) / 1e5, Math.round(lat * 1e5) / 1e5];
-    const last = out.at(-1);
-    if (!last || last[0] !== p[0] || last[1] !== p[1]) out.push(p);
-  }
-  return out;
-}
-
-/** Normalise to MultiLineString-or-LineString with thinned coordinates. */
-function thinGeometry(geometry) {
+/**
+ * Normalise to MultiLineString-or-LineString with thinned coordinates.
+ *
+ * Named apart from util.mjs's thinGeometry, which it shares thinRing with but
+ * not its contract: this one also drops degenerate lines and collapses a
+ * one-part MultiLineString, both specific to road segments.
+ */
+function thinLineGeometry(geometry) {
   if (!geometry) return null;
   if (geometry.type === 'LineString') {
-    const line = thin(geometry.coordinates);
+    const line = thinRing(geometry.coordinates);
     return line.length >= 2 ? { type: 'LineString', coordinates: line } : null;
   }
   if (geometry.type === 'MultiLineString') {
-    const parts = geometry.coordinates.map(thin).filter((l) => l.length >= 2);
+    const parts = geometry.coordinates.map(thinRing).filter((l) => l.length >= 2);
     if (!parts.length) return null;
     return parts.length === 1
       ? { type: 'LineString', coordinates: parts[0] }
@@ -183,7 +185,7 @@ async function main() {
   const features = [];
   for (const f of raw) {
     const p = f.properties ?? {};
-    const geometry = thinGeometry(f.geometry);
+    const geometry = thinLineGeometry(f.geometry);
     if (!geometry) {
       droppedGeometry++;
       continue;

@@ -55,7 +55,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   },
   {
     id: 'enforcement',
-    label: { en: 'Immigration Enforcement', es: 'Control migratorio' },
+    label: { en: 'Enforcement', es: 'Aplicación de la ley' },
     summary: {
       en: 'What the recording is for: the agencies that have signed up to act, and the places people are held.',
       es: 'Para qué sirve la grabación: las agencias que se comprometieron a actuar y los lugares donde se retiene a personas.',
@@ -75,10 +75,298 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
  */
 export const LAYERS: LayerDefinition[] = [
   {
+    id: 'agency_jurisdiction',
+    slug: 'agency-jurisdictions',
+    category: 'enforcement',
+    // The frame every other layer is read against: which agency answers for
+    // the ground under a given camera.
+    defaultOn: true,
+    label: {
+      en: 'Police & sheriff jurisdictions',
+      es: 'Jurisdicciones policiales y de alguaciles',
+    },
+    summary: {
+      en: 'Which police department or sheriff’s office answers for each block of the Twin Cities metro.',
+      es: 'Qué departamento de policía u oficina del alguacil responde por cada zona del área metropolitana de Twin Cities.',
+    },
+    whatThisMeans: {
+      en: 'Every 911 call is routed by a table — the Master Street Address Guide (MSAG) — that assigns each address to one law enforcement agency. The Metropolitan Emergency Services Board (MESB) publishes that assignment as a map: one polygon per agency, covering its full response area. This is the ground an agency answers for, not an internal subdivision — Minneapolis’s own five numbered police precincts, for instance, are folded into one polygon here, because the point of this layer is the boundary a records request or a council question is actually addressed to, not how a department organises its own patrol shifts.',
+      es: 'Cada llamada al 911 se enruta mediante una tabla — la Guía Maestra de Direcciones (MSAG) — que asigna cada dirección a una agencia de aplicación de la ley. La Junta de Servicios de Emergencia Metropolitana (MESB) publica esa asignación como un mapa: un polígono por agencia, que cubre toda su área de respuesta. Este es el territorio del que responde una agencia, no una subdivisión interna — los cinco recintos numerados de la policía de Minneapolis, por ejemplo, quedan agrupados en un solo polígono aquí, porque el propósito de esta capa es el límite al que realmente se dirige una solicitud de registros o una pregunta ante el concejo, no cómo organiza un departamento sus propios turnos de patrulla.',
+    },
+    limitations: [
+      {
+        en: 'Covers the 10-county Twin Cities metro region only — MESB’s own service area. Minnesota DPS is building a statewide version under its NG911 GIS program; it was not yet public as of this layer’s last refresh.',
+        es: 'Cubre solo la región metropolitana de Twin Cities de 10 condados — el área de servicio propia de MESB. El DPS de Minnesota está construyendo una versión estatal bajo su programa NG911 GIS; no era pública aún en la última actualización de esta capa.',
+      },
+      {
+        en: 'A polygon is where an agency answers 911 calls, not a map of where its officers actually patrol day to day.',
+        es: 'Un polígono es el área donde una agencia responde llamadas al 911, no un mapa de dónde patrullan realmente sus oficiales día a día.',
+      },
+      {
+        en: 'This is agency-level jurisdiction, not an internal subdivision. A department that organises itself into precincts, districts, or beats does not have those drawn separately here.',
+        es: 'Esto es jurisdicción a nivel de agencia, no una subdivisión interna. Un departamento que se organiza en recintos, distritos o zonas de patrulla no los tiene dibujados por separado aquí.',
+      },
+      {
+        en: 'Checked against Census city boundaries: most single-city departments track their city\'s limits almost exactly, but not all. A few, like St. Anthony, also serve a second contracting city under agreement. Four — Lakes Area, South Lake Minnetonka, West Hennepin, and Centennial Lakes police — are joint departments shared by several small cities and match no single municipality. Four more are institutional forces that sit inside or across city lines rather than being a city themselves: University of Minnesota, Metropolitan Airports Commission, Veterans Affairs, and Minnesota State Fair police.',
+        es: 'Comparado con los límites municipales del Censo: la mayoría de los departamentos de una sola ciudad siguen los límites de su ciudad casi con exactitud, pero no todos. Algunos, como St. Anthony, también atienden a una segunda ciudad bajo contrato. Cuatro — Lakes Area, South Lake Minnetonka, West Hennepin y Centennial Lakes police — son departamentos conjuntos compartidos por varias ciudades pequeñas y no coinciden con ningún municipio único. Otros cuatro son fuerzas institucionales que se ubican dentro o a través de los límites municipales en lugar de ser una ciudad en sí: la policía de la Universidad de Minnesota, la Comisión Metropolitana de Aeropuertos, Asuntos de Veteranos y la Feria Estatal de Minnesota.',
+      },
+    ],
+    geometry: 'polygon',
+    // Doubles as the selected-jurisdiction highlight colour (see
+    // polygonClick below) — every polygon starts a neutral, uncoloured grey
+    // and only the tapped one switches to this, so it needs to read clearly
+    // against both the muted default and a basemap, not just tile neatly
+    // into the rest of the enforcement palette the way a normal fill would.
+    color: '#f59e0b',
+    colorLight: '#b45309',
+    filters: [
+      {
+        key: 'agencyType',
+        kind: 'enum',
+        label: { en: 'Agency type', es: 'Tipo de agencia' },
+      },
+    ],
+    // The name MESB routes 911 calls under, drawn on the ground the way the
+    // source's own dispatch table names it.
+    labelBy: { key: 'name' },
+    // Ward-map browsing: hovering previews a jurisdiction, a tap commits it
+    // and fits the camera to it, and ALPR dots (added after this layer — see
+    // beneathDots()) keep drawing on top of every polygon here regardless of
+    // which one is selected.
+    polygonClick: 'highlight',
+    // The polygon is context, not the finding: what lights up on selection is
+    // the building it answers from and the readers it reported, so the ward
+    // settles rather than blazing.
+    selectedEmphasis: 'subtle',
+    // What a selected jurisdiction actually highlights: the building(s) it
+    // answers from, per agency-buildings.mjs's own join, and thin paths to the
+    // readers this agency itself reported to the state under Minn. Stat.
+    // § 13.824. Both are joins on a document, not tests of what falls inside
+    // the boundary — an earlier version drew a path to every camera merely
+    // *contained* by the polygon, which is a claim the data cannot support and
+    // §0.3 forbids. See relatedBuildings' comment in types.ts.
+    relatedBuildings: {
+      layerId: 'agency_building',
+      joinKey: 'jurisdictionId',
+      // Throw from the headquarters where the inventory distinguishes one: a
+      // § 13.824 filing is the department's, not any one precinct's, so the
+      // lines leave the address that answers for the department rather than
+      // whichever substation the ingest happened to emit first.
+      hubKey: 'subStation',
+      // Only to readers this agency itself reported to the state — never to
+      // whatever happens to sit inside the boundary. See pathsTo's own
+      // comment in types.ts for why that distinction is the whole point.
+      pathsTo: {
+        layerId: 'alpr_reported',
+        joinKey: 'jurisdictionId',
+      },
+    },
+    action: {
+      // Reuses the existing generic surveillance-inventory request template —
+      // right for any agency, not specific to 287(g) or ALPR.
+      requestType: 'inventory',
+      label: {
+        en: 'Ask what surveillance tech this agency runs',
+        es: 'Preguntar qué tecnología de vigilancia usa esta agencia',
+      },
+      // The record is the agency, so it is also the body to write to.
+      fallbackBody: 'name',
+    },
+    dataPath: '/data/agency-jurisdictions.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'Metropolitan Emergency Services Board — Law Enforcement Agency areas',
+      sourceUrl: 'https://gisdata.mn.gov/dataset/org-mn-mesb-bdry-law',
+      license: 'Public government data — no formal reuse licence published (MESB disclaims warranty)',
+      licenseUrl: null,
+      attribution:
+        'Metropolitan Emergency Services Board, MESB Region PSAPs and Emergency Response Agencies',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    detailFields: [
+      { key: 'agencyType', label: { en: 'Agency type', es: 'Tipo de agencia' } },
+      { key: 'county', label: { en: 'County', es: 'Condado' } },
+      {
+        key: 'alprReportStatus',
+        label: {
+          en: 'ALPR use reported to the state',
+          es: 'Uso de lectores de placas informado al estado',
+        },
+      },
+      {
+        key: 'alprDeviceLocations',
+        label: {
+          en: 'Device locations, as the agency reported them',
+          es: 'Ubicaciones de dispositivos, según lo informado por la agencia',
+        },
+      },
+      {
+        key: 'alprBcaSourceUrl',
+        label: { en: 'BCA report', es: 'Informe del BCA' },
+        format: 'link',
+      },
+    ],
+    nearMe: {
+      mode: 'contains',
+      title: {
+        en: 'Your local police or sheriff’s jurisdiction',
+        es: 'Su jurisdicción policial o del alguacil local',
+      },
+      empty: {
+        en: 'This point falls outside the 10-county metro region this layer covers.',
+        es: 'Este punto está fuera de la región metropolitana de 10 condados que cubre esta capa.',
+      },
+      detail: ['agencyType'],
+      caveat: {
+        en: 'This is the agency’s full jurisdiction, not an internal precinct or patrol district.',
+        es: 'Esta es la jurisdicción completa de la agencia, no un recinto o distrito de patrulla interno.',
+      },
+    },
+  },
+
+  {
+    id: 'agency_building',
+    slug: 'agency-buildings',
+    category: 'enforcement',
+    // Off by default. Statewide this is thousands of points, and at the
+    // opening view they crowd the marks the map is actually about — the
+    // cameras and the agreements. The jurisdiction polygon already answers
+    // "who is responsible for this ground" without it; a reader who wants
+    // the specific door switches this on.
+    defaultOn: false,
+    label: {
+      en: 'Police & sheriff buildings',
+      es: 'Edificios policiales y de alguaciles',
+    },
+    summary: {
+      en: 'Station and precinct addresses for Minnesota law enforcement agencies, one point per building.',
+      es: 'Direcciones de estaciones y recintos de agencias policiales de Minnesota, un punto por edificio.',
+    },
+    whatThisMeans: {
+      en: 'Minnesota keeps a statewide inventory of active law enforcement facility locations, built with local officials and updated on a rolling basis. Unlike the jurisdiction layer, which folds a department’s whole area into one polygon, this is one point per building — so Minneapolis’s five numbered precincts and headquarters each appear separately, and so does every substation a larger department runs. Selecting a jurisdiction on the map highlights the building or buildings it answers from.',
+      es: 'Minnesota mantiene un inventario estatal de ubicaciones activas de instalaciones policiales, elaborado con funcionarios locales y actualizado de forma continua. A diferencia de la capa de jurisdicciones, que agrupa toda el área de un departamento en un solo polígono, aquí hay un punto por edificio — así que los cinco recintos numerados y la sede de Minneapolis aparecen por separado, al igual que cada subestación de un departamento más grande. Seleccionar una jurisdicción en el mapa resalta el edificio o edificios desde los que responde.',
+    },
+    limitations: [
+      {
+        en: 'Covers all of Minnesota, but only buildings whose agency also appears in the 10-county metro jurisdiction layer can be highlighted by selecting a jurisdiction; the rest are shown on their own with no polygon to link them to.',
+        es: 'Cubre todo Minnesota, pero solo los edificios cuya agencia también aparece en la capa de jurisdicciones del área metropolitana de 10 condados pueden resaltarse al seleccionar una jurisdicción; el resto se muestra por separado, sin polígono al que vincularlo.',
+      },
+      {
+        en: 'A handful of jurisdictions — chiefly federal or military installations — have no building on record in this dataset at all.',
+        es: 'Un puñado de jurisdicciones — principalmente instalaciones federales o militares — no tienen ningún edificio registrado en este conjunto de datos.',
+      },
+      {
+        en: 'This is a continually-edited reference inventory maintained by local officials, not a survey with a fixed vintage; a recently opened, closed, or renamed building may lag here.',
+        es: 'Este es un inventario de referencia editado continuamente por funcionarios locales, no una encuesta con una fecha fija; un edificio recientemente abierto, cerrado o renombrado puede no reflejarse aquí de inmediato.',
+      },
+    ],
+    geometry: 'point',
+    color: '#f59e0b',
+    colorLight: '#b45309',
+    // A station house is a kind of place, not a measurement, so it gets a
+    // glyph rather than a dot — and the two offices get their own insignia,
+    // which is a real distinction in Minnesota law rather than decoration: a
+    // sheriff is an elected county officer, a police chief is a municipal
+    // appointee, and which one answers for a building changes who a records
+    // request is addressed to.
+    markerIcon: {
+      icon: 'Landmark',
+      byValue: {
+        key: 'agencyType',
+        // Military and Other both fall through to the `icon` above: this map
+        // has no claim to make about the difference between a National Guard
+        // facility and an unclassified one, and inventing an insignia for it
+        // would be decoration.
+        icons: { Police: 'Shield', Sheriff: 'Star' },
+      },
+    },
+    hoverCard: {
+      fields: ['agencyType', 'address', 'city', 'subStation'],
+      // Joined on the department, not the building: the filing under Minn.
+      // Stat. § 13.824 is the agency's, so every station of a department
+      // shows the same readers rather than pretending one door owns some
+      // subset of them.
+      related: {
+        layerId: 'alpr_reported',
+        fromKey: 'jurisdictionId',
+        joinKey: 'jurisdictionId',
+        labelKey: 'reportedLocation',
+        linkKey: 'sourceUrl',
+        title: {
+          en: 'ALPR readers this department reported to the state',
+          es: 'Lectores ALPR que este departamento reportó al estado',
+        },
+        empty: {
+          en: 'No ALPR filing found for this department. That means none was found under this name — not that it operates none.',
+          es: 'No se encontró ninguna declaración de ALPR para este departamento. Eso significa que no se encontró bajo este nombre, no que no opere ninguno.',
+        },
+        linkLabel: {
+          en: 'The filing these come from',
+          es: 'La declaración de la que provienen',
+        },
+        moreLabel: { en: '+{n} more', es: '+{n} más' },
+        max: 4,
+      },
+      // The honest answer to "where's the contract?". No vendor contract is
+      // published in any dataset this project ingests, so rather than leave
+      // a reader assuming one is missing by oversight, the card says the
+      // record does not exist here and points at the way to get it (§0.6).
+      note: {
+        en: 'No vendor contract is published in this data. Click the station, then “Ask what surveillance tech this agency runs” to request it.',
+        es: 'Ningún contrato con proveedores está publicado en estos datos. Haga clic en la estación y luego en «Preguntar qué tecnología de vigilancia usa esta agencia» para solicitarlo.',
+      },
+    },
+    filters: [
+      {
+        key: 'agencyType',
+        kind: 'enum',
+        label: { en: 'Agency type', es: 'Tipo de agencia' },
+      },
+    ],
+    action: {
+      requestType: 'inventory',
+      label: {
+        en: 'Ask what surveillance tech this agency runs',
+        es: 'Preguntar qué tecnología de vigilancia usa esta agencia',
+      },
+      fallbackBody: 'name',
+    },
+    dataPath: '/data/agency-buildings.geojson',
+    csvPath: '/data/agency-buildings.csv',
+    provenance: {
+      source: 'Minnesota Law Enforcement Locations — U-Spatial, University of Minnesota',
+      sourceUrl: 'https://gisdata.mn.gov/dataset/struc-law-enforce-mn',
+      license:
+        'No formal licence published; U-Spatial/USGS disclaim warranty, acknowledgement appreciated',
+      licenseUrl: null,
+      attribution: 'U-Spatial, University of Minnesota; U.S. Geological Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    detailFields: [
+      { key: 'agencyType', label: { en: 'Agency type', es: 'Tipo de agencia' } },
+      { key: 'address', label: { en: 'Address', es: 'Dirección' } },
+      { key: 'city', label: { en: 'City', es: 'Ciudad' } },
+      { key: 'subStation', label: { en: 'Precinct / substation', es: 'Recinto / subestación' } },
+    ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'Nearest police or sheriff building', es: 'Edificio policial más cercano' },
+      empty: {
+        en: 'No building in this dataset is near this point.',
+        es: 'Ningún edificio de este conjunto de datos está cerca de este punto.',
+      },
+      detail: ['address'],
+    },
+  },
+
+  {
     id: 'agency_287g',
     slug: '287g',
     category: 'enforcement',
-    order: 1,
     label: {
       en: '287(g) agency agreements',
       es: 'Acuerdos de agencias 287(g)',
@@ -167,7 +455,9 @@ export const LAYERS: LayerDefinition[] = [
     id: 'alpr',
     slug: 'alpr',
     category: 'surveillance',
-    order: 2,
+    // The map's subject. On since long before this field existed, when the
+    // whole surveillance category was switched on by category.
+    defaultOn: true,
     label: {
       en: 'ALPR / Flock cameras',
       es: 'Cámaras ALPR / Flock',
@@ -282,6 +572,20 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'manufacturer', kind: 'enum', label: { en: 'Manufacturer', es: 'Fabricante' } },
       { key: 'cameraType', kind: 'enum', label: { en: 'Camera type', es: 'Tipo de cámara' } },
     ],
+    hoverCard: {
+      fields: ['manufacturer', 'operatorType', 'operator', 'cameraType', 'zone'],
+      // No `related` here, deliberately, and it is the whole difference
+      // between this card and the one on an agency-reported reader. There is
+      // no document joining a crowd-sourced camera to an agency — the
+      // operator field is a word a volunteer typed, which is why the note
+      // says so on every single card rather than only where the field is
+      // blank. A `related` block here would be the containment inference
+      // this project already removed once.
+      note: {
+        en: 'Mapped by volunteers. “Who runs it” is what a mapper wrote down, not a verified contract — and most often nobody wrote anything.',
+        es: 'Mapeado por voluntarios. «Quién lo opera» es lo que anotó un mapeador, no un contrato verificado, y la mayoría de las veces nadie anotó nada.',
+      },
+    },
     detailFields: [
       { key: 'manufacturer', label: { en: 'Manufacturer', es: 'Fabricante' } },
       { key: 'operatorType', label: { en: 'Who runs it', es: 'Quién lo opera' } },
@@ -311,10 +615,146 @@ export const LAYERS: LayerDefinition[] = [
   },
 
   {
+    id: 'alpr_reported',
+    slug: 'alpr-reported',
+    category: 'surveillance',
+    // The readers the thrown lines land on. Off, they would land on nothing.
+    defaultOn: true,
+    label: {
+      en: 'ALPR readers agencies reported',
+      es: 'Lectores ALPR reportados por agencias',
+    },
+    summary: {
+      en: 'Readers a named police department or sheriff told the state it operates, and where.',
+      es: 'Lectores que un departamento de policía o alguacil declaró al estado que opera, y dónde.',
+    },
+    whatThisMeans: {
+      en: 'Minnesota law (Minn. Stat. § 13.824) requires every law enforcement agency that operates an automated licence plate reader to report it to the state, including where its fixed readers are, and requires the Bureau of Criminal Apprehension to publish what they file. Every point here comes from one of those filings. That makes this the only camera layer on this map whose operator is documented rather than guessed: the crowd-sourced camera layer records hardware someone saw on a pole and usually cannot say whose it is, while a record here is a named public agency stating, under a reporting duty, that this reader is theirs.',
+      es: 'La ley de Minnesota (Minn. Stat. § 13.824) exige que toda agencia policial que opere un lector automático de matrículas lo informe al estado, incluida la ubicación de sus lectores fijos, y exige que la Oficina de Aprehensión Criminal publique lo que presentan. Cada punto aquí proviene de una de esas presentaciones. Esto la convierte en la única capa de cámaras de este mapa cuyo operador está documentado y no inferido: la capa comunitaria registra equipos que alguien vio en un poste y casi nunca puede decir de quién son, mientras que un registro aquí es una agencia pública nombrada declarando, bajo un deber de informar, que ese lector es suyo.',
+    },
+    limitations: [
+      {
+        en: 'Only agencies that filed a report appear. An agency missing here may not have filed, or may operate only vehicle-mounted readers, which are not fixed locations — it is not evidence the agency operates none.',
+        es: 'Solo aparecen las agencias que presentaron un informe. Una agencia ausente puede no haber presentado, o puede operar solo lectores montados en vehículos, que no son ubicaciones fijas; no es prueba de que no opere ninguno.',
+      },
+      {
+        en: 'Positions are resolved from the words in each filing against OpenStreetMap road geometry. The filing is the record; the coordinate is this project’s reading of it.',
+        es: 'Las posiciones se resuelven a partir de las palabras de cada presentación usando la geometría vial de OpenStreetMap. La presentación es el registro; la coordenada es la lectura que hace este proyecto.',
+      },
+      {
+        en: 'Filings that give a street address, name a landmark rather than a corner, or name roads that do not exist or do not meet — including outright typos in the published list — are deliberately left off the map rather than approximated. They are published in full alongside the data so the gap is inspectable.',
+        es: 'Las presentaciones que dan una dirección postal, nombran un punto de referencia en lugar de una esquina, o nombran vías que no existen o no se cruzan —incluidos errores tipográficos en la lista publicada— se omiten deliberadamente del mapa en lugar de aproximarse. Se publican íntegras junto a los datos para que la brecha sea inspeccionable.',
+      },
+      {
+        en: 'A reported location is where the agency says a reader is, not a guarantee it is still there or was ever installed.',
+        es: 'Una ubicación reportada es donde la agencia dice que hay un lector, no una garantía de que siga allí o de que se haya instalado.',
+      },
+    ],
+    geometry: 'point',
+    // Kin to the crowd-sourced camera layer's sky blue rather than a colour
+    // of its own: same subject, stronger provenance. Deliberately not the
+    // detention layer's rose, which it collided with exactly when this entry
+    // was first written.
+    color: '#22d3ee',
+    colorLight: '#0e7490',
+    filters: [
+      { key: 'agencyName', kind: 'enum', label: { en: 'Reporting agency', es: 'Agencia informante' } },
+    ],
+    hoverCard: {
+      fields: ['agencyName', 'reportedLocation', 'statute'],
+      // The inverse of the station card, and the reason this layer exists:
+      // from a reader, name the department that claimed it and the door it
+      // answers from. Safe to draw because the filing itself makes the link
+      // — the crowd-sourced layer above gets no such block for exactly that
+      // reason.
+      // Joined on the agency's own name rather than its jurisdiction id:
+      // the id only exists for the 10-county metro, and this layer is
+      // statewide, so keying on it would leave every outstate reader
+      // reporting "none" when the department had in fact filed a dozen.
+      related: {
+        layerId: 'alpr_reported',
+        fromKey: 'agencyName',
+        joinKey: 'agencyName',
+        labelKey: 'reportedLocation',
+        linkKey: 'sourceUrl',
+        title: {
+          en: 'Readers this department reported, this one among them',
+          es: 'Lectores que este departamento reportó, incluido este',
+        },
+        // Unreachable in practice, and kept deliberately: this is a self-join,
+        // so the hovered reader is always one of its own matches and the count
+        // is never zero. Retained because the field is required and because
+        // the day this layer is joined to anything else, an empty state that
+        // says what an absence does NOT mean is what §1c asks for.
+        empty: {
+          en: 'No other filing found under this department’s name.',
+          es: 'No se encontró ninguna otra declaración a nombre de este departamento.',
+        },
+        linkLabel: {
+          en: 'The filing these come from',
+          es: 'La declaración de la que provienen',
+        },
+        moreLabel: { en: '+{n} more', es: '+{n} más' },
+        max: 4,
+      },
+      note: {
+        en: 'Position is this project’s reading of the words in the filing, resolved against OpenStreetMap roads — not a surveyed coordinate.',
+        es: 'La posición es la lectura que hace este proyecto de las palabras de la declaración, resuelta con las vías de OpenStreetMap; no es una coordenada topográfica.',
+      },
+    },
+    action: {
+      requestType: 'alpr',
+      label: {
+        en: 'Request this agency’s ALPR records',
+        es: 'Solicitar los registros ALPR de esta agencia',
+      },
+      bodyKey: 'agencyName',
+      fallbackBody: 'countySheriff',
+    },
+    dataPath: '/data/alpr-reported.geojson',
+    csvPath: '/data/alpr-reported.csv',
+    provenance: {
+      source: 'Minnesota Bureau of Criminal Apprehension — agencies reporting LPR use',
+      sourceUrl: 'https://dps.mn.gov/divisions/bca/data-and-reports/agencies-use-lprs-lpr',
+      license: 'Public government data (Minn. Stat. ch. 13)',
+      licenseUrl: null,
+      attribution:
+        'Minnesota Bureau of Criminal Apprehension; positions resolved against © OpenStreetMap contributors (ODbL)',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    detailFields: [
+      { key: 'agencyName', label: { en: 'Reporting agency', es: 'Agencia informante' } },
+      {
+        key: 'reportedLocation',
+        label: { en: 'Location, as the agency wrote it', es: 'Ubicación, según la agencia' },
+      },
+      { key: 'statute', label: { en: 'Reported under', es: 'Informado bajo' } },
+      { key: 'sourceUrl', label: { en: 'BCA report', es: 'Informe del BCA' }, format: 'link' },
+    ],
+    nearMe: {
+      mode: 'radius',
+      title: {
+        en: 'Agency-reported readers near you',
+        es: 'Lectores reportados por agencias cerca de usted',
+      },
+      empty: {
+        en: 'No agency has reported a fixed reader near this point.',
+        es: 'Ninguna agencia ha reportado un lector fijo cerca de este punto.',
+      },
+      radii: [1, 3],
+      caveat: {
+        en: 'Only readers agencies reported to the state. An agency that filed nothing does not appear.',
+        es: 'Solo lectores que las agencias reportaron al estado. Una agencia que no presentó nada no aparece.',
+      },
+    },
+  },
+
+  {
     id: 'redlining',
     slug: 'redlining',
     category: 'historical',
-    order: 4,
     label: {
       en: 'Redlining zones (HOLC)',
       es: 'Zonas de redlining (HOLC)',
@@ -477,7 +917,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'detention_facility',
     slug: 'detention',
     category: 'enforcement',
-    order: 5,
     label: {
       en: 'ICE-contract detention facilities',
       es: 'Centros de detención con contrato de ICE',
@@ -559,7 +998,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'data_center',
     slug: 'data-centers',
     category: 'infrastructure',
-    order: 6,
     label: {
       en: 'Data centers',
       es: 'Centros de datos',
@@ -697,7 +1135,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'aadt',
     slug: 'traffic-volume',
     category: 'infrastructure',
-    order: 8,
     label: {
       en: 'Roadway traffic volume',
       es: 'Volumen de tráfico vial',
@@ -824,7 +1261,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'racial_covenant',
     slug: 'covenants',
     category: 'historical',
-    order: 7,
     label: {
       en: 'Racial covenants',
       es: 'Convenios raciales',
@@ -928,7 +1364,6 @@ export const LAYERS: LayerDefinition[] = [
     id: 'ej_cumulative',
     slug: 'ej-cumulative',
     category: 'environment',
-    order: 9,
     label: { en: 'Cumulative Stressors', es: 'Factores de estrés acumulativos' },
     summary: {
       en: 'How many environmental and health stressors burden each census tract today, from MPCA’s draft CI-MAP.',

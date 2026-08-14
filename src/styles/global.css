@@ -282,6 +282,56 @@
 }
 
 /*
+ * The pointer-only hover card (mapController's buildHoverCard). Styled here
+ * rather than with utility classes on the constructed nodes, for the same
+ * reason the theme control is: this DOM is built at runtime by a .ts module,
+ * where Tailwind's build-time scan cannot see the class strings, so a utility
+ * written there is a class name that resolves to nothing.
+ *
+ * The card is aria-hidden — the record list beside the map is the accessible
+ * interface (§4) — so nothing here is load-bearing for a screen reader.
+ */
+.hover-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.hover-card-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.hover-card-heading {
+  padding-top: 0.25rem;
+  font-weight: 600;
+}
+.hover-card-label {
+  opacity: 0.6;
+}
+.hover-card-muted {
+  opacity: 0.7;
+}
+.hover-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding-left: 1rem;
+  list-style: disc;
+  opacity: 0.8;
+}
+.hover-card-more {
+  opacity: 0.6;
+}
+.hover-card-cite {
+  text-decoration: underline;
+}
+.hover-card-note {
+  padding-top: 0.25rem;
+  opacity: 0.6;
+}
+
+/*
  * ThemeControl (src/lib/themeControl.ts) — the map-corner "site theme / map
  * theme" popover. Built with hand-written classes rather than
  * .maplibregl-ctrl-icon's convention (a class MapLibre expects on a
