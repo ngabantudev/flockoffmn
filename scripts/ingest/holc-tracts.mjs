@@ -53,10 +53,7 @@
  * present-day condition follows from a 1930s line (§1c).
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-
-import { fetchWithRetry, PUBLIC_DATA, log } from './lib/util.mjs';
+import { fetchWithRetry, writeReference, text, log } from './lib/util.mjs';
 
 const SOURCE =
   'https://raw.githubusercontent.com/americanpanorama/mapping-inequality-census-crosswalk/main/MIv3Areas_2020TractCrosswalk.geojson';
@@ -101,10 +98,6 @@ function sharePercent(value) {
   return Math.round(n * 10_000) / 100;
 }
 
-function text(value) {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
-}
-
 async function main() {
   log('holc-tracts', 'fetching the national crosswalk (~72 MB, no per-state file published)');
   const res = await fetchWithRetry(SOURCE, { timeoutMs: FETCH_TIMEOUT_MS });
@@ -116,6 +109,10 @@ async function main() {
 
   const scoped = all.features.filter((f) => f.properties?.state === STATE_USPS);
   if (!scoped.length) throw new Error(`no crosswalk rows found for ${STATE_USPS}`);
+  // Read now so the 72 MB parse tree stops being reachable through `all`: the
+  // grouping below needs 922 rows, and holding the national graph alive until
+  // the final write is how this script would OOM on a small machine.
+  const nationalRowCount = all.features.length;
 
   /*
    * area_id -> the tracts it touches, largest share first.
@@ -178,38 +175,31 @@ async function main() {
   if (untracted) log('holc-tracts', `${untracted} rows carry no tract GEOID upstream — dropped`);
   if (outOfState) log('holc-tracts', `${outOfState} rows overlap a tract outside Minnesota`);
 
-  const dir = path.join(PUBLIC_DATA, 'reference');
-  await mkdir(dir, { recursive: true });
-  await writeFile(
-    path.join(dir, 'holc-tract-crosswalk.json'),
-    JSON.stringify({
-      metadata: {
-        source:
-          'Mapping Inequality census crosswalk, Digital Scholarship Lab, University of Richmond',
-        sourceUrl: REPO,
-        datasetUrl: SOURCE,
-        // The repository README states "This data is licensed under a CC-BY-NC
-        // license" and names no version; the repository carries no LICENSE
-        // file. The parent project's own terms page states CC BY-NC 2.5, so
-        // that is what is recorded — flagged, not silently assumed.
-        license: 'CC BY-NC (version unstated upstream; parent project states 2.5)',
-        licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
-        attribution:
-          'Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality: Redlining in New Deal America", crosswalked against NHGIS 2020 census tracts by the Digital Scholarship Lab',
-        tractVintage: '2020 census tracts (NHGIS)',
-        state: STATE_USPS,
-        areaCount,
-        tractCount: tracts.size,
-        rowsWithoutTract: untracted,
-        rowsOutsideMinnesota: outOfState,
-        nationalRowCount: all.features.length,
-        note: 'Geometric overlap only: this share of this 2020 tract sits on ground a 1930s HOLC map graded this way. Not a claim that anything about the tract today follows from the grade. Shares must not be summed across areas without deduplicating by tract.',
-        lastUpdated: new Date().toISOString(),
-      },
-      byArea,
-    }),
-  );
-  log('holc-tracts', `wrote ${areaCount} areas -> public/data/${OUT}`);
+  await writeReference(OUT, {
+    metadata: {
+      source: 'Mapping Inequality census crosswalk, Digital Scholarship Lab, University of Richmond',
+      sourceUrl: REPO,
+      datasetUrl: SOURCE,
+      // The repository README states "This data is licensed under a CC-BY-NC
+      // license" and names no version; the repository carries no LICENSE file.
+      // The parent project's own terms page states CC BY-NC 2.5, so that is
+      // what is recorded — flagged, not silently assumed.
+      license: 'CC BY-NC (version unstated upstream; parent project states 2.5)',
+      licenseUrl: 'https://creativecommons.org/licenses/by-nc/2.5/',
+      attribution:
+        'Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality: Redlining in New Deal America", crosswalked against NHGIS 2020 census tracts by the Digital Scholarship Lab',
+      tractVintage: '2020 census tracts (NHGIS)',
+      state: STATE_USPS,
+      areaCount,
+      tractCount: tracts.size,
+      rowsWithoutTract: untracted,
+      rowsOutsideMinnesota: outOfState,
+      nationalRowCount,
+      note: 'Geometric overlap only: this share of this 2020 tract sits on ground a 1930s HOLC map graded this way. Not a claim that anything about the tract today follows from the grade. Shares must not be summed across areas without deduplicating by tract.',
+    },
+    byArea,
+  });
+  log('holc-tracts', `${areaCount} areas indexed`);
 }
 
 main().catch((err) => {

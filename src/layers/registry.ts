@@ -64,6 +64,24 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
 ];
 
 /**
+ * The colours HOLC printed on its own map sheets, read from Mapping
+ * Inequality's fill values.
+ *
+ * Two layers draw the same 1930s document — the graded neighbourhood areas and
+ * the block-by-block tracing of the colour inside them — and they have to agree
+ * on screen or the claim that they are two readings of one sheet fails at a
+ * glance. Written once so an edit cannot desynchronise them.
+ */
+const HOLC_GRADE_COLORS = {
+  A: '#76a865',
+  B: '#7cb5bd',
+  C: '#ffff00',
+  D: '#d9838d',
+  /** Non-residential land, recorded on some sheets without a residential grade. */
+  E: '#fefefe',
+} as const;
+
+/**
  * The layer registry — the single source of truth for what the map shows.
  *
  * Adding a layer means: write an ingest script that emits a LayerCollection to
@@ -807,15 +825,9 @@ export const LAYERS: LayerDefinition[] = [
     categoryColors: {
       key: 'grade',
       label: { en: 'HOLC grade', es: 'Calificación HOLC' },
-      // The colours HOLC printed on the original sheets, read from the source
-      // data's own fill values, so the map reads like the document it is.
-      colors: [
-        { value: 'A', color: '#76a865' },
-        { value: 'B', color: '#7cb5bd' },
-        { value: 'C', color: '#ffff00' },
-        { value: 'D', color: '#d9838d' },
-        { value: 'E', color: '#fefefe' },
-      ],
+      // The colours HOLC printed on the original sheets, so the map reads like
+      // the document it is. Shared with the block-by-block layer.
+      colors: Object.entries(HOLC_GRADE_COLORS).map(([value, color]) => ({ value, color })),
       fallback: '#9ca3af',
     },
     // The identifier HOLC printed on each zone — "A1", "D4" — drawn on the
@@ -868,6 +880,28 @@ export const LAYERS: LayerDefinition[] = [
         kind: 'enum',
         label: { en: 'Groups named in the survey', es: 'Grupos nombrados en la encuesta' },
       },
+      {
+        key: 'dating',
+        kind: 'enum',
+        label: { en: 'How the date is known', es: 'Cómo se conoce la fecha' },
+        // The bilingual sentences live here rather than on all 168 features:
+        // three strings written once beat three English strings shipped per
+        // record and rendered under a Spanish label.
+        valueDescriptions: {
+          'Year recorded upstream': {
+            en: 'Mapping Inequality records a year for this city’s map. Only Minneapolis (1937) and Duluth (1936) have one.',
+            es: 'Mapping Inequality registra un año para el mapa de esta ciudad. Solo Minneapolis (1937) y Duluth (1936) lo tienen.',
+          },
+          'Survey-programme window only': {
+            en: 'No year is recorded for this city. The map was made under HOLC’s City Survey Program, which ran from late 1935 to 1940, and can be dated no more closely than that.',
+            es: 'No hay año registrado para esta ciudad. El mapa se hizo bajo el City Survey Program de HOLC, que funcionó desde finales de 1935 hasta 1940, y no puede fecharse con más precisión.',
+          },
+          'No year recorded': {
+            en: 'No year recorded, and this map was made outside HOLC’s City Survey Program altogether. No source found for when it was drawn.',
+            es: 'Sin año registrado, y este mapa se hizo completamente fuera del City Survey Program de HOLC. No se encontró ninguna fuente sobre cuándo se dibujó.',
+          },
+        },
+      },
     ],
     detailFields: [
       { key: 'grade', label: { en: 'HOLC grade', es: 'Calificación HOLC' } },
@@ -905,11 +939,10 @@ export const LAYERS: LayerDefinition[] = [
       { key: 'surveyForm', label: { en: 'Survey form', es: 'Formulario de la encuesta' } },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'holcId', label: { en: 'HOLC area ID', es: 'ID del área HOLC' } },
-      { key: 'surveyYear', label: { en: 'Year of the map', es: 'Año del mapa' } },
-      {
-        key: 'surveyYearBasis',
-        label: { en: 'How that year is known', es: 'Cómo se conoce ese año' },
-      },
+      // The year itself is the record's source date and the panel already
+      // renders it; this says how firmly it is known, which the date alone
+      // cannot.
+      { key: 'dating', label: { en: 'How the date is known', es: 'Cómo se conoce la fecha' } },
       {
         key: 'tracts',
         label: {
@@ -992,10 +1025,10 @@ export const LAYERS: LayerDefinition[] = [
        * grade" reads as not a grade rather than as a fifth grade.
        */
       colors: [
-        { value: 'Best', color: '#76a865' },
-        { value: 'Still Desirable', color: '#7cb5bd' },
-        { value: 'Definitely Declining', color: '#ffff00' },
-        { value: 'Hazardous', color: '#d9838d' },
+        { value: 'Best', color: HOLC_GRADE_COLORS.A },
+        { value: 'Still Desirable', color: HOLC_GRADE_COLORS.B },
+        { value: 'Definitely Declining', color: HOLC_GRADE_COLORS.C },
+        { value: 'Hazardous', color: HOLC_GRADE_COLORS.D },
         { value: 'Business and Industrial', color: '#9ca3af' },
         { value: 'Park / Open Space', color: '#6b7f6b' },
         { value: 'Open Water', color: '#7d9db8' },
@@ -1010,48 +1043,19 @@ export const LAYERS: LayerDefinition[] = [
     // of a specific sheet, and a reader has to be able to see the sheet.
     //
     // The identifier HOLC printed on the surrounding area, drawn on the ground
-    // the way the original sheet drew it.
-    //
-    // Not the same thing the redlining layer does, and worth being clear about
-    // the difference: that layer has one feature per area and so draws each
-    // identifier once, while this one labels *blocks*, so a single area's
-    // identifier is carried by hundreds of polygons ("C3" on 682 of them).
-    // MapLibre's collision handling is what makes that readable rather than a
-    // wall — it draws whichever labels fit and hides the rest, so an area
-    // reads as its identifier repeated across its own ground and closing in
-    // resolves more of them. Blocks on ground HOLC never numbered, and blocks
-    // outside every graded area, carry no identifier and go unlabelled.
-    labelBy: { key: 'miArea' },
+    // the way the original sheet drew it — see limitations for where it comes
+    // from and why some blocks have none. `minzoom` because this labels
+    // *blocks*: one area's identifier is carried by hundreds of polygons
+    // ("C3" on 682 of them), and below street zoom every one of those is a
+    // collision candidate placed and then discarded.
+    labelBy: { key: 'miArea', minzoom: 12 },
+    // No `related` join here, deliberately. The tract's present-day burden
+    // band is stamped on each block at ingest instead: fetching the whole
+    // cumulative-stressor layer (3.6 MB, 683 KB gzipped) the moment a reader
+    // toggled this one on, to render one of four words, doubled the cost of
+    // switching the layer on for an enum. See holc-detail.mjs.
     hoverCard: {
-      fields: ['className', 'grade', 'miArea', 'city'],
-      // The seam to the present, at block precision: this block's 2020 tract,
-      // and what MPCA's draft records for that same tract now. A documented
-      // join on a shared GEOID — two dated facts adjacent, with nothing
-      // computed between them (§1c).
-      related: {
-        layerId: 'ej_cumulative',
-        fromKey: 'tractGeoid',
-        joinKey: 'geoid',
-        // The band, not the raw stressor list: the card renders this value
-        // bare, and a semicolon-separated string of fourteen indicator names
-        // is a wall, not a line. The full list is one click away in the
-        // cumulative-stressors layer's own panel, which is where it belongs.
-        labelKey: 'burdenBand',
-        title: {
-          en: 'Cumulative stressor burden in this tract today (MPCA draft)',
-          es: 'Carga de factores acumulativos hoy en esta sección (borrador MPCA)',
-        },
-        empty: {
-          en: 'No cumulative-stressor record matches this tract.',
-          es: 'Ningún registro de factores acumulativos coincide con esta sección.',
-        },
-        linkLabel: {
-          en: 'MPCA’s draft cumulative impacts record',
-          es: 'Registro preliminar de impactos acumulativos de la MPCA',
-        },
-        moreLabel: { en: '+{n} more', es: '+{n} más' },
-        max: 1,
-      },
+      fields: ['className', 'grade', 'miArea', 'tractBurdenBand'],
       note: {
         en: 'Traced from a photograph of the original map. Two dated records of the same ground, eighty years apart — the map sets them side by side and draws no conclusion between them.',
         es: 'Trazado a partir de una fotografía del mapa original. Dos registros fechados del mismo terreno, con ochenta años de diferencia: el mapa los pone uno junto al otro y no extrae ninguna conclusión.',
@@ -1131,6 +1135,13 @@ export const LAYERS: LayerDefinition[] = [
       },
       { key: 'city', label: { en: 'City', es: 'Ciudad' } },
       { key: 'tractGeoid', label: { en: '2020 census tract', es: 'Sección censal 2020' } },
+      {
+        key: 'tractBurdenBand',
+        label: {
+          en: 'That tract’s cumulative burden today (MPCA draft)',
+          es: 'Carga acumulativa actual de esa sección (borrador MPCA)',
+        },
+      },
     ],
     nearMe: {
       mode: 'contains',

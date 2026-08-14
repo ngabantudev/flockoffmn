@@ -93,11 +93,13 @@
  */
 
 import {
-  fetchWithRetry,
+  arcgisCount,
+  arcgisQueryAll,
   writeLayer,
   loadCounties,
   loadPublicJson,
   thinGeometry,
+  without,
   log,
   slugId,
 } from './lib/util.mjs';
@@ -125,6 +127,16 @@ const PAGE = 1000;
  * ungraded ground.
  */
 const MIN_EXPECTED = 10_000;
+
+/**
+ * HOLC's City Survey Program window, and this layer's honest date.
+ *
+ * Mapping Inequality records 1937 for Minneapolis and no year at all for
+ * St. Paul, and this is one sheet covering both, so neither city's answer can
+ * stand for the whole. Declared once and used for both the per-feature date
+ * and the layer provenance, so the two cannot drift.
+ */
+const PROGRAM_WINDOW = '1935-1940';
 
 /**
  * The publisher's single attribute, decoded to a HOLC grade letter.
@@ -175,78 +187,21 @@ function areaIdentifier(label) {
     : null;
 }
 
-/**
- * Drop the keys with nothing in them.
- *
- * Same reasoning as aadt.mjs's helper of the same name: a null attribute still
- * costs its key and six bytes of `":null,"` in a file this many records long,
- * and every consumer here treats a missing key and a null one identically.
- * Five of the nine classes carry no grade, so this is thousands of records.
- */
-function without(attributes) {
-  return Object.fromEntries(Object.entries(attributes).filter(([, v]) => v !== null));
-}
-
-async function fetchPage(offset) {
-  const params = new URLSearchParams({
-    where: '1=1',
-    outFields: 'OBJECTID,HSG_SCALE',
-    returnGeometry: 'true',
-    outSR: '4326',
-    // Five decimals is ~1.1 m. These are city blocks, not survey parcels, and
-    // the publisher warns the georeference itself is of unknown accuracy, so
-    // shipping seventeen decimals would be precision theatre paid for in bytes.
-    geometryPrecision: '5',
-    resultRecordCount: String(PAGE),
-    resultOffset: String(offset),
-    f: 'geojson',
-  });
-  const res = await fetchWithRetry(`${SERVICE}/query?${params}`, { timeoutMs: 120_000 });
-  return res.json();
-}
-
-/** How many polygons the service says it holds, so paging can be checked. */
-async function totalCount() {
-  const params = new URLSearchParams({ where: '1=1', returnCountOnly: 'true', f: 'json' });
-  const res = await fetchWithRetry(`${SERVICE}/query?${params}`, { timeoutMs: 45_000 });
-  const count = (await res.json())?.count;
-  if (!Number.isFinite(count)) throw new Error('service did not report a record count');
-  return count;
-}
-
-/**
- * Page through the service, checked against its own count.
- *
- * A short page is not proof of the end. If the server's `maxRecordCount` is
- * below our page size every page is short and the run would stop after the
- * first one, and an ArcGIS instance that answers 200 with an error body past a
- * high offset would end the loop mid-map. Either publishes a partial HOLC
- * sheet, where the missing half reads as ungraded ground rather than as an
- * error — so `exceededTransferLimit` is honoured where the service sends it,
- * and the total is verified at the end regardless.
- */
-async function fetchAll(total) {
-  const out = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const page = await fetchPage(offset);
-    const got = page?.features ?? [];
-    out.push(...got);
-    log('holc-detail', `  fetched ${out.length}/${total} polygons`);
-    if (!got.length) break;
-    if (!page?.properties?.exceededTransferLimit && got.length < PAGE) break;
-  }
-  if (out.length !== total) {
-    throw new Error(
-      `fetched ${out.length} polygons but the service reports ${total} — refusing to publish a partial map`,
-    );
-  }
-  return out;
-}
+/** Query params beyond paging; see arcgisQueryAll in lib/util.mjs. */
+const QUERY = {
+  outFields: 'OBJECTID,HSG_SCALE',
+  returnGeometry: 'true',
+  outSR: '4326',
+  // Five decimals is ~1.1 m. These are city blocks, not survey parcels, and
+  // the publisher warns the georeference itself is of unknown accuracy, so
+  // shipping seventeen decimals would be precision theatre paid for in bytes.
+  geometryPrecision: '5',
+};
 
 async function main() {
-  const total = await totalCount();
+  const total = await arcgisCount(SERVICE);
   const [raw, counties, jurisdictions, redlining, tracts] = await Promise.all([
-    fetchAll(total),
+    arcgisQueryAll('holc-detail', SERVICE, { params: QUERY, pageSize: PAGE, expected: total }),
     loadCounties(),
     loadPublicJson('reference/mn-jurisdictions.geojson', {
       runFirst: 'npm run data:jurisdictions',
@@ -279,21 +234,45 @@ async function main() {
     );
   }
 
-  const tally = { same: 0, differs: 0, outside: 0 };
+  // Two counters, not three buckets: everything else the cross-check reports
+  // is derivable from these and the feature count.
+  let inside = 0;
+  let agree = 0;
+  /*
+   * Mapping Inequality categories the cross-check actually met.
+   *
+   * The comparison below is a bare string equality against the Metropolitan
+   * Council's class, with no translation table in between (see
+   * GRADE_OF_CLASS) — deliberate, but it leaves the contract guarded on one
+   * side only. If Mapping Inequality renamed its vocabulary, agreement would
+   * collapse and the run would die reporting that "the two maps have
+   * diverged": true, and pointing at entirely the wrong cause.
+   *
+   * Collected during the join rather than swept from the whole redlining layer
+   * up front, because that layer is statewide and the four Minnesota cities
+   * HOLC mapped outside its City Survey Program legitimately use their own
+   * words — "Good", "Poor", "Outlying - Sparcely Settled". Those are not a
+   * vocabulary drift and this sheet never meets them; only the categories that
+   * land under a Twin Cities block are this check's business.
+   */
+  const seenCategories = new Set();
 
   const features = raw.map((f) => {
     const className = f.properties?.HSG_SCALE ?? null;
-    const grade = className ? (GRADE_OF_CLASS[className] ?? null) : null;
+    const grade = GRADE_OF_CLASS[className] ?? null;
     const point = representativePoint(f.geometry);
 
     const county = findContaining(point, counties.features);
     const jurisdiction = findContaining(point, jurisdictions.features);
     const miArea = findContaining(point, redlining.features);
-    const miCategory = miArea?.properties.attributes.category ?? null;
     const tract = tracts ? findContaining(point, tracts.features) : null;
 
-    const verdict = !miArea ? 'outside' : miCategory === className ? 'same' : 'differs';
-    tally[verdict]++;
+    if (miArea) {
+      const category = miArea.properties.attributes.category;
+      inside++;
+      if (category) seenCategories.add(category);
+      if (category === className) agree++;
+    }
 
     return {
       type: 'Feature',
@@ -306,9 +285,10 @@ async function main() {
         state: 'MN',
         countyFips: county?.properties.geoid ?? null,
         confidence: 'confirmed',
-        // The sheet itself, not the year the publisher stamped on the file.
-        // See the header: 1934 predates the survey programme that produced it.
-        sourceDate: '1930s',
+        // The survey programme's window, matching this layer's provenance
+        // rather than rounding to a decade. See the header: the publisher's
+        // 1934 predates the programme that produced the sheet.
+        sourceDate: PROGRAM_WINDOW,
         attributes: without({
           className,
           grade,
@@ -321,6 +301,23 @@ async function main() {
           // The 2020 tract this block sits in. One block, one tract; the join
           // key every present-day tract dataset here shares.
           tractGeoid: tract?.properties.attributes.geoid ?? null,
+          /*
+           * MPCA's present-day burden band for that same tract, carried here
+           * rather than joined in the browser.
+           *
+           * The map used to fetch the whole cumulative-stressor layer — 3.6 MB,
+           * 683 KB gzipped, 1,505 tract polygons — the moment a reader switched
+           * this layer on, purely to render one of four words on a hover card.
+           * That doubled the cost of turning the layer on to show an enum, and
+           * §0.7 is about old phones on bad connections. Stamped at ingest it
+           * costs about four kilobytes gzipped.
+           *
+           * Two dated, sourced facts about the same ground on one record. The
+           * grade is from the 1930s and the band is MPCA's draft reading of
+           * today; nothing here computes a relationship between them, and
+           * nothing may (§1c).
+           */
+          tractBurdenBand: tract?.properties.attributes.burdenBand ?? null,
         }),
       },
     };
@@ -350,20 +347,55 @@ async function main() {
   log('holc-detail', `${withTract}/${features.length} blocks resolve a 2020 census tract`);
 
   /*
+   * The two cross-layer joins are the only things in this script that could
+   * fail quietly.
+   *
+   * Everything else refuses to publish on a shape change — the record count,
+   * MIN_EXPECTED, the class vocabulary on both sides, the agreement floor. But
+   * a rename of Mapping Inequality's `label` or MPCA's `geoid` would simply
+   * resolve nothing: the layer would publish 11,561 blocks with the field
+   * absent, its own knownGaps would read "0 of 11561 blocks resolve a 2020
+   * census tract", and the registry would keep advertising a detail field that
+   * is never populated. Structurally valid, self-describing, and wrong.
+   */
+  if (!labelled) {
+    throw new Error(
+      `no block resolved a HOLC area label against ${redlining.features.length} graded areas — Mapping Inequality's label field has probably changed`,
+    );
+  }
+  if (tracts && !withTract) {
+    throw new Error(
+      `no block resolved a census tract against ${tracts.features.length} tracts — MPCA's geoid field has probably changed`,
+    );
+  }
+
+  // See seenCategories: a word this sheet's ground actually carries, that the
+  // class table has never heard of, is a vocabulary change rather than a
+  // disagreement between the two maps — and should say so.
+  const unknownCategories = [...seenCategories].filter((c) => !(c in GRADE_OF_CLASS));
+  if (unknownCategories.length) {
+    throw new Error(
+      `Mapping Inequality categories this layer cannot compare against: ${unknownCategories.join(', ')} — their vocabulary has probably changed`,
+    );
+  }
+
+  /*
    * The agreement rate, measured this run rather than remembered from a note.
    *
    * Denominator is the polygons that fall inside a Mapping Inequality area at
-   * all — see AGREEMENT above for why the ones outside are excluded rather
-   * than counted against. The figure goes into provenance and into the
-   * knownGaps text from the same variables, so the prose and the number cannot
-   * drift apart the way a hand-written percentage would.
+   * all. Blocks outside every graded area are excluded rather than counted
+   * against: Mapping Inequality drew only the graded neighbourhoods, so a
+   * block on ungraded fringe land correctly falls outside all of them, and
+   * folding that into a failure rate would understate what is being measured.
+   * The figure reaches provenance and the knownGaps text from these same
+   * variables, so the prose and the number cannot drift.
    */
-  const compared = tally.same + tally.differs;
-  const agreementPct = compared ? Math.round((tally.same / compared) * 1000) / 10 : null;
+  const outside = features.length - inside;
+  const agreementPct = inside ? Math.round((agree / inside) * 1000) / 10 : null;
   log(
     'holc-detail',
-    `agreement with Mapping Inequality: ${tally.same}/${compared} = ${agreementPct}% ` +
-      `(${tally.outside} polygons fall outside every graded area)`,
+    `agreement with Mapping Inequality: ${agree}/${inside} = ${agreementPct}% ` +
+      `(${outside} polygons fall outside every graded area)`,
   );
   if (agreementPct !== null && agreementPct < 80) {
     throw new Error(
@@ -384,7 +416,7 @@ async function main() {
         'Metropolitan Council, "Historic Home Owners\' Loan Corporation Neighborhood Appraisal Map"',
       // The HOLC City Survey Program window, not the publisher's 1934 stamp.
       // knownGaps carries the full account of the disagreement.
-      sourceDate: '1935-1940',
+      sourceDate: PROGRAM_WINDOW,
       publisherStatedDate: '1934',
       refresh: 'rare',
       publisherLineage:
@@ -394,8 +426,8 @@ async function main() {
       // Measured every run against redlining.geojson; see the header.
       crossCheckedAgainst: 'Mapping Inequality (public/data/redlining.geojson)',
       crossCheckAgreementPercent: agreementPct,
-      crossCheckComparedPolygons: compared,
-      crossCheckOutsideAnyGradedArea: tally.outside,
+      crossCheckComparedPolygons: inside,
+      crossCheckOutsideAnyGradedArea: outside,
       blocksWithAreaLabel: labelled,
       blocksWithTract: withTract,
       tractVintage: '2020 census tracts, via public/data/ej-cumulative.geojson',
@@ -403,6 +435,17 @@ async function main() {
       // are the Metropolitan Council's, the area identifier is Mapping
       // Inequality's. Credited separately rather than folded into one line.
       secondarySources: [
+        {
+          key: 'mpca-cimap',
+          name: 'Minnesota Pollution Control Agency, CI-MAP (draft)',
+          url: 'https://pca-gis02.pca.state.mn.us/ci-map/',
+          license: 'Public government data (Minn. Stat. ch. 13) — no formal licence published',
+          licenseUrl: null,
+          contributes: {
+            en: 'The 2020 census tract boundaries each block is matched against, and that tract’s present-day cumulative-stressor burden band.',
+            es: 'Los límites de las secciones censales de 2020 con los que se empareja cada manzana, y la banda de carga acumulativa actual de esa sección.',
+          },
+        },
         {
           key: 'mapping-inequality',
           name: 'Mapping Inequality, Digital Scholarship Lab, University of Richmond',
@@ -420,9 +463,10 @@ async function main() {
       'Minneapolis and St. Paul only. The Metropolitan Council digitised the Twin Cities sheet; the six other Minnesota cities HOLC surveyed appear in the redlining layer instead, and neither layer covers a city that was never surveyed.',
       'The publisher dates this file to 1934 and its description discusses grades assigned "in 1934". HOLC\'s City Survey Program did not begin until late 1935, so no residential security map can date from 1934 — 1934 is the year the FHA underwriting scheme these grades implement was created. Mapping Inequality dates the Minneapolis map to 1937 and records no year at all for St. Paul. This layer is dated to the programme window rather than repeating either claim as fact.',
       'The Metropolitan Council states plainly that the file "was digitized from a non-georeferenced, photgraphic image of the original map" and that "the accuracy is unknown". Boundaries here are a tracing of a photograph of a hand-drawn sheet, not a survey.',
-      `Every polygon is tested against the independently georeferenced Mapping Inequality areas at build time: ${tally.same} of ${compared} comparable polygons carry the same class, or ${agreementPct}%. A further ${tally.outside} fall outside every graded area, which is expected — Mapping Inequality drew only the graded neighbourhoods, and this sheet was traced to its edges. Most of the remainder are the parks, water and industrial blocks this layer exists to distinguish, where the finer tracing says more than the neighbourhood outline could rather than contradicting it.`,
+      `Every polygon is tested against the independently georeferenced Mapping Inequality areas at build time: ${agree} of ${inside} comparable polygons carry the same class, or ${agreementPct}%. A further ${outside} fall outside every graded area, which is expected — Mapping Inequality drew only the graded neighbourhoods, and this sheet was traced to its edges. Most of the remainder are the parks, water and industrial blocks this layer exists to distinguish, where the finer tracing says more than the neighbourhood outline could rather than contradicting it.`,
       `The Metropolitan Council file carries one attribute, the class, and no area identifier — so nothing in it can join to HOLC's survey sheets. The area label on each block (${labelled} of ${features.length} have one) is Mapping Inequality's, resolved by which of their graded areas the block's centre falls inside, and it is the route back to what the appraiser wrote. A block carries no label if it falls outside every graded area, or on the commercial and industrial ground HOLC numbered nothing on — the appraisers printed no identifier there, and this does not invent one.`,
       `${withTract} of ${features.length} blocks resolve a 2020 census tract, matched by containment against the tract boundaries this project already ships with the cumulative-stressor layer. The tract is a join key for laying present-day data beside the grade. It is not a claim that anything about the tract today follows from the grade.`,
+      "Each block also carries the burden band MPCA's draft cumulative-impacts map gives that tract today. It is a second dated fact about the same ground, roughly eighty years later, from a draft that may change; the band is MPCA's tract-level reading and describes neither this block nor any household on it. Nothing here computes a relationship between the 1930s grade and the present-day band, and nothing should.",
       'Park, open water and undeveloped shading is reproduced as the sheet drew it. That is a claim about the 1930s map, not about present-day land cover — parks have been built and lakes have been filled since.',
       '"Uncertain" is the publisher\'s own value for ground whose colour could not be read off the photograph. It is carried through unresolved rather than assigned a grade.',
     ],

@@ -402,6 +402,19 @@ export interface LayerDefinition {
   labelBy?: {
     /** Attribute holding the text to draw. */
     key: string;
+    /**
+     * Zoom below which labels are not placed at all. Omit to label at every
+     * zoom the layer draws at, which is right where records are few.
+     *
+     * This exists because collision placement is not free: MapLibre shapes
+     * glyphs for every candidate in view before deciding which fit, so a layer
+     * labelling one identifier per *block* rather than per area offers
+     * thousands of candidates across a metro to draw a few dozen. That work is
+     * discarded every frame, on a project that targets old phones (§0.7).
+     * Setting this to the zoom where a label first becomes readable costs
+     * nothing visible — below it the labels were being suppressed anyway.
+     */
+    minzoom?: number;
   };
   /**
    * How a click on this polygon layer behaves.

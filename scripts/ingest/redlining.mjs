@@ -142,27 +142,36 @@ function groupsNamed(ad) {
 }
 
 /**
- * What we can honestly say about when a city's map was drawn.
+ * How well this city's map is dated, as a stable code.
  *
- * Three cases, kept apart on purpose: a documented year, a city surveyed under
- * the City Survey Program whose year nobody has recorded, and a city whose map
- * was made outside that programme entirely and carries no date either. Only
- * the first is a date. The other two say so.
+ * The three cases are kept apart on purpose: a documented year, a city
+ * surveyed under the City Survey Program whose year nobody recorded, and a
+ * city mapped outside that programme with no date either. Only the first is a
+ * date, and a reader comparing this against a covenant recorded in 1934 needs
+ * to know which they have.
+ *
+ * A code rather than a sentence, because the sentence has to exist in both
+ * languages and an attribute is a flat string: the registry's
+ * `valueDescriptions` carries the bilingual explanation, which is the same
+ * mechanism the grade letters already use.
  */
-function surveyDate(city, citySurvey) {
-  if (CITY_SURVEY_YEAR[city]) return CITY_SURVEY_YEAR[city];
-  return citySurvey ? PROGRAM_WINDOW : null;
-}
+const DATING = {
+  recorded: 'Year recorded upstream',
+  window: 'Survey-programme window only',
+  none: 'No year recorded',
+};
 
-/** How the date was arrived at, shown beside it rather than left to be inferred. */
-function surveyDateBasis(city, citySurvey) {
-  if (CITY_SURVEY_YEAR[city]) {
-    return 'Year recorded for this city by Mapping Inequality.';
-  }
-  if (citySurvey) {
-    return 'Mapping Inequality records no year for this city. Dated only to HOLC\'s City Survey Program, which ran from late 1935 to 1940.';
-  }
-  return 'No year recorded, and this map was made outside HOLC\'s City Survey Program. No source found for when it was drawn.';
+/**
+ * What we can honestly say about when a city's map was drawn, and how firmly.
+ *
+ * One conditional rather than two: the date and the confidence in it are the
+ * same decision, and splitting them across two functions called on the same
+ * arguments meant two branch orders to keep in step.
+ */
+function survey(city, citySurvey) {
+  if (CITY_SURVEY_YEAR[city]) return { date: CITY_SURVEY_YEAR[city], dating: DATING.recorded };
+  if (citySurvey) return { date: PROGRAM_WINDOW, dating: DATING.window };
+  return { date: null, dating: DATING.none };
 }
 
 /**
@@ -197,7 +206,10 @@ function tractList(rows) {
     return `${r.geoid} (${share})`;
   });
   const hidden = rows.length - shown.length;
-  return hidden > 0 ? `${shown.join('; ')}; +${hidden} more` : shown.join('; ');
+  // "+3" rather than "+3 more": this value renders under a Spanish label for a
+  // Spanish reader, and an attribute is a flat string with no locale of its
+  // own, so the overflow marker has to be one that needs no translating.
+  return hidden > 0 ? `${shown.join('; ')}; +${hidden}` : shown.join('; ');
 }
 
 /** Trim a free-text survey value to a clean string, or null. Never invents one. */
@@ -262,6 +274,7 @@ async function main() {
     // Assign a county by the zone's representative point so the "near me"
     // panel and the county filter behave the same as for point layers.
     const county = findContaining(representativePoint(f.geometry), counties.features);
+    const dating = survey(p.city, p.city_survey);
 
     return {
       type: 'Feature',
@@ -277,7 +290,9 @@ async function main() {
         // The city's own year where one is recorded, the programme window
         // where it is not, and null where even that does not apply. Never a
         // decade standing in for a date nobody has. See CITY_SURVEY_YEAR.
-        sourceDate: surveyDate(p.city, p.city_survey),
+        // The panel already renders this as the record's source date, so it is
+        // deliberately not repeated as an attribute — only how firm it is.
+        sourceDate: dating.date,
         attributes: {
           grade,
           gradeMeaning: grade ? (GRADE_MEANING[grade] ?? CATEGORY_FALLBACK) : CATEGORY_FALLBACK,
@@ -290,13 +305,9 @@ async function main() {
           // one it covers. Two dated facts about the same ground, adjacent —
           // and nothing computed between them (§1c).
           tracts: tractList(crosswalk?.byArea?.[String(p.area_id)]),
-          surveyYear: surveyDate(p.city, p.city_survey),
-          surveyYearBasis: surveyDateBasis(p.city, p.city_survey),
-          // Whether this map came out of HOLC's own City Survey Program or was
-          // drawn for the agency some other way. The four Minnesota cities
-          // outside the programme use their own idiosyncratic category
-          // vocabulary — "Good", "Fair", "Poor" — rather than the A-D grades.
-          citySurveyProgram: p.city_survey ? 'Yes' : 'No',
+          // How firmly the date beside it is known. The bilingual explanation
+          // of each value is in the registry's `valueDescriptions`.
+          dating: dating.dating,
 
           // --- transcribed survey sheet, when one exists for this area ---
           // Absent fields stay null: a box the appraiser left blank is not a
@@ -344,12 +355,9 @@ async function main() {
 
   const datedCities = cities.filter((c) => CITY_SURVEY_YEAR[c]);
   const undatedCities = cities.filter((c) => !CITY_SURVEY_YEAR[c]);
+  // Read off the source rather than off the features we just built from it.
   const nonProgramCities = [
-    ...new Set(
-      features
-        .filter((f) => f.properties.attributes.citySurveyProgram === 'No')
-        .map((f) => f.properties.attributes.city),
-    ),
+    ...new Set(scoped.filter((f) => !f.properties.city_survey).map((f) => f.properties.city)),
   ].sort();
   log(
     'redlining',
@@ -399,6 +407,11 @@ async function main() {
       // see which cities are actually dated and which are not.
       citySurveyYears: CITY_SURVEY_YEAR,
       citiesWithNoRecordedYear: undatedCities,
+      // Where the years came from, so the claim is checkable rather than
+      // resting on a note in the script. The register is embedded in Mapping
+      // Inequality's own map application; it is not published as a file, which
+      // is why the table is transcribed rather than fetched.
+      citySurveyYearSource: 'https://dsl.richmond.edu/panorama/redlining/data',
       areasWithTractLink: withTracts,
       // The tract shares are a second publisher's work joined onto this one's
       // areas, so they are credited as such rather than folded into the
