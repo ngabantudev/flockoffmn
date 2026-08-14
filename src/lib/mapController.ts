@@ -354,8 +354,17 @@ export class MapController {
   private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
   /** rAF handle for the path-throw animation, so a new selection can cancel the last. */
   private throwFrame: number | null = null;
+  /**
+   * Bumped on every selection and every release. showRelatedBuildings awaits
+   * network fetches, so it compares this against the value it started with
+   * before touching the map — a slow request for a ward the reader has since
+   * left must not paint over the one they are actually looking at.
+   */
+  private selectionEpoch = 0;
   /** Separate from `popup`, which is the "near me" marker and must survive a hover. */
   private hoverPopup: maplibregl.Popup | null = null;
+  /** Which record `hoverPopup` is currently describing. See bindHoverCard. */
+  private hoverCardId: string | null = null;
   /**
    * The one hover-previewed polygon per `polygonClick: 'highlight'` layer.
    * Tracked here rather than as a closure inside bindHighlightSelect so
@@ -524,6 +533,41 @@ export class MapController {
   }
 
   /**
+   * A polygon layer's colour expression, for both its fill and its outline.
+   *
+   * Extracted for exactly the reason pointCircleColor above is: this is built
+   * once at layer creation and again in the theme repaint, and keeping two
+   * copies is what let them drift. A `polygonClick: 'highlight'` layer's
+   * expression reads feature-state, so a repaint that rebuilt only the
+   * historical-document branch replaced it with a flat colour — every ward
+   * painted as if selected, and no way to tell which one actually was, from
+   * the first basemap toggle onward.
+   */
+  private polygonFillColor(layer: ClientLayer): maplibregl.ExpressionSpecification {
+    if (layer.polygonClick === 'highlight') {
+      return [
+        'case',
+        [
+          'any',
+          ['boolean', ['feature-state', 'selected'], false],
+          ['boolean', ['feature-state', 'hover'], false],
+        ],
+        this.layerColor(layer),
+        this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
+      ] as unknown as maplibregl.ExpressionSpecification;
+    }
+    if (layer.categoryColors) {
+      return [
+        'match',
+        ['get', layer.categoryColors.key],
+        ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
+        layer.categoryColors.fallback,
+      ] as unknown as maplibregl.ExpressionSpecification;
+    }
+    return ['coalesce', ['get', 'holcFill'], this.layerColor(layer)] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
    * Re-keys every basemap-dependent paint property after `basemapDark`
    * changes: a colour chosen while dark was current — a layer's own
    * identity colour, or a casing drawn in the basemap's own background —
@@ -541,18 +585,27 @@ export class MapController {
     for (const layer of this.layers) {
       if (this.map.getLayer(`${layer.id}-fill`)) {
         if (!layer.categoryColors) {
-          this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', [
-            'coalesce',
-            ['get', 'holcFill'],
-            this.layerColor(layer),
-          ] as unknown as maplibregl.ExpressionSpecification);
+          const fill = this.polygonFillColor(layer);
+          this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', fill);
+          // The outline is drawn in the same expression as the fill (see
+          // addLayer), so it goes stale in exactly the same way if left out.
+          if (this.map.getLayer(`${layer.id}-outline`)) {
+            this.map.setPaintProperty(`${layer.id}-outline`, 'line-color', fill);
+          }
         }
         if (this.map.getLayer(`${layer.id}-labels`)) {
           this.map.setPaintProperty(`${layer.id}-labels`, 'text-halo-color', this.basemapColor);
         }
       }
 
-      if (this.map.getLayer(`${layer.id}-points`)) {
+      // Type-checked, not just existence-checked: a `markerIcon` layer draws
+      // its records as a symbol layer under the same `-points` id, and asking
+      // MapLibre for a circle paint property on a symbol layer throws out of
+      // setPaintProperty — which would abort this loop and leave every layer
+      // after it painted for the previous basemap. Glyphs are re-themed by
+      // refreshMarkerIcons() below instead, since their colour is baked into
+      // a bitmap rather than held in a paint property.
+      if (this.map.getLayer(`${layer.id}-points`)?.type === 'circle') {
         const circleColor = this.pointCircleColor(layer);
         this.map.setPaintProperty(`${layer.id}-points`, 'circle-color', circleColor);
         this.map.setPaintProperty(
@@ -582,6 +635,65 @@ export class MapController {
         this.refresh(layer.id);
       }
     }
+
+    // The transient selection overlays bake a colour at creation the same way
+    // a layer does, and they outlive a basemap toggle because the toggle
+    // doesn't clear the reader's selection.
+    const owner = this.layers.find((l) => l.relatedBuildings);
+    if (owner) {
+      const color = this.layerColor(owner);
+      if (this.map.getLayer(RELATED_BUILDINGS_GLOW_LAYER)) {
+        this.map.setPaintProperty(RELATED_BUILDINGS_GLOW_LAYER, 'circle-color', color);
+      }
+      if (this.map.getLayer(RELATED_BUILDINGS_LAYER)?.type === 'circle') {
+        this.map.setPaintProperty(RELATED_BUILDINGS_LAYER, 'circle-color', color);
+        this.map.setPaintProperty(RELATED_BUILDINGS_LAYER, 'circle-stroke-color', this.basemapColor);
+      }
+      if (this.map.getLayer(RELATED_PATHS_LAYER)) {
+        this.map.setPaintProperty(RELATED_PATHS_LAYER, 'line-color', color);
+      }
+      if (this.map.getLayer(RELATED_IMPACT_LAYER)) {
+        this.map.setPaintProperty(RELATED_IMPACT_LAYER, 'circle-stroke-color', color);
+      }
+    }
+
+    void this.refreshMarkerIcons();
+  }
+
+  /**
+   * Re-bake every `markerIcon` glyph for the current basemap.
+   *
+   * Same problem ensureConeSprite has, and the same shape of answer: the
+   * glyph is a bitmap with the layer colour and the basemap's own background
+   * disc painted into it, so a repaint cannot fix it — a new image under a
+   * new theme-suffixed id has to be generated and pointed at. The cached
+   * expression is dropped first because it names the *old* theme's image ids.
+   */
+  private async refreshMarkerIcons(): Promise<void> {
+    const relatedGlyphOwner = this.layers.find((l) => l.relatedBuildings)?.relatedBuildings?.layerId;
+    for (const layer of this.layers) {
+      if (!layer.markerIcon) continue;
+      this.markerExpressions.delete(layer.id);
+      await this.cacheMarkerExpression(layer);
+      const expression = this.markerExpressions.get(layer.id);
+      if (!expression) continue;
+      if (this.map.getLayer(`${layer.id}-points`)?.type === 'symbol') {
+        this.map.setLayoutProperty(`${layer.id}-points`, 'icon-image', expression as never);
+      }
+      if (
+        relatedGlyphOwner === layer.id &&
+        this.map.getLayer(RELATED_BUILDINGS_LAYER)?.type === 'symbol'
+      ) {
+        this.map.setLayoutProperty(RELATED_BUILDINGS_LAYER, 'icon-image', expression as never);
+      }
+    }
+  }
+
+  /** Just the dot/glyph layers, which sit above every polygon. See bindHighlightSelect. */
+  private interactivePointLayerIds(): string[] {
+    return this.layers
+      .map((l) => `${l.id}-points`)
+      .filter((id) => this.map.getLayer(id));
   }
 
   /** Style layers a tap can select a record on. See bindInteractions. */
@@ -604,18 +716,11 @@ export class MapController {
       this.easeToCamera(this.preSelectCamera, REDUCED_MOTION ? 0 : 500);
       this.preSelectCamera = null;
     }
-    for (const [layerId, featureId] of this.selectedPolygon) {
-      this.map.setFeatureState(
-        { source: this.sourceId(layerId), id: featureId },
-        { selected: false },
-      );
-    }
-    this.selectedPolygon.clear();
+    this.releaseHighlight();
     for (const [layerId, featureId] of this.hoveredPolygon) {
       this.map.setFeatureState({ source: this.sourceId(layerId), id: featureId }, { hover: false });
     }
     this.hoveredPolygon.clear();
-    this.clearRelatedBuildings();
     this.events.onSelect?.(null);
   }
 
@@ -993,15 +1098,26 @@ export class MapController {
 
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
   async loadLayer(layer: ClientLayer): Promise<void> {
-    if (this.data.has(layer.id) || this.loading.has(layer.id)) return;
+    if (this.loading.has(layer.id)) return;
+    // Having the records is not the same as having drawn them:
+    // ensureDataLoaded() fetches a layer for a cross-layer lookup without
+    // adding a source, so a layer can sit in `this.data` having never been
+    // drawn. Keying the early return on the data alone meant a reader who
+    // selected a jurisdiction first — which preloads the buildings — then
+    // ticked the buildings layer on got nothing at all: no source, no dots,
+    // no onLayerReady, and a checkbox that appeared to do nothing.
+    if (this.data.has(layer.id) && this.map.getSource(this.sourceId(layer.id))) return;
     this.loading.add(layer.id);
     try {
-      const res = await fetch(layer.dataPath);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const collection = await res.json();
-      const features: LoadedFeature[] = collection.features ?? [];
-      this.rawData.set(layer.id, features);
-      this.data.set(layer.id, features);
+      let features = this.data.get(layer.id);
+      if (!features) {
+        const res = await fetch(layer.dataPath);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const collection = await res.json();
+        features = (collection.features ?? []) as LoadedFeature[];
+        this.rawData.set(layer.id, features);
+        this.data.set(layer.id, features);
+      }
       await this.ready();
       // Glyphs before the layer that references them: MapLibre would warn and
       // draw nothing for an icon-image whose image is still decoding.
@@ -1052,34 +1168,9 @@ export class MapController {
     if (layer.geometry === 'polygon') {
       const under = this.beneathDots();
       const highlightMode = layer.polygonClick === 'highlight';
-      // Polygons colour by declared category where the registry names one, so
-      // the legend swatches and the ground read from the same table. A
-      // highlight-mode layer instead stays one neutral tone until a tap sets
-      // its feature-state, at which point it alone switches to the layer's
-      // own colour — see NEUTRAL_POLYGON_DARK/LIGHT's comment. Otherwise keep
-      // the historical-document behaviour: the colour the source printed on
-      // the original sheet where we have it, then the layer's own.
-      const polygonColor = (
-        highlightMode
-          ? [
-              'case',
-              [
-                'any',
-                ['boolean', ['feature-state', 'selected'], false],
-                ['boolean', ['feature-state', 'hover'], false],
-              ],
-              this.layerColor(layer),
-              this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
-            ]
-          : layer.categoryColors
-            ? [
-                'match',
-                ['get', layer.categoryColors.key],
-                ...layer.categoryColors.colors.flatMap(({ value, color }) => [value, color]),
-                layer.categoryColors.fallback,
-              ]
-            : ['coalesce', ['get', 'holcFill'], this.layerColor(layer)]
-      ) as unknown as maplibregl.ExpressionSpecification;
+      // Fill and outline share one expression — see polygonFillColor for
+      // which of the three it picks and why.
+      const polygonColor = this.polygonFillColor(layer);
 
       // The grid stands under the parcels and fades out exactly as they fade
       // in, so the two are never both at full strength over the same ground.
@@ -1572,10 +1663,15 @@ export class MapController {
    */
   private bindHoverCard(layer: ClientLayer, mapLayerId: string) {
     if (!layer.hoverCard) return;
-    let shownId: string | null = null;
 
+    // `hoverCardId` is controller state, not a per-binding closure, because
+    // the popup it describes is: two card-bearing layers whose records
+    // overlap (a crowd-sourced camera sitting on an agency-reported one) each
+    // bind their own handlers, and one layer's mouseleave tearing down the
+    // shared popup while the other still believed it was showing left the
+    // card stuck hidden until the pointer left that record entirely.
     const hide = () => {
-      shownId = null;
+      this.hoverCardId = null;
       this.hoverPopup?.remove();
       this.hoverPopup = null;
     };
@@ -1590,14 +1686,14 @@ export class MapController {
       // a card repeating it would just cover the ground the reader is
       // looking at.
       if (this.selectedPolygon.get(layer.id) === id) return hide();
-      if (id === shownId) {
-        this.hoverPopup?.setLngLat(e.lngLat);
+      if (id === this.hoverCardId && this.hoverPopup) {
+        this.hoverPopup.setLngLat(e.lngLat);
         return;
       }
       const feature = this.data.get(layer.id)?.find((f) => f.properties.id === id);
       if (!feature) return hide();
 
-      shownId = id;
+      this.hoverCardId = id;
       const card = this.buildHoverCard(layer, feature);
       if (!this.hoverPopup) {
         this.hoverPopup = new maplibregl.Popup({
@@ -1644,20 +1740,22 @@ export class MapController {
     }
 
     const rel = spec.related;
-    if (rel) {
+    const joinValue = rel ? attrs[rel.fromKey] : null;
+    // A record with no joining value cannot be searched for at all, so the
+    // block is omitted entirely rather than rendered empty. Three quarters of
+    // the buildings in this dataset sit outside the metro and carry no
+    // jurisdiction id; showing them "no ALPR filing found for this
+    // department" would assert an absence the join never actually tested —
+    // exactly the claim §1c says not to make.
+    if (rel && joinValue != null) {
       const heading = document.createElement('p');
       heading.className = 'pt-1 font-semibold';
-      const joinValue = attrs[rel.fromKey];
-      // Records are only counted where this record actually carries the
-      // joining value; a building with no jurisdiction has no filing to
-      // show, which is different from a department that filed nothing.
       const loaded = this.data.has(rel.layerId);
-      const matches =
-        joinValue == null || !loaded
-          ? []
-          : (this.data.get(rel.layerId) ?? []).filter(
-              (f) => f.properties.attributes[rel.joinKey] === joinValue,
-            );
+      const matches = !loaded
+        ? []
+        : (this.data.get(rel.layerId) ?? []).filter(
+            (f) => f.properties.attributes[rel.joinKey] === joinValue,
+          );
 
       if (!loaded) {
         // Say nothing rather than the wrong thing: until the other layer is
@@ -1783,6 +1881,16 @@ export class MapController {
       if (!hit) return;
       const id = (hit.properties as Record<string, unknown>)?.id as string;
       if (!id) return;
+
+      // A record drawn on top of this ward owns the tap. MapLibre runs every
+      // layer's click listener independently, so a jurisdiction whose fill
+      // covers the whole metro would otherwise also answer for taps on the
+      // cameras standing on it, and which of the two ended up in the panel
+      // came down to whichever layer happened to finish loading last.
+      const above = this.interactivePointLayerIds();
+      if (above.length && this.map.queryRenderedFeatures(e.point, { layers: above }).length) {
+        return;
+      }
 
       // A tap on the ward already showing is the reader putting it back —
       // the one thing focusFeature can't infer, since it has no notion of a
@@ -2060,8 +2168,33 @@ export class MapController {
     // record list. Putting it on the click alone meant a jurisdiction picked
     // from search opened its panel but never highlighted its ward or threw
     // its lines, which is the same selection reached a different way.
-    if (layer.polygonClick === 'highlight') this.markPolygonSelected(layer, featureId);
+    if (layer.polygonClick === 'highlight') {
+      this.markPolygonSelected(layer, featureId);
+    } else {
+      // Selecting a camera is still a new selection: the ward that was lit,
+      // and the lines it threw, describe a record the panel no longer shows.
+      // Without this a jurisdiction stayed highlighted under an unrelated
+      // record for the rest of the session.
+      this.releaseHighlight();
+    }
     if (layer.relatedBuildings) void this.showRelatedBuildings(feature, layer);
+  }
+
+  /**
+   * Drop every `polygonClick: 'highlight'` selection and the overlays hung
+   * off it, without touching the camera or the detail panel. The half of
+   * clearSelection that a *different* record being selected also needs.
+   */
+  private releaseHighlight() {
+    this.selectionEpoch++;
+    for (const [layerId, featureId] of this.selectedPolygon) {
+      this.map.setFeatureState(
+        { source: this.sourceId(layerId), id: featureId },
+        { selected: false },
+      );
+    }
+    this.selectedPolygon.clear();
+    this.clearRelatedBuildings();
   }
 
   /** Move a highlight layer's exclusive selection to one feature. */
@@ -2145,7 +2278,15 @@ export class MapController {
     const rel = layer.relatedBuildings;
     if (!rel) return;
 
+    // Every await below is a fetch that can outlive the selection that
+    // started it: a reader who taps one ward and immediately taps another (or
+    // taps out entirely) would otherwise get the slower, older request
+    // painting its buildings and throwing its lines over the newer selection.
+    const token = ++this.selectionEpoch;
+    const stale = () => token !== this.selectionEpoch;
+
     const buildings = await this.ensureDataLoaded(rel.layerId);
+    if (stale()) return;
     const matched = buildings.filter(
       (f) => f.properties.attributes[rel.joinKey] === jurisdiction.properties.id,
     );
@@ -2176,6 +2317,7 @@ export class MapController {
       // the glyph didn't resolve.
       const buildingLayer = this.layers.find((l) => l.id === rel.layerId);
       if (buildingLayer) await this.cacheMarkerExpression(buildingLayer);
+      if (stale()) return;
       const glyph = buildingLayer ? this.markerExpressions.get(buildingLayer.id) : undefined;
 
       this.map.addLayer(
@@ -2214,6 +2356,7 @@ export class MapController {
     let readers: LoadedFeature[] = [];
     if (rel.pathsTo) {
       const all = await this.ensureDataLoaded(rel.pathsTo.layerId);
+      if (stale()) return;
       readers = all.filter(
         (f) =>
           f.geometry.type === 'Point' &&
@@ -2227,7 +2370,14 @@ export class MapController {
     // comment in agency-buildings.mjs), because the filing is the
     // department's, not any one station's.
     const hub = matched.find((f) => !f.properties.attributes.subStation) ?? matched[0];
-    if (!hub || !readers.length) return;
+    // A department with nothing to throw has to *erase* the last one's lines,
+    // not simply decline to draw its own — most jurisdictions reported no
+    // reader, so returning early here left the previously selected agency's
+    // paths hanging off a building the panel no longer describes.
+    if (!hub || !readers.length) {
+      this.clearThrownPaths();
+      return;
+    }
 
     const origin = representativePoint(hub.geometry) as [number, number];
     const targets = readers.map((r) => representativePoint(r.geometry) as [number, number]);
@@ -2379,6 +2529,15 @@ export class MapController {
       cancelAnimationFrame(this.throwFrame);
       this.throwFrame = null;
     }
+  }
+
+  /** Stop the throw and empty its two sources, leaving the layers in place. */
+  private clearThrownPaths() {
+    this.cancelThrow();
+    const paths = this.map.getSource(RELATED_PATHS_SOURCE) as GeoJSONSource | undefined;
+    const impacts = this.map.getSource(RELATED_IMPACT_SOURCE) as GeoJSONSource | undefined;
+    paths?.setData(EMPTY_FC as never);
+    impacts?.setData(EMPTY_FC as never);
   }
 
   /** Undo showRelatedBuildings. Called wherever a selection itself clears. */

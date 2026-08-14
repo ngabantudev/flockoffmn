@@ -104,6 +104,10 @@ async function main() {
     const jurisdiction =
       byNormName.get(key) ?? byNormName.get(aliasTargetToOurName.get(key) ?? '__none__');
 
+    // ArcGIS will happily return an attribute row with no shape. Skip it
+    // rather than destructuring null and failing the whole ingest over one
+    // unmapped building.
+    if (f.geometry?.type !== 'Point' || !Array.isArray(f.geometry.coordinates)) continue;
     const [lng, lat] = f.geometry.coordinates;
     const county = findContaining([lng, lat], counties.features);
     const subStation = (f.properties.NAME_2 ?? '').trim() || null;
