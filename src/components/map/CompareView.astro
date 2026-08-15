@@ -1,0 +1,282 @@
+---
+/**
+ * A CNU/Esri-Instant-App-style swipe comparison: poverty rate under one
+ * MapLibre map, Black population share under a second one stacked on top of
+ * it and clipped to a draggable divider, both reading the same
+ * demographics.geojson the toggleable layers on the main map already use
+ * (scripts/ingest/demographics.mjs).
+ *
+ * Deliberately a separate page from the main map (src/pages/compare.astro),
+ * not a mode bolted onto MapController — that class is already the load-
+ * bearing 3000-line surface every other layer depends on, and a two-map-
+ * instance compare view is a genuinely different rendering model (two WebGL
+ * contexts, a synced viewport, a clipped container) that has nothing to gain
+ * from sharing its code. Keeping it standalone means this experiment can be
+ * deleted or rebuilt without touching the layer registry, filters, hover
+ * cards or the accessible record list every other layer relies on.
+ *
+ * Accessibility (CLAUDE.md §4/Part 0 §0.7): a pixel-swipe has no non-visual
+ * reading — nothing here pretends otherwise. The divider is a real
+ * <input type="range">, so it is keyboard-operable and its value is
+ * announced, but "which shade is under the divider right now" is still a
+ * visual question with no textual answer. `compareAccessibleNote` says so
+ * plainly and points to the same data in a form that does have one: the two
+ * toggleable single-metric layers on the main map, and the CSV/GeoJSON
+ * download.
+ */
+import type { Locale } from '~/layers/types';
+import { LAYERS } from '~/layers/registry';
+import { useTranslations, pick } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const povertyLayer = LAYERS.find((l) => l.id === 'demographic_poverty_rate')!;
+const blackLayer = LAYERS.find((l) => l.id === 'demographic_black_share')!;
+
+// Only what the client script needs to paint and legend each side — not the
+// full registry entry (whatThisMeans, limitations, filters, etc. stay on the
+// main map's layer panel, one canonical copy of that prose rather than two).
+const povertyConfig = {
+  dataPath: povertyLayer.dataPath,
+  color: povertyLayer.color,
+  categoryColors: povertyLayer.categoryColors!,
+  label: pick(povertyLayer.label, locale),
+};
+const blackConfig = {
+  dataPath: blackLayer.dataPath,
+  color: blackLayer.color,
+  categoryColors: blackLayer.categoryColors!,
+  label: pick(blackLayer.label, locale),
+};
+
+const strings = {
+  compareSliderLabel: t('compareSliderLabel'),
+  comparePovertySide: t('comparePovertySide'),
+  compareBlackSide: t('compareBlackSide'),
+  loading: t('loading'),
+};
+---
+
+<div class="flex h-full min-h-0 flex-col">
+  <div class="border-b border-ink-800 bg-ink-900 px-4 py-3 sm:px-6">
+    <h1 class="text-base font-semibold text-ink-100 sm:text-lg">{t('compareTitle')}</h1>
+    <p class="mt-1 max-w-3xl text-sm text-ink-300">{t('compareIntro')}</p>
+  </div>
+
+  <div class="relative min-h-0 flex-1" id="compare-root">
+    <div class="absolute inset-0" id="compare-map-a" role="img" aria-label={strings.comparePovertySide}></div>
+    <div class="pointer-events-none absolute inset-0" id="compare-map-b" role="img" aria-label={strings.compareBlackSide}></div>
+
+    <!-- The divider line follows the slider's value; drawn purely for sighted
+         users, the slider beneath it is the actual control. -->
+    <div id="compare-divider" class="pointer-events-none absolute inset-y-0 w-0.5 bg-ink-100 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" style="left:50%"></div>
+
+    <div class="pointer-events-none absolute inset-x-0 top-3 flex justify-between px-3 text-xs sm:px-4">
+      <span class="pointer-events-auto rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow" style={`border-left:3px solid ${povertyConfig.color}`}>
+        {strings.comparePovertySide}
+      </span>
+      <span class="pointer-events-auto rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow" style={`border-right:3px solid ${blackConfig.color}`}>
+        {strings.compareBlackSide}
+      </span>
+    </div>
+
+    <input
+      type="range"
+      id="compare-slider"
+      min="0"
+      max="100"
+      value="50"
+      step="1"
+      aria-label={strings.compareSliderLabel}
+      class="absolute inset-x-4 bottom-4 sm:inset-x-8"
+    />
+
+    <div id="compare-status" class="sr-only" role="status" aria-live="polite"></div>
+    <div id="compare-loading" class="absolute inset-0 flex items-center justify-center bg-ink-950 text-sm text-ink-300">
+      {strings.loading}
+    </div>
+  </div>
+
+  <p class="border-t border-ink-800 bg-ink-900 px-4 py-3 text-xs text-ink-400 sm:px-6">
+    {t('compareAccessibleNote')}
+    {' '}
+    <a href="/data" class="underline hover:text-ink-200">{t('compareAccessibleLink')}</a>
+  </p>
+</div>
+
+<script is:inline type="application/json" id="compare-config" set:html={JSON.stringify({ poverty: povertyConfig, black: blackConfig, strings })} />
+
+<script>
+  import maplibregl from 'maplibre-gl';
+  import { Protocol as PMTilesProtocol } from 'pmtiles';
+  import { baseStyle, MN_CENTER } from '~/lib/mapStyle';
+  import { initialMapStyle } from '~/lib/theme';
+
+  // Registering twice (once here, once if MapController's module also loads
+  // on this page) is harmless — addProtocol just overwrites the same handler
+  // with an equivalent one — but this page never imports mapController.ts, so
+  // it needs its own registration rather than relying on that module having
+  // run first.
+  maplibregl.addProtocol('pmtiles', new PMTilesProtocol().tile);
+
+  type CategoryColors = {
+    key: string;
+    colors: Array<{ value: string; color: string }>;
+    fallback: string;
+  };
+  type SideConfig = { dataPath: string; color: string; categoryColors: CategoryColors; label: string };
+
+  const config = JSON.parse(document.getElementById('compare-config')!.textContent!) as {
+    poverty: SideConfig;
+    black: SideConfig;
+  };
+
+  const elA = document.getElementById('compare-map-a')!;
+  const elB = document.getElementById('compare-map-b')!;
+  const divider = document.getElementById('compare-divider')!;
+  const slider = document.getElementById('compare-slider') as HTMLInputElement;
+  const statusEl = document.getElementById('compare-status')!;
+  const loadingEl = document.getElementById('compare-loading')!;
+
+  function fillExpression(cc: CategoryColors): maplibregl.ExpressionSpecification {
+    return [
+      'match',
+      // Band values live under properties.attributes (the shared feature
+      // schema — see FeatureProperties in src/layers/types.ts), not at the
+      // top level MapLibre's bare ['get', key] reads by default. The
+      // three-argument form reads inside that nested object instead of
+      // silently returning undefined and falling through to `fallback` for
+      // every feature, which is what shipped here first — every tract read
+      // as unmatched and rendered in the one grey fallback colour, which
+      // looked exactly like "no data at all".
+      ['get', cc.key, ['get', 'attributes']],
+      ...cc.colors.flatMap(({ value, color }) => [value, color]),
+      cc.fallback,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  function addChoropleth(map: maplibregl.Map, side: SideConfig) {
+    map.addSource('demographics', { type: 'geojson', data: side.dataPath });
+    map.addLayer({
+      id: 'demographics-fill',
+      type: 'fill',
+      source: 'demographics',
+      paint: {
+        'fill-color': fillExpression(side.categoryColors),
+        'fill-opacity': 0.82,
+      },
+    });
+    map.addLayer({
+      id: 'demographics-outline',
+      type: 'line',
+      source: 'demographics',
+      paint: { 'line-color': 'rgba(0,0,0,0.25)', 'line-width': 0.5 },
+    });
+  }
+
+  /**
+   * Two full MapLibre instances is real weight — a second WebGL context, a
+   * second copy of the basemap style, a second fetch of the 3.5 MB
+   * demographics file. Deferred behind `start()` so that weight is only ever
+   * paid by a reader who actually opens this view, never by every visitor to
+   * the page it's embedded in (see the IntersectionObserver below).
+   */
+  let started = false;
+  function start() {
+    if (started) return;
+    started = true;
+
+    const style = baseStyle(initialMapStyle());
+    const sharedOptions: Partial<maplibregl.MapOptions> = {
+      style,
+      center: MN_CENTER,
+      zoom: 5.2,
+      minZoom: 3,
+      maxZoom: 14,
+      attributionControl: { compact: true },
+      dragRotate: false,
+      pitchWithRotate: false,
+      // The clipped top map is never the one a reader's pointer lands on
+      // close to the divider; only the bottom map handles interaction, and
+      // its moves are mirrored onto the top one below. Interacting on the
+      // top map's own (clipped-visible) region would desync the two until
+      // the next mirrored move, so it is disabled outright rather than
+      // half-supported.
+      interactive: false,
+    };
+
+    const mapA = new maplibregl.Map({ ...sharedOptions, container: elA, interactive: true } as maplibregl.MapOptions);
+    const mapB = new maplibregl.Map({ ...sharedOptions, container: elB } as maplibregl.MapOptions);
+
+    mapA.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }), 'top-right');
+
+    let syncing = false;
+    mapA.on('move', () => {
+      if (syncing) return;
+      syncing = true;
+      mapB.jumpTo({ center: mapA.getCenter(), zoom: mapA.getZoom(), bearing: mapA.getBearing(), pitch: mapA.getPitch() });
+      syncing = false;
+    });
+
+    /**
+     * `elB` (the Black-share map) stays the same full-size, same-position
+     * box as `elA` at all times — never resized or offset — so its content
+     * lines up pixel-for-pixel with the map underneath it as both pan and
+     * zoom together. Only its `clip-path` moves, hiding everything left of
+     * the divider so `elA` shows through there instead. Clipping this way
+     * (rather than shrinking a wrapper with `overflow: hidden`) sidesteps
+     * the coordinate offset that approach would otherwise introduce, and
+     * modern browsers exclude the clipped-away region from hit-testing too
+     * — though `elB` is also marked `pointer-events-none` outright, so
+     * panning always reaches `elA` regardless of where the divider sits.
+     */
+    function layout() {
+      mapA.resize();
+      mapB.resize();
+    }
+
+    function applySlider(percent: number) {
+      elB.style.clipPath = `inset(0 0 0 ${percent}%)`;
+      divider.style.left = `${percent}%`;
+      statusEl.textContent = `${config.poverty.label} ${percent}%, ${config.black.label} ${100 - percent}%`;
+    }
+
+    slider.addEventListener('input', () => applySlider(Number(slider.value)));
+    window.addEventListener('resize', layout);
+
+    let loadedCount = 0;
+    function onOneLoaded() {
+      loadedCount++;
+      if (loadedCount === 2) loadingEl.remove();
+    }
+
+    mapA.on('load', () => {
+      addChoropleth(mapA, config.poverty);
+      onOneLoaded();
+    });
+    mapB.on('load', () => {
+      addChoropleth(mapB, config.black);
+      onOneLoaded();
+    });
+
+    applySlider(Number(slider.value));
+    layout();
+  }
+
+  // Fires as soon as the element has real, on-screen geometry — immediately
+  // for a standalone page where it's visible from first paint, or the moment
+  // an embedding page reveals it (e.g. by clearing a `hidden` attribute),
+  // whichever applies. Either way `start()` only ever runs once.
+  const root = document.getElementById('compare-root')!;
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      start();
+      observer.disconnect();
+    }
+  });
+  observer.observe(root);
+</script>
