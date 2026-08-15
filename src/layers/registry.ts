@@ -126,8 +126,8 @@ export const LAYERS: LayerDefinition[] = [
         es: 'La propia redacción del registro interno de búsquedas de la agencia estaba incompleta al publicarse — nombraba personal individual y números de caso. Este proyecto no publica ni reproduce ese archivo; aquí solo consta un total mensual de búsquedas internas. Consulte el README de la carpeta de documentos reproducidos para ver qué se omitió y por qué.',
       },
       {
-        en: 'Contract status (added August 2026, as Minnesota cities began ending Flock Safety contracts) distinguishes a Tier 1/2-documented ending — "Suspended," "Terminated," "Not renewed," "Expired" — from one that is only reported: "Reported ended" (a distinct glyph on the map, and "Reported" rather than "Confirmed" confidence) means multiple news outlets, but no council resolution, agency memo, or other primary record yet, describe this contract as ending. That is frequently a live, unsettled situation — a manager’s action a council could reverse, a story still developing — not a weaker version of a settled fact. Both kinds of ending stop the jurisdiction’s green wash; only a confirmed one clears it to plain neutral, and a reported one instead washes it a duller, second colour. A jurisdiction that shows neither is not evidence its contract continues — only that no report has reached this layer yet.',
-        es: 'El estado del contrato (agregado en agosto de 2026, cuando ciudades de Minnesota comenzaron a terminar contratos con Flock Safety) distingue una finalización documentada en Nivel 1/2 —"Suspendido", "Terminado", "No renovado", "Vencido"— de una que solo se reporta: "Finalización reportada" (un ícono distinto en el mapa, y confianza "Reportado" en lugar de "Confirmado") significa que varios medios periodísticos, pero aún ningún acuerdo del concejo, memorando de la agencia u otro registro primario, describen este contrato como finalizado. Con frecuencia se trata de una situación en curso y no resuelta —una acción de un gerente que un concejo podría revertir, una historia aún en desarrollo— no una versión más débil de un hecho ya resuelto. Ambos tipos de finalización detienen el tono verde de la jurisdicción; solo una confirmada lo deja en un neutro plano, y una reportada lo tiñe de un segundo color más apagado. Que una jurisdicción no muestre ninguno de los dos no es evidencia de que su contrato continúe — solo de que ningún reporte ha llegado aún a esta capa.',
+        en: 'Contract status (added August 2026, as Minnesota cities began ending Flock Safety contracts) distinguishes a Tier 1/2-documented ending — "Suspended," "Terminated," "Not renewed," "Expired" — from one that is only reported: "Reported ended" (a distinct glyph on the map, and "Reported" rather than "Confirmed" confidence) means multiple news outlets, but no council resolution, agency memo, or other primary record yet, describe this contract as ending. That is frequently a live, unsettled situation — a manager’s action a council could reverse, a story still developing — not a weaker version of a settled fact. Both the point and the jurisdiction under it show which kind: a confirmed ending washes red, a reported one a duller amber, and an active, confirmed contract green. A jurisdiction that shows none of the three is not evidence its contract continues — only that no report has reached this layer yet.',
+        es: 'El estado del contrato (agregado en agosto de 2026, cuando ciudades de Minnesota comenzaron a terminar contratos con Flock Safety) distingue una finalización documentada en Nivel 1/2 —"Suspendido", "Terminado", "No renovado", "Vencido"— de una que solo se reporta: "Finalización reportada" (un ícono distinto en el mapa, y confianza "Reportado" en lugar de "Confirmado") significa que varios medios periodísticos, pero aún ningún acuerdo del concejo, memorando de la agencia u otro registro primario, describen este contrato como finalizado. Con frecuencia se trata de una situación en curso y no resuelta —una acción de un gerente que un concejo podría revertir, una historia aún en desarrollo— no una versión más débil de un hecho ya resuelto. Tanto el punto como la jurisdicción debajo muestran de qué tipo se trata: una finalización confirmada se tiñe de rojo, una reportada de un ámbar más apagado, y un contrato activo y confirmado de verde. Que una jurisdicción no muestre ninguno de los tres no es evidencia de que su contrato continúe — solo de que ningún reporte ha llegado aún a esta capa.',
       },
     ],
     geometry: 'point',
@@ -135,22 +135,18 @@ export const LAYERS: LayerDefinition[] = [
     colorLight: '#a16207',
     markerIcon: {
       icon: 'FileText',
-      // Both shape AND colour carry the status distinction. Active and
-      // Reported ended share their exact colour with the jurisdiction wash
-      // (tintWhenRelated's `color`/`secondaryWhen` below) — one palette, read
-      // the same way at the point and the polygon. A confirmed ending is the
-      // one place point and polygon deliberately part ways: the polygon
-      // washes to plain neutral (its narrower claim — "nothing documented
-      // here" — would be false for a confirmed-ended contract), while the
-      // point itself turns red, because a reader scanning the map for what
-      // changed should not have to click through to learn a contract was
-      // cancelled. Every value named here explicitly, `Active` included,
-      // rather than leaving it to the top-level `icon`/`color` fallback: a
-      // record with no `status` attribute at all (there shouldn't be one,
-      // but nothing enforces that at ingest — see ContractStatus's own
-      // comment in types.ts) still falls back to this layer's plain identity
-      // yellow, which reads as "unknown," not as a fourth, unlabelled status
-      // colour.
+      // Both shape AND colour carry the status distinction, and every colour
+      // here is exactly the one the jurisdiction wash uses for the same
+      // statuses (tintWhenRelated's `color`/`cancelledWhen`/`secondaryWhen`
+      // below) — one palette, read the same way at the point and the
+      // polygon, so a reader learns green/red/amber once and it means the
+      // same thing wherever it shows up. Every value named here explicitly,
+      // `Active` included, rather than leaving it to the top-level
+      // `icon`/`color` fallback: a record with no `status` attribute at all
+      // (there shouldn't be one, but nothing enforces that at ingest — see
+      // ContractStatus's own comment in types.ts) still falls back to this
+      // layer's plain identity yellow, which reads as "unknown," not as a
+      // fourth, unlabelled status colour.
       byValue: {
         key: 'status',
         icons: {
@@ -171,11 +167,9 @@ export const LAYERS: LayerDefinition[] = [
           Active: { color: '#86efac', colorLight: '#064e3b' },
           // Red for a confirmed ending — the one status change on this
           // record a reader should catch without opening the panel. The
-          // jurisdiction it drives still washes to plain neutral rather than
-          // red (see tintWhenRelated's own comment): the polygon's neutral
-          // means "nothing documented here," which a confirmed-ended
-          // contract is not, so the point carries the alarm colour and the
-          // polygon keeps its narrower, honest claim.
+          // jurisdiction it drives washes the same red (tintWhenRelated's
+          // `cancelledWhen` below), so the fact reads identically whether a
+          // reader is looking at the pin or the polygon under it.
           Suspended: { color: '#f87171', colorLight: '#7f1d1d' },
           Terminated: { color: '#f87171', colorLight: '#7f1d1d' },
           'Not renewed': { color: '#f87171', colorLight: '#7f1d1d' },
@@ -413,15 +407,17 @@ export const LAYERS: LayerDefinition[] = [
     // vendor contract — see the field's own comment in types.ts for why this
     // is a coverage cue and not a score. excludeWhen means a jurisdiction
     // whose only contract has since ended, confirmed or merely reported
-    // (see ContractStatus's own comment in types.ts) stops glowing on the
-    // strength of a record that no longer describes the present, without
-    // the record itself leaving the map. secondaryWhen then repaints a
-    // jurisdiction in that second group — reported ended, not yet a
-    // confirmed one — a duller amber instead of plain neutral, so
-    // "contested and unconfirmed" is its own visible state rather than
-    // collapsing into either "documented" or "nothing on record." Every
-    // polygon that gets neither wash staying neutral is the honest state
-    // of the data, not a verdict on the agency.
+    // (see ContractStatus's own comment in types.ts) stops glowing green on
+    // the strength of a record that no longer describes the present,
+    // without the record itself leaving the map. cancelledWhen and
+    // secondaryWhen then repaint that jurisdiction one of two other colours
+    // rather than plain neutral: red for a confirmed cancellation, a duller
+    // amber for one that's still only reported — so "confirmed cancelled,"
+    // "reported but contested," and "nothing on record" are three distinct
+    // visible states instead of collapsing "cancelled" and "never had one"
+    // into the same neutral. Only a polygon with no ending on record at all
+    // stays neutral, and that staying neutral is the honest state of the
+    // data, not a verdict on the agency.
     // Bright mint on dark, deep emerald on light — the first plain green
     // (Tailwind's own 500/600 step) read at roughly 1.1:1 against the light
     // basemap's neutral unselected grey, i.e. functionally invisible; both
@@ -439,14 +435,28 @@ export const LAYERS: LayerDefinition[] = [
       },
       color: '#86efac',
       colorLight: '#064e3b',
+      // Red, matching the pin's own colour for the same statuses (see
+      // vendor_contract's markerIcon.byValue.colors) — a confirmed
+      // cancellation is the one status change a reader should be able to
+      // spot without a click, at the polygon as well as the point. Ranked
+      // above secondaryWhen: see applyRelatedTint's own comment for why a
+      // jurisdiction with both a confirmed cancellation and an unrelated
+      // reported one shows the confirmed fact.
+      cancelledWhen: {
+        key: 'status',
+        values: ['Suspended', 'Terminated', 'Not renewed', 'Expired'],
+        color: '#f87171',
+        colorLight: '#7f1d1d',
+      },
       // A duller amber, not a paler green: a jurisdiction whose only
       // documented contract is only *reported* ended (see ContractStatus's
       // own comment in types.ts) is genuinely a different state from one
-      // with a confirmed, active contract, and from one with none on record
-      // at all — visible without a click, the same way the green wash
-      // already is. Amber reads as "unsettled" against this basemap the
-      // way the confidence label already does in the detail panel; this is
-      // that same distinction made visible at the polygon.
+      // with a confirmed, active contract, from one with a confirmed
+      // cancellation, and from one with none on record at all — visible
+      // without a click, the same way the other washes already are. Amber
+      // reads as "unsettled" against this basemap the way the confidence
+      // label already does in the detail panel; this is that same
+      // distinction made visible at the polygon.
       secondaryWhen: {
         key: 'status',
         values: ['Reported ended'],

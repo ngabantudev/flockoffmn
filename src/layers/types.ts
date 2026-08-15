@@ -713,14 +713,33 @@ export interface LayerDefinition {
      * `ContractStatus`'s `'Reported ended'` value). Only applied when no
      * match clears `color`'s bar (a jurisdiction with one active and one
      * reported-ended contract reads as fully documented, not contested) and
-     * `secondaryWhen`'s own values are not also excluded above — the two
-     * fields are independent tests, not a fallback chain, so declaring a
-     * value here without also naming it in `excludeWhen` would let a
-     * merely-reported record count as a confirmed one. Omit for a join with
-     * nothing worth flagging as contested rather than simply present or
-     * absent.
+     * no match clears `cancelledWhen`'s bar either — the three tiers rank
+     * confirmed-active above confirmed-cancelled above merely-reported, so a
+     * jurisdiction with both a confirmed cancellation and an unrelated
+     * reported one shows the confirmed fact. `secondaryWhen`'s own values
+     * are not also excluded above — the fields are independent tests, not a
+     * fallback chain, so declaring a value here without also naming it in
+     * `excludeWhen` would let a merely-reported record count as a confirmed
+     * one. Omit for a join with nothing worth flagging as contested rather
+     * than simply present or absent.
      */
     secondaryWhen?: { key: string; values: string[]; color: string; colorLight: string };
+    /**
+     * A third wash, ranked above `secondaryWhen` and below `color`, for a
+     * jurisdiction whose only joined match is a *confirmed* ending rather
+     * than merely absent or merely reported — `ContractStatus`'s
+     * `'Suspended'`/`'Terminated'`/`'Not renewed'`/`'Expired'` values. Unlike
+     * those statuses' effect on the point itself (see the `vendor_contract`
+     * registry entry's `markerIcon.byValue.colors` — the pin turns the same
+     * red), this is a genuine exception to `color`'s own "a document exists"
+     * claim: the jurisdiction is being told apart from one with *no* record
+     * at all, on purpose, because a reader scanning for what changed
+     * shouldn't have to click through to learn a contract there was
+     * cancelled. Same independent-test relationship to `excludeWhen` as
+     * `secondaryWhen`. Omit for a join with nothing worth flagging as
+     * cancelled rather than simply present or absent.
+     */
+    cancelledWhen?: { key: string; values: string[]; color: string; colorLight: string };
   };
   /**
    * The zooms across which this layer's records emerge.

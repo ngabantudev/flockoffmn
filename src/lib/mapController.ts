@@ -115,6 +115,7 @@ export interface ClientLayer {
     color: string;
     colorLight: string;
     secondaryWhen?: { key: string; values: string[]; color: string; colorLight: string };
+    cancelledWhen?: { key: string; values: string[]; color: string; colorLight: string };
   };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
@@ -673,9 +674,19 @@ export class MapController {
             'case',
             ['boolean', ['feature-state', 'related'], false],
             this.basemapDark ? layer.tintWhenRelated.color : layer.tintWhenRelated.colorLight,
-            // The contested wash only ever shows for a jurisdiction the
-            // `related` case above didn't already claim, so this branch and
-            // the one above can never both fire for the same polygon.
+            // The cancelled and contested washes only ever show for a
+            // jurisdiction the `related` case above didn't already claim,
+            // and applyRelatedTint never sets both of their flags on the
+            // same feature — so at most one of the next two branches can
+            // ever fire for a given polygon.
+            ...(layer.tintWhenRelated.cancelledWhen
+              ? [
+                  ['boolean', ['feature-state', 'relatedCancelled'], false],
+                  this.basemapDark
+                    ? layer.tintWhenRelated.cancelledWhen.color
+                    : layer.tintWhenRelated.cancelledWhen.colorLight,
+                ]
+              : []),
             ...(layer.tintWhenRelated.secondaryWhen
               ? [
                   ['boolean', ['feature-state', 'relatedSecondary'], false],
@@ -733,9 +744,14 @@ export class MapController {
         ['boolean', ['feature-state', 'hover'], false],
         0.28,
         ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 0.34] : []),
-        // A smaller bump than `related`'s — legible as "something's here" at
-        // a glance without reading as equally settled a fact as the green
-        // wash it sits one step below.
+        // A cancellation is as settled a fact as an active contract, so it
+        // reads at the same strength as `related` — only the colour tells
+        // the two apart.
+        ...(tintActive && layer.tintWhenRelated?.cancelledWhen
+          ? [['boolean', ['feature-state', 'relatedCancelled'], false], 0.34]
+          : []),
+        // A smaller bump than the other two — legible as "something's here"
+        // at a glance without reading as equally settled a fact as either.
         ...(tintActive && layer.tintWhenRelated?.secondaryWhen
           ? [['boolean', ['feature-state', 'relatedSecondary'], false], 0.26]
           : []),
@@ -771,6 +787,9 @@ export class MapController {
       ['boolean', ['feature-state', 'hover'], false],
       1.8,
       ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 2.2] : []),
+      ...(tintActive && layer.tintWhenRelated?.cancelledWhen
+        ? [['boolean', ['feature-state', 'relatedCancelled'], false], 2.2]
+        : []),
       ...(tintActive && layer.tintWhenRelated?.secondaryWhen
         ? [['boolean', ['feature-state', 'relatedSecondary'], false], 1.9]
         : []),
@@ -1439,18 +1458,26 @@ export class MapController {
           !rel.excludeWhen ||
           !rel.excludeWhen.values.includes(String(m.properties.attributes[rel.excludeWhen.key])),
       );
-      // Independent of the check above, not a fallback from it: a match
-      // that clears `related` already outranks the contested wash (see
-      // polygonFillColor), so this only ever ends up mattering for a
-      // jurisdiction where nothing does.
+      // Ranked below `related`, above `relatedSecondary`: a confirmed
+      // cancellation outranks a merely-reported one when a jurisdiction
+      // somehow has both and nothing active.
+      const relatedCancelled =
+        !related &&
+        rel.cancelledWhen &&
+        matches?.some((m) => rel.cancelledWhen!.values.includes(String(m.properties.attributes[rel.cancelledWhen!.key])));
+      // Independent of the checks above, not a fallback from them: either
+      // one already outranks the contested wash (see polygonFillColor), so
+      // this only ever ends up mattering for a jurisdiction where neither
+      // does.
       const relatedSecondary =
         !related &&
+        !relatedCancelled &&
         rel.secondaryWhen &&
         matches?.some((m) => rel.secondaryWhen!.values.includes(String(m.properties.attributes[rel.secondaryWhen!.key])));
-      if (related || relatedSecondary) {
+      if (related || relatedCancelled || relatedSecondary) {
         this.map.setFeatureState(
           { source: src, id: feature.properties.id },
-          { related: !!related, relatedSecondary: !!relatedSecondary },
+          { related: !!related, relatedCancelled: !!relatedCancelled, relatedSecondary: !!relatedSecondary },
         );
       }
     }
