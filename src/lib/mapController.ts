@@ -239,6 +239,22 @@ const CONE_PROP = '__cone';
 const NEUTRAL_POLYGON_DARK = '#64748b';
 const NEUTRAL_POLYGON_LIGHT = '#94a3b8';
 
+/**
+ * The hover/select *outline* colour for a `polygonClick: 'highlight'`
+ * layer — the wealldobettermn.org effect this borrows (its own
+ * OUTLINE_COLOR, WardMap.tsx): a selected ward's fill stays whatever colour
+ * it already has, but its outline pops to a fixed near-white (dark
+ * basemap) or near-black (light basemap) and thickens, so which one is
+ * highlighted reads instantly regardless of the polygon's own colour.
+ * Deliberately a *different* constant from NEUTRAL_POLYGON_DARK/LIGHT
+ * above (which colour the *fill* when nothing is selected) — this is what
+ * lets polygonOutlineColor() diverge from polygonFillColor() for exactly
+ * this one state. Matches global.css's --color-ink-100 (this site's own
+ * primary-text ink) rather than inventing a new colour for the occasion.
+ */
+const POLYGON_HIGHLIGHT_OUTLINE_DARK = '#e7ecf3';
+const POLYGON_HIGHLIGHT_OUTLINE_LIGHT = '#131a24';
+
 /** Written onto derived grid blocks by us; not an upstream field. */
 const BLOCK_COUNT_PROP = '__blockCount';
 
@@ -742,6 +758,33 @@ export class MapController {
   }
 
   /**
+   * A `polygonClick: 'highlight'` layer's *outline* colour — deliberately
+   * separate from polygonFillColor() above. The fill keeps sharing that
+   * expression (the polygon's own identity colour when selected/hovered,
+   * NEUTRAL_POLYGON_DARK/LIGHT otherwise); the outline instead pops to
+   * POLYGON_HIGHLIGHT_OUTLINE_DARK/LIGHT — see that constant's own comment
+   * for why a fixed near-white/near-black reads more clearly than "the same
+   * colour, just thicker" once a reader is looking for which one they
+   * selected, not what category it belongs to. Only called for
+   * `polygonClick: 'highlight'` layers (see addLayer below); every other
+   * polygon kind keeps outline === fill, unchanged. Takes no layer argument
+   * — unlike polygonFillColor(), only the basemap flavor decides this
+   * colour, never the layer's own identity colour.
+   */
+  private polygonOutlineColor(): maplibregl.ExpressionSpecification {
+    return [
+      'case',
+      [
+        'any',
+        ['boolean', ['feature-state', 'selected'], false],
+        ['boolean', ['feature-state', 'hover'], false],
+      ],
+      this.basemapDark ? POLYGON_HIGHLIGHT_OUTLINE_DARK : POLYGON_HIGHLIGHT_OUTLINE_LIGHT,
+      this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
    * Re-keys every basemap-dependent paint property after `basemapDark`
    * changes: a colour chosen while dark was current — a layer's own
    * identity colour, or a casing drawn in the basemap's own background —
@@ -761,10 +804,14 @@ export class MapController {
         if (!layer.categoryColors) {
           const fill = this.polygonFillColor(layer);
           this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', fill);
-          // The outline is drawn in the same expression as the fill (see
-          // addLayer), so it goes stale in exactly the same way if left out.
+          // The outline shares the fill's expression for every polygon kind
+          // except `polygonClick: 'highlight'` (see addLayer's own comment
+          // and polygonOutlineColor) — that one pops to a fixed near-white/
+          // near-black instead, which is itself basemap-dependent and needs
+          // the same re-key here, just from a different source.
           if (this.map.getLayer(`${layer.id}-outline`)) {
-            this.map.setPaintProperty(`${layer.id}-outline`, 'line-color', fill);
+            const outline = layer.polygonClick === 'highlight' ? this.polygonOutlineColor() : fill;
+            this.map.setPaintProperty(`${layer.id}-outline`, 'line-color', outline);
           }
         }
         if (this.map.getLayer(`${layer.id}-labels`)) {
@@ -1454,8 +1501,12 @@ export class MapController {
       // for.
       const subtle = layer.selectedEmphasis === 'subtle';
       // Fill and outline share one expression — see polygonFillColor for
-      // which of the three it picks and why.
+      // which of the three it picks and why. The exception is a
+      // `polygonClick: 'highlight'` layer's *outline*: see
+      // polygonOutlineColor's own comment for why that one pops to a fixed
+      // near-white/near-black instead of sharing polygonColor.
       const polygonColor = this.polygonFillColor(layer);
+      const outlineColor = highlightMode ? this.polygonOutlineColor() : polygonColor;
 
       // The grid stands under the parcels and fades out exactly as they fade
       // in, so the two are never both at full strength over the same ground.
@@ -1578,7 +1629,7 @@ export class MapController {
           type: 'line',
           source: src,
           paint: {
-            'line-color': polygonColor,
+            'line-color': outlineColor,
             // A hovered ward's border thickens a little, a tapped one thickens
             // further, so the state reads at a glance even for a reader who
             // can't tell the fill colours apart.

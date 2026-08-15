@@ -675,19 +675,42 @@ export const LAYERS: LayerDefinition[] = [
       },
     ],
     geometry: 'point',
-    color: '#38bdf8',
-    colorLight: '#067baf',
+    // Blue — categorical slot 1 of the validated 7-hue dark-mode order
+    // below (dataviz skill: fixed order, never cycled), matching this
+    // layer's own most identifiable category, "Police department". Was a
+    // brighter, more saturated sky blue (#38bdf8/#067baf) — the whole
+    // surveillance category defaulting to two different near-neon
+    // blue-cyans (this layer's own colour and alpr_reported's, both always
+    // on) was what actually made a fresh dark-mode load read as navy rather
+    // than the near-black-and-white wealldobettermn.org's own basemap is —
+    // the basemap was never the difference; see this repo's own commit
+    // history around the four-style basemap mirror for the pixel-level
+    // comparison that found this.
+    color: '#3987e5',
+    colorLight: '#2a78d6',
     // Category colour now applies at every zoom (see mapController.ts), and
-    // the rarest value — "Other or unclassified", muted slate #94a3b8 —
-    // reads as almost no edge at all against the dark basemap's own
-    // near-black background under the default basemap-coloured ring. A fixed
-    // white ring keeps every dot legible regardless of which category colour
-    // it landed on or which basemap it's sitting over.
+    // the rarest value — "Other or unclassified" — reads as almost no edge
+    // at all against the dark basemap's own near-black background under the
+    // default basemap-coloured ring. A fixed white ring keeps every dot
+    // legible regardless of which category colour it landed on or which
+    // basemap it's sitting over.
     pointStrokeColor: '#ffffff',
     bearingKey: 'direction',
     categoryColors: {
       key: 'operatorType',
       label: { en: 'Who runs it', es: 'Quién lo opera' },
+      // One hex per value, not a light/dark pair — this map's categoryColors
+      // type has no light-mode variant (see layers/types.ts), so these are
+      // the dataviz skill's dark-mode categorical steps used everywhere:
+      // OKLCH L 0.48–0.67, chosen to still read reasonably against a light
+      // basemap rather than being tuned exclusively for one. "Not recorded"
+      // is deliberately NOT from that ramp — it's the skill's separate,
+      // reserved "critical" status colour, because that's what it actually
+      // is: an alarm ("still unidentified"), not a peer category, and status
+      // colours are kept visually distinct from categorical ones on purpose
+      // so neither is mistaken for the other. "Other or unclassified" is
+      // likewise not a categorical hue — a genuine non-category gets the
+      // skill's neutral ink tone, not an invented ninth colour.
       colors: [
         // First, because it is the answer four readers in five give — but not
         // muted. A desaturated grey here used to read as "no camera," the
@@ -695,17 +718,17 @@ export const LAYERS: LayerDefinition[] = [
         // reader, just one whose operator nobody has identified yet. A
         // saturated red keeps that legible at a glance, the way a device's own
         // recording light would.
-        { value: 'Not recorded', color: '#dc2626' },
-        { value: 'Police department', color: '#38bdf8' },
-        { value: 'County sheriff', color: '#22d3ee' },
-        { value: 'State agency', color: '#a78bfa' },
-        { value: 'Multi-agency task force', color: '#fb7185' },
-        { value: 'Neighbourhood association', color: '#4ade80' },
-        { value: 'School or campus', color: '#facc15' },
-        { value: 'Vendor-operated (Flock)', color: '#f97316' },
-        { value: 'Other or unclassified', color: '#94a3b8' },
+        { value: 'Not recorded', color: '#d03b3b' },
+        { value: 'Police department', color: '#3987e5' },
+        { value: 'County sheriff', color: '#199e70' },
+        { value: 'State agency', color: '#9085e9' },
+        { value: 'Multi-agency task force', color: '#d55181' },
+        { value: 'Neighbourhood association', color: '#008300' },
+        { value: 'School or campus', color: '#c98500' },
+        { value: 'Vendor-operated (Flock)', color: '#d95926' },
+        { value: 'Other or unclassified', color: '#898781' },
       ],
-      fallback: '#94a3b8',
+      fallback: '#898781',
     },
     // Plain locations, not a density estimate. A faint, uncoloured speck is
     // visible from the map's own minimum zoom (3 — the whole state, or the
@@ -825,12 +848,18 @@ export const LAYERS: LayerDefinition[] = [
       },
     ],
     geometry: 'point',
-    // Kin to the crowd-sourced camera layer's sky blue rather than a colour
-    // of its own: same subject, stronger provenance. Deliberately not the
-    // detention layer's rose, which it collided with exactly when this entry
-    // was first written.
-    color: '#22d3ee',
-    colorLight: '#0e7490',
+    // Kin to the crowd-sourced camera layer's blue rather than a colour of
+    // its own: same subject, stronger provenance — a deeper step of the
+    // same hue reads as "the more official version" without becoming a
+    // second, competing categorical colour on a map that already shows one
+    // blue for "Police department" (alpr's own categoryColors). Was a
+    // separate near-neon cyan (#22d3ee/#0e7490); see alpr's own colour
+    // comment for why two always-on layers each picking a different bright
+    // blue-cyan was the actual source of the map reading "navy," not the
+    // basemap. Deliberately not the detention layer's rose, which it
+    // collided with exactly when this entry was first written.
+    color: '#1c5cab',
+    colorLight: '#184f95',
     filters: [
       { key: 'agencyName', kind: 'enum', label: { en: 'Reporting agency', es: 'Agencia informante' } },
     ],
