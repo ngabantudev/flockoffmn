@@ -8,7 +8,6 @@ import {
   FLAVOR_VARIANT_PAINT_KEYS,
   METRO_BOUNDS,
   METRO_CENTER,
-  MN_BOUNDS,
 } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { createElement } from 'lucide';
@@ -536,9 +535,9 @@ export class MapController {
     this.map.on('load', () => {
       this.hasLoaded = true;
       // Metro on load, not the statewide MN_BOUNDS — see METRO_CENTER's
-      // comment in mapStyle.ts. MN_BOUNDS is still where the "Reset to
-      // Minnesota" button (resetView(), below) sends a reader who has
-      // panned or filtered elsewhere and wants the whole state back.
+      // comment in mapStyle.ts. resetView() (below) fits this same
+      // METRO_BOUNDS, so the reset button returns a reader who has panned
+      // or filtered elsewhere to exactly what they saw on first load.
       this.map.fitBounds(METRO_BOUNDS, { padding: 24, animate: false });
     });
 
@@ -3023,8 +3022,14 @@ export class MapController {
     );
   }
 
+  /**
+   * Return to exactly the view a reader who just opened the page sees —
+   * METRO_BOUNDS, the same fitBounds call 'load' above runs — not the
+   * statewide MN_BOUNDS. A reset that lands somewhere the reader never
+   * actually started from is not a reset.
+   */
   resetView() {
-    this.map.fitBounds(MN_BOUNDS, {
+    this.map.fitBounds(METRO_BOUNDS, {
       padding: this.fitPadding(24),
       duration: REDUCED_MOTION ? 0 : 500,
     });
