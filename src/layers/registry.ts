@@ -633,8 +633,8 @@ export const LAYERS: LayerDefinition[] = [
     // whole surveillance category was switched on by category.
     defaultOn: true,
     label: {
-      en: 'ALPR / Flock cameras',
-      es: 'Cámaras ALPR / Flock',
+      en: 'ALPR Cameras (Community Reported)',
+      es: 'Cámaras ALPR (reportadas por la comunidad)',
     },
     summary: {
       en: 'Automated licence plate readers mapped by volunteers — cameras that photograph and log passing vehicles.',
@@ -795,8 +795,8 @@ export const LAYERS: LayerDefinition[] = [
     // The readers the thrown lines land on. Off, they would land on nothing.
     defaultOn: true,
     label: {
-      en: 'ALPR readers agencies reported',
-      es: 'Lectores ALPR reportados por agencias',
+      en: 'ALPR Cameras (BCA Reported)',
+      es: 'Cámaras ALPR (reportadas por el BCA)',
     },
     summary: {
       en: 'Readers a named police department or sheriff told the state it operates, and where.',
