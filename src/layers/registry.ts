@@ -82,6 +82,18 @@ const HOLC_GRADE_COLORS = {
 } as const;
 
 /**
+ * Shared `geometryNote` for every layer keyed to a census tract
+ * (ej_cumulative and the three demographic_* layers): a tract's own name is
+ * just a number, and nothing in the source data names it anything else — see
+ * tractLabel's comment in ej-cumulative.mjs for why no neighborhood name is
+ * invented here.
+ */
+const CENSUS_TRACT_NOTE = {
+  en: 'A census tract is a U.S. Census Bureau statistical area of roughly 1,200–8,000 residents, drawn for reporting — not an official neighborhood.',
+  es: 'Una sección censal es un área estadística de la Oficina del Censo de EE. UU. de aproximadamente 1200 a 8000 residentes, trazada para fines de informes — no un barrio oficial.',
+};
+
+/**
  * Plain-language label for each of CI-MAP's 26 stressor codes, for the
  * `ej_cumulative` layer's `adverseList` pill row.
  *
@@ -1972,6 +1984,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'Minnesota’s 2023 cumulative impacts law (Minn. Stat. § 116.065) requires the state to weigh the burdens a community already carries before permitting new ones. CI-MAP is the Pollution Control Agency’s draft implementation: for every census tract it counts stressors — air pollution risk, cleanup sites, impaired waters, traffic, asthma and lead rates, tree cover and more, 26 indicators in all — and compares the count to county and state medians. Laid beside the 1930s redlining grades and the covenant map, it shows where the historical lines and present-day burdens coincide. A tract is an aggregate of thousands of people; nothing here describes a household.',
       es: 'La ley de impactos acumulativos de Minnesota de 2023 (Minn. Stat. § 116.065) exige al estado sopesar las cargas que una comunidad ya soporta antes de permitir otras nuevas. CI-MAP es la implementación preliminar de la Agencia de Control de la Contaminación: para cada sección censal cuenta factores de estrés — riesgo de contaminación del aire, sitios de limpieza, aguas degradadas, tráfico, tasas de asma y plomo, cobertura arbórea y más, 26 indicadores en total — y compara el recuento con las medianas del condado y del estado. Junto a las calificaciones de redlining de los años 30 y el mapa de convenios, muestra dónde coinciden las líneas históricas y las cargas actuales. Una sección censal agrega a miles de personas; nada aquí describe un hogar.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'CI-MAP is a public draft first published in December 2025; scores and methodology may change as rulemaking under the statute proceeds.',
@@ -2128,6 +2141,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'The Census Bureau’s American Community Survey samples households continuously and publishes a five-year rolling average for every census tract — a few thousand residents each. This layer shows what share of each tract is Black or African American, counted separately from Hispanic or Latino origin so a Black Hispanic resident is not counted twice. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Black neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
       es: 'La Encuesta sobre la Comunidad de la Census Bureau muestrea hogares de forma continua y publica un promedio móvil de cinco años para cada sección censal, de unos pocos miles de residentes cada una. Esta capa muestra qué proporción de cada sección es negra o afroamericana, contada por separado del origen hispano o latino para que un residente negro hispano no se cuente dos veces. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios negros — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'A five-year rolling average, not a count taken on any single date.',
@@ -2195,6 +2209,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'The same American Community Survey five-year rolling average as the Black population share layer, showing what share of each tract is Hispanic or Latino of any race. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Latinx neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
       es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que la capa de proporción de población negra, mostrando qué proporción de cada sección es hispana o latina de cualquier raza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios latinos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'A five-year rolling average, not a count taken on any single date.',
@@ -2262,6 +2277,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'The same American Community Survey five-year rolling average as the two population-share layers, showing what share of each tract’s residents live below the federal poverty line. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in low-income neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the rate itself.',
       es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que las dos capas de proporción de población, mostrando qué proporción de los residentes de cada sección vive por debajo del umbral federal de pobreza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios de bajos ingresos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la tasa misma.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'A five-year rolling average, not a count taken on any single date.',

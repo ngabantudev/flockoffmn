@@ -28,6 +28,8 @@ export interface ClientLayer {
   label: string;
   summary: string;
   whatThisMeans: string;
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  geometryNote?: string;
   limitations: string[];
   /** Concrete, cited stakes shown inside "What this means", if the layer names any. */
   impactSpheres?: {

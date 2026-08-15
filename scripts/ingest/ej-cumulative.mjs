@@ -67,6 +67,28 @@ function text(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
+/**
+ * The Census Bureau's own display form of a tract number — the same
+ * formatting data.census.gov itself uses — read out of the GEOID rather than
+ * shown raw. A GEOID is state(2) + county(3) + tract(6); the tract's 6 digits
+ * are a 4-digit base number and a 2-digit hundredths suffix ("770100" is
+ * tract 7701, suffix .00; "000203" is tract 2, suffix .03). The suffix is
+ * dropped when it's ".00" — most Minnesota tracts have never been split — and
+ * kept otherwise, so a tract that *was* split still reads as the specific
+ * piece CI-MAP means, not its unsplit parent.
+ *
+ * A tract has no name beyond this number: the source carries no neighborhood
+ * field, and this project does not invent one from a boundary this dataset
+ * never drew (CLAUDE.md §0.3 — no inference where a document doesn't say).
+ */
+function tractLabel(geoid) {
+  if (typeof geoid !== 'string' || geoid.length !== 11) return null;
+  const code = geoid.slice(5);
+  const base = String(Number(code.slice(0, 4)));
+  const suffix = code.slice(4);
+  return suffix === '00' ? base : `${base}.${suffix}`;
+}
+
 // CI-MAP's own fixed denominator (see this file's header comment): 26
 // indicators scored per tract. Computed once here into a display string
 // rather than left to be reassembled with a hardcoded "26" wherever
@@ -112,6 +134,7 @@ async function main() {
     const stressorCount = num(p[FIELDS.stressorCount]);
     const countyMedian = num(p[FIELDS.countyMedian]);
     const stateMedian = num(p[FIELDS.stateMedian]);
+    const tractNumber = tractLabel(geoid);
 
     return {
       type: 'Feature',
@@ -119,7 +142,7 @@ async function main() {
       properties: {
         id: slugId('ej', geoid),
         layer: 'ej_cumulative',
-        name: `Tract ${geoid}${countyName ? ` — ${countyName} County` : ''}`,
+        name: `Census Tract ${tractNumber ?? geoid}${countyName ? `, ${countyName} County` : ''}`,
         county: countyName,
         state: 'MN',
         // A tract GEOID is state+county+tract; the county is its prefix.
@@ -132,6 +155,10 @@ async function main() {
           // joins on, and a join key that only exists as a substring of
           // something else is a join waiting to be parsed wrong.
           geoid,
+          // The Census Bureau's own short form of the same tract, for anyone
+          // cross-referencing a data.census.gov profile page — those are
+          // indexed by this number, not the 11-digit GEOID.
+          tractNumber,
           burdenBand: band(stressorCount, countyMedian, stateMedian),
           stressorCount,
           stressorSummary: stressorCount == null ? null : `${stressorCount} / ${TOTAL_STRESSORS}`,

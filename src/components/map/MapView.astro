@@ -23,6 +23,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   label: pick(d.label, locale),
   summary: pick(d.summary, locale),
   whatThisMeans: pick(d.whatThisMeans, locale),
+  geometryNote: d.geometryNote ? pick(d.geometryNote, locale) : undefined,
   limitations: d.limitations.map((l) => pick(l, locale)),
   impactSpheres: d.impactSpheres?.map((s) => ({
     icon: s.icon,
@@ -725,6 +726,12 @@ const strings = {
     titleWrap.append(badge, el('h2', 'text-base font-semibold leading-snug text-ink-100', p.name));
     if (p.county) {
       titleWrap.append(el('p', 'mt-0.5 text-xs text-ink-400', `${p.county}, ${p.state}`));
+    }
+    // What kind of ground this shape actually is, for a name — a tract
+    // number, a HOLC ID — that doesn't say so on its own. See
+    // LayerDefinition.geometryNote's comment in layers/types.ts.
+    if (layer.geometryNote) {
+      titleWrap.append(el('p', 'mt-1 text-xs italic leading-snug text-ink-400', layer.geometryNote));
     }
     // The position itself, for a record that has one exactly. Six decimals is
     // about 11 cm — far finer than a crowd-sourced pin deserves, but it is what
