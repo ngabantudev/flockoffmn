@@ -135,16 +135,22 @@ export const LAYERS: LayerDefinition[] = [
     colorLight: '#a16207',
     markerIcon: {
       icon: 'FileText',
-      // Both shape AND colour carry the status distinction, and the colours
-      // are the same three the jurisdiction wash uses (tintWhenRelated's
-      // `color`/`secondaryWhen` below) — a reader learns the palette once
-      // and reads it at both the point and the polygon. Every value named
-      // here explicitly, `Active` included, rather than leaving it to the
-      // top-level `icon`/`color` fallback: a record with no `status`
-      // attribute at all (there shouldn't be one, but nothing enforces that
-      // at ingest — see ContractStatus's own comment in types.ts) still
-      // falls back to this layer's plain identity yellow, which reads as
-      // "unknown," not as a fourth, unlabelled status colour.
+      // Both shape AND colour carry the status distinction. Active and
+      // Reported ended share their exact colour with the jurisdiction wash
+      // (tintWhenRelated's `color`/`secondaryWhen` below) — one palette, read
+      // the same way at the point and the polygon. A confirmed ending is the
+      // one place point and polygon deliberately part ways: the polygon
+      // washes to plain neutral (its narrower claim — "nothing documented
+      // here" — would be false for a confirmed-ended contract), while the
+      // point itself turns red, because a reader scanning the map for what
+      // changed should not have to click through to learn a contract was
+      // cancelled. Every value named here explicitly, `Active` included,
+      // rather than leaving it to the top-level `icon`/`color` fallback: a
+      // record with no `status` attribute at all (there shouldn't be one,
+      // but nothing enforces that at ingest — see ContractStatus's own
+      // comment in types.ts) still falls back to this layer's plain identity
+      // yellow, which reads as "unknown," not as a fourth, unlabelled status
+      // colour.
       byValue: {
         key: 'status',
         icons: {
@@ -163,16 +169,17 @@ export const LAYERS: LayerDefinition[] = [
           // contract reads as one fact in one colour whether you're looking
           // at the pin or the jurisdiction under it.
           Active: { color: '#86efac', colorLight: '#064e3b' },
-          // A settled, neutral grey — deliberately not the alarm-red or
-          // vendor-yellow this glyph might otherwise reach for: a confirmed
-          // ending is a plain fact, not itself the finding. The jurisdiction
-          // it drives washes to plain neutral for the same reason (see
-          // tintWhenRelated's own comment); this is that same "settled, not
-          // urgent" read carried onto the point.
-          Suspended: { color: '#94a3b8', colorLight: '#334155' },
-          Terminated: { color: '#94a3b8', colorLight: '#334155' },
-          'Not renewed': { color: '#94a3b8', colorLight: '#334155' },
-          Expired: { color: '#94a3b8', colorLight: '#334155' },
+          // Red for a confirmed ending — the one status change on this
+          // record a reader should catch without opening the panel. The
+          // jurisdiction it drives still washes to plain neutral rather than
+          // red (see tintWhenRelated's own comment): the polygon's neutral
+          // means "nothing documented here," which a confirmed-ended
+          // contract is not, so the point carries the alarm colour and the
+          // polygon keeps its narrower, honest claim.
+          Suspended: { color: '#f87171', colorLight: '#7f1d1d' },
+          Terminated: { color: '#f87171', colorLight: '#7f1d1d' },
+          'Not renewed': { color: '#f87171', colorLight: '#7f1d1d' },
+          Expired: { color: '#f87171', colorLight: '#7f1d1d' },
           // Same amber as tintWhenRelated.secondaryWhen: "reported, not yet
           // confirmed" is one colour wherever it appears.
           'Reported ended': { color: '#fcd34d', colorLight: '#78350f' },
