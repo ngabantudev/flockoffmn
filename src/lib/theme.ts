@@ -41,6 +41,16 @@ export function setTheme(theme: Theme): void {
     // change above still takes effect for this page view.
   }
   document.dispatchEvent(new CustomEvent<{ theme: Theme }>(THEME_CHANGE_EVENT, { detail: { theme } }));
+  // Site theme and map theme are paired, not independent — matching
+  // wealldobettermn.org's THEME_BASEMAP pairing (src/lib/mapStyles.ts):
+  // picking Light always switches the basemap to Light too, overriding
+  // whatever basemap was picked before. `theme` itself is the paired
+  // MapStyleId here (their literal values are the same two strings), so no
+  // separate lookup table is needed the way the reference's four-basemap
+  // catalog requires one. A visitor can still hand-pick a basemap
+  // afterwards via the in-map "Map theme" control — that choice sticks
+  // until the next site-theme switch, same as the reference.
+  setMapStyle(theme);
 }
 
 /**
@@ -57,20 +67,23 @@ export function onThemeChange(handler: (theme: Theme) => void): () => void {
 }
 
 /**
- * Map basemap flavors. Independent of the site theme by design — see the
- * in-map "Map theme" control (mapController.ts's ThemeControl) — but a
- * visitor who has never touched that control gets whichever of these two
- * defaults matches their site theme (initialMapStyle() below), rather than
- * an arbitrary fixed style.
+ * Map basemap flavors. Paired with the site theme (see setTheme above) —
+ * switching Light/Dark always switches the basemap to match, though a
+ * visitor can hand-pick a basemap afterwards via the in-map "Map theme"
+ * control (mapController.ts's ThemeControl); that choice sticks until the
+ * next site-theme switch.
  *
- * Only two flavors, where the old MapTiler-backed catalog had four
- * (streets-dark, muted-dark, streets-light, minimal-light): regenerating
- * tiles per style used to be the reason to multiply presets, and that cost
- * is gone now that one self-hosted vector archive serves every flavor (see
- * mapStyle.ts's BASEMAP_LAYERS). The cost that remains is hand-maintained
- * paint code, which has to stay legible under every data layer this site
- * carries — so it stays to exactly the two the site theme needs, not the
- * four a swappable vendor made cheap to offer.
+ * Only two flavors, where wealldobettermn.org's OpenFreeMap-backed catalog
+ * has four (fiord, liberty, positron, dark): this site's basemap is a
+ * single self-hosted PMTiles archive (see mapStyle.ts's TILES_URL comment
+ * for why — no tile-provider vendor, no rate ceiling, no third party that
+ * sees a visitor's pan/zoom traffic) rendered through hand-maintained
+ * paint code (BASEMAP_LAYERS) that has to stay legible under every data
+ * layer this site carries. Multiplying that to four flavors is a real
+ * option — either four more self-hosted palettes reusing the same archive
+ * and paint pipeline, or adopting an external vendor like the reference
+ * does — but it's an architecture decision, not a styling tweak, and isn't
+ * done here; flagged rather than silently matched or silently skipped.
  */
 export type MapStyleId = 'dark' | 'light';
 
