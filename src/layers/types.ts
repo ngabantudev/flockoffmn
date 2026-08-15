@@ -189,13 +189,18 @@ export interface FilterDefinition {
  * src/lib/detailFields.ts switches over this exhaustively, so adding a member
  * here fails the build until every surface handles it.
  */
-export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees';
+export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees' | 'currency';
 
 /** How to render one attribute in the detail panel (spec F5). */
 export interface DetailField {
   key: string;
   label: I18nString;
-  /** `date` formats ISO strings; `link` renders an anchor; `text` is default. */
+  /**
+   * `date` formats ISO strings; `link` renders an anchor; `currency` prints a
+   * plain USD number ($ sign, thousands separators, no cents — every dollar
+   * figure ingested here is already a whole-dollar contract line); `text` is
+   * default.
+   */
   format?: DetailFieldFormat;
 }
 

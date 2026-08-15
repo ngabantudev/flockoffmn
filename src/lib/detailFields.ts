@@ -42,6 +42,12 @@ export function formatValue(
       const compass = compassLabel(value);
       return compass ? `${value}° (${compass})` : `${value}°`;
     }
+    case 'currency': {
+      const n = Number(value);
+      return Number.isFinite(n)
+        ? n.toLocaleString(locale, { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+        : String(value);
+    }
     case 'link':
     case 'text':
       return String(value);
