@@ -27,7 +27,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Police & sheriff jurisdictions | `agency-jurisdictions.geojson` | No formal licence published; MESB disclaims warranty | Attribute MESB. Metro region only — see the layer's `knownGaps`. Carries a cross-referenced fact from a second Tier 1 source (BCA) as an attribute; see below. |
 | Police & sheriff buildings | `agency-buildings.geojson` | No formal licence published; U-Spatial/USGS disclaim warranty | Attribute U-Spatial (University of Minnesota) and USGS. |
 | BCA reported-LPR-use agencies (reference) | `reference/bca-alpr-agencies.json` | Public government data (Minn. Stat. ch. 13) | Free for any use. Not a public map layer — joined into the jurisdiction layer's attributes. |
-| ALPR readers agencies reported | `alpr-reported.geojson` | Public government data (Minn. Stat. ch. 13) for the filings; [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) for the road geometry used to place them | Attribute the BCA **and** OpenStreetMap contributors. The positions are derived against OSM road geometry, so ODbL attribution travels with them. |
+| ALPR Cameras (BCA Reported) | `alpr-reported.geojson` | Public government data (Minn. Stat. ch. 13) for the filings; [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) for the road geometry used to place them | Attribute the BCA **and** OpenStreetMap contributors. The positions are derived against OSM road geometry, so ODbL attribution travels with them. |
 | Redlining zones | `redlining.geojson` | [CC BY-NC 2.5](https://creativecommons.org/licenses/by-nc/2.5/) | **Non-commercial.** Not usable commercially. (The project's pre-2023 terms were CC BY-NC-SA 4.0; the current site states CC BY-NC 2.5.) |
 | HOLC appraisal, block by block | `holc-detail.geojson` | **Mixed.** Geometry and class: public domain under the [MGDPA](https://www.revisor.mn.gov/statutes/cite/13). The `miArea` field only: Mapping Inequality, CC BY-NC 2.5 | Free for any use **once `miArea` is dropped**; with it, non-commercial. See below — this is the one file here whose licence varies by column, and it is deliberate. |
 | HOLC area ↔ census tract crosswalk (reference) | `reference/holc-tract-crosswalk.json` | CC BY-NC, version unstated upstream (repo has no `LICENSE` file; the parent project states [2.5](https://creativecommons.org/licenses/by-nc/2.5/)) | **Non-commercial.** Not a public map layer — read by the redlining ingest to put each graded area's 2020 tracts and coverage shares on it. |
@@ -53,7 +53,7 @@ Reproduce these when redistributing the corresponding layer:
   cross-referenced from the Minnesota Bureau of Criminal Apprehension.
 - **Police & sheriff buildings** — U-Spatial, University of Minnesota;
   U.S. Geological Survey.
-- **ALPR readers agencies reported** — Minnesota Bureau of Criminal
+- **ALPR Cameras (BCA Reported)** — Minnesota Bureau of Criminal
   Apprehension, published under Minn. Stat. § 13.824; positions resolved
   against © OpenStreetMap contributors, ODbL.
 - **Redlining** — Robert K. Nelson, LaDale Winling, et al., "Mapping Inequality:

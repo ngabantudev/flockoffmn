@@ -55,7 +55,7 @@ This is a public good, not a product.
 | Layer | MN records | Where it comes from |
 |---|---:|---|
 | **287(g) agency agreements** | 10 | ICE's own published list (2,179 nationally) |
-| **ALPR / Flock cameras** | ~1,400 | OpenStreetMap, mapped by volunteers |
+| **ALPR Cameras (Community Reported)** | ~1,400 | OpenStreetMap, mapped by volunteers |
 | **Redlining zones (HOLC)** | 168 | Mapping Inequality, Univ. of Richmond |
 | **ICE-contract detention facilities** | 5 | ICE Over-72-Hour Facility List |
 | **Data centers** | 20 | FracTracker Alliance FOIA records |
