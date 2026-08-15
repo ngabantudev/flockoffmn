@@ -42,6 +42,11 @@ jobs:
         id: ingest
         env:
           SCOPE: ${{ inputs.scope == 'national' && 'national' || '' }}
+          # The one ingest script that needs a key (demographics.mjs, Census
+          # Data API — see .env.example). Unset here just means that one
+          # layer's step fails and its previous file is kept; every other
+          # layer still refreshes.
+          CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
         # Keep going if a single layer's upstream is down; the step below
         # reports which ones failed and the existing file stays in place.
         continue-on-error: true

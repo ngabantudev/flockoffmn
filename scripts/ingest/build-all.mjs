@@ -55,6 +55,9 @@ const STEPS = [
   { name: 'redlining', script: 'redlining.mjs' },
   { name: 'covenants', script: 'covenants.mjs' },
   { name: 'ej-cumulative', script: 'ej-cumulative.mjs' },
+  // Reads ej-cumulative.geojson for its 2020 tract geometry and GEOIDs rather
+  // than refetching tract boundaries a second time. See its own header.
+  { name: 'demographics', script: 'demographics.mjs' },
   // Last of the historical layers, because it reads two of the others:
   // redlining.geojson for the area label drawn on each block and for the
   // agreement check it measures every run, and ej-cumulative.geojson for the

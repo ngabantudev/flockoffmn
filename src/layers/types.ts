@@ -51,6 +51,15 @@ export type LayerId =
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
   // A tract is an aggregate of thousands of people, never a household.
   | 'ej_cumulative'
+  // Three views of one Census ACS dataset (scripts/ingest/demographics.mjs),
+  // sharing a dataPath — Black population share, Latinx population share, and
+  // poverty rate, each toggled independently so a reader compares them the
+  // same way the HOLC and covenant layers are compared: two colours on the
+  // same map, not a computed overlap. Same tract-is-an-aggregate boundary as
+  // ej_cumulative.
+  | 'demographic_black_share'
+  | 'demographic_latinx_share'
+  | 'demographic_poverty_rate'
   // The vendor contract itself — the record every other surveillance layer's
   // hoverCard has, until now, had to say was absent. Not a live feed: a
   // vendor contract only exists when a records request produces one, so this
