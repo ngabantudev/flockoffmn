@@ -1122,6 +1122,12 @@ export const LAYERS: LayerDefinition[] = [
     // The identifier HOLC printed on each zone — "A1", "D4" — drawn on the
     // ground the way the original sheet drew it.
     labelBy: { key: 'holcId' },
+    // Same hover-on-enabled treatment as holc_appraisal_detail beside it: a
+    // reader browsing this layer should get the grade at a glance without a
+    // click, same as agency_jurisdiction's ward browsing.
+    hoverCard: {
+      fields: ['grade', 'groupsNamed', 'city', 'dating'],
+    },
     dataPath: '/data/redlining.geojson',
     csvPath: null,
     provenance: {
@@ -1857,6 +1863,12 @@ export const LAYERS: LayerDefinition[] = [
     // parcel is metres wide rather than a fixed-size camera icon, so it needs
     // to be much closer before it reads as its own shape rather than noise.
     blockAggregate: { cellMeters: 300, blocksUntil: 12, detailFrom: 15 },
+    // Only when this layer is toggled on and a lot renders at real scale
+    // (not the zoomed-out block-aggregate cell — see blockAggregate above,
+    // which stays unclickable and unhoverable by design).
+    hoverCard: {
+      fields: ['deedYear', 'city'],
+    },
     dataPath: '/data/covenants.geojson',
     csvPath: null,
     provenance: {
@@ -1941,6 +1953,12 @@ export const LAYERS: LayerDefinition[] = [
         { value: 'Most burdened', color: '#8f2d0f' },
       ],
       fallback: '#6b7280',
+    },
+    // Same hover-on-enabled treatment as the historical-policy layers beside
+    // it: a reader browsing tracts should get the burden band at a glance
+    // without a click.
+    hoverCard: {
+      fields: ['stressorCount', 'countyMedian', 'mpcaAdverse'],
     },
     dataPath: '/data/ej-cumulative.geojson',
     csvPath: null,
@@ -2075,6 +2093,10 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#6b7280',
     },
+    // Same hover-on-enabled treatment as the other tract-level layers.
+    hoverCard: {
+      fields: ['blackPercent', 'blackHighUncertainty', 'totalPopulation'],
+    },
     dataPath: '/data/demographics.geojson',
     csvPath: null,
     provenance: {
@@ -2138,6 +2160,10 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#6b7280',
     },
+    // Same hover-on-enabled treatment as the other tract-level layers.
+    hoverCard: {
+      fields: ['latinxPercent', 'latinxHighUncertainty', 'totalPopulation'],
+    },
     dataPath: '/data/demographics.geojson',
     csvPath: null,
     provenance: {
@@ -2200,6 +2226,10 @@ export const LAYERS: LayerDefinition[] = [
         { value: '40%+', color: '#134e4a' },
       ],
       fallback: '#6b7280',
+    },
+    // Same hover-on-enabled treatment as the other tract-level layers.
+    hoverCard: {
+      fields: ['povertyPercent', 'povertyHighUncertainty', 'totalPopulation'],
     },
     dataPath: '/data/demographics.geojson',
     csvPath: null,
