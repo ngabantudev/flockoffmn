@@ -235,7 +235,7 @@ export interface FilterDefinition {
  * src/lib/detailFields.ts switches over this exhaustively, so adding a member
  * here fails the build until every surface handles it.
  */
-export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees' | 'currency';
+export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees' | 'currency' | 'pills';
 
 /** How to render one attribute in the detail panel (spec F5). */
 export interface DetailField {
@@ -244,10 +244,20 @@ export interface DetailField {
   /**
    * `date` formats ISO strings; `link` renders an anchor; `currency` prints a
    * plain USD number ($ sign, thousands separators, no cents — every dollar
-   * figure ingested here is already a whole-dollar contract line); `text` is
-   * default.
+   * figure ingested here is already a whole-dollar contract line); `pills`
+   * splits a `"; "`-joined source string into a wrapped row of labelled
+   * capsules, one per code — see `pillLabels`; `text` is default.
    */
   format?: DetailFieldFormat;
+  /**
+   * `pills` only: code → human label, the same shape and reasoning as
+   * `FilterDefinition.valueDescriptions` — a source field ships codes, a
+   * reader needs the plain-language meaning of each one. A code with no entry
+   * here still renders, Title Cased with underscores turned to spaces, rather
+   * than being silently dropped — an unmapped code is a gap in the label map,
+   * not a reason to hide a stressor the source document actually names.
+   */
+  pillLabels?: Record<string, I18nString>;
 }
 
 /**
@@ -358,6 +368,18 @@ export interface LayerDefinition {
   summary: I18nString;
   /** A paragraph explaining what the reader is looking at (spec F5). */
   whatThisMeans: I18nString;
+  /**
+   * One line, shown right under a selected feature's name, saying what kind
+   * of ground the shape actually is — a census tract, a HOLC-graded area, a
+   * parcel — when the feature's own name (a tract number, a HOLC ID) doesn't
+   * say so on its own (CLAUDE.md §0.9, translate the jargon). `whatThisMeans`
+   * already covers this in a paragraph read once for the whole layer; this is
+   * the same fact restated in one line, next to the specific record it
+   * applies to, for a reader who opened a feature without reading the layer
+   * description first. Omit for a layer whose name is already self-evident
+   * (an agency, a building, a contract).
+   */
+  geometryNote?: I18nString;
   /** Honest limitations, shown with the layer and on the sources page (F8). */
   limitations: I18nString[];
   /**

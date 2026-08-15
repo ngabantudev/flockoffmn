@@ -23,6 +23,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   label: pick(d.label, locale),
   summary: pick(d.summary, locale),
   whatThisMeans: pick(d.whatThisMeans, locale),
+  geometryNote: d.geometryNote ? pick(d.geometryNote, locale) : undefined,
   limitations: d.limitations.map((l) => pick(l, locale)),
   impactSpheres: d.impactSpheres?.map((s) => ({
     icon: s.icon,
@@ -106,6 +107,9 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     key: f.key,
     label: pick(f.label, locale),
     format: f.format,
+    pillLabels: f.pillLabels
+      ? Object.fromEntries(Object.entries(f.pillLabels).map(([v, text]) => [v, pick(text, locale)]))
+      : undefined,
   })),
   action: d.action
     ? {
@@ -723,6 +727,12 @@ const strings = {
     if (p.county) {
       titleWrap.append(el('p', 'mt-0.5 text-xs text-ink-400', `${p.county}, ${p.state}`));
     }
+    // What kind of ground this shape actually is, for a name — a tract
+    // number, a HOLC ID — that doesn't say so on its own. See
+    // LayerDefinition.geometryNote's comment in layers/types.ts.
+    if (layer.geometryNote) {
+      titleWrap.append(el('p', 'mt-1 text-xs italic leading-snug text-ink-400', layer.geometryNote));
+    }
     // The position itself, for a record that has one exactly. Six decimals is
     // about 11 cm — far finer than a crowd-sourced pin deserves, but it is what
     // the source holds, and rounding it here would quietly disagree with the
@@ -832,7 +842,13 @@ const strings = {
 
     // Layer-specific fields.
     const rows = layer.detailFields
-      .map((f) => ({ label: f.label, value: formatValue(attrs[f.key], f.format), format: f.format }))
+      .map((f) => ({
+        key: f.key,
+        label: f.label,
+        value: formatValue(attrs[f.key], f.format),
+        format: f.format,
+        pillLabels: f.pillLabels,
+      }))
       .filter((r) => r.value !== null);
 
     if (rows.length) {
@@ -848,8 +864,43 @@ const strings = {
           a.setAttribute('rel', 'noopener noreferrer');
           dd.append(a);
           wrap.append(dd);
+        } else if (row.format === 'pills') {
+          // One capsule per code, in source order. A code with no entry in
+          // pillLabels still renders — Title Cased with underscores turned to
+          // spaces — rather than being dropped: the source document names it,
+          // even if this project's label map hasn't caught up yet.
+          const dd = el('dd', 'flex flex-wrap gap-1.5');
+          for (const code of row.value!.split(';').map((s) => s.trim()).filter(Boolean)) {
+            const label =
+              row.pillLabels?.[code] ??
+              code.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+            dd.append(
+              el(
+                'span',
+                'inline-flex items-center rounded-full border border-ink-700 bg-ink-850 px-2 py-0.5 text-[11px] text-ink-200',
+                label,
+              ),
+            );
+          }
+          wrap.append(dd);
         } else {
-          wrap.append(el('dd', 'text-sm text-ink-100 break-words', row.value!));
+          const dd = el('dd', 'text-sm text-ink-100 break-words');
+          // A row whose key drives the map's own fill color (categoryColors)
+          // gets that same swatch beside its value here, the same pairing the
+          // filter checkboxes already draw — one color, read the same way
+          // wherever it shows up (see the filter list a few hundred lines up).
+          const swatchColor =
+            layer.categoryColors?.key === row.key
+              ? (layer.categoryColors.colors.find((c) => c.value === attrs[row.key])?.color ??
+                layer.categoryColors.fallback)
+              : null;
+          if (swatchColor) {
+            const swatch = el('span', 'mr-1.5 inline-block h-2 w-2 rounded-full align-middle');
+            swatch.style.background = swatchColor;
+            dd.append(swatch);
+          }
+          dd.append(document.createTextNode(row.value!));
+          wrap.append(dd);
         }
         dl.append(wrap);
       }

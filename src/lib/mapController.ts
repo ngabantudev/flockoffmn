@@ -28,6 +28,8 @@ export interface ClientLayer {
   label: string;
   summary: string;
   whatThisMeans: string;
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  geometryNote?: string;
   limitations: string[];
   /** Concrete, cited stakes shown inside "What this means", if the layer names any. */
   impactSpheres?: {
@@ -143,7 +145,12 @@ export interface ClientLayer {
    * hand-mirrored from LayerDefinition, and widening it here is what let the
    * shared formatter silently drop a member.
    */
-  detailFields: { key: string; label: string; format?: DetailFieldFormat }[];
+  detailFields: {
+    key: string;
+    label: string;
+    format?: DetailFieldFormat;
+    pillLabels?: Record<string, string>;
+  }[];
   source: string;
   sourceUrl: string;
   license: string;
@@ -2274,7 +2281,19 @@ export class MapController {
         href.textContent = value;
         row.append(label, href);
       } else {
-        row.append(label, document.createTextNode(value));
+        row.append(label);
+        // Same swatch the detail panel draws beside a row whose key is the
+        // one driving the map's own fill color — see renderDetail's
+        // swatchColor logic in MapView.astro for the sibling case.
+        if (layer.categoryColors?.key === key) {
+          const swatch = document.createElement('span');
+          swatch.className = 'hover-card-swatch';
+          swatch.style.background =
+            layer.categoryColors.colors.find((c) => c.value === attrs[key])?.color ??
+            layer.categoryColors.fallback;
+          row.append(swatch);
+        }
+        row.append(document.createTextNode(value));
       }
       root.append(row);
     }

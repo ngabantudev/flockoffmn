@@ -450,6 +450,20 @@
 .hover-card-cite {
   text-decoration: underline;
 }
+/*
+ * The same categoryColors swatch the detail panel draws beside a row whose
+ * key drives the map's own fill color (see renderDetail's swatchColor logic
+ * in MapView.astro) — one color, read the same way whether a reader is
+ * hovering or has clicked through to the panel.
+ */
+.hover-card-swatch {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.3rem;
+  border-radius: 9999px;
+  vertical-align: middle;
+}
 .hover-card-note {
   padding-top: 0.25rem;
   opacity: 0.6;
