@@ -2281,7 +2281,19 @@ export class MapController {
         href.textContent = value;
         row.append(label, href);
       } else {
-        row.append(label, document.createTextNode(value));
+        row.append(label);
+        // Same swatch the detail panel draws beside a row whose key is the
+        // one driving the map's own fill color — see renderDetail's
+        // swatchColor logic in MapView.astro for the sibling case.
+        if (layer.categoryColors?.key === key) {
+          const swatch = document.createElement('span');
+          swatch.className = 'hover-card-swatch';
+          swatch.style.background =
+            layer.categoryColors.colors.find((c) => c.value === attrs[key])?.color ??
+            layer.categoryColors.fallback;
+          row.append(swatch);
+        }
+        row.append(document.createTextNode(value));
       }
       root.append(row);
     }
