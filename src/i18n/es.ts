@@ -20,18 +20,24 @@ export const es: Record<string, string> = {
   skipToContent: 'Saltar al contenido principal',
 
   // Comparador deslizante
-  compareTitle: 'Tasa de pobreza y proporción de población negra, una junto a la otra',
+  // Mayúscula inicial en cada palabra aquí — compareTitle es un <h1> visible,
+  // comparePovertySide/compareBlackSide son encabezados de leyenda,
+  // compareOpenButton/compareShowAlpr son etiquetas de botón/control.
+  // compareIntro, compareAccessibleNote y compareVintage son prosa y
+  // mantienen mayúscula solo al inicio, a propósito.
+  compareTitle: 'Tasa De Pobreza Y Proporción De Población Negra, Una Junto A La Otra',
   compareIntro:
     'Arrastra el control deslizante para comparar dos capas de secciones censales en el mismo mapa: la tasa de pobreza a la izquierda, la proporción de población negra a la derecha. Ambas provienen de las mismas estimaciones de la Encuesta sobre la Comunidad de la Census Bureau que las capas activables del mapa principal — esta vista las presenta una junto a la otra en lugar de una a la vez.',
   compareSliderLabel: 'Mover el divisor entre la tasa de pobreza y la proporción de población negra',
-  comparePovertySide: 'Tasa de pobreza',
-  compareBlackSide: 'Proporción de población negra',
-  compareVintage: 'Ambas de la Encuesta sobre la Comunidad de la Census Bureau, estimaciones de 5 años,',
-  compareShowAlpr: 'Mostrar cámaras ALPR',
+  comparePovertySide: 'Tasa De Pobreza',
+  compareBlackSide: 'Proporción De Población Negra',
+  compareSourceLabel: 'Fuente:',
+  compareVintage: 'Encuesta sobre la Comunidad de la Census Bureau, estimaciones de 5 años,',
+  compareShowAlpr: 'Mostrar Cámaras ALPR',
   compareAccessibleNote:
     'Esta vista dividida es una herramienta de comparación visual y no tiene equivalente no visual — un lector de pantalla no puede describir qué tono queda bajo un divisor en movimiento. Para los mismos datos en forma accesible, cierra esta vista y activa las capas de tasa de pobreza y proporción de población negra una a la vez, o descarga la tabla completa desde Datos abiertos.',
   compareAccessibleLink: 'Descargas de datos abiertos',
-  compareOpenButton: 'Comparar pobreza y población negra',
+  compareOpenButton: 'Comparar Pobreza Y Población Negra',
   compareClose: 'Cerrar la vista de comparación',
 
   layers: 'Capas',
