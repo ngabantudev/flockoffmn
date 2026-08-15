@@ -222,6 +222,106 @@ export const LAYERS: LayerDefinition[] = [
   },
 
   {
+    id: 'vendor_contract_termination',
+    slug: 'vendor-contract-terminations',
+    category: 'enforcement',
+    defaultOn: true,
+    label: {
+      en: 'Contracts terminated, paused, or not renewed',
+      es: 'Contratos terminados, pausados o no renovados',
+    },
+    summary: {
+      en: 'Agencies that ended, paused, or declined to renew a vendor contract for an ALPR system — the other half of the vendor-contract story.',
+      es: 'Agencias que terminaron, pausaron o no renovaron un contrato con un proveedor de sistemas ALPR — la otra mitad de la historia del contrato con proveedores.',
+    },
+    whatThisMeans: {
+      en: 'A vendor contract has a beginning and, sometimes, an end — a termination, a lapsed non-renewal, or a paused trial. This layer tracks that second event with the same discipline the "Documented vendor contracts" layer applies to the first: a record appears here as a mapped feature only once a document (a termination or non-renewal notice, board or council minutes ending the program) or two independent sources corroborate it. A single news report, however directly an official is quoted, is not enough on its own — that is a tracked lead, listed in this layer\'s "what this map can\'t see" section with what would be needed to confirm it, not a pin on the map. As of this layer\'s last build, no contract ending has cleared that bar for a Minnesota agency; the leads section below is where that work is visible while it is pending.',
+      es: 'Un contrato con un proveedor tiene un inicio y, a veces, un final — una terminación, una no renovación, o una pausa de prueba. Esta capa rastrea ese segundo evento con la misma disciplina que la capa "Contratos de proveedores documentados" aplica al primero: un registro aparece aquí como un elemento del mapa solo una vez que un documento (un aviso de terminación o no renovación, actas de la junta o el concejo que terminan el programa) o dos fuentes independientes lo corroboran. Un solo reportaje periodístico, por directamente que cite a un funcionario, no basta por sí solo — eso es una pista rastreada, listada en la sección "lo que este mapa no puede ver" de esta capa junto con lo que se necesitaría para confirmarla, no un punto en el mapa. Al momento de la última construcción de esta capa, ninguna terminación de contrato ha superado ese umbral para una agencia de Minnesota; la sección de pistas abajo es donde ese trabajo es visible mientras está pendiente.',
+    },
+    limitations: [
+      {
+        en: 'A hand-curated set, not a live feed. Nobody publishes an index of ended law-enforcement vendor contracts, so an agency’s absence here has not been shown to mean its contract is still active — only that no ending has yet been documented or corroborated for it.',
+        es: 'Un conjunto curado a mano, no una fuente en vivo. Nadie publica un índice de contratos con proveedores de aplicación de la ley que hayan terminado, por lo que la ausencia de una agencia aquí no ha demostrado que su contrato siga activo — solo que aún no se ha documentado o corroborado un final para ella.',
+      },
+      {
+        en: 'Records the fact and the reason an agency itself gave, not an assessment of whether that reason is the true or complete one. Two documented facts side by side are for the reader to weigh — see CLAUDE.md §1c.',
+        es: 'Registra el hecho y el motivo que la propia agencia dio, no una evaluación de si ese motivo es verdadero o completo. Dos hechos documentados uno junto al otro son para que el lector los sopese — véase CLAUDE.md §1c.',
+      },
+      {
+        en: 'A single news report on a contract ending, however directly an official is quoted, does not by itself produce a mapped feature — see this layer’s knownGaps for what is currently tracked only as a lead, and what would be needed to confirm it.',
+        es: 'Un solo reportaje periodístico sobre el final de un contrato, por directamente que cite a un funcionario, no produce por sí solo un elemento del mapa — véanse los knownGaps de esta capa para lo que actualmente solo se rastrea como pista, y lo que se necesitaría para confirmarlo.',
+      },
+    ],
+    geometry: 'point',
+    color: '#f87171',
+    colorLight: '#b91c1c',
+    markerIcon: { icon: 'FileX' },
+    filters: [
+      {
+        key: 'status',
+        label: { en: 'Status', es: 'Estado' },
+        kind: 'enum',
+        valueDescriptions: {
+          terminated: { en: 'Contract ended before its term expired', es: 'Contrato terminado antes de vencer su plazo' },
+          'non-renewed': { en: 'Allowed to lapse at the end of its term', es: 'Se permitió que venciera al final de su plazo' },
+          paused: { en: 'Suspended, not necessarily ended', es: 'Suspendido, no necesariamente terminado' },
+        },
+      },
+    ],
+    hoverCard: {
+      fields: ['vendor', 'status', 'statusDate', 'reason'],
+      note: {
+        en: 'The document or corroborating sources behind this record are linked below.',
+        es: 'El documento o las fuentes que corroboran este registro están enlazados abajo.',
+      },
+    },
+    action: {
+      requestType: 'procurement',
+      label: {
+        en: 'Request this agency’s termination or non-renewal notice',
+        es: 'Solicitar el aviso de terminación o no renovación de esta agencia',
+      },
+      bodyKey: 'jurisdictionName',
+      fallbackBody: 'name',
+    },
+    dataPath: '/data/vendor-contract-terminations.geojson',
+    csvPath: '/data/vendor-contract-terminations.csv',
+    provenance: {
+      source: 'Agency terminations and non-renewals of ALPR vendor contracts, documented or corroborated per CLAUDE.md §3',
+      sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/13',
+      license: 'Public government data (Minnesota Government Data Practices Act, Minn. Stat. ch. 13), where the confirming document is a public record',
+      licenseUrl: 'https://www.revisor.mn.gov/statutes/cite/13',
+      attribution: 'Varies per record — see each feature’s own source fields',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    detailFields: [
+      { key: 'vendor', label: { en: 'Vendor', es: 'Proveedor' } },
+      { key: 'product', label: { en: 'Product', es: 'Producto' } },
+      { key: 'status', label: { en: 'Status', es: 'Estado' } },
+      { key: 'statusDate', label: { en: 'Date', es: 'Fecha' }, format: 'date' },
+      { key: 'reason', label: { en: 'Reason given', es: 'Motivo dado' } },
+      { key: 'decidedBy', label: { en: 'Announced by', es: 'Anunciado por' } },
+      { key: 'priorCameraCount', label: { en: 'Cameras operated before ending', es: 'Cámaras operadas antes de terminar' } },
+      { key: 'relatedVendorContractId', label: { en: 'Related documented contract', es: 'Contrato documentado relacionado' } },
+      { key: 'sourceName', label: { en: 'Source', es: 'Fuente' } },
+      { key: 'sourceUrl', label: { en: 'Source link', es: 'Enlace de la fuente' }, format: 'link' },
+      { key: 'sourceDate', label: { en: 'Source date', es: 'Fecha de la fuente' }, format: 'date' },
+      { key: 'documentUrl', label: { en: 'Termination or non-renewal document', es: 'Documento de terminación o no renovación' }, format: 'link' },
+    ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'Nearest documented contract ending', es: 'Final de contrato documentado más cercano' },
+      empty: {
+        en: 'No documented contract ending near this point yet — see the layer’s tracked leads for reports still awaiting confirmation.',
+        es: 'Aún no hay ningún final de contrato documentado cerca de este punto — véanse las pistas rastreadas de la capa para reportes que aún esperan confirmación.',
+      },
+      detail: ['vendor', 'status'],
+    },
+  },
+
+  {
     id: 'agency_jurisdiction',
     slug: 'agency-jurisdictions',
     category: 'enforcement',

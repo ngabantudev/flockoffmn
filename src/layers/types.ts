@@ -58,7 +58,14 @@ export type LayerId =
   // in full under public/data/docs/, starting with the first: University of
   // Minnesota PD's Flock Safety contract, released via a MuckRock MGDPA
   // request. See scripts/ingest/vendor-contracts.mjs.
-  | 'vendor_contract';
+  | 'vendor_contract'
+  // The other end of the same relation: an agency terminating, pausing, or
+  // declining to renew a vendor contract. Kept separate from vendor_contract
+  // because the evidentiary bar for "it ended" is lighter than for the full
+  // signed terms — see scripts/ingest/vendor-contract-terminations.mjs for
+  // why a mapped feature here needs a document or two corroborating sources,
+  // and why a single news report becomes a knownGaps lead, not a pin.
+  | 'vendor_contract_termination';
 
 export type Locale = 'en' | 'es';
 
