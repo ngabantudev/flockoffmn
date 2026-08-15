@@ -71,7 +71,14 @@ export interface ClientLayer {
   /** See LayerDefinition's own comment in layers/types.ts. */
   polygonClick?: 'highlight';
   /** See LayerDefinition's own comment in layers/types.ts. */
-  markerIcon?: { icon: string; byValue?: { key: string; icons: Record<string, string> } };
+  markerIcon?: {
+    icon: string;
+    byValue?: {
+      key: string;
+      icons: Record<string, string>;
+      colors?: Record<string, { color: string; colorLight: string }>;
+    };
+  };
   /** See LayerDefinition's own comment in layers/types.ts. Strings already localised. */
   hoverCard?: {
     fields: string[];
@@ -100,7 +107,16 @@ export interface ClientLayer {
     pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
   };
   /** See LayerDefinition's own comment in layers/types.ts. */
-  tintWhenRelated?: { layerId: LayerId; fromKey?: string; joinKey: string; color: string; colorLight: string };
+  tintWhenRelated?: {
+    layerId: LayerId;
+    fromKey?: string;
+    joinKey: string;
+    excludeWhen?: { key: string; values: string[] };
+    color: string;
+    colorLight: string;
+    secondaryWhen?: { key: string; values: string[]; color: string; colorLight: string };
+    cancelledWhen?: { key: string; values: string[]; color: string; colorLight: string };
+  };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -658,6 +674,27 @@ export class MapController {
             'case',
             ['boolean', ['feature-state', 'related'], false],
             this.basemapDark ? layer.tintWhenRelated.color : layer.tintWhenRelated.colorLight,
+            // The cancelled and contested washes only ever show for a
+            // jurisdiction the `related` case above didn't already claim,
+            // and applyRelatedTint never sets both of their flags on the
+            // same feature — so at most one of the next two branches can
+            // ever fire for a given polygon.
+            ...(layer.tintWhenRelated.cancelledWhen
+              ? [
+                  ['boolean', ['feature-state', 'relatedCancelled'], false],
+                  this.basemapDark
+                    ? layer.tintWhenRelated.cancelledWhen.color
+                    : layer.tintWhenRelated.cancelledWhen.colorLight,
+                ]
+              : []),
+            ...(layer.tintWhenRelated.secondaryWhen
+              ? [
+                  ['boolean', ['feature-state', 'relatedSecondary'], false],
+                  this.basemapDark
+                    ? layer.tintWhenRelated.secondaryWhen.color
+                    : layer.tintWhenRelated.secondaryWhen.colorLight,
+                ]
+              : []),
             this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
           ] as unknown as maplibregl.ExpressionSpecification)
         : (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT);
@@ -707,6 +744,17 @@ export class MapController {
         ['boolean', ['feature-state', 'hover'], false],
         0.28,
         ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 0.34] : []),
+        // A cancellation is as settled a fact as an active contract, so it
+        // reads at the same strength as `related` — only the colour tells
+        // the two apart.
+        ...(tintActive && layer.tintWhenRelated?.cancelledWhen
+          ? [['boolean', ['feature-state', 'relatedCancelled'], false], 0.34]
+          : []),
+        // A smaller bump than the other two — legible as "something's here"
+        // at a glance without reading as equally settled a fact as either.
+        ...(tintActive && layer.tintWhenRelated?.secondaryWhen
+          ? [['boolean', ['feature-state', 'relatedSecondary'], false], 0.26]
+          : []),
         0.16,
       ] as unknown as maplibregl.ExpressionSpecification;
     }
@@ -739,6 +787,12 @@ export class MapController {
       ['boolean', ['feature-state', 'hover'], false],
       1.8,
       ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 2.2] : []),
+      ...(tintActive && layer.tintWhenRelated?.cancelledWhen
+        ? [['boolean', ['feature-state', 'relatedCancelled'], false], 2.2]
+        : []),
+      ...(tintActive && layer.tintWhenRelated?.secondaryWhen
+        ? [['boolean', ['feature-state', 'relatedSecondary'], false], 1.9]
+        : []),
       1.1,
     ] as unknown as maplibregl.ExpressionSpecification;
   }
@@ -1038,15 +1092,29 @@ export class MapController {
    * symbol layer that references the id, so MapLibre never renders a frame
    * against a missing image.
    */
-  private async ensureMarkerIcon(layer: ClientLayer, iconName: string): Promise<string | null> {
+  private async ensureMarkerIcon(
+    layer: ClientLayer,
+    iconName: string,
+    colorOverride?: { color: string; colorLight: string },
+  ): Promise<string | null> {
     const node = MARKER_ICONS[iconName];
     if (!node) return null;
-    const id = `${layer.id}-icon-${iconName}-${this.basemapDark ? 'dark' : 'light'}`;
+    const color = colorOverride
+      ? this.basemapDark
+        ? colorOverride.color
+        : colorOverride.colorLight
+      : this.layerColor(layer);
+    // A colour-overridden glyph needs its own cached bitmap even when it
+    // shares an icon name with a plain one — Suspended and Terminated both
+    // draw FileX, in the same grey, and share a bake; Active's FileText
+    // would otherwise collide with this same layer's plain, uncoloured
+    // FileText bake and lose its colour on whichever finished baking last.
+    const colorSuffix = colorOverride ? `-${color.replace('#', '')}` : '';
+    const id = `${layer.id}-icon-${iconName}${colorSuffix}-${this.basemapDark ? 'dark' : 'light'}`;
     if (this.map.hasImage(id)) return id;
 
     const pixelRatio = 2;
     const px = 30 * pixelRatio;
-    const color = this.layerColor(layer);
     const inner = px * 0.62;
 
     // Built by lucide's own createElement, which supplies xmlns, viewBox, fill
@@ -1118,7 +1186,7 @@ export class MapController {
 
     const pairs: string[] = [];
     for (const [value, iconName] of Object.entries(spec.byValue.icons)) {
-      const id = await this.ensureMarkerIcon(layer, iconName);
+      const id = await this.ensureMarkerIcon(layer, iconName, spec.byValue.colors?.[value]);
       if (id) pairs.push(value, id);
     }
     if (!pairs.length) return fallbackId;
@@ -1380,8 +1448,37 @@ export class MapController {
     const src = this.sourceId(layer.id);
     for (const feature of this.data.get(layer.id) ?? []) {
       const value = this.joinValueOf(feature, rel.fromKey);
-      if (value != null && index.has(value)) {
-        this.map.setFeatureState({ source: src, id: feature.properties.id }, { related: true });
+      const matches = value != null ? index.get(value) : undefined;
+      // `some`, not `has`/length: a jurisdiction with one terminated and one
+      // still-active contract on record should keep glowing for the one that
+      // is — excludeWhen drops individual matches from counting, not the
+      // whole bucket the moment any of them has ended.
+      const related = matches?.some(
+        (m) =>
+          !rel.excludeWhen ||
+          !rel.excludeWhen.values.includes(String(m.properties.attributes[rel.excludeWhen.key])),
+      );
+      // Ranked below `related`, above `relatedSecondary`: a confirmed
+      // cancellation outranks a merely-reported one when a jurisdiction
+      // somehow has both and nothing active.
+      const relatedCancelled =
+        !related &&
+        rel.cancelledWhen &&
+        matches?.some((m) => rel.cancelledWhen!.values.includes(String(m.properties.attributes[rel.cancelledWhen!.key])));
+      // Independent of the checks above, not a fallback from them: either
+      // one already outranks the contested wash (see polygonFillColor), so
+      // this only ever ends up mattering for a jurisdiction where neither
+      // does.
+      const relatedSecondary =
+        !related &&
+        !relatedCancelled &&
+        rel.secondaryWhen &&
+        matches?.some((m) => rel.secondaryWhen!.values.includes(String(m.properties.attributes[rel.secondaryWhen!.key])));
+      if (related || relatedCancelled || relatedSecondary) {
+        this.map.setFeatureState(
+          { source: src, id: feature.properties.id },
+          { related: !!related, relatedCancelled: !!relatedCancelled, relatedSecondary: !!relatedSecondary },
+        );
       }
     }
   }
