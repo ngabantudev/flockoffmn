@@ -642,7 +642,13 @@ export class MapController {
    */
   private polygonFillColor(layer: ClientLayer): maplibregl.ExpressionSpecification {
     if (layer.polygonClick === 'highlight') {
-      const unselected = layer.tintWhenRelated
+      // The tint is one layer (vendor_contract) painted onto another
+      // (agency_jurisdiction) — Documented vendor contracts and the green
+      // wash over jurisdictions with a contract are one feature to the
+      // reader, so unticking the source layer has to take the wash with it,
+      // not just leave it floating on feature-state that was set once and
+      // never revisited.
+      const unselected = layer.tintWhenRelated && this.visible.has(layer.tintWhenRelated.layerId)
         ? // Read from feature-state (applyRelatedTint sets it once the
           // target layer's data is in), not a literal id list baked into
           // the expression — the join can finish loading well after this
@@ -675,6 +681,66 @@ export class MapController {
       ] as unknown as maplibregl.ExpressionSpecification;
     }
     return ['coalesce', ['get', 'holcFill'], this.layerColor(layer)] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
+   * A related ward's fill/outline don't just recolour, they sit a step
+   * bolder than a plain unselected wash (see the inline comment where this
+   * used to live, in addLayer). That bump reads feature-state exactly like
+   * the colour does, so it has the same bug the colour had: gate it on the
+   * target layer's visibility too, or unticking `vendor_contract` leaves a
+   * jurisdiction that's merely gone back to its neutral colour still a
+   * hair more opaque/thicker than every other unrelated ward beside it —
+   * the hue would disappear but a faint outline of it would not.
+   */
+  private polygonFillOpacity(
+    layer: ClientLayer,
+    highlightMode: boolean,
+    subtle: boolean,
+  ): maplibregl.ExpressionSpecification | number {
+    if (highlightMode) {
+      const tintActive = layer.tintWhenRelated && this.visible.has(layer.tintWhenRelated.layerId);
+      return [
+        'case',
+        ['boolean', ['feature-state', 'selected'], false],
+        subtle ? 0.24 : 0.42,
+        ['boolean', ['feature-state', 'hover'], false],
+        0.28,
+        ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 0.34] : []),
+        0.16,
+      ] as unknown as maplibregl.ExpressionSpecification;
+    }
+    if (layer.blockAggregate) {
+      return [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        layer.blockAggregate.blocksUntil,
+        0,
+        layer.blockAggregate.detailFrom,
+        0.42,
+      ] as unknown as maplibregl.ExpressionSpecification;
+    }
+    return 0.42;
+  }
+
+  /** Outline counterpart to polygonFillOpacity — see its comment. */
+  private polygonLineWidth(
+    layer: ClientLayer,
+    highlightMode: boolean,
+    subtle: boolean,
+  ): maplibregl.ExpressionSpecification | number {
+    if (!highlightMode) return 1.1;
+    const tintActive = layer.tintWhenRelated && this.visible.has(layer.tintWhenRelated.layerId);
+    return [
+      'case',
+      ['boolean', ['feature-state', 'selected'], false],
+      subtle ? 1.6 : 2.5,
+      ['boolean', ['feature-state', 'hover'], false],
+      1.8,
+      ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 2.2] : []),
+      1.1,
+    ] as unknown as maplibregl.ExpressionSpecification;
   }
 
   /**
@@ -1298,11 +1364,13 @@ export class MapController {
   /**
    * Marks every polygon of `layer` that has at least one match in
    * `layer.tintWhenRelated`'s target with a `related` feature-state flag,
-   * which polygonFillColor reads. Loads the target layer's data first if it
-   * isn't already in `this.data` — ensureDataLoaded's own cross-layer path,
-   * so the tint appears whether or not a reader has switched that layer on
-   * — and only then builds the join index, so a call that runs before the
-   * fetch completes can't poison joinIndex's cache with an empty result.
+   * which polygonFillColor reads (alongside the target layer's on/off
+   * state — see repaintTintDependents). Loads the target layer's data first
+   * if it isn't already in `this.data` — ensureDataLoaded's own cross-layer
+   * path, so the join is ready the moment a reader does switch that layer
+   * on, rather than racing a fetch at toggle time — and only then builds
+   * the join index, so a call that runs before the fetch completes can't
+   * poison joinIndex's cache with an empty result.
    */
   private async applyRelatedTint(layer: ClientLayer): Promise<void> {
     const rel = layer.tintWhenRelated;
@@ -1470,40 +1538,7 @@ export class MapController {
             // the accessible record list reads every parcel at every zoom, so
             // the parcel itself has to still be there to fade back in, not
             // be swapped out for the grid and reinstated later.
-            'fill-opacity': highlightMode
-              ? // A blank ward stays a light wash. Hover and selected sit
-                // close together on purpose — for a `relatedBuildings` layer
-                // the polygon is context, not the finding; the thing that
-                // actually lights up on selection is the building itself
-                // (see showRelatedBuildings), so the polygon settles rather
-                // than blazing full-strength the way a plain highlight layer
-                // still would (see the outline width below for that case).
-                // `tintWhenRelated` is the one exception: that colour has to
-                // read as a finding on its own, with no click, so a related
-                // ward sits a full step above the plain 0.16 wash — the same
-                // 0.16 was the whole reason the tint first read as invisible.
-                ([
-                  'case',
-                  ['boolean', ['feature-state', 'selected'], false],
-                  subtle ? 0.24 : 0.42,
-                  ['boolean', ['feature-state', 'hover'], false],
-                  0.28,
-                  ...(layer.tintWhenRelated
-                    ? [['boolean', ['feature-state', 'related'], false], 0.34]
-                    : []),
-                  0.16,
-                ] as unknown as maplibregl.ExpressionSpecification)
-              : layer.blockAggregate
-                ? ([
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    layer.blockAggregate.blocksUntil,
-                    0,
-                    layer.blockAggregate.detailFrom,
-                    0.42,
-                  ] as unknown as maplibregl.ExpressionSpecification)
-                : 0.42,
+            'fill-opacity': this.polygonFillOpacity(layer, highlightMode, subtle),
           },
         },
         under,
@@ -1518,19 +1553,7 @@ export class MapController {
             // A hovered ward's border thickens a little, a tapped one thickens
             // further, so the state reads at a glance even for a reader who
             // can't tell the fill colours apart.
-            'line-width': highlightMode
-              ? ([
-                  'case',
-                  ['boolean', ['feature-state', 'selected'], false],
-                  subtle ? 1.6 : 2.5,
-                  ['boolean', ['feature-state', 'hover'], false],
-                  1.8,
-                  ...(layer.tintWhenRelated
-                    ? [['boolean', ['feature-state', 'related'], false], 2.2]
-                    : []),
-                  1.1,
-                ] as unknown as maplibregl.ExpressionSpecification)
-              : 1.1,
+            'line-width': this.polygonLineWidth(layer, highlightMode, subtle),
             'line-opacity': layer.blockAggregate
               ? ([
                   'interpolate',
@@ -2274,7 +2297,35 @@ export class MapController {
       if (!styleId.startsWith(`${layer.id}-`)) continue;
       this.map.setLayoutProperty(styleId, 'visibility', visibility);
     }
+    this.repaintTintDependents(layer.id);
     this.emitCounts();
+  }
+
+  /**
+   * `tintWhenRelated` paints one layer's colour onto another (the green wash
+   * `agency_jurisdiction` takes on wherever `vendor_contract` has a
+   * documented contract). polygonFillColor already keys that wash on the
+   * source layer's visibility, but a MapLibre paint expression only
+   * re-evaluates when its inputs change — `this.visible` is plain JS state,
+   * invisible to the style until something re-sets the paint property. So
+   * every toggle of a layer other layers tint against has to explicitly
+   * rebuild and re-set those dependents' fill/outline, the same way
+   * repaintThemedLayers does for a basemap change.
+   */
+  private repaintTintDependents(targetLayerId: LayerId) {
+    for (const dependent of this.layers) {
+      if (dependent.tintWhenRelated?.layerId !== targetLayerId) continue;
+      if (!this.map.getLayer(`${dependent.id}-fill`)) continue;
+      const highlightMode = dependent.polygonClick === 'highlight';
+      const subtle = dependent.selectedEmphasis === 'subtle';
+      const fill = this.polygonFillColor(dependent);
+      this.map.setPaintProperty(`${dependent.id}-fill`, 'fill-color', fill);
+      this.map.setPaintProperty(`${dependent.id}-fill`, 'fill-opacity', this.polygonFillOpacity(dependent, highlightMode, subtle));
+      if (this.map.getLayer(`${dependent.id}-outline`)) {
+        this.map.setPaintProperty(`${dependent.id}-outline`, 'line-color', fill);
+        this.map.setPaintProperty(`${dependent.id}-outline`, 'line-width', this.polygonLineWidth(dependent, highlightMode, subtle));
+      }
+    }
   }
 
   /** Where the reader was before a filter first moved the camera. */
