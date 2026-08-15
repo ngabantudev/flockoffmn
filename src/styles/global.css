@@ -301,22 +301,56 @@
 /*
  * Below `lg` the detail panel is a sheet floating over the bottom of the map
  * rather than a sibling beside it (see #detail-panel in MapView.astro), which
- * would otherwise bury MapLibre's own bottom-anchored controls under it. The
- * scale bar going missing is a nuisance; the attribution going missing is an
- * OpenStreetMap licence term, so this is not cosmetic. `--map-sheet-h` is
- * published by MapView from the sheet's measured height and is 0px whenever no
- * sheet is open, which is what makes one unconditional rule safe.
+ * would otherwise bury bottom-anchored controls under it. The attribution
+ * going missing is an OpenStreetMap licence term, not cosmetic — see
+ * #map-corner-controls' own `bottom` rule below, which is what actually
+ * carries this lift now that no control is docked in either of MapLibre's
+ * own bottom-left/bottom-right corner containers (ScaleControl, the one
+ * control that used to live in bottom-left, is gone — no reference
+ * equivalent; see mapController.ts's constructor comment).
  */
-.maplibregl-ctrl-bottom-left,
-.maplibregl-ctrl-bottom-right {
-  bottom: var(--map-sheet-h, 0px);
+/*
+ * Map control geometry, matched to wealldobettermn.org's own
+ * #map-corner-controls (see its WardMap.tsx and globals.css) — one flex
+ * column owning the theme toggle, reset button, MapLibre's zoom buttons,
+ * and its attribution badge as ordinary children, so `gap` alone keeps
+ * them evenly spaced regardless of any one control's actual rendered size,
+ * rather than four independently-tuned offsets that happen to agree.
+ * --map-ctrl-edge is the wrapper's own distance from the map's true
+ * corner, matching MapLibre's historical default control margin so this
+ * doesn't read as a new, arbitrary number.
+ */
+:root {
+  --map-ctrl-edge: 10px;
+  --map-ctrl-gap: 10px;
+}
+#map-corner-controls {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  right: var(--map-ctrl-edge);
+  bottom: calc(var(--map-ctrl-edge) + var(--map-sheet-h, 0px));
+  gap: var(--map-ctrl-gap);
   transition: bottom 150ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
-  .maplibregl-ctrl-bottom-left,
-  .maplibregl-ctrl-bottom-right {
+  #map-corner-controls {
     transition: none;
   }
+}
+/*
+ * MapLibre's compact AttributionControl carries its own unconditional
+ * margin: 10px (maplibre-gl.css's .maplibregl-ctrl-attrib.maplibregl-compact
+ * rule, not scoped to a corner container), which would otherwise widen the
+ * badge's flex item asymmetrically wider than the 29px zoom/theme buttons
+ * next to it and throw off #map-corner-controls' `align-items: center`.
+ * Zeroed here so the badge's actual size is all the wrapper sees —
+ * spacing is `gap` alone, same as its siblings.
+ */
+#map-corner-controls .maplibregl-ctrl-attrib {
+  margin: 0 !important;
 }
 /*
  * The strip of map left above an open sheet on a phone is a couple of hundred
@@ -422,6 +456,17 @@
 }
 
 /*
+ * ResetViewControl (src/lib/resetViewControl.ts) — same inline-SVG-child
+ * centering issue as .theme-control-button below, for the same reason.
+ */
+.reset-view-control-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-ink-100);
+}
+
+/*
  * ThemeControl (src/lib/themeControl.ts) — the map-corner "site theme / map
  * theme" popover. Built with hand-written classes rather than
  * .maplibregl-ctrl-icon's convention (a class MapLibre expects on a
@@ -456,7 +501,12 @@
 }
 .theme-control-panel {
   position: absolute;
-  top: calc(100% + 0.5rem);
+  /*
+   * Opens upward, not down: the control now docks bottom-right (see
+   * mapController.ts's addControl calls), so a panel that dropped below the
+   * button would open off the bottom edge of the map instead of over it.
+   */
+  bottom: calc(100% + 0.5rem);
   right: 0;
   z-index: 10;
   width: max-content;

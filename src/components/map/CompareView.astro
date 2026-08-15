@@ -361,9 +361,7 @@ const strings = {
     if (started) return;
     started = true;
 
-    const style = baseStyle(initialMapStyle());
     const sharedOptions: Partial<maplibregl.MapOptions> = {
-      style,
       center: MN_CENTER,
       zoom: 5.2,
       minZoom: 3,
@@ -380,8 +378,25 @@ const strings = {
       interactive: false,
     };
 
-    const mapA = new maplibregl.Map({ ...sharedOptions, container: elA, interactive: true } as maplibregl.MapOptions);
-    const mapB = new maplibregl.Map({ ...sharedOptions, container: elB } as maplibregl.MapOptions);
+    // baseStyle() called once per map, not shared — MapLibre's Map
+    // constructor mutates the style object it's given while resolving it
+    // (relative sprite/glyphs URLs become absolute in place), so handing
+    // the same object reference to a second Map instance fed it an
+    // already-mutated style and threw "Invalid sprite URL, must be
+    // absolute" on mapB. baseStyle() already does its own structuredClone
+    // internally (see mapStyle.ts) — calling it twice, not sharing one
+    // result, is what makes each map's copy independent.
+    const mapA = new maplibregl.Map({
+      ...sharedOptions,
+      style: baseStyle(initialMapStyle()),
+      container: elA,
+      interactive: true,
+    } as maplibregl.MapOptions);
+    const mapB = new maplibregl.Map({
+      ...sharedOptions,
+      style: baseStyle(initialMapStyle()),
+      container: elB,
+    } as maplibregl.MapOptions);
 
     mapA.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }), 'top-right');
 

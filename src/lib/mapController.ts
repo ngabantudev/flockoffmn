@@ -4,8 +4,8 @@ import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import {
   baseStyle,
   basemapBackgroundColor,
-  BASEMAP_LAYERS,
-  FLAVOR_VARIANT_PAINT_KEYS,
+  ALL_BASEMAP_LAYER_IDS,
+  BASEMAP_SOURCE_IDS,
   METRO_BOUNDS,
   METRO_CENTER,
 } from './mapStyle';
@@ -17,6 +17,7 @@ import type { DetailFieldFormat } from '../layers/types';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
+import { ResetViewControl } from './resetViewControl';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -161,6 +162,8 @@ export interface ControllerEvents {
   onCounts?: (counts: Record<string, { shown: number; total: number }>) => void;
   onLayerReady?: (layerId: string, features: LoadedFeature[]) => void;
   onError?: (layerId: string, message: string) => void;
+  /** Localized label for the corner "reset view" control — see ResetViewControl. */
+  resetViewLabel?: string;
 }
 
 const REDUCED_MOTION =
@@ -251,6 +254,22 @@ const CONE_PROP = '__cone';
  */
 const NEUTRAL_POLYGON_DARK = '#64748b';
 const NEUTRAL_POLYGON_LIGHT = '#94a3b8';
+
+/**
+ * The hover/select *outline* colour for a `polygonClick: 'highlight'`
+ * layer — the wealldobettermn.org effect this borrows (its own
+ * OUTLINE_COLOR, WardMap.tsx): a selected ward's fill stays whatever colour
+ * it already has, but its outline pops to a fixed near-white (dark
+ * basemap) or near-black (light basemap) and thickens, so which one is
+ * highlighted reads instantly regardless of the polygon's own colour.
+ * Deliberately a *different* constant from NEUTRAL_POLYGON_DARK/LIGHT
+ * above (which colour the *fill* when nothing is selected) — this is what
+ * lets polygonOutlineColor() diverge from polygonFillColor() for exactly
+ * this one state. Matches global.css's --color-ink-100 (this site's own
+ * primary-text ink) rather than inventing a new colour for the occasion.
+ */
+const POLYGON_HIGHLIGHT_OUTLINE_DARK = '#e7ecf3';
+const POLYGON_HIGHLIGHT_OUTLINE_LIGHT = '#131a24';
 
 /** Written onto derived grid blocks by us; not an upstream field. */
 const BLOCK_COUNT_PROP = '__blockCount';
@@ -434,7 +453,7 @@ export class MapController {
    */
   private basemapDark = MAP_STYLES[initialMapStyle()].dark;
   /** See the `basemapColor` getter's comment — kept in sync by setBasemap(), the only place `basemapDark` changes. */
-  private cachedBasemapColor = basemapBackgroundColor(this.basemapDark);
+  private cachedBasemapColor = basemapBackgroundColor(initialMapStyle());
   /** Where the reader was before a tapped record moved the camera to it. */
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
   /**
@@ -488,6 +507,17 @@ export class MapController {
   private overlay: HTMLElement | null = null;
   private overlaySize: ResizeObserver | null = null;
   private overlayShown: MutationObserver | null = null;
+  /**
+   * #map-corner-controls' four occupants — hand-mounted (see the
+   * constructor), so map.remove() won't tear them down on its own; each
+   * needs an explicit onRemove() in destroy(). ScaleControl isn't here: it
+   * still goes through map.addControl(), which does clean it up.
+   */
+  private themeControl: ThemeControl | null = null;
+  private resetViewControl: ResetViewControl | null = null;
+  private navControl: maplibregl.NavigationControl | null = null;
+  private attribControl: maplibregl.AttributionControl | null = null;
+  private attribObserver: MutationObserver | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -504,7 +534,14 @@ export class MapController {
       zoom: 9,
       minZoom: 3,
       maxZoom: 18,
-      attributionControl: { compact: true },
+      // false, not the usual `{ compact: true }` — built and mounted by
+      // hand below instead, alongside the zoom buttons and the theme
+      // toggle, into #map-corner-controls (see that div's own comment in
+      // MapView.astro). Handing it to this option (or to
+      // map.addControl()) would put it in MapLibre's own separately-
+      // positioned bottom-right corner container, which this app no
+      // longer uses — matching wealldobettermn.org's WardMap.tsx exactly.
+      attributionControl: false,
       // The canvas is not usable by a screen reader; the record list beside it
       // is the accessible equivalent, so keep the canvas out of the tab order.
       // Keyboard panning still works once the map is focused deliberately.
@@ -512,23 +549,52 @@ export class MapController {
       pitchWithRotate: false,
     });
 
-    // Added before NavigationControl so it stacks above the zoom buttons —
-    // MapLibre stacks same-position controls in the order they're added, and
-    // "map theme / site theme" reads as a settings entry point, which belongs
-    // above the more frequently-used zoom controls, not buried below them.
-    this.map.addControl(new ThemeControl(), 'top-right');
-    this.map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
-      'top-right',
-    );
-    this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
+    // Mounted by hand (control.onAdd(map) → append the returned element
+    // ourselves) rather than map.addControl(), so the theme toggle, reset
+    // button, zoom buttons, and attribution badge all live as ordinary
+    // flex children of one div this markup owns (#map-corner-controls, in
+    // MapView.astro) instead of being split across MapLibre's own
+    // per-corner containers. onRemove() is called explicitly in destroy()
+    // for the same reason: map.remove() only tears down controls it thinks
+    // it owns via its own _controls list, and these are deliberately kept
+    // out of it. Order here is the stacking order top-to-bottom.
+    const cornerControls = container.parentElement?.querySelector<HTMLElement>('#map-corner-controls');
+    this.themeControl = new ThemeControl();
+    this.resetViewControl = new ResetViewControl(events.resetViewLabel ?? 'Reset view', () => this.resetView());
+    this.navControl = new maplibregl.NavigationControl({ showCompass: false });
+    this.attribControl = new maplibregl.AttributionControl({ compact: true });
+    if (cornerControls) {
+      cornerControls.appendChild(this.themeControl.onAdd(this.map));
+      cornerControls.appendChild(this.resetViewControl.onAdd(this.map));
+      cornerControls.appendChild(this.navControl.onAdd(this.map));
+      const attribEl = this.attribControl.onAdd(this.map);
+      cornerControls.appendChild(attribEl);
 
-    // The basemap is independent of every other layer here — swapping it is
-    // just re-setting BASEMAP_LAYERS' paint properties, never map.setStyle()
-    // (which would drop every registry layer this class has added). Queued
-    // on 'load' if a visitor toggles before the map has finished its first
-    // style load, since setPaintProperty on a layer that doesn't exist yet
-    // throws.
+      // MapLibre's AttributionControl starts *expanded* the first time
+      // attributions populate, even with `compact: true` set — its own
+      // _updateCompact() adds `maplibregl-compact-show` unconditionally on
+      // first run and only collapses it later, in response to a `drag`
+      // event. Left alone, that means the attribution badge briefly
+      // renders as a full text bar rather than the small "i" badge a
+      // reader expects. A MutationObserver, not a fixed timeout, catches
+      // the class the instant MapLibre adds it regardless of how long the
+      // style/sources take to load, and only fires once — after that, a
+      // reader's own click on the badge toggles it normally.
+      const collapseAttribOnce = () => {
+        if (!attribEl.classList.contains('maplibregl-compact-show')) return;
+        attribEl.classList.remove('maplibregl-compact-show');
+        attribEl.removeAttribute('open');
+        this.attribObserver?.disconnect();
+      };
+      this.attribObserver = new MutationObserver(collapseAttribOnce);
+      this.attribObserver.observe(attribEl, { attributes: true, attributeFilter: ['class'] });
+      collapseAttribOnce();
+    }
+
+    // Queued on 'load' if a visitor toggles before the map has finished its
+    // first style load — setBasemap() reads the live style via
+    // map.getStyle() to preserve registry layers (see its own comment), and
+    // that read isn't meaningful yet before 'load' fires.
     onMapStyleChange((styleId) => {
       if (this.hasLoaded) this.setBasemap(styleId);
       else this.map.once('load', () => this.setBasemap(styleId));
@@ -574,35 +640,49 @@ export class MapController {
   }
 
   /**
-   * Re-keys the basemap without map.setStyle() — that would drop every
-   * source/layer this class has added for the registry layers and density
-   * threads. The vector basemap has one source and ~20 layers
-   * (BASEMAP_LAYERS in mapStyle.ts) instead of the old raster setup's one
-   * source and two paint properties, but the principle is the same: every
-   * paint key that *can* differ between flavors gets re-set here, every
-   * time, for every layer — never left to whatever a previous flavor
-   * happened to set. That's what makes a bug like the old
-   * raster-brightness-max reset (a paint key MapLibre won't revert on its
-   * own just because a later call omits it) structurally impossible instead
-   * of something to remember by hand. "Can differ" is FLAVOR_VARIANT_PAINT_KEYS
-   * (mapStyle.ts) — precomputed by literally comparing both flavors' paint
-   * output, not a hand-picked subset — so a key that's provably identical
-   * either way (most `line-width` curves, for instance) is skipped rather
-   * than redundantly reapplied to every one of ~20 layers on every toggle.
+   * Swaps to a different basemap style via a real map.setStyle() call — the
+   * thing this method used to avoid entirely (see git history: a prior
+   * version re-keyed ~20 same-shaped layers' paint properties in place,
+   * because every "flavor" back then was the same layer set in different
+   * colors). These four styles (mapStyle.ts's basemapStyles/*.json) aren't
+   * that: fiord has 48 layers, liberty has 110, with different ids — a
+   * color-only repaint can't express switching between structurally
+   * different style documents, so an actual style swap is required.
+   *
+   * The risk map.setStyle() normally carries — dropping every source/layer
+   * this class has added on top for registry layers, flight/density
+   * threads, and everything else — is handled by hand instead of avoided:
+   * map.getStyle() returns the *live* current style (the current basemap's
+   * layers plus every layer added since), so subtracting
+   * ALL_BASEMAP_LAYER_IDS / BASEMAP_SOURCE_IDS (mapStyle.ts — the union
+   * across all four styles, not just whichever is currently active, since
+   * the *previous* style's own layer ids need stripping regardless of which
+   * one that was) leaves exactly the non-basemap sources/layers, spliced
+   * onto the new style's own basemap sources/layers before the single
+   * setStyle() call. Data layers keep their live paint state — any
+   * setPaintProperty() already applied to them survives, since getStyle()
+   * reflects that, not the original addLayer() call — and never actually
+   * leave the map.
    */
   setBasemap(styleId: MapStyleId): void {
     const dark = MAP_STYLES[styleId].dark;
-    for (const layer of BASEMAP_LAYERS) {
-      if (!this.map.getLayer(layer.id)) continue;
-      const paint = layer.paint(dark);
-      for (const key of FLAVOR_VARIANT_PAINT_KEYS.get(layer.id) ?? []) {
-        this.map.setPaintProperty(layer.id, key, paint[key]);
-      }
-    }
+    const newBasemap = baseStyle(styleId);
+    const current = this.map.getStyle();
+
+    const keptSources = Object.fromEntries(
+      Object.entries(current?.sources ?? {}).filter(([id]) => !BASEMAP_SOURCE_IDS.has(id)),
+    );
+    const keptLayers = (current?.layers ?? []).filter((l) => !ALL_BASEMAP_LAYER_IDS.has(l.id));
+
+    this.map.setStyle({
+      ...newBasemap,
+      sources: { ...newBasemap.sources, ...keptSources },
+      layers: [...newBasemap.layers, ...keptLayers],
+    });
 
     if (dark !== this.basemapDark) {
       this.basemapDark = dark;
-      this.cachedBasemapColor = basemapBackgroundColor(dark);
+      this.cachedBasemapColor = basemapBackgroundColor(styleId);
       this.repaintThemedLayers();
     }
   }
@@ -612,10 +692,10 @@ export class MapController {
    * this so a coloured mark reads against the map instead of floating on it.
    * A cached field, not a live lookup: `repaintThemedLayers()` reads this
    * once per registry layer (dozens, potentially), and re-deriving it every
-   * time meant a linear scan over BASEMAP_LAYERS plus a fresh paint-object
-   * allocation on every single read of a value that's constant for the
-   * entire loop and only ever changes when `basemapDark` flips — see
-   * `setBasemap()`, the only place that invalidates it.
+   * time meant a fresh lookup into the current style's own background layer
+   * on every single read of a value that's constant for the entire loop and
+   * only ever changes when `basemapDark` flips — see `setBasemap()`, the
+   * only place that invalidates it.
    */
   private get basemapColor(): string {
     return this.cachedBasemapColor;
@@ -721,6 +801,33 @@ export class MapController {
   }
 
   /**
+   * A `polygonClick: 'highlight'` layer's *outline* colour — deliberately
+   * separate from polygonFillColor() above. The fill keeps sharing that
+   * expression (the polygon's own identity colour when selected/hovered,
+   * NEUTRAL_POLYGON_DARK/LIGHT otherwise); the outline instead pops to
+   * POLYGON_HIGHLIGHT_OUTLINE_DARK/LIGHT — see that constant's own comment
+   * for why a fixed near-white/near-black reads more clearly than "the same
+   * colour, just thicker" once a reader is looking for which one they
+   * selected, not what category it belongs to. Only called for
+   * `polygonClick: 'highlight'` layers (see addLayer below); every other
+   * polygon kind keeps outline === fill, unchanged. Takes no layer argument
+   * — unlike polygonFillColor(), only the basemap flavor decides this
+   * colour, never the layer's own identity colour.
+   */
+  private polygonOutlineColor(): maplibregl.ExpressionSpecification {
+    return [
+      'case',
+      [
+        'any',
+        ['boolean', ['feature-state', 'selected'], false],
+        ['boolean', ['feature-state', 'hover'], false],
+      ],
+      this.basemapDark ? POLYGON_HIGHLIGHT_OUTLINE_DARK : POLYGON_HIGHLIGHT_OUTLINE_LIGHT,
+      this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
    * A related ward's fill/outline don't just recolour, they sit a step
    * bolder than a plain unselected wash (see the inline comment where this
    * used to live, in addLayer). That bump reads feature-state exactly like
@@ -817,10 +924,14 @@ export class MapController {
         if (!layer.categoryColors) {
           const fill = this.polygonFillColor(layer);
           this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', fill);
-          // The outline is drawn in the same expression as the fill (see
-          // addLayer), so it goes stale in exactly the same way if left out.
+          // The outline shares the fill's expression for every polygon kind
+          // except `polygonClick: 'highlight'` (see addLayer's own comment
+          // and polygonOutlineColor) — that one pops to a fixed near-white/
+          // near-black instead, which is itself basemap-dependent and needs
+          // the same re-key here, just from a different source.
           if (this.map.getLayer(`${layer.id}-outline`)) {
-            this.map.setPaintProperty(`${layer.id}-outline`, 'line-color', fill);
+            const outline = layer.polygonClick === 'highlight' ? this.polygonOutlineColor() : fill;
+            this.map.setPaintProperty(`${layer.id}-outline`, 'line-color', outline);
           }
         }
         if (this.map.getLayer(`${layer.id}-labels`)) {
@@ -1555,8 +1666,12 @@ export class MapController {
       // for.
       const subtle = layer.selectedEmphasis === 'subtle';
       // Fill and outline share one expression — see polygonFillColor for
-      // which of the three it picks and why.
+      // which of the three it picks and why. The exception is a
+      // `polygonClick: 'highlight'` layer's *outline*: see
+      // polygonOutlineColor's own comment for why that one pops to a fixed
+      // near-white/near-black instead of sharing polygonColor.
       const polygonColor = this.polygonFillColor(layer);
+      const outlineColor = highlightMode ? this.polygonOutlineColor() : polygonColor;
 
       // The grid stands under the parcels and fades out exactly as they fade
       // in, so the two are never both at full strength over the same ground.
@@ -1646,7 +1761,7 @@ export class MapController {
           type: 'line',
           source: src,
           paint: {
-            'line-color': polygonColor,
+            'line-color': outlineColor,
             // A hovered ward's border thickens a little, a tapped one thickens
             // further, so the state reads at a glance even for a reader who
             // can't tell the fill colours apart.
@@ -3250,6 +3365,14 @@ export class MapController {
     this.cancelThrow();
     this.popup?.remove();
     this.hoverPopup?.remove();
+    // Explicit onRemove() for all four — map.remove() only tears down
+    // controls added via map.addControl(), and these were deliberately
+    // kept out of that list (see the constructor).
+    this.attribObserver?.disconnect();
+    this.themeControl?.onRemove();
+    this.resetViewControl?.onRemove();
+    this.navControl?.onRemove();
+    this.attribControl?.onRemove();
     this.map.remove();
   }
 }
