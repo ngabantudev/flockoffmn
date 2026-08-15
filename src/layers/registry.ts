@@ -135,14 +135,20 @@ export const LAYERS: LayerDefinition[] = [
     colorLight: '#a16207',
     markerIcon: {
       icon: 'FileText',
-      // The glyph carries the status distinction rather than the dot's
-      // colour: see FileX's own comment in lib/icons.ts for why a marker
-      // layer's colour can't vary per record, and ContractStatus's comment
-      // in layers/types.ts for why "ended" is a fact worth drawing rather
-      // than a reason to make the record disappear.
+      // Both shape AND colour carry the status distinction, and the colours
+      // are the same three the jurisdiction wash uses (tintWhenRelated's
+      // `color`/`secondaryWhen` below) — a reader learns the palette once
+      // and reads it at both the point and the polygon. Every value named
+      // here explicitly, `Active` included, rather than leaving it to the
+      // top-level `icon`/`color` fallback: a record with no `status`
+      // attribute at all (there shouldn't be one, but nothing enforces that
+      // at ingest — see ContractStatus's own comment in types.ts) still
+      // falls back to this layer's plain identity yellow, which reads as
+      // "unknown," not as a fourth, unlabelled status colour.
       byValue: {
         key: 'status',
         icons: {
+          Active: 'FileText',
           Suspended: 'FileX',
           Terminated: 'FileX',
           'Not renewed': 'FileX',
@@ -151,6 +157,25 @@ export const LAYERS: LayerDefinition[] = [
           // record with no Tier 1/2 document behind it yet, only converging
           // news coverage — see ContractStatus's own comment in types.ts.
           'Reported ended': 'FileQuestion',
+        },
+        colors: {
+          // Same green as tintWhenRelated.color: an active, confirmed
+          // contract reads as one fact in one colour whether you're looking
+          // at the pin or the jurisdiction under it.
+          Active: { color: '#86efac', colorLight: '#064e3b' },
+          // A settled, neutral grey — deliberately not the alarm-red or
+          // vendor-yellow this glyph might otherwise reach for: a confirmed
+          // ending is a plain fact, not itself the finding. The jurisdiction
+          // it drives washes to plain neutral for the same reason (see
+          // tintWhenRelated's own comment); this is that same "settled, not
+          // urgent" read carried onto the point.
+          Suspended: { color: '#94a3b8', colorLight: '#334155' },
+          Terminated: { color: '#94a3b8', colorLight: '#334155' },
+          'Not renewed': { color: '#94a3b8', colorLight: '#334155' },
+          Expired: { color: '#94a3b8', colorLight: '#334155' },
+          // Same amber as tintWhenRelated.secondaryWhen: "reported, not yet
+          // confirmed" is one colour wherever it appears.
+          'Reported ended': { color: '#fcd34d', colorLight: '#78350f' },
         },
       },
     },

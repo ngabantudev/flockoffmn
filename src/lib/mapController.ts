@@ -71,7 +71,14 @@ export interface ClientLayer {
   /** See LayerDefinition's own comment in layers/types.ts. */
   polygonClick?: 'highlight';
   /** See LayerDefinition's own comment in layers/types.ts. */
-  markerIcon?: { icon: string; byValue?: { key: string; icons: Record<string, string> } };
+  markerIcon?: {
+    icon: string;
+    byValue?: {
+      key: string;
+      icons: Record<string, string>;
+      colors?: Record<string, { color: string; colorLight: string }>;
+    };
+  };
   /** See LayerDefinition's own comment in layers/types.ts. Strings already localised. */
   hoverCard?: {
     fields: string[];
@@ -1066,15 +1073,29 @@ export class MapController {
    * symbol layer that references the id, so MapLibre never renders a frame
    * against a missing image.
    */
-  private async ensureMarkerIcon(layer: ClientLayer, iconName: string): Promise<string | null> {
+  private async ensureMarkerIcon(
+    layer: ClientLayer,
+    iconName: string,
+    colorOverride?: { color: string; colorLight: string },
+  ): Promise<string | null> {
     const node = MARKER_ICONS[iconName];
     if (!node) return null;
-    const id = `${layer.id}-icon-${iconName}-${this.basemapDark ? 'dark' : 'light'}`;
+    const color = colorOverride
+      ? this.basemapDark
+        ? colorOverride.color
+        : colorOverride.colorLight
+      : this.layerColor(layer);
+    // A colour-overridden glyph needs its own cached bitmap even when it
+    // shares an icon name with a plain one — Suspended and Terminated both
+    // draw FileX, in the same grey, and share a bake; Active's FileText
+    // would otherwise collide with this same layer's plain, uncoloured
+    // FileText bake and lose its colour on whichever finished baking last.
+    const colorSuffix = colorOverride ? `-${color.replace('#', '')}` : '';
+    const id = `${layer.id}-icon-${iconName}${colorSuffix}-${this.basemapDark ? 'dark' : 'light'}`;
     if (this.map.hasImage(id)) return id;
 
     const pixelRatio = 2;
     const px = 30 * pixelRatio;
-    const color = this.layerColor(layer);
     const inner = px * 0.62;
 
     // Built by lucide's own createElement, which supplies xmlns, viewBox, fill
@@ -1146,7 +1167,7 @@ export class MapController {
 
     const pairs: string[] = [];
     for (const [value, iconName] of Object.entries(spec.byValue.icons)) {
-      const id = await this.ensureMarkerIcon(layer, iconName);
+      const id = await this.ensureMarkerIcon(layer, iconName, spec.byValue.colors?.[value]);
       if (id) pairs.push(value, id);
     }
     if (!pairs.length) return fallbackId;

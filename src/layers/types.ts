@@ -520,7 +520,23 @@ export interface LayerDefinition {
    */
   markerIcon?: {
     icon: string;
-    byValue?: { key: string; icons: Record<string, string> };
+    byValue?: {
+      key: string;
+      icons: Record<string, string>;
+      /**
+       * Override the glyph's ring and stroke colour per value — every value
+       * absent here draws in the layer's own `color`/`colorLight`, same as
+       * before this existed. For most `byValue` layers (a sheriff's star vs.
+       * a police shield) the shape alone is the real distinction and colour
+       * would be decoration, so this stays unset. `vendor_contract` is the
+       * exception: a contract's status is a fact worth reading in the same
+       * colour language as the jurisdiction wash it drives (see
+       * tintWhenRelated's `color`/`secondaryWhen` fields), so its glyph and
+       * that wash share a palette rather than the glyph carrying an
+       * unrelated colour of its own.
+       */
+      colors?: Record<string, { color: string; colorLight: string }>;
+    };
   };
   /**
    * A card shown on hover, summarising a record without selecting it.
