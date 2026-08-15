@@ -24,6 +24,8 @@ export const en: Record<string, string> = {
   compareSliderLabel: 'Move the divider between poverty rate and Black population share',
   comparePovertySide: 'Poverty rate',
   compareBlackSide: 'Black population share',
+  compareVintage: 'Both from the Census Bureau’s American Community Survey, 5-year estimates,',
+  compareShowAlpr: 'Show ALPR cameras',
   compareAccessibleNote:
     'This split view is a visual comparison tool and has no non-visual equivalent — a screen reader cannot describe which shade sits under a moving divider. For the same data in an accessible form, close this view and switch on the Poverty rate and Black population share layers one at a time, or download the underlying table from Open data.',
   compareAccessibleLink: 'Open data downloads',

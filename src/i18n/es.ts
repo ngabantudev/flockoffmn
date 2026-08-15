@@ -26,6 +26,8 @@ export const es: Record<string, string> = {
   compareSliderLabel: 'Mover el divisor entre la tasa de pobreza y la proporción de población negra',
   comparePovertySide: 'Tasa de pobreza',
   compareBlackSide: 'Proporción de población negra',
+  compareVintage: 'Ambas de la Encuesta sobre la Comunidad de la Census Bureau, estimaciones de 5 años,',
+  compareShowAlpr: 'Mostrar cámaras ALPR',
   compareAccessibleNote:
     'Esta vista dividida es una herramienta de comparación visual y no tiene equivalente no visual — un lector de pantalla no puede describir qué tono queda bajo un divisor en movimiento. Para los mismos datos en forma accesible, cierra esta vista y activa las capas de tasa de pobreza y proporción de población negra una a la vez, o descarga la tabla completa desde Datos abiertos.',
   compareAccessibleLink: 'Descargas de datos abiertos',

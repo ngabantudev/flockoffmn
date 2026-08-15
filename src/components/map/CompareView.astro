@@ -26,6 +26,7 @@
  */
 import type { Locale } from '~/layers/types';
 import { LAYERS } from '~/layers/registry';
+import { loadLayer, mergedProvenance } from '~/layers/data';
 import { useTranslations, pick } from '~/lib/i18n';
 
 interface Props {
@@ -36,6 +37,19 @@ const t = useTranslations(locale);
 
 const povertyLayer = LAYERS.find((l) => l.id === 'demographic_poverty_rate')!;
 const blackLayer = LAYERS.find((l) => l.id === 'demographic_black_share')!;
+const alprLayer = LAYERS.find((l) => l.id === 'alpr')!;
+
+// The registry's own provenance.sourceDate is a static placeholder (null,
+// same as every other layer — see registry.ts's comment on why); the real
+// ACS vintage is only known once the ingest has actually run, so it's read
+// off the generated file itself, the same "the file wins" rule the sources
+// page uses (mergedProvenance). Both demographic layers share one dataset,
+// so either resolves the same vintage.
+const povertyLoaded = await loadLayer(povertyLayer);
+const vintage = mergedProvenance(povertyLoaded).sourceDate as string | null;
+// "2020-2024" as ingested -> "2020–2024" as displayed, the same en-dash
+// style every ACS-range date already uses elsewhere on the site.
+const vintageDisplay = vintage?.replace('-', '–') ?? null;
 
 // Only what the client script needs to paint and legend each side — not the
 // full registry entry (whatThisMeans, limitations, filters, etc. stay on the
@@ -52,12 +66,23 @@ const blackConfig = {
   categoryColors: blackLayer.categoryColors!,
   label: pick(blackLayer.label, locale),
 };
+// A fixed single colour and a plain circle, not the main map's full
+// operator-colour/direction-cone treatment (categoryColors, bearingKey) —
+// this view exists to show where the cameras sit against the demographic
+// choropleths, not to re-explain who runs each one. The main map's ALPR
+// layer, linked from the accessible note below, is still the complete record.
+const alprConfig = {
+  dataPath: alprLayer.dataPath,
+  color: alprLayer.color,
+  strokeColor: alprLayer.pointStrokeColor ?? '#ffffff',
+};
 
 const strings = {
   compareSliderLabel: t('compareSliderLabel'),
   comparePovertySide: t('comparePovertySide'),
   compareBlackSide: t('compareBlackSide'),
   loading: t('loading'),
+  compareShowAlpr: t('compareShowAlpr'),
 };
 ---
 
@@ -65,6 +90,7 @@ const strings = {
   <div class="border-b border-ink-800 bg-ink-900 px-4 py-3 sm:px-6">
     <h1 class="text-base font-semibold text-ink-100 sm:text-lg">{t('compareTitle')}</h1>
     <p class="mt-1 max-w-3xl text-sm text-ink-300">{t('compareIntro')}</p>
+    {vintageDisplay && <p class="mt-1 text-xs text-ink-400">{t('compareVintage')} {vintageDisplay}</p>}
   </div>
 
   <div class="relative min-h-0 flex-1" id="compare-root">
@@ -75,12 +101,16 @@ const strings = {
          users, the slider beneath it is the actual control. -->
     <div id="compare-divider" class="pointer-events-none absolute inset-y-0 w-0.5 bg-ink-100 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" style="left:50%"></div>
 
-    <div class="pointer-events-none absolute inset-x-0 top-3 flex justify-between px-3 text-xs sm:px-4">
+    <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-start justify-between gap-2 px-3 text-xs sm:px-4">
       <span class="pointer-events-auto rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow" style={`border-left:3px solid ${povertyConfig.color}`}>
-        {strings.comparePovertySide}
+        {strings.comparePovertySide}{vintageDisplay ? ` (${vintageDisplay})` : ''}
       </span>
+      <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow">
+        <input type="checkbox" id="compare-show-alpr" checked style={`accent-color:${alprConfig.color}`} />
+        {strings.compareShowAlpr}
+      </label>
       <span class="pointer-events-auto rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow" style={`border-right:3px solid ${blackConfig.color}`}>
-        {strings.compareBlackSide}
+        {strings.compareBlackSide}{vintageDisplay ? ` (${vintageDisplay})` : ''}
       </span>
     </div>
 
@@ -108,7 +138,7 @@ const strings = {
   </p>
 </div>
 
-<script is:inline type="application/json" id="compare-config" set:html={JSON.stringify({ poverty: povertyConfig, black: blackConfig, strings })} />
+<script is:inline type="application/json" id="compare-config" set:html={JSON.stringify({ poverty: povertyConfig, black: blackConfig, alpr: alprConfig, strings })} />
 
 <script>
   import maplibregl from 'maplibre-gl';
@@ -129,10 +159,12 @@ const strings = {
     fallback: string;
   };
   type SideConfig = { dataPath: string; color: string; categoryColors: CategoryColors; label: string };
+  type AlprConfig = { dataPath: string; color: string; strokeColor: string };
 
   const config = JSON.parse(document.getElementById('compare-config')!.textContent!) as {
     poverty: SideConfig;
     black: SideConfig;
+    alpr: AlprConfig;
   };
 
   const elA = document.getElementById('compare-map-a')!;
@@ -141,6 +173,7 @@ const strings = {
   const slider = document.getElementById('compare-slider') as HTMLInputElement;
   const statusEl = document.getElementById('compare-status')!;
   const loadingEl = document.getElementById('compare-loading')!;
+  const alprCheckbox = document.getElementById('compare-show-alpr') as HTMLInputElement;
 
   function fillExpression(cc: CategoryColors): maplibregl.ExpressionSpecification {
     return [
@@ -175,6 +208,34 @@ const strings = {
       type: 'line',
       source: 'demographics',
       paint: { 'line-color': 'rgba(0,0,0,0.25)', 'line-width': 0.5 },
+    });
+  }
+
+  /**
+   * Cameras, drawn identically on both maps. With mapB clipped to the right
+   * of the divider, a camera added to mapA alone would vanish the moment the
+   * divider passed it, and one added to mapB alone would never appear left
+   * of the divider at all. Duplicating the same source/layer onto both is
+   * what makes a dot read as one continuous thing as the divider moves
+   * across it, not two different dots that happen to line up.
+   *
+   * Deliberately not the main map's full ALPR treatment: one colour, one
+   * plain circle, no operator category, no direction cone — this view is
+   * "where are the cameras relative to these two layers", not a rebuild of
+   * the ALPR record itself. `compareAccessibleNote` points to the real thing.
+   */
+  function addAlpr(map: maplibregl.Map, alpr: AlprConfig) {
+    map.addSource('alpr', { type: 'geojson', data: alpr.dataPath });
+    map.addLayer({
+      id: 'alpr-points',
+      type: 'circle',
+      source: 'alpr',
+      paint: {
+        'circle-radius': 3.5,
+        'circle-color': alpr.color,
+        'circle-stroke-color': alpr.strokeColor,
+        'circle-stroke-width': 1,
+      },
     });
   }
 
@@ -248,18 +309,34 @@ const strings = {
     slider.addEventListener('input', () => applySlider(Number(slider.value)));
     window.addEventListener('resize', layout);
 
+    function setAlprVisibility(visible: boolean) {
+      const v = visible ? 'visible' : 'none';
+      for (const map of [mapA, mapB]) {
+        if (map.getLayer('alpr-points')) map.setLayoutProperty('alpr-points', 'visibility', v);
+      }
+    }
+    alprCheckbox.addEventListener('change', () => setAlprVisibility(alprCheckbox.checked));
+
     let loadedCount = 0;
     function onOneLoaded() {
       loadedCount++;
-      if (loadedCount === 2) loadingEl.remove();
+      if (loadedCount === 2) {
+        loadingEl.remove();
+        // Both layers exist by now regardless of which map's 'load' fired
+        // last; setting this once here (rather than per-map, per-load) is
+        // what makes it correct regardless of that ordering.
+        setAlprVisibility(alprCheckbox.checked);
+      }
     }
 
     mapA.on('load', () => {
       addChoropleth(mapA, config.poverty);
+      addAlpr(mapA, config.alpr);
       onOneLoaded();
     });
     mapB.on('load', () => {
       addChoropleth(mapB, config.black);
+      addAlpr(mapB, config.alpr);
       onOneLoaded();
     });
 
