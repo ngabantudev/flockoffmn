@@ -164,6 +164,7 @@ const strings = {
   actionUnknownOperator: t('actionUnknownOperator'),
   actionPickBody: t('actionPickBody'),
   filtersCleared: t('filtersCleared'),
+  resetView: t('resetView'),
 };
 ---
 
@@ -453,29 +454,19 @@ const strings = {
       </div>
 
       {/*
-        Lifted clear of the detail sheet on the viewports where the sheet
-        floats over the map — see #detail-panel below. --map-sheet-h is 0px
-        whenever no sheet is open, so this is the same 2rem from the bottom it
-        always was.
+        One wrapper for everything that lives in the map's bottom-right
+        corner — matching wealldobettermn.org's own #map-corner-controls
+        exactly (see its WardMap.tsx): the theme toggle, the reset-view
+        button, MapLibre's zoom buttons, and its attribution badge, mounted
+        as ordinary flex children of a div this markup owns rather than
+        handed to MapLibre's own separately-positioned corner container via
+        map.addControl(). That's what makes `gap` alone keep all four
+        evenly spaced regardless of any one control's actual rendered
+        width — no per-control offset tuning. mapController.ts's map-setup
+        does the actual mounting (control.onAdd(map) → appendChild) into
+        this empty div; nothing is rendered here.
       */}
-      {/*
-        Icon-only, not text-and-icon: the label still exists for anyone who
-        needs it — aria-label plus a native title tooltip — but the visible
-        button is just the glyph, the compact corner-control treatment
-        wealldobettermn.org uses for its own "back to the state" reset. The
-        icon itself is injected by the client script below, the same place
-        impactSpheres' icons are, rather than server-rendered here: lucide's
-        DOM builder needs a browser.
-      */}
-      <button
-        id="reset-view"
-        type="button"
-        aria-label={t('resetView')}
-        title={t('resetView')}
-        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
-        class="absolute right-2 flex h-8 w-8 items-center justify-center rounded-md border border-ink-700 bg-ink-900/90 text-ink-200 hover:text-ink-100 motion-safe:transition-[bottom]"
-      >
-      </button>
+      <div id="map-corner-controls"></div>
 
       {/*
         A second, visual-only way to look at the two demographic layers
@@ -582,7 +573,7 @@ const strings = {
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { formatValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
-  import { createElement, Crosshair } from 'lucide';
+  import { createElement } from 'lucide';
   // The same closed allow-list the map's own marker glyphs resolve through —
   // see its comment for why there is one map and not two.
   import { MARKER_ICONS } from '~/lib/icons';
@@ -619,6 +610,7 @@ const strings = {
   }
 
   const controller = new MapController(mapEl, layers, {
+    resetViewLabel: S.resetView,
     onSelect: (feature, layer) => renderDetail(feature, layer),
     onCounts: (counts) => {
       for (const [id, { shown }] of Object.entries(counts)) {
@@ -1063,10 +1055,6 @@ const strings = {
 
     status(S.filtersCleared);
   });
-
-  const resetViewButton = document.getElementById('reset-view');
-  resetViewButton?.appendChild(createElement(Crosshair, { width: 16, height: 16 }));
-  resetViewButton?.addEventListener('click', () => controller.resetView());
 
   /* ------------------------------- Compare ------------------------------- */
 
