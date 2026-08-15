@@ -4,8 +4,8 @@ import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import {
   baseStyle,
   basemapBackgroundColor,
-  BASEMAP_LAYERS,
-  FLAVOR_VARIANT_PAINT_KEYS,
+  ALL_BASEMAP_LAYER_IDS,
+  BASEMAP_SOURCE_IDS,
   METRO_BOUNDS,
   METRO_CENTER,
 } from './mapStyle';
@@ -421,7 +421,7 @@ export class MapController {
    */
   private basemapDark = MAP_STYLES[initialMapStyle()].dark;
   /** See the `basemapColor` getter's comment — kept in sync by setBasemap(), the only place `basemapDark` changes. */
-  private cachedBasemapColor = basemapBackgroundColor(this.basemapDark);
+  private cachedBasemapColor = basemapBackgroundColor(initialMapStyle());
   /** Where the reader was before a tapped record moved the camera to it. */
   private preSelectCamera: { center: [number, number]; zoom: number } | null = null;
   /**
@@ -559,12 +559,10 @@ export class MapController {
       collapseAttribOnce();
     }
 
-    // The basemap is independent of every other layer here — swapping it is
-    // just re-setting BASEMAP_LAYERS' paint properties, never map.setStyle()
-    // (which would drop every registry layer this class has added). Queued
-    // on 'load' if a visitor toggles before the map has finished its first
-    // style load, since setPaintProperty on a layer that doesn't exist yet
-    // throws.
+    // Queued on 'load' if a visitor toggles before the map has finished its
+    // first style load — setBasemap() reads the live style via
+    // map.getStyle() to preserve registry layers (see its own comment), and
+    // that read isn't meaningful yet before 'load' fires.
     onMapStyleChange((styleId) => {
       if (this.hasLoaded) this.setBasemap(styleId);
       else this.map.once('load', () => this.setBasemap(styleId));
@@ -610,35 +608,49 @@ export class MapController {
   }
 
   /**
-   * Re-keys the basemap without map.setStyle() — that would drop every
-   * source/layer this class has added for the registry layers and density
-   * threads. The vector basemap has one source and ~20 layers
-   * (BASEMAP_LAYERS in mapStyle.ts) instead of the old raster setup's one
-   * source and two paint properties, but the principle is the same: every
-   * paint key that *can* differ between flavors gets re-set here, every
-   * time, for every layer — never left to whatever a previous flavor
-   * happened to set. That's what makes a bug like the old
-   * raster-brightness-max reset (a paint key MapLibre won't revert on its
-   * own just because a later call omits it) structurally impossible instead
-   * of something to remember by hand. "Can differ" is FLAVOR_VARIANT_PAINT_KEYS
-   * (mapStyle.ts) — precomputed by literally comparing both flavors' paint
-   * output, not a hand-picked subset — so a key that's provably identical
-   * either way (most `line-width` curves, for instance) is skipped rather
-   * than redundantly reapplied to every one of ~20 layers on every toggle.
+   * Swaps to a different basemap style via a real map.setStyle() call — the
+   * thing this method used to avoid entirely (see git history: a prior
+   * version re-keyed ~20 same-shaped layers' paint properties in place,
+   * because every "flavor" back then was the same layer set in different
+   * colors). These four styles (mapStyle.ts's basemapStyles/*.json) aren't
+   * that: fiord has 48 layers, liberty has 110, with different ids — a
+   * color-only repaint can't express switching between structurally
+   * different style documents, so an actual style swap is required.
+   *
+   * The risk map.setStyle() normally carries — dropping every source/layer
+   * this class has added on top for registry layers, flight/density
+   * threads, and everything else — is handled by hand instead of avoided:
+   * map.getStyle() returns the *live* current style (the current basemap's
+   * layers plus every layer added since), so subtracting
+   * ALL_BASEMAP_LAYER_IDS / BASEMAP_SOURCE_IDS (mapStyle.ts — the union
+   * across all four styles, not just whichever is currently active, since
+   * the *previous* style's own layer ids need stripping regardless of which
+   * one that was) leaves exactly the non-basemap sources/layers, spliced
+   * onto the new style's own basemap sources/layers before the single
+   * setStyle() call. Data layers keep their live paint state — any
+   * setPaintProperty() already applied to them survives, since getStyle()
+   * reflects that, not the original addLayer() call — and never actually
+   * leave the map.
    */
   setBasemap(styleId: MapStyleId): void {
     const dark = MAP_STYLES[styleId].dark;
-    for (const layer of BASEMAP_LAYERS) {
-      if (!this.map.getLayer(layer.id)) continue;
-      const paint = layer.paint(dark);
-      for (const key of FLAVOR_VARIANT_PAINT_KEYS.get(layer.id) ?? []) {
-        this.map.setPaintProperty(layer.id, key, paint[key]);
-      }
-    }
+    const newBasemap = baseStyle(styleId);
+    const current = this.map.getStyle();
+
+    const keptSources = Object.fromEntries(
+      Object.entries(current?.sources ?? {}).filter(([id]) => !BASEMAP_SOURCE_IDS.has(id)),
+    );
+    const keptLayers = (current?.layers ?? []).filter((l) => !ALL_BASEMAP_LAYER_IDS.has(l.id));
+
+    this.map.setStyle({
+      ...newBasemap,
+      sources: { ...newBasemap.sources, ...keptSources },
+      layers: [...newBasemap.layers, ...keptLayers],
+    });
 
     if (dark !== this.basemapDark) {
       this.basemapDark = dark;
-      this.cachedBasemapColor = basemapBackgroundColor(dark);
+      this.cachedBasemapColor = basemapBackgroundColor(styleId);
       this.repaintThemedLayers();
     }
   }
@@ -648,10 +660,10 @@ export class MapController {
    * this so a coloured mark reads against the map instead of floating on it.
    * A cached field, not a live lookup: `repaintThemedLayers()` reads this
    * once per registry layer (dozens, potentially), and re-deriving it every
-   * time meant a linear scan over BASEMAP_LAYERS plus a fresh paint-object
-   * allocation on every single read of a value that's constant for the
-   * entire loop and only ever changes when `basemapDark` flips — see
-   * `setBasemap()`, the only place that invalidates it.
+   * time meant a fresh lookup into the current style's own background layer
+   * on every single read of a value that's constant for the entire loop and
+   * only ever changes when `basemapDark` flips — see `setBasemap()`, the
+   * only place that invalidates it.
    */
   private get basemapColor(): string {
     return this.cachedBasemapColor;

@@ -132,17 +132,43 @@ config** to see a working map, in both `npm run dev` and a production build.
   zoom 0-14 (MapLibre overzooms past that by scaling vector geometry rather
   than blurring pixels the way raster tiles do — see the maxzoom comment in
   that script).
-- **Style:** hand-written vector paint rules in `src/lib/mapStyle.ts`'s
-  `BASEMAP_LAYERS`, two flavors (dark/light) matching the site theme. Not
-  four, the way the old MapTiler catalog offered — see that file's header
-  comment for why.
+- **Style:** four styles — fiord, liberty, positron, dark — mirrored from
+  OpenFreeMap (MIT-licensed) into `src/lib/basemapStyles/*.json` by
+  `scripts/tiles/mirror-basemap-styles.mjs`, matching
+  wealldobettermn.org's own catalog exactly. Each style's vector source is
+  rewritten to point at this bucket instead of OpenFreeMap's, and its
+  sprite/glyphs at this site's own origin (`public/sprites/`,
+  `public/fonts/`) instead of OpenFreeMap's — no visitor's browser ever
+  talks to OpenFreeMap directly. `src/lib/mapStyle.ts` reads these four
+  JSON files at build time (plain imports, not a runtime fetch); it no
+  longer hand-generates basemap paint rules the way the old two-flavor
+  system did.
 - **Attribution:** two separate credits are legally required, not one —
   OpenStreetMap (the data, ODbL) and OpenMapTiles (the tile schema, CC BY).
-  Both are baked into `TILE_ATTRIBUTION` in `mapStyle.ts` and render in
-  MapLibre's attribution control automatically. See `LICENSE-DATA.md`'s
-  basemap section for the full Produced-Work-vs-Derivative-Database
-  reasoning behind why this can ship without ODbL's share-alike clause
-  attaching.
+  Both are baked into each `basemapStyles/*.json`'s
+  `sources.openmaptiles.attribution` by the mirror script (and exported as
+  `TILE_ATTRIBUTION` from `mapStyle.ts` for anything else that wants the
+  same text) and render in MapLibre's attribution control automatically.
+  See `LICENSE-DATA.md`'s basemap section for the full
+  Produced-Work-vs-Derivative-Database reasoning behind why this can ship
+  without ODbL's share-alike clause attaching.
+
+### Refreshing the four basemap styles
+
+Needed if OpenFreeMap changes fiord/liberty/positron/dark's colors or
+layers upstream and the live site should follow — no automatic schedule,
+same reasoning as the archive rebuild below.
+
+```bash
+node scripts/tiles/mirror-basemap-styles.mjs
+```
+
+Re-fetches all four styles plus the shared sprite set and the two font
+weights (Bold, Italic) this adds beyond the Regular `public/fonts/` already
+vendored, rewriting each style's vector source/sprite/glyphs to this
+project's own self-hosted URLs. Review the diff in
+`src/lib/basemapStyles/*.json` before committing — this is a real content
+change to how the map looks, not a mechanical regeneration.
 
 ### Rebuilding the archive
 

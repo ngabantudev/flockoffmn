@@ -33,7 +33,8 @@
     "data:covenants": "node scripts/ingest/covenants.mjs",
     "data:ej": "node scripts/ingest/ej-cumulative.mjs",
     "tiles:build": "node scripts/tiles/build-basemap.mjs",
-    "tiles:publish": "node scripts/tiles/build-basemap.mjs --upload"
+    "tiles:publish": "node scripts/tiles/build-basemap.mjs --upload",
+    "tiles:styles": "node scripts/tiles/mirror-basemap-styles.mjs"
   },
   "dependencies": {
     "astro": "^7.1.6",
