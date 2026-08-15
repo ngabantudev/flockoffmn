@@ -126,8 +126,8 @@ export const LAYERS: LayerDefinition[] = [
         es: 'La propia redacción del registro interno de búsquedas de la agencia estaba incompleta al publicarse — nombraba personal individual y números de caso. Este proyecto no publica ni reproduce ese archivo; aquí solo consta un total mensual de búsquedas internas. Consulte el README de la carpeta de documentos reproducidos para ver qué se omitió y por qué.',
       },
       {
-        en: 'Contract status (added August 2026, as Minnesota cities began ending Flock Safety contracts) is transcribed only where a source documents an ending event directly — a news article alone does not move a record off "Active" here. A city working through this in the press but with no primary record yet transcribed is not shown as ended, which is a limit of this layer\'s sourcing bar, not a claim that its contract continues.',
-        es: 'El estado del contrato (agregado en agosto de 2026, cuando ciudades de Minnesota comenzaron a terminar contratos con Flock Safety) se transcribe solo cuando una fuente documenta directamente un evento de finalización — un artículo periodístico por sí solo no cambia un registro de "Activo". Una ciudad en proceso según la prensa pero sin un registro primario aún transcrito no se muestra como finalizada, lo cual es un límite del umbral de fuentes de esta capa, no una afirmación de que su contrato continúa.',
+        en: 'Contract status (added August 2026, as Minnesota cities began ending Flock Safety contracts) distinguishes a Tier 1/2-documented ending — "Suspended," "Terminated," "Not renewed," "Expired" — from one that is only reported: "Reported ended" (a distinct glyph on the map, and "Reported" rather than "Confirmed" confidence) means multiple news outlets, but no council resolution, agency memo, or other primary record yet, describe this contract as ending. That is frequently a live, unsettled situation — a manager’s action a council could reverse, a story still developing — not a weaker version of a settled fact. Both kinds of ending stop the jurisdiction’s green wash; only a confirmed one clears it to plain neutral, and a reported one instead washes it a duller, second colour. A jurisdiction that shows neither is not evidence its contract continues — only that no report has reached this layer yet.',
+        es: 'El estado del contrato (agregado en agosto de 2026, cuando ciudades de Minnesota comenzaron a terminar contratos con Flock Safety) distingue una finalización documentada en Nivel 1/2 —"Suspendido", "Terminado", "No renovado", "Vencido"— de una que solo se reporta: "Finalización reportada" (un ícono distinto en el mapa, y confianza "Reportado" en lugar de "Confirmado") significa que varios medios periodísticos, pero aún ningún acuerdo del concejo, memorando de la agencia u otro registro primario, describen este contrato como finalizado. Con frecuencia se trata de una situación en curso y no resuelta —una acción de un gerente que un concejo podría revertir, una historia aún en desarrollo— no una versión más débil de un hecho ya resuelto. Ambos tipos de finalización detienen el tono verde de la jurisdicción; solo una confirmada lo deja en un neutro plano, y una reportada lo tiñe de un segundo color más apagado. Que una jurisdicción no muestre ninguno de los dos no es evidencia de que su contrato continúe — solo de que ningún reporte ha llegado aún a esta capa.',
       },
     ],
     geometry: 'point',
@@ -142,7 +142,16 @@ export const LAYERS: LayerDefinition[] = [
       // than a reason to make the record disappear.
       byValue: {
         key: 'status',
-        icons: { Suspended: 'FileX', Terminated: 'FileX', 'Not renewed': 'FileX', Expired: 'FileX' },
+        icons: {
+          Suspended: 'FileX',
+          Terminated: 'FileX',
+          'Not renewed': 'FileX',
+          Expired: 'FileX',
+          // A different shape, not a paler FileX: this is the status for a
+          // record with no Tier 1/2 document behind it yet, only converging
+          // news coverage — see ContractStatus's own comment in types.ts.
+          'Reported ended': 'FileQuestion',
+        },
       },
     },
     filters: [
@@ -170,6 +179,10 @@ export const LAYERS: LayerDefinition[] = [
           Expired: {
             en: 'The contract’s term ended with no documented renewal or replacement on record.',
             es: 'El plazo del contrato terminó sin que haya constancia documentada de renovación o reemplazo.',
+          },
+          'Reported ended': {
+            en: 'News coverage — not yet a council resolution, agency memo, or other primary record — reports this contract suspended, terminated, or not renewed. Often still unsettled: several of these are a manager’s action a council could reverse, or a decision made in the days since the last check of this record. Confidence on this record is “Reported,” not “Confirmed.”',
+            es: 'La cobertura periodística —todavía no una resolución del concejo, un memorando de la agencia u otro registro primario— reporta que este contrato fue suspendido, terminado o no renovado. A menudo aún no está resuelto: varios de estos casos son una decisión de un gerente que un concejo podría revertir, o una decisión tomada en los días posteriores a la última revisión de este registro. La confianza de este registro es "Reportado", no "Confirmado".',
           },
         },
       },
@@ -367,11 +380,16 @@ export const LAYERS: LayerDefinition[] = [
     // A green wash on a jurisdiction that has a documented, currently active
     // vendor contract — see the field's own comment in types.ts for why this
     // is a coverage cue and not a score. excludeWhen means a jurisdiction
-    // whose only contract has since ended (see ContractStatus's own comment
-    // in types.ts) stops glowing on the strength of a record that no longer
-    // describes the present, without the record itself leaving the map.
-    // Every other polygon staying neutral is the honest state of the data,
-    // not a verdict on the agency.
+    // whose only contract has since ended, confirmed or merely reported
+    // (see ContractStatus's own comment in types.ts) stops glowing on the
+    // strength of a record that no longer describes the present, without
+    // the record itself leaving the map. secondaryWhen then repaints a
+    // jurisdiction in that second group — reported ended, not yet a
+    // confirmed one — a duller amber instead of plain neutral, so
+    // "contested and unconfirmed" is its own visible state rather than
+    // collapsing into either "documented" or "nothing on record." Every
+    // polygon that gets neither wash staying neutral is the honest state
+    // of the data, not a verdict on the agency.
     // Bright mint on dark, deep emerald on light — the first plain green
     // (Tailwind's own 500/600 step) read at roughly 1.1:1 against the light
     // basemap's neutral unselected grey, i.e. functionally invisible; both
@@ -383,9 +401,26 @@ export const LAYERS: LayerDefinition[] = [
     tintWhenRelated: {
       layerId: 'vendor_contract',
       joinKey: 'jurisdictionId',
-      excludeWhen: { key: 'status', values: ['Suspended', 'Terminated', 'Not renewed', 'Expired'] },
+      excludeWhen: {
+        key: 'status',
+        values: ['Suspended', 'Terminated', 'Not renewed', 'Expired', 'Reported ended'],
+      },
       color: '#86efac',
       colorLight: '#064e3b',
+      // A duller amber, not a paler green: a jurisdiction whose only
+      // documented contract is only *reported* ended (see ContractStatus's
+      // own comment in types.ts) is genuinely a different state from one
+      // with a confirmed, active contract, and from one with none on record
+      // at all — visible without a click, the same way the green wash
+      // already is. Amber reads as "unsettled" against this basemap the
+      // way the confidence label already does in the detail panel; this is
+      // that same distinction made visible at the polygon.
+      secondaryWhen: {
+        key: 'status',
+        values: ['Reported ended'],
+        color: '#fcd34d',
+        colorLight: '#78350f',
+      },
     },
     action: {
       // Reuses the existing generic surveillance-inventory request template —

@@ -1,4 +1,4 @@
-import { Shield, Star, Landmark, Route, Fingerprint, Speech, FileText, FileX, type IconNode } from 'lucide';
+import { Shield, Star, Landmark, Route, Fingerprint, Speech, FileText, FileX, FileQuestion, type IconNode } from 'lucide';
 
 /**
  * Every lucide glyph the registry may name, by the exact string it writes.
@@ -24,8 +24,13 @@ export const MARKER_ICONS: Record<string, IconNode> = {
   Fingerprint,
   Speech,
   FileText,
-  // A contract still in force draws FileText; one that has ended — by any
-  // of the statuses in ContractStatus other than "Active" — draws FileX. See
-  // the vendor_contract registry entry's markerIcon.byValue.
+  // A contract still in force draws FileText; one confirmed ended (any of
+  // ContractStatus's Tier 1/2-sourced values) draws FileX; one only reported
+  // ended, with no primary document yet, draws FileQuestion — a different
+  // shape for "this is still contested" rather than a paler copy of FileX,
+  // which would read as the same fact drawn less confidently instead of a
+  // genuinely different one. See the vendor_contract registry entry's
+  // markerIcon.byValue.
   FileX,
+  FileQuestion,
 };

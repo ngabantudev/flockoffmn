@@ -107,6 +107,7 @@ export interface ClientLayer {
     excludeWhen?: { key: string; values: string[] };
     color: string;
     colorLight: string;
+    secondaryWhen?: { key: string; values: string[]; color: string; colorLight: string };
   };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
@@ -665,6 +666,17 @@ export class MapController {
             'case',
             ['boolean', ['feature-state', 'related'], false],
             this.basemapDark ? layer.tintWhenRelated.color : layer.tintWhenRelated.colorLight,
+            // The contested wash only ever shows for a jurisdiction the
+            // `related` case above didn't already claim, so this branch and
+            // the one above can never both fire for the same polygon.
+            ...(layer.tintWhenRelated.secondaryWhen
+              ? [
+                  ['boolean', ['feature-state', 'relatedSecondary'], false],
+                  this.basemapDark
+                    ? layer.tintWhenRelated.secondaryWhen.color
+                    : layer.tintWhenRelated.secondaryWhen.colorLight,
+                ]
+              : []),
             this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
           ] as unknown as maplibregl.ExpressionSpecification)
         : (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT);
@@ -714,6 +726,12 @@ export class MapController {
         ['boolean', ['feature-state', 'hover'], false],
         0.28,
         ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 0.34] : []),
+        // A smaller bump than `related`'s — legible as "something's here" at
+        // a glance without reading as equally settled a fact as the green
+        // wash it sits one step below.
+        ...(tintActive && layer.tintWhenRelated?.secondaryWhen
+          ? [['boolean', ['feature-state', 'relatedSecondary'], false], 0.26]
+          : []),
         0.16,
       ] as unknown as maplibregl.ExpressionSpecification;
     }
@@ -746,6 +764,9 @@ export class MapController {
       ['boolean', ['feature-state', 'hover'], false],
       1.8,
       ...(tintActive ? [['boolean', ['feature-state', 'related'], false], 2.2] : []),
+      ...(tintActive && layer.tintWhenRelated?.secondaryWhen
+        ? [['boolean', ['feature-state', 'relatedSecondary'], false], 1.9]
+        : []),
       1.1,
     ] as unknown as maplibregl.ExpressionSpecification;
   }
@@ -1392,13 +1413,24 @@ export class MapController {
       // still-active contract on record should keep glowing for the one that
       // is — excludeWhen drops individual matches from counting, not the
       // whole bucket the moment any of them has ended.
-      const counts = matches?.some(
+      const related = matches?.some(
         (m) =>
           !rel.excludeWhen ||
           !rel.excludeWhen.values.includes(String(m.properties.attributes[rel.excludeWhen.key])),
       );
-      if (counts) {
-        this.map.setFeatureState({ source: src, id: feature.properties.id }, { related: true });
+      // Independent of the check above, not a fallback from it: a match
+      // that clears `related` already outranks the contested wash (see
+      // polygonFillColor), so this only ever ends up mattering for a
+      // jurisdiction where nothing does.
+      const relatedSecondary =
+        !related &&
+        rel.secondaryWhen &&
+        matches?.some((m) => rel.secondaryWhen!.values.includes(String(m.properties.attributes[rel.secondaryWhen!.key])));
+      if (related || relatedSecondary) {
+        this.map.setFeatureState(
+          { source: src, id: feature.properties.id },
+          { related: !!related, relatedSecondary: !!relatedSecondary },
+        );
       }
     }
   }

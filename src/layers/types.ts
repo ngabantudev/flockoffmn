@@ -92,13 +92,24 @@ export type Confidence = 'confirmed' | 'reported' | 'probabilistic';
  * that way in the source. Collapsing the two would assert a permanence the
  * record does not support.
  *
+ * `Reported ended` is deliberately its own value rather than a confidence
+ * qualifier bolted onto `Suspended`/`Terminated`/etc.: those four describe
+ * what a Tier 1/2 document says happened, and several of August 2026's
+ * cancellations have no such document yet, only converging Tier 4 (and one
+ * Tier 3 social-media) reporting — see CLAUDE.md §3. Using it says two
+ * things a reader needs at once: this is not confirmed the way Columbia
+ * Heights’s termination is, and it is not settled either, which is
+ * generally true of these — several are announcements pending a council
+ * vote, or a manager’s action a council could still reverse. `confidence`
+ * on the record is set to `'reported'` alongside it, never `'confirmed'`.
+ *
  * Not a closed TS union enforced by an exhaustive switch — ingest scripts
  * are plain `.mjs`, outside the type checker — but closed in spirit: the
  * registry's `status` filter and `categoryColors`/`markerIcon.byValue`
  * entries for `vendor_contract` are the enforcement, and a value transcribed
  * here that isn't named in all three renders as an unglossed fallback.
  */
-export type ContractStatus = 'Active' | 'Suspended' | 'Terminated' | 'Not renewed' | 'Expired';
+export type ContractStatus = 'Active' | 'Suspended' | 'Terminated' | 'Not renewed' | 'Expired' | 'Reported ended';
 
 /** How often the upstream source is expected to change. */
 export type RefreshCadence = 'frequent' | 'periodic' | 'rare';
@@ -679,6 +690,21 @@ export interface LayerDefinition {
      * made this field required in the first place.
      */
     colorLight: string;
+    /**
+     * A second, weaker wash for a jurisdiction whose only joined match is
+     * unconfirmed rather than absent — a contract several news outlets
+     * report as ended but that no Tier 1/2 document has yet settled (see
+     * `ContractStatus`'s `'Reported ended'` value). Only applied when no
+     * match clears `color`'s bar (a jurisdiction with one active and one
+     * reported-ended contract reads as fully documented, not contested) and
+     * `secondaryWhen`'s own values are not also excluded above — the two
+     * fields are independent tests, not a fallback chain, so declaring a
+     * value here without also naming it in `excludeWhen` would let a
+     * merely-reported record count as a confirmed one. Omit for a join with
+     * nothing worth flagging as contested rather than simply present or
+     * absent.
+     */
+    secondaryWhen?: { key: string; values: string[]; color: string; colorLight: string };
   };
   /**
    * The zooms across which this layer's records emerge.
