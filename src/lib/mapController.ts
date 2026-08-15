@@ -8,7 +8,6 @@ import {
   FLAVOR_VARIANT_PAINT_KEYS,
   METRO_BOUNDS,
   METRO_CENTER,
-  MN_BOUNDS,
 } from './mapStyle';
 import { bboxOf, representativePoint } from './geo.mjs';
 import { createElement } from 'lucide';
@@ -100,6 +99,8 @@ export interface ClientLayer {
     hubKey?: string;
     pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
   };
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  tintWhenRelated?: { layerId: LayerId; fromKey?: string; joinKey: string; color: string; colorLight: string };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -536,9 +537,9 @@ export class MapController {
     this.map.on('load', () => {
       this.hasLoaded = true;
       // Metro on load, not the statewide MN_BOUNDS — see METRO_CENTER's
-      // comment in mapStyle.ts. MN_BOUNDS is still where the "Reset to
-      // Minnesota" button (resetView(), below) sends a reader who has
-      // panned or filtered elsewhere and wants the whole state back.
+      // comment in mapStyle.ts. resetView() (below) fits this same
+      // METRO_BOUNDS, so the reset button returns a reader who has panned
+      // or filtered elsewhere to exactly what they saw on first load.
       this.map.fitBounds(METRO_BOUNDS, { padding: 24, animate: false });
     });
 
@@ -641,6 +642,19 @@ export class MapController {
    */
   private polygonFillColor(layer: ClientLayer): maplibregl.ExpressionSpecification {
     if (layer.polygonClick === 'highlight') {
+      const unselected = layer.tintWhenRelated
+        ? // Read from feature-state (applyRelatedTint sets it once the
+          // target layer's data is in), not a literal id list baked into
+          // the expression — the join can finish loading well after this
+          // paint property is first set, and feature-state repaints on its
+          // own the moment it changes.
+          ([
+            'case',
+            ['boolean', ['feature-state', 'related'], false],
+            this.basemapDark ? layer.tintWhenRelated.color : layer.tintWhenRelated.colorLight,
+            this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
+          ] as unknown as maplibregl.ExpressionSpecification)
+        : (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT);
       return [
         'case',
         [
@@ -649,7 +663,7 @@ export class MapController {
           ['boolean', ['feature-state', 'hover'], false],
         ],
         this.layerColor(layer),
-        this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
+        unselected,
       ] as unknown as maplibregl.ExpressionSpecification;
     }
     if (layer.categoryColors) {
@@ -1281,6 +1295,29 @@ export class MapController {
     return index;
   }
 
+  /**
+   * Marks every polygon of `layer` that has at least one match in
+   * `layer.tintWhenRelated`'s target with a `related` feature-state flag,
+   * which polygonFillColor reads. Loads the target layer's data first if it
+   * isn't already in `this.data` — ensureDataLoaded's own cross-layer path,
+   * so the tint appears whether or not a reader has switched that layer on
+   * — and only then builds the join index, so a call that runs before the
+   * fetch completes can't poison joinIndex's cache with an empty result.
+   */
+  private async applyRelatedTint(layer: ClientLayer): Promise<void> {
+    const rel = layer.tintWhenRelated;
+    if (!rel) return;
+    await this.ensureDataLoaded(rel.layerId);
+    const index = this.joinIndex(rel.layerId, rel.joinKey);
+    const src = this.sourceId(layer.id);
+    for (const feature of this.data.get(layer.id) ?? []) {
+      const value = this.joinValueOf(feature, rel.fromKey);
+      if (value != null && index.has(value)) {
+        this.map.setFeatureState({ source: src, id: feature.properties.id }, { related: true });
+      }
+    }
+  }
+
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
   async loadLayer(layer: ClientLayer): Promise<void> {
     if (this.loading.has(layer.id)) return;
@@ -1441,12 +1478,19 @@ export class MapController {
                 // (see showRelatedBuildings), so the polygon settles rather
                 // than blazing full-strength the way a plain highlight layer
                 // still would (see the outline width below for that case).
+                // `tintWhenRelated` is the one exception: that colour has to
+                // read as a finding on its own, with no click, so a related
+                // ward sits a full step above the plain 0.16 wash — the same
+                // 0.16 was the whole reason the tint first read as invisible.
                 ([
                   'case',
                   ['boolean', ['feature-state', 'selected'], false],
                   subtle ? 0.24 : 0.42,
                   ['boolean', ['feature-state', 'hover'], false],
                   0.28,
+                  ...(layer.tintWhenRelated
+                    ? [['boolean', ['feature-state', 'related'], false], 0.34]
+                    : []),
                   0.16,
                 ] as unknown as maplibregl.ExpressionSpecification)
               : layer.blockAggregate
@@ -1481,6 +1525,9 @@ export class MapController {
                   subtle ? 1.6 : 2.5,
                   ['boolean', ['feature-state', 'hover'], false],
                   1.8,
+                  ...(layer.tintWhenRelated
+                    ? [['boolean', ['feature-state', 'related'], false], 2.2]
+                    : []),
                   1.1,
                 ] as unknown as maplibregl.ExpressionSpecification)
               : 1.1,
@@ -1499,6 +1546,7 @@ export class MapController {
         },
         under,
       );
+      if (layer.tintWhenRelated) void this.applyRelatedTint(layer);
       if (layer.labelBy) {
         // The identifier the source printed on the area, in the area's own
         // colour over a basemap-dark halo. Null attributes draw nothing, and
@@ -3023,8 +3071,14 @@ export class MapController {
     );
   }
 
+  /**
+   * Return to exactly the view a reader who just opened the page sees —
+   * METRO_BOUNDS, the same fitBounds call 'load' above runs — not the
+   * statewide MN_BOUNDS. A reset that lands somewhere the reader never
+   * actually started from is not a reset.
+   */
   resetView() {
-    this.map.fitBounds(MN_BOUNDS, {
+    this.map.fitBounds(METRO_BOUNDS, {
       padding: this.fitPadding(24),
       duration: REDUCED_MOTION ? 0 : 500,
     });

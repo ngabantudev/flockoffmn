@@ -1,4 +1,4 @@
-import { Shield, Star, Landmark, Route, Fingerprint, Speech, type IconNode } from 'lucide';
+import { Shield, Star, Landmark, Route, Fingerprint, Speech, FileText, type IconNode } from 'lucide';
 
 /**
  * Every lucide glyph the registry may name, by the exact string it writes.
@@ -23,4 +23,5 @@ export const MARKER_ICONS: Record<string, IconNode> = {
   Route,
   Fingerprint,
   Speech,
+  FileText,
 };

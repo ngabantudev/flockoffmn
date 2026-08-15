@@ -50,7 +50,15 @@ export type LayerId =
   // Present-day counterpart to the historical layers: MPCA's cumulative
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
   // A tract is an aggregate of thousands of people, never a household.
-  | 'ej_cumulative';
+  | 'ej_cumulative'
+  // The vendor contract itself — the record every other surveillance layer's
+  // hoverCard has, until now, had to say was absent. Not a live feed: a
+  // vendor contract only exists when a records request produces one, so this
+  // is a small hand-curated set of documented agreements, each one mirrored
+  // in full under public/data/docs/, starting with the first: University of
+  // Minnesota PD's Flock Safety contract, released via a MuckRock MGDPA
+  // request. See scripts/ingest/vendor-contracts.mjs.
+  | 'vendor_contract';
 
 export type Locale = 'en' | 'es';
 
@@ -181,13 +189,18 @@ export interface FilterDefinition {
  * src/lib/detailFields.ts switches over this exhaustively, so adding a member
  * here fails the build until every surface handles it.
  */
-export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees';
+export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees' | 'currency';
 
 /** How to render one attribute in the detail panel (spec F5). */
 export interface DetailField {
   key: string;
   label: I18nString;
-  /** `date` formats ISO strings; `link` renders an anchor; `text` is default. */
+  /**
+   * `date` formats ISO strings; `link` renders an anchor; `currency` prints a
+   * plain USD number ($ sign, thousands separators, no cents — every dollar
+   * figure ingested here is already a whole-dollar contract line); `text` is
+   * default.
+   */
   format?: DetailFieldFormat;
 }
 
@@ -589,6 +602,44 @@ export interface LayerDefinition {
        */
       joinKey: string;
     };
+  };
+  /**
+   * Tint a `polygonClick: 'highlight'` polygon's unselected fill while at
+   * least one record in another layer joins to it — for a jurisdiction, "a
+   * records request has produced something here" made visible without a
+   * click.
+   *
+   * A coverage cue, not a score (§1c): the tint says a document exists, and
+   * its absence says only that no request has produced one *yet*, never
+   * that an agency has nothing to find — the same distinction every
+   * `related.empty` string on this map already has to hold, just read off a
+   * fill colour instead of a hover card. It is computed at render time from
+   * data both layers already load (the same "no record of its own" rule
+   * `blockAggregate` documents) and never becomes a field of its own: not in
+   * `detailFields`, not in a download, not part of the accessible record
+   * list — a visual-only cue layered on top of a relation that is
+   * independently inspectable through the layer it points at.
+   */
+  tintWhenRelated?: {
+    /** The layer whose presence lights this polygon up. */
+    layerId: LayerId;
+    /** Attribute on THIS layer holding the joining value; defaults to `id`. */
+    fromKey?: string;
+    /** Attribute on that layer holding the same value. */
+    joinKey: string;
+    /** Fill/outline colour applied while at least one match exists (dark basemap). */
+    color: string;
+    /**
+     * `color`'s counterpart for a light basemap — the same pairing every
+     * layer's own `color`/`colorLight` already makes, and required rather
+     * than optional here: this colour has to clear WCAG non-text contrast
+     * (~3:1) against both the light basemap *and* the neutral grey every
+     * other unselected polygon already draws in, and one hex rarely clears
+     * both a near-black and a near-white background at once. Omitting it
+     * would silently reuse `color`, which is exactly the failure mode that
+     * made this field required in the first place.
+     */
+    colorLight: string;
   };
   /**
    * The zooms across which this layer's records emerge.
