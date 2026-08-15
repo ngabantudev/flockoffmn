@@ -1899,4 +1899,193 @@ export const LAYERS: LayerDefinition[] = [
       wide: true,
     },
   },
+
+  {
+    id: 'demographic_black_share',
+    slug: 'demographics-black',
+    category: 'environment',
+    label: { en: 'Black population share', es: 'Proporción de población negra' },
+    summary: {
+      en: 'What share of each census tract is Black or African American, from the Census Bureau’s American Community Survey.',
+      es: 'Qué proporción de cada sección censal es negra o afroamericana, según la Encuesta sobre la Comunidad de la Census Bureau.',
+    },
+    whatThisMeans: {
+      en: 'The Census Bureau’s American Community Survey samples households continuously and publishes a five-year rolling average for every census tract — a few thousand residents each. This layer shows what share of each tract is Black or African American, counted separately from Hispanic or Latino origin so a Black Hispanic resident is not counted twice. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Black neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
+      es: 'La Encuesta sobre la Comunidad de la Census Bureau muestrea hogares de forma continua y publica un promedio móvil de cinco años para cada sección censal, de unos pocos miles de residentes cada una. Esta capa muestra qué proporción de cada sección es negra o afroamericana, contada por separado del origen hispano o latino para que un residente negro hispano no se cuente dos veces. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios negros — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
+    },
+    limitations: [
+      {
+        en: 'A five-year rolling average, not a count taken on any single date.',
+        es: 'Un promedio móvil de cinco años, no un recuento tomado en una fecha concreta.',
+      },
+      {
+        en: 'Margins of error can be large for a small population in a small tract. Tracts where the estimate’s coefficient of variation exceeds 40% — the Census Bureau’s own reliability cutoff — are marked in the detail panel rather than shown as precise; roughly seven in ten Minnesota tracts fall into that category for this specific estimate, since the statewide Black population is a small share spread thin across mostly rural tracts.',
+        es: 'Los márgenes de error pueden ser grandes para una población pequeña en una sección pequeña. Las secciones donde el coeficiente de variación de la estimación supera el 40% —el propio umbral de fiabilidad de la Census Bureau— se marcan en el panel de detalle en lugar de mostrarse como precisas; alrededor de siete de cada diez secciones de Minnesota caen en esa categoría para esta estimación en concreto, ya que la población negra estatal es una proporción pequeña repartida entre secciones mayormente rurales.',
+      },
+      {
+        en: 'A tract average says nothing about any block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#ec4899',
+    colorLight: '#be185d',
+    categoryColors: {
+      key: 'blackBand',
+      label: { en: 'Black population share', es: 'Proporción de población negra' },
+      colors: [
+        { value: '0–5%', color: '#fce7f3' },
+        { value: '5–15%', color: '#f9a8d4' },
+        { value: '15–30%', color: '#ec4899' },
+        { value: '30–50%', color: '#be185d' },
+        { value: '50%+', color: '#831843' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/demographics.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'U.S. Census Bureau, American Community Survey, table B03002',
+      sourceUrl: 'https://www.census.gov/data/developers/data-sets/acs-5year.html',
+      license: 'Public domain (U.S. federal statistical work)',
+      licenseUrl: null,
+      attribution: 'U.S. Census Bureau, American Community Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [{ key: 'blackBand', kind: 'enum', label: { en: 'Black population share', es: 'Proporción de población negra' } }],
+    detailFields: [
+      { key: 'blackPercent', label: { en: 'Black or African American, % of tract', es: 'Negra o afroamericana, % de la sección' } },
+      { key: 'blackPercentMoe', label: { en: '± margin of error, percentage points', es: '± margen de error, puntos porcentuales' } },
+      { key: 'blackHighUncertainty', label: { en: 'Estimate below the Census Bureau’s reliability threshold', es: 'Estimación por debajo del umbral de fiabilidad de la Census Bureau' } },
+      { key: 'totalPopulation', label: { en: 'Total tract population', es: 'Población total de la sección' } },
+    ],
+  },
+
+  {
+    id: 'demographic_latinx_share',
+    slug: 'demographics-latinx',
+    category: 'environment',
+    label: { en: 'Latinx population share', es: 'Proporción de población latina' },
+    summary: {
+      en: 'What share of each census tract is Hispanic or Latino, from the Census Bureau’s American Community Survey.',
+      es: 'Qué proporción de cada sección censal es hispana o latina, según la Encuesta sobre la Comunidad de la Census Bureau.',
+    },
+    whatThisMeans: {
+      en: 'The same American Community Survey five-year rolling average as the Black population share layer, showing what share of each tract is Hispanic or Latino of any race. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Latinx neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
+      es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que la capa de proporción de población negra, mostrando qué proporción de cada sección es hispana o latina de cualquier raza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios latinos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
+    },
+    limitations: [
+      {
+        en: 'A five-year rolling average, not a count taken on any single date.',
+        es: 'Un promedio móvil de cinco años, no un recuento tomado en una fecha concreta.',
+      },
+      {
+        en: 'Margins of error can be large for a small population in a small tract. Tracts where the estimate’s coefficient of variation exceeds 40% — the Census Bureau’s own reliability cutoff — are marked in the detail panel rather than shown as precise.',
+        es: 'Los márgenes de error pueden ser grandes para una población pequeña en una sección pequeña. Las secciones donde el coeficiente de variación de la estimación supera el 40% —el propio umbral de fiabilidad de la Census Bureau— se marcan en el panel de detalle en lugar de mostrarse como precisas.',
+      },
+      {
+        en: 'A tract average says nothing about any block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#6366f1',
+    colorLight: '#4338ca',
+    categoryColors: {
+      key: 'latinxBand',
+      label: { en: 'Latinx population share', es: 'Proporción de población latina' },
+      colors: [
+        { value: '0–5%', color: '#e0e7ff' },
+        { value: '5–15%', color: '#a5b4fc' },
+        { value: '15–30%', color: '#6366f1' },
+        { value: '30–50%', color: '#4338ca' },
+        { value: '50%+', color: '#312e81' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/demographics.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'U.S. Census Bureau, American Community Survey, table B03002',
+      sourceUrl: 'https://www.census.gov/data/developers/data-sets/acs-5year.html',
+      license: 'Public domain (U.S. federal statistical work)',
+      licenseUrl: null,
+      attribution: 'U.S. Census Bureau, American Community Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [{ key: 'latinxBand', kind: 'enum', label: { en: 'Latinx population share', es: 'Proporción de población latina' } }],
+    detailFields: [
+      { key: 'latinxPercent', label: { en: 'Hispanic or Latino, % of tract', es: 'Hispana o latina, % de la sección' } },
+      { key: 'latinxPercentMoe', label: { en: '± margin of error, percentage points', es: '± margen de error, puntos porcentuales' } },
+      { key: 'latinxHighUncertainty', label: { en: 'Estimate below the Census Bureau’s reliability threshold', es: 'Estimación por debajo del umbral de fiabilidad de la Census Bureau' } },
+      { key: 'totalPopulation', label: { en: 'Total tract population', es: 'Población total de la sección' } },
+    ],
+  },
+
+  {
+    id: 'demographic_poverty_rate',
+    slug: 'demographics-poverty',
+    category: 'environment',
+    label: { en: 'Poverty rate', es: 'Tasa de pobreza' },
+    summary: {
+      en: 'What share of each census tract lives below the federal poverty line, from the Census Bureau’s American Community Survey.',
+      es: 'Qué proporción de cada sección censal vive por debajo del umbral federal de pobreza, según la Encuesta sobre la Comunidad de la Census Bureau.',
+    },
+    whatThisMeans: {
+      en: 'The same American Community Survey five-year rolling average as the two population-share layers, showing what share of each tract’s residents live below the federal poverty line. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in low-income neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the rate itself.',
+      es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que las dos capas de proporción de población, mostrando qué proporción de los residentes de cada sección vive por debajo del umbral federal de pobreza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios de bajos ingresos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la tasa misma.',
+    },
+    limitations: [
+      {
+        en: 'A five-year rolling average, not a count taken on any single date.',
+        es: 'Un promedio móvil de cinco años, no un recuento tomado en una fecha concreta.',
+      },
+      {
+        en: 'This is the Census Bureau’s own pre-computed subject-table rate (table S1701), with its own published margin of error — shown in the detail panel, and flagged where the coefficient of variation exceeds the Bureau’s 40% reliability cutoff.',
+        es: 'Esta es la tasa ya calculada por la propia Census Bureau en su tabla temática (tabla S1701), con su propio margen de error publicado —mostrado en el panel de detalle y señalado cuando el coeficiente de variación supera el umbral de fiabilidad del 40% de la Oficina.',
+      },
+      {
+        en: 'A tract average says nothing about any block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#14b8a6',
+    colorLight: '#0f766e',
+    categoryColors: {
+      key: 'povertyBand',
+      label: { en: 'Poverty rate', es: 'Tasa de pobreza' },
+      colors: [
+        { value: '0–10%', color: '#ccfbf1' },
+        { value: '10–20%', color: '#5eead4' },
+        { value: '20–30%', color: '#14b8a6' },
+        { value: '30–40%', color: '#0f766e' },
+        { value: '40%+', color: '#134e4a' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/demographics.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'U.S. Census Bureau, American Community Survey, table S1701',
+      sourceUrl: 'https://www.census.gov/data/developers/data-sets/acs-5year.html',
+      license: 'Public domain (U.S. federal statistical work)',
+      licenseUrl: null,
+      attribution: 'U.S. Census Bureau, American Community Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [{ key: 'povertyBand', kind: 'enum', label: { en: 'Poverty rate', es: 'Tasa de pobreza' } }],
+    detailFields: [
+      { key: 'povertyPercent', label: { en: 'Below the poverty line, % of tract', es: 'Por debajo del umbral de pobreza, % de la sección' } },
+      { key: 'povertyPercentMoe', label: { en: '± margin of error, percentage points', es: '± margen de error, puntos porcentuales' } },
+      { key: 'povertyHighUncertainty', label: { en: 'Estimate below the Census Bureau’s reliability threshold', es: 'Estimación por debajo del umbral de fiabilidad de la Census Bureau' } },
+      { key: 'totalPopulation', label: { en: 'Total tract population', es: 'Población total de la sección' } },
+    ],
+  },
 ];

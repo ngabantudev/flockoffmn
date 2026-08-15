@@ -13,7 +13,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "check": "astro check",
-    "data": "node scripts/ingest/build-all.mjs",
+    "data": "node --env-file-if-exists=.env scripts/ingest/build-all.mjs",
     "data:counties": "node scripts/ingest/counties.mjs",
     "data:jurisdictions": "node scripts/ingest/jurisdictions.mjs",
     "data:alpr": "node scripts/ingest/alpr.mjs",
@@ -32,6 +32,7 @@
     "pages:publish": "npm run build && wrangler pages deploy dist --project-name=flockoffmn --branch=main",
     "data:covenants": "node scripts/ingest/covenants.mjs",
     "data:ej": "node scripts/ingest/ej-cumulative.mjs",
+    "data:demographics": "node --env-file-if-exists=.env scripts/ingest/demographics.mjs",
     "tiles:build": "node scripts/tiles/build-basemap.mjs",
     "tiles:publish": "node scripts/tiles/build-basemap.mjs --upload"
   },

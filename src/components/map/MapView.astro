@@ -3,6 +3,7 @@ import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
 import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import CompareView from '~/components/map/CompareView.astro';
 
 interface Props {
   locale: Locale;
@@ -475,6 +476,47 @@ const strings = {
         class="absolute right-2 flex h-8 w-8 items-center justify-center rounded-md border border-ink-700 bg-ink-900/90 text-ink-200 hover:text-ink-100 motion-safe:transition-[bottom]"
       >
       </button>
+
+      {/*
+        A second, visual-only way to look at the two demographic layers
+        already on the main map (see the Environment section of the layer
+        panel) — poverty rate and Black population share, side by side with a
+        draggable divider, instead of toggled one at a time. Lives in the same
+        map-only container as reset-view above so its own absolute
+        positioning is scoped to the map canvas, not the layer panel beside
+        it. The overlay it opens is not built until first opened — see
+        CompareView.astro's start()/IntersectionObserver.
+
+        top-left rather than alongside reset-view at the bottom: the bottom
+        of the map is already the most crowded strip on screen — the
+        colour-coded key, the scale bar, and the attribution control all
+        live there, and on a narrow phone that's not enough room for a
+        fourth thing. A first pass put this button at bottom-right and it
+        overlapped the attribution control badly enough that a scripted
+        click on a 375px-wide viewport landed on attribution instead of the
+        button. Top-left has nothing else on it at any breakpoint.
+      */}
+      <button
+        id="open-compare"
+        type="button"
+        title={t('compareOpenButton')}
+        class="absolute top-2 left-2 max-w-[75vw] rounded-full border border-ink-700 bg-ink-900/90 px-3 py-1.5 text-xs font-medium text-ink-100 hover:bg-ink-800"
+      >
+        {t('compareOpenButton')}
+      </button>
+
+      <div id="compare-overlay" hidden class="absolute inset-0 z-30 bg-ink-950">
+        <button
+          id="close-compare"
+          type="button"
+          aria-label={t('compareClose')}
+          title={t('compareClose')}
+          class="absolute top-3 right-3 z-40 flex h-8 w-8 items-center justify-center rounded-md border border-ink-700 bg-ink-900/90 text-lg leading-none text-ink-200 hover:text-ink-100"
+        >
+          ×
+        </button>
+        <CompareView locale={locale} />
+      </div>
 
       {/*
         On-map keys for colour-coded layers, one bar per visible layer that
@@ -1025,6 +1067,21 @@ const strings = {
   const resetViewButton = document.getElementById('reset-view');
   resetViewButton?.appendChild(createElement(Crosshair, { width: 16, height: 16 }));
   resetViewButton?.addEventListener('click', () => controller.resetView());
+
+  /* ------------------------------- Compare ------------------------------- */
+
+  const openCompareButton = document.getElementById('open-compare');
+  const compareOverlay = document.getElementById('compare-overlay');
+  const closeCompareButton = document.getElementById('close-compare');
+  openCompareButton?.addEventListener('click', () => {
+    if (compareOverlay) compareOverlay.hidden = false;
+  });
+  closeCompareButton?.addEventListener('click', () => {
+    if (compareOverlay) compareOverlay.hidden = true;
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && compareOverlay && !compareOverlay.hidden) compareOverlay.hidden = true;
+  });
 
   /* ------------------------------- Search ------------------------------- */
 
