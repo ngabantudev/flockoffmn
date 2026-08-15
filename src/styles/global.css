@@ -422,6 +422,17 @@
 }
 
 /*
+ * ResetViewControl (src/lib/resetViewControl.ts) — same inline-SVG-child
+ * centering issue as .theme-control-button below, for the same reason.
+ */
+.reset-view-control-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-ink-100);
+}
+
+/*
  * ThemeControl (src/lib/themeControl.ts) — the map-corner "site theme / map
  * theme" popover. Built with hand-written classes rather than
  * .maplibregl-ctrl-icon's convention (a class MapLibre expects on a
@@ -456,7 +467,12 @@
 }
 .theme-control-panel {
   position: absolute;
-  top: calc(100% + 0.5rem);
+  /*
+   * Opens upward, not down: the control now docks bottom-right (see
+   * mapController.ts's addControl calls), so a panel that dropped below the
+   * button would open off the bottom edge of the map instead of over it.
+   */
+  bottom: calc(100% + 0.5rem);
   right: 0;
   z-index: 10;
   width: max-content;
