@@ -82,6 +82,55 @@ const HOLC_GRADE_COLORS = {
 } as const;
 
 /**
+ * Plain-language label for each of CI-MAP's 26 stressor codes, for the
+ * `ej_cumulative` layer's `adverseList` pill row.
+ *
+ * MPCA's own field ships snake_case codes joined by "; " — read straight
+ * through from the source, unmodified, so the raw record still matches the
+ * document (see ej-cumulative.mjs). This is presentation over that same
+ * value, the same role HOLC_GRADE_COLORS and each filter's
+ * `valueDescriptions` already play elsewhere: it renames nothing in the data,
+ * only in what a reader is shown.
+ */
+const EJ_STRESSOR_LABELS: Record<string, { en: string; es: string }> = {
+  age: { en: 'Older population', es: 'Población de mayor edad' },
+  asthma: { en: 'Asthma', es: 'Asma' },
+  cancer_risk: { en: 'Cancer risk', es: 'Riesgo de cáncer' },
+  childhood_lead_exposure: { en: 'Childhood lead exposure', es: 'Exposición infantil al plomo' },
+  cleanup_sites: { en: 'Contaminated cleanup sites', es: 'Sitios contaminados en limpieza' },
+  cost_burdened_households: { en: 'Cost-burdened households', es: 'Hogares con carga de costos' },
+  disability: { en: 'Disability', es: 'Discapacidad' },
+  education: { en: 'Limited educational attainment', es: 'Nivel educativo limitado' },
+  food_insecurity: { en: 'Food insecurity', es: 'Inseguridad alimentaria' },
+  groundwater_threats: { en: 'Groundwater contamination threats', es: 'Amenazas de contaminación de aguas subterráneas' },
+  heart_disease: { en: 'Heart disease', es: 'Enfermedad cardíaca' },
+  impaired_waters: { en: 'Impaired waters', es: 'Aguas degradadas' },
+  impervious_surfaces: { en: 'Impervious surfaces', es: 'Superficies impermeables' },
+  income_inequality: { en: 'Income inequality', es: 'Desigualdad de ingresos' },
+  industrial_runoff_exceedances: {
+    en: 'Industrial runoff exceedances',
+    es: 'Excesos de escorrentía industrial',
+  },
+  lack_recreation: { en: 'Lack of recreational access', es: 'Falta de acceso recreativo' },
+  lack_tree_canopy: { en: 'Lack of tree canopy', es: 'Falta de cobertura arbórea' },
+  non_cancer_risk: { en: 'Non-cancer health risk', es: 'Riesgo de salud no cancerígeno' },
+  ozone: { en: 'Ozone', es: 'Ozono' },
+  pm_2_5: { en: 'Fine particulate matter (PM2.5)', es: 'Partículas finas (PM2.5)' },
+  population_near_highways: {
+    en: 'Population near highways',
+    es: 'Población cerca de autopistas',
+  },
+  regulated_pollution_activities: {
+    en: 'Regulated pollution activities',
+    es: 'Actividades reguladas de contaminación',
+  },
+  solid_waste: { en: 'Solid waste facilities', es: 'Instalaciones de residuos sólidos' },
+  traffic_density: { en: 'Traffic density', es: 'Densidad de tráfico' },
+  unemployment: { en: 'Unemployment', es: 'Desempleo' },
+  uninsured: { en: 'Uninsured residents', es: 'Residentes sin seguro médico' },
+};
+
+/**
  * The layer registry — the single source of truth for what the map shows.
  *
  * Adding a layer means: write an ingest script that emits a LayerCollection to
@@ -1958,7 +2007,7 @@ export const LAYERS: LayerDefinition[] = [
     // it: a reader browsing tracts should get the burden band at a glance
     // without a click.
     hoverCard: {
-      fields: ['stressorCount', 'countyMedian', 'mpcaAdverse'],
+      fields: ['stressorSummary', 'burdenBand', 'mpcaAdverse'],
     },
     dataPath: '/data/ej-cumulative.geojson',
     csvPath: null,
@@ -1985,8 +2034,21 @@ export const LAYERS: LayerDefinition[] = [
     ],
     detailFields: [
       {
-        key: 'stressorCount',
-        label: { en: 'Stressors present, of 26', es: 'Factores presentes, de 26' },
+        // "19 / 26" — the count as MPCA counts it, and the fixed denominator
+        // CI-MAP's methodology uses (see whatThisMeans above). Computed once
+        // in ej-cumulative.mjs alongside the raw stressorCount, which stays a
+        // plain number for the band calculation and any future export; this
+        // is display text only.
+        key: 'stressorSummary',
+        label: { en: 'Cumulative stressors', es: 'Factores de estrés acumulativos' },
+      },
+      {
+        // Same wording the map's own legend and fill color already use for
+        // this field (categoryColors.label above) — one judgment about a
+        // tract's burden, read the same way wherever it appears, not a
+        // second scale invented for this row alone.
+        key: 'burdenBand',
+        label: { en: 'Burden vs county median', es: 'Carga frente a la mediana del condado' },
       },
       {
         key: 'countyMedian',
@@ -2009,6 +2071,8 @@ export const LAYERS: LayerDefinition[] = [
           en: 'Stressors MPCA marks adverse here',
           es: 'Factores que la MPCA marca como adversos aquí',
         },
+        format: 'pills',
+        pillLabels: EJ_STRESSOR_LABELS,
       },
       {
         key: 'tribeNames',
@@ -2046,7 +2110,7 @@ export const LAYERS: LayerDefinition[] = [
         en: 'This point is not inside a Minnesota census tract with CI-MAP data.',
         es: 'Este punto no está dentro de una sección censal de Minnesota con datos de CI-MAP.',
       },
-      detail: ['stressorCount', 'countyMedian', 'mpcaAdverse'],
+      detail: ['stressorSummary', 'burdenBand', 'countyMedian', 'mpcaAdverse'],
       wide: true,
     },
   },

@@ -50,6 +50,12 @@ export function formatValue(
     }
     case 'link':
     case 'text':
+    // The raw `"; "`-joined source string, unsplit — same value `text` would
+    // produce. Splitting into individual pills and resolving each code's
+    // label is a DOM-structure choice (one element per code, not one string),
+    // so it happens where the elements are built, not here. See
+    // MapView.astro's row-rendering loop.
+    case 'pills':
       return String(value);
     default: {
       // Exhaustiveness guard: adding a DetailFieldFormat member without a case

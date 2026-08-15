@@ -235,7 +235,7 @@ export interface FilterDefinition {
  * src/lib/detailFields.ts switches over this exhaustively, so adding a member
  * here fails the build until every surface handles it.
  */
-export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees' | 'currency';
+export type DetailFieldFormat = 'text' | 'date' | 'link' | 'degrees' | 'currency' | 'pills';
 
 /** How to render one attribute in the detail panel (spec F5). */
 export interface DetailField {
@@ -244,10 +244,20 @@ export interface DetailField {
   /**
    * `date` formats ISO strings; `link` renders an anchor; `currency` prints a
    * plain USD number ($ sign, thousands separators, no cents — every dollar
-   * figure ingested here is already a whole-dollar contract line); `text` is
-   * default.
+   * figure ingested here is already a whole-dollar contract line); `pills`
+   * splits a `"; "`-joined source string into a wrapped row of labelled
+   * capsules, one per code — see `pillLabels`; `text` is default.
    */
   format?: DetailFieldFormat;
+  /**
+   * `pills` only: code → human label, the same shape and reasoning as
+   * `FilterDefinition.valueDescriptions` — a source field ships codes, a
+   * reader needs the plain-language meaning of each one. A code with no entry
+   * here still renders, Title Cased with underscores turned to spaces, rather
+   * than being silently dropped — an unmapped code is a gap in the label map,
+   * not a reason to hide a stressor the source document actually names.
+   */
+  pillLabels?: Record<string, I18nString>;
 }
 
 /**

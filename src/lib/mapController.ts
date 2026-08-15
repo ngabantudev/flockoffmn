@@ -143,7 +143,12 @@ export interface ClientLayer {
    * hand-mirrored from LayerDefinition, and widening it here is what let the
    * shared formatter silently drop a member.
    */
-  detailFields: { key: string; label: string; format?: DetailFieldFormat }[];
+  detailFields: {
+    key: string;
+    label: string;
+    format?: DetailFieldFormat;
+    pillLabels?: Record<string, string>;
+  }[];
   source: string;
   sourceUrl: string;
   license: string;

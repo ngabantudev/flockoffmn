@@ -67,6 +67,13 @@ function text(v) {
   return typeof v === 'string' && v.trim() ? v.trim() : null;
 }
 
+// CI-MAP's own fixed denominator (see this file's header comment): 26
+// indicators scored per tract. Computed once here into a display string
+// rather than left to be reassembled with a hardcoded "26" wherever
+// stressorCount is shown, so a future methodology change only means editing
+// this one constant.
+const TOTAL_STRESSORS = 26;
+
 /**
  * Four bands relative to the county median. This is our presentation, not
  * MPCA's determination — the agency's own yes/no finding ships unmodified in
@@ -127,6 +134,7 @@ async function main() {
           geoid,
           burdenBand: band(stressorCount, countyMedian, stateMedian),
           stressorCount,
+          stressorSummary: stressorCount == null ? null : `${stressorCount} / ${TOTAL_STRESSORS}`,
           countyMedian,
           stateMedian,
           indicatorCount: num(p[FIELDS.indicatorCount]),
