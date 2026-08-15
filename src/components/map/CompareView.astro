@@ -121,35 +121,19 @@ const strings = {
     <div id="compare-divider" class="pointer-events-none absolute inset-y-0 w-0.5 bg-ink-100 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" style="left:50%"></div>
 
     {/*
-      pr-14/pr-16 rather than a matching px-3/px-4: mapA carries a
-      NavigationControl (zoom +/-) docked at MapLibre's own top-right, which
-      this row would otherwise sit right underneath — the same top-3
-      distance from the edge as the control's own margin. The extra right
-      clearance keeps the Black-share chip from drawing under those buttons
-      at any width; nothing on the left needs it, so it's asymmetric rather
-      than a wider px-* on both sides.
+      No Poverty Rate / Black Population Share pills up here any more —
+      which side is which is already answered by the colour-band legends at
+      the bottom of the map, so this was a second, redundant copy of the
+      same two names. The ALPR checkbox is the only thing left that needs a
+      control up here, so it's centred rather than fighting mapA's zoom
+      +/- buttons for the right-hand corner the old three-item row had to
+      dodge with asymmetric padding.
     */}
-    {/*
-      The "(2020–2024)" suffix is dropped below sm: rather than baked into
-      one string, so it can fold away by itself on a phone — three chips
-      each carrying their full vintage text is most of why this row wrapped
-      to three separate lines and ate ~100px a phone can't spare. The
-      vintage is still stated once, above, in the header block; this is a
-      second copy for convenience at a glance, not the only place it lives.
-    */}
-    <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-start justify-between gap-1.5 py-0 pr-14 pl-3 text-[11px] sm:gap-2 sm:pr-16 sm:pl-4 sm:text-xs">
-      <span class="pointer-events-auto rounded bg-ink-900/85 px-1.5 py-0.5 font-medium text-ink-100 shadow sm:px-2 sm:py-1" style={`border-left:3px solid ${povertyConfig.color}`}>
-        {strings.comparePovertySide}
-        {vintageDisplay && <span class="hidden sm:inline">{' '}({vintageDisplay})</span>}
-      </span>
-      <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-1.5 py-0.5 font-medium text-ink-100 shadow sm:px-2 sm:py-1">
+    <div class="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+      <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 text-[11px] font-medium text-ink-100 shadow sm:text-xs">
         <input type="checkbox" id="compare-show-alpr" checked style={`accent-color:${alprConfig.color}`} />
         {strings.compareShowAlpr}
       </label>
-      <span class="pointer-events-auto rounded bg-ink-900/85 px-1.5 py-0.5 font-medium text-ink-100 shadow sm:px-2 sm:py-1" style={`border-right:3px solid ${blackConfig.color}`}>
-        {strings.compareBlackSide}
-        {vintageDisplay && <span class="hidden sm:inline">{' '}({vintageDisplay})</span>}
-      </span>
     </div>
 
     {/*
