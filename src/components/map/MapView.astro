@@ -453,13 +453,19 @@ const strings = {
       </div>
 
       {/*
-        "Reset view" now lives inside the map's own bottom-right corner
-        control stack (see ResetViewControl in mapController.ts), the same
-        wealldobettermn.org corner-control treatment this button used before
-        it moved — it just reads as one control among several now that the
-        native control flexbox lays it out instead of a hand-placed absolute
-        button trying to avoid overlapping that stack.
+        One wrapper for everything that lives in the map's bottom-right
+        corner — matching wealldobettermn.org's own #map-corner-controls
+        exactly (see its WardMap.tsx): the theme toggle, the reset-view
+        button, MapLibre's zoom buttons, and its attribution badge, mounted
+        as ordinary flex children of a div this markup owns rather than
+        handed to MapLibre's own separately-positioned corner container via
+        map.addControl(). That's what makes `gap` alone keep all four
+        evenly spaced regardless of any one control's actual rendered
+        width — no per-control offset tuning. mapController.ts's map-setup
+        does the actual mounting (control.onAdd(map) → appendChild) into
+        this empty div; nothing is rendered here.
       */}
+      <div id="map-corner-controls"></div>
 
       {/*
         On-map keys for colour-coded layers, one bar per visible layer that

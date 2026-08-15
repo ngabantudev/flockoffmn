@@ -475,6 +475,17 @@ export class MapController {
   private overlay: HTMLElement | null = null;
   private overlaySize: ResizeObserver | null = null;
   private overlayShown: MutationObserver | null = null;
+  /**
+   * #map-corner-controls' four occupants — hand-mounted (see the
+   * constructor), so map.remove() won't tear them down on its own; each
+   * needs an explicit onRemove() in destroy(). ScaleControl isn't here: it
+   * still goes through map.addControl(), which does clean it up.
+   */
+  private themeControl: ThemeControl | null = null;
+  private resetViewControl: ResetViewControl | null = null;
+  private navControl: maplibregl.NavigationControl | null = null;
+  private attribControl: maplibregl.AttributionControl | null = null;
+  private attribObserver: MutationObserver | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -491,7 +502,14 @@ export class MapController {
       zoom: 9,
       minZoom: 3,
       maxZoom: 18,
-      attributionControl: { compact: true },
+      // false, not the usual `{ compact: true }` — built and mounted by
+      // hand below instead, alongside the zoom buttons and the theme
+      // toggle, into #map-corner-controls (see that div's own comment in
+      // MapView.astro). Handing it to this option (or to
+      // map.addControl()) would put it in MapLibre's own separately-
+      // positioned bottom-right corner container, which this app no
+      // longer uses — matching wealldobettermn.org's WardMap.tsx exactly.
+      attributionControl: false,
       // The canvas is not usable by a screen reader; the record list beside it
       // is the accessible equivalent, so keep the canvas out of the tab order.
       // Keyboard panning still works once the map is focused deliberately.
@@ -499,28 +517,52 @@ export class MapController {
       pitchWithRotate: false,
     });
 
-    // Bottom-right, not MapLibre's top-right default — matches the
-    // wealldobettermn.org reference layout, and keeps every interactive
-    // control within thumb's reach of the bottom corner on a phone instead
-    // of forcing a reach across the screen. Added before NavigationControl
-    // so it stacks above the zoom buttons — MapLibre stacks same-position
-    // controls in the order they're added, and "map theme / site theme"
-    // reads as a settings entry point, which belongs above the
-    // more frequently-used zoom controls, not buried below them.
-    this.map.addControl(new ThemeControl(), 'bottom-right');
-    this.map.addControl(
-      new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
-      'bottom-right',
-    );
-    // MapLibre stacks a corner's controls with the first-added nearest the
-    // true corner, so this — added last among the bottom-right group — ends
-    // up farthest from it, above the zoom buttons it resets the view
-    // relative to. Still the same clustered corner as the reference; just
-    // the top of the stack instead of the bottom.
-    this.map.addControl(
-      new ResetViewControl(events.resetViewLabel ?? 'Reset view', () => this.resetView()),
-      'bottom-right',
-    );
+    // Mounted by hand (control.onAdd(map) → append the returned element
+    // ourselves) rather than map.addControl(), so the theme toggle, reset
+    // button, zoom buttons, and attribution badge all live as ordinary
+    // flex children of one div this markup owns (#map-corner-controls, in
+    // MapView.astro) instead of being split across MapLibre's own
+    // per-corner containers. onRemove() is called explicitly in destroy()
+    // for the same reason: map.remove() only tears down controls it thinks
+    // it owns via its own _controls list, and these are deliberately kept
+    // out of it. Order here is the stacking order top-to-bottom.
+    const cornerControls = container.parentElement?.querySelector<HTMLElement>('#map-corner-controls');
+    this.themeControl = new ThemeControl();
+    this.resetViewControl = new ResetViewControl(events.resetViewLabel ?? 'Reset view', () => this.resetView());
+    this.navControl = new maplibregl.NavigationControl({ showCompass: false });
+    this.attribControl = new maplibregl.AttributionControl({ compact: true });
+    if (cornerControls) {
+      cornerControls.appendChild(this.themeControl.onAdd(this.map));
+      cornerControls.appendChild(this.resetViewControl.onAdd(this.map));
+      cornerControls.appendChild(this.navControl.onAdd(this.map));
+      const attribEl = this.attribControl.onAdd(this.map);
+      cornerControls.appendChild(attribEl);
+
+      // MapLibre's AttributionControl starts *expanded* the first time
+      // attributions populate, even with `compact: true` set — its own
+      // _updateCompact() adds `maplibregl-compact-show` unconditionally on
+      // first run and only collapses it later, in response to a `drag`
+      // event. Left alone, that means the attribution badge briefly
+      // renders as a full text bar rather than the small "i" badge a
+      // reader expects. A MutationObserver, not a fixed timeout, catches
+      // the class the instant MapLibre adds it regardless of how long the
+      // style/sources take to load, and only fires once — after that, a
+      // reader's own click on the badge toggles it normally.
+      const collapseAttribOnce = () => {
+        if (!attribEl.classList.contains('maplibregl-compact-show')) return;
+        attribEl.classList.remove('maplibregl-compact-show');
+        attribEl.removeAttribute('open');
+        this.attribObserver?.disconnect();
+      };
+      this.attribObserver = new MutationObserver(collapseAttribOnce);
+      this.attribObserver.observe(attribEl, { attributes: true, attributeFilter: ['class'] });
+      collapseAttribOnce();
+    }
+
+    // No reference equivalent — wealldobettermn.org has no scale bar. Kept
+    // as its own addControl at the opposite corner: a distance reference
+    // is useful here in a way it apparently isn't there, and bottom-left
+    // is empty space the corner-controls stack doesn't touch.
     this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
 
     // The basemap is independent of every other layer here — swapping it is
@@ -3118,6 +3160,14 @@ export class MapController {
     this.cancelThrow();
     this.popup?.remove();
     this.hoverPopup?.remove();
+    // Explicit onRemove() for all four — map.remove() only tears down
+    // controls added via map.addControl(), and these were deliberately
+    // kept out of that list (see the constructor).
+    this.attribObserver?.disconnect();
+    this.themeControl?.onRemove();
+    this.resetViewControl?.onRemove();
+    this.navControl?.onRemove();
+    this.attribControl?.onRemove();
     this.map.remove();
   }
 }
