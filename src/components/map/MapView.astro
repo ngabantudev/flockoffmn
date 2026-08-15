@@ -75,6 +75,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   relatedBuildings: d.relatedBuildings,
+  tintWhenRelated: d.tintWhenRelated,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
     : undefined,
@@ -456,13 +457,23 @@ const strings = {
         whenever no sheet is open, so this is the same 2rem from the bottom it
         always was.
       */}
+      {/*
+        Icon-only, not text-and-icon: the label still exists for anyone who
+        needs it — aria-label plus a native title tooltip — but the visible
+        button is just the glyph, the compact corner-control treatment
+        wealldobettermn.org uses for its own "back to the state" reset. The
+        icon itself is injected by the client script below, the same place
+        impactSpheres' icons are, rather than server-rendered here: lucide's
+        DOM builder needs a browser.
+      */}
       <button
         id="reset-view"
         type="button"
+        aria-label={t('resetView')}
+        title={t('resetView')}
         style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
-        class="absolute right-2 rounded-md border border-ink-700 bg-ink-900/90 px-2.5 py-1.5 text-xs text-ink-200 hover:text-ink-100 motion-safe:transition-[bottom]"
+        class="absolute right-2 flex h-8 w-8 items-center justify-center rounded-md border border-ink-700 bg-ink-900/90 text-ink-200 hover:text-ink-100 motion-safe:transition-[bottom]"
       >
-        {t('resetView')}
       </button>
 
       {/*
@@ -529,7 +540,7 @@ const strings = {
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { formatValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
-  import { createElement } from 'lucide';
+  import { createElement, Crosshair } from 'lucide';
   // The same closed allow-list the map's own marker glyphs resolve through —
   // see its comment for why there is one map and not two.
   import { MARKER_ICONS } from '~/lib/icons';
@@ -1011,7 +1022,9 @@ const strings = {
     status(S.filtersCleared);
   });
 
-  document.getElementById('reset-view')?.addEventListener('click', () => controller.resetView());
+  const resetViewButton = document.getElementById('reset-view');
+  resetViewButton?.appendChild(createElement(Crosshair, { width: 16, height: 16 }));
+  resetViewButton?.addEventListener('click', () => controller.resetView());
 
   /* ------------------------------- Search ------------------------------- */
 
