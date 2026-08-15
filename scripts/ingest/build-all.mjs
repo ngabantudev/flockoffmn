@@ -34,6 +34,10 @@ const STEPS = [
   // Needs agency-jurisdictions.geojson to join each building to its agency's
   // canonical name — see that script's own comment on why it runs after.
   { name: 'agency-buildings', script: 'agency-buildings.mjs' },
+  // Needs agency-buildings.geojson to resolve each documented contract's
+  // location and jurisdiction; reads its own mirrored PDFs/CSVs under
+  // public/data/docs, not the network, so it has nothing else to wait on.
+  { name: 'vendor-contracts', script: 'vendor-contracts.mjs' },
   // Needs the BCA reference for the filings, the jurisdictions and buildings
   // to anchor each agency's road search, so it follows all three.
   { name: 'alpr-reported', script: 'alpr-reported.mjs' },

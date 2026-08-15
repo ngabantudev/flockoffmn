@@ -50,7 +50,15 @@ export type LayerId =
   // Present-day counterpart to the historical layers: MPCA's cumulative
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
   // A tract is an aggregate of thousands of people, never a household.
-  | 'ej_cumulative';
+  | 'ej_cumulative'
+  // The vendor contract itself — the record every other surveillance layer's
+  // hoverCard has, until now, had to say was absent. Not a live feed: a
+  // vendor contract only exists when a records request produces one, so this
+  // is a small hand-curated set of documented agreements, each one mirrored
+  // in full under public/data/docs/, starting with the first: University of
+  // Minnesota PD's Flock Safety contract, released via a MuckRock MGDPA
+  // request. See scripts/ingest/vendor-contracts.mjs.
+  | 'vendor_contract';
 
 export type Locale = 'en' | 'es';
 

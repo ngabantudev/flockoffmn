@@ -327,13 +327,17 @@ export const LAYERS: LayerDefinition[] = [
         moreLabel: { en: '+{n} more', es: '+{n} más' },
         max: 4,
       },
-      // The honest answer to "where's the contract?". No vendor contract is
-      // published in any dataset this project ingests, so rather than leave
-      // a reader assuming one is missing by oversight, the card says the
-      // record does not exist here and points at the way to get it (§0.6).
+      // The honest answer to "where's the contract?". Almost no agency's
+      // vendor contract is published in any dataset this project ingests — a
+      // records request has to produce one before it can appear on the
+      // "Documented vendor contracts" layer — so rather than leave a reader
+      // assuming one is missing by oversight, the card says so and points at
+      // the way to get it (§0.6). No longer an absolute claim as of the first
+      // documented contract (University of Minnesota Police); see
+      // vendor_contract below.
       note: {
-        en: 'No vendor contract is published in this data. Click the station, then “Ask what surveillance tech this agency runs” to request it.',
-        es: 'Ningún contrato con proveedores está publicado en estos datos. Haga clic en la estación y luego en «Preguntar qué tecnología de vigilancia usa esta agencia» para solicitarlo.',
+        en: 'No vendor contract is published here for most agencies — check the “Documented vendor contracts” layer, then click the station and “Ask what surveillance tech this agency runs” to request one.',
+        es: 'Para la mayoría de las agencias no hay ningún contrato con proveedores publicado aquí — consulte la capa «Contratos de proveedores documentados», luego haga clic en la estación y en «Preguntar qué tecnología de vigilancia usa esta agencia» para solicitarlo.',
       },
     },
     filters: [
@@ -766,6 +770,132 @@ export const LAYERS: LayerDefinition[] = [
         en: 'Only readers agencies reported to the state. An agency that filed nothing does not appear.',
         es: 'Solo lectores que las agencias reportaron al estado. Una agencia que no presentó nada no aparece.',
       },
+    },
+  },
+
+  {
+    id: 'vendor_contract',
+    slug: 'vendor-contracts',
+    category: 'surveillance',
+    defaultOn: true,
+    label: {
+      en: 'Documented vendor contracts',
+      es: 'Contratos de proveedores documentados',
+    },
+    summary: {
+      en: 'The actual contract behind a camera system — vendor, cost, term and data-sharing terms — for the agencies a records request has produced one from.',
+      es: 'El contrato real detrás de un sistema de cámaras — proveedor, costo, plazo y condiciones de intercambio de datos — para las agencias de las que una solicitud de registros lo obtuvo.',
+    },
+    whatThisMeans: {
+      en: 'Every other surveillance layer on this map can say an agency operates a camera system; almost none of them can say who sold it, what it cost, or who else gets to search it. This layer is where that answer lives once a public records request produces it — a hand-curated set, not an automatic feed, because no agency publishes an index of its own vendor contracts. The first entry is University of Minnesota Police Department’s Flock Safety contract, released through a Minnesota Government Data Practices Act request filed via MuckRock: the signed services agreement, a later 5-camera expansion order, and two months of network audit logs showing every outside agency that searched UMPD’s camera network and how often. The dollar figures, terms and signers below are transcribed from those documents, which are mirrored in full for anyone to check.',
+      es: 'Cualquier otra capa de vigilancia de este mapa puede decir que una agencia opera un sistema de cámaras; casi ninguna puede decir quién lo vendió, cuánto costó, o quién más puede buscar en él. Esta capa es donde vive esa respuesta una vez que una solicitud de registros públicos la produce — un conjunto curado a mano, no una fuente automática, porque ninguna agencia publica un índice de sus propios contratos con proveedores. La primera entrada es el contrato de Flock Safety del Departamento de Policía de la Universidad de Minnesota, obtenido mediante una solicitud bajo la Ley de Prácticas de Datos Gubernamentales de Minnesota presentada vía MuckRock: el acuerdo de servicios firmado, una orden de expansión posterior de 5 cámaras, y dos meses de registros de auditoría de red que muestran cada agencia externa que buscó en la red de cámaras de la UMPD y con qué frecuencia. Las cifras, plazos y firmantes abajo se transcriben de esos documentos, que se reproducen íntegros para que cualquiera los verifique.',
+    },
+    limitations: [
+      {
+        en: 'A hand-curated set, not a survey. A contract appears here only once a records request has produced and mirrored it — an agency missing here has not been shown to lack a vendor contract, only to not yet have one documented.',
+        es: 'Un conjunto curado a mano, no una encuesta. Un contrato aparece aquí solo una vez que una solicitud de registros lo produjo y se mirroreó — una agencia ausente aquí no ha demostrado carecer de contrato con un proveedor, solo que aún no está documentado.',
+      },
+      {
+        en: 'Network query figures cover only the months included in the records response that produced them — two months here — not the contract’s full history.',
+        es: 'Las cifras de consultas de red cubren solo los meses incluidos en la respuesta de registros que las produjo — dos meses en este caso — no el historial completo del contrato.',
+      },
+      {
+        en: 'The agency’s own redaction of its in-house search log was incomplete when released — it named individual staff and case numbers. This project does not publish or mirror that file; only a single monthly total of in-house searches is carried here. See the mirrored document folder’s README for what was withheld and why.',
+        es: 'La propia redacción del registro interno de búsquedas de la agencia estaba incompleta al publicarse — nombraba personal individual y números de caso. Este proyecto no publica ni reproduce ese archivo; aquí solo consta un total mensual de búsquedas internas. Consulte el README de la carpeta de documentos reproducidos para ver qué se omitió y por qué.',
+      },
+    ],
+    geometry: 'point',
+    color: '#facc15',
+    colorLight: '#a16207',
+    markerIcon: { icon: 'FileText' },
+    // One documented contract so far — nothing yet to build a filter on.
+    filters: [],
+    hoverCard: {
+      fields: ['vendor', 'executedDate', 'cameraCountCurrent', 'annualCost'],
+      related: {
+        layerId: 'alpr_reported',
+        fromKey: 'jurisdictionId',
+        joinKey: 'jurisdictionId',
+        labelKey: 'reportedLocation',
+        linkKey: 'sourceUrl',
+        title: {
+          en: 'This agency’s ALPR readers, reported to the state',
+          es: 'Los lectores ALPR de esta agencia, reportados al estado',
+        },
+        empty: {
+          en: 'No BCA filing found under this agency’s jurisdiction. That means none was found under this name — not that it reported none.',
+          es: 'No se encontró ninguna declaración ante el BCA bajo la jurisdicción de esta agencia. Eso significa que no se encontró bajo este nombre, no que no reportó ninguno.',
+        },
+        linkLabel: {
+          en: 'The BCA filing this joins to',
+          es: 'La declaración del BCA con la que se relaciona',
+        },
+        moreLabel: { en: '+{n} more', es: '+{n} más' },
+        max: 4,
+      },
+      note: {
+        en: 'Network query figures and the in-house search total on this record are drawn from documents mirrored below — click through for the underlying files.',
+        es: 'Las cifras de consultas de red y el total de búsquedas internas de este registro provienen de documentos reproducidos abajo — haga clic para ver los archivos originales.',
+      },
+    },
+    action: {
+      requestType: 'procurement',
+      label: {
+        en: 'Request this agency’s current billing and renewal records',
+        es: 'Solicitar los registros actuales de facturación y renovación de esta agencia',
+      },
+      bodyKey: 'jurisdictionName',
+      fallbackBody: 'name',
+    },
+    dataPath: '/data/vendor-contracts.geojson',
+    csvPath: '/data/vendor-contracts.csv',
+    provenance: {
+      source: 'University of Minnesota Police Department, released via MuckRock public records requests',
+      sourceUrl:
+        'https://www.muckrock.com/foi/minneapolis-1607/flock-safety-contract-information-communication-records-and-access-logs-university-of-minnesota-police-department-212163/',
+      license: 'Public government data (Minnesota Government Data Practices Act, Minn. Stat. ch. 13)',
+      licenseUrl: 'https://www.revisor.mn.gov/statutes/cite/13',
+      attribution: 'University of Minnesota Police Department; released via MuckRock',
+      sourceDate: '2026-07-09',
+      lastUpdated: null,
+      refresh: 'rare',
+    },
+    detailFields: [
+      { key: 'vendor', label: { en: 'Vendor', es: 'Proveedor' } },
+      { key: 'product', label: { en: 'Product', es: 'Producto' } },
+      { key: 'executedDate', label: { en: 'Contract executed', es: 'Contrato firmado' }, format: 'date' },
+      { key: 'initialTermMonths', label: { en: 'Initial term (months)', es: 'Plazo inicial (meses)' } },
+      { key: 'renewalType', label: { en: 'Renewal terms', es: 'Condiciones de renovación' } },
+      { key: 'signedBy', label: { en: 'Signed by', es: 'Firmado por' } },
+      { key: 'cameraCountInitial', label: { en: 'Cameras, at signing', es: 'Cámaras, al firmar' } },
+      { key: 'cameraCountCurrent', label: { en: 'Cameras, current', es: 'Cámaras, actual' } },
+      { key: 'annualCost', label: { en: 'Annual recurring cost (USD)', es: 'Costo anual recurrente (USD)' } },
+      { key: 'totalContractYear1', label: { en: 'Total cost, year 1 (USD)', es: 'Costo total, año 1 (USD)' } },
+      { key: 'expansionDate', label: { en: 'Expansion order date', es: 'Fecha de orden de expansión' }, format: 'date' },
+      { key: 'expansionCamerasAdded', label: { en: 'Cameras added by expansion', es: 'Cámaras añadidas por expansión' } },
+      { key: 'expansionAnnualCost', label: { en: 'Expansion annual cost (USD)', es: 'Costo anual de la expansión (USD)' } },
+      { key: 'expansionRenewalType', label: { en: 'Expansion renewal terms', es: 'Condiciones de renovación de la expansión' } },
+      { key: 'expansionSignedBy', label: { en: 'Expansion signed by', es: 'Expansión firmada por' } },
+      { key: 'footageRetentionDays', label: { en: 'Footage retention (days)', es: 'Retención de video (días)' } },
+      { key: 'networkQueriesLatestMonth', label: { en: 'Network queries, latest mirrored month', es: 'Consultas de red, último mes reproducido' } },
+      { key: 'partnerAgenciesLatestMonth', label: { en: 'Outside agencies querying this network', es: 'Agencias externas que consultan esta red' } },
+      { key: 'outsideAgencySharePct', label: { en: 'Share of queries from outside agencies (%)', es: 'Proporción de consultas de agencias externas (%)' } },
+      { key: 'networkQueryTopReason', label: { en: 'Most common query reason', es: 'Motivo de consulta más común' } },
+      { key: 'inHouseQueriesMostRecentMonth', label: { en: 'This agency’s own queries, most recent month', es: 'Consultas propias de esta agencia, mes más reciente' } },
+      { key: 'inHouseQueriesPeriod', label: { en: 'Period covered', es: 'Período cubierto' } },
+      { key: 'contractDocUrl', label: { en: 'Signed services agreement', es: 'Acuerdo de servicios firmado' }, format: 'link' },
+      { key: 'expansionDocUrl', label: { en: 'Expansion order form', es: 'Formulario de orden de expansión' }, format: 'link' },
+      { key: 'requestId', label: { en: 'Records request', es: 'Solicitud de registros' } },
+      { key: 'requestUrl', label: { en: 'Original request and full response', es: 'Solicitud original y respuesta completa' }, format: 'link' },
+    ],
+    nearMe: {
+      mode: 'nearest',
+      title: { en: 'Nearest documented vendor contract', es: 'Contrato de proveedor documentado más cercano' },
+      empty: {
+        en: 'No documented vendor contract near this point — most agencies have none on record here yet, documented or not.',
+        es: 'Ningún contrato de proveedor documentado cerca de este punto — la mayoría de las agencias aún no tienen ninguno registrado aquí, documentado o no.',
+      },
+      detail: ['vendor', 'annualCost'],
     },
   },
 
