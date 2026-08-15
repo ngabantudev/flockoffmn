@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * L1 — ALPR / Flock cameras.
+ * L1 — ALPR Cameras (Community Reported).
  *
  * Pulls ALPR camera nodes tagged in OpenStreetMap by DeFlock volunteers,
  * scoped to Minnesota via its OSM administrative boundary. ODbL data, no API
