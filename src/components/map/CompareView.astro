@@ -107,7 +107,9 @@ const strings = {
     <div class="pointer-events-none absolute inset-0" id="compare-map-b" role="img" aria-label={strings.compareBlackSide}></div>
 
     <!-- The divider line follows the slider's value; drawn purely for sighted
-         users, the slider beneath it is the actual control. -->
+         users, the slider beneath it is the actual control. Positioned in
+         pixels, not a naive percentage — see the client script's note on why
+         a native range thumb's centre isn't at value% of the track width. -->
     <div id="compare-divider" class="pointer-events-none absolute inset-y-0 w-0.5 bg-ink-100 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" style="left:50%"></div>
 
     <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-start justify-between gap-2 px-3 text-xs sm:px-4">
@@ -123,6 +125,42 @@ const strings = {
       </span>
     </div>
 
+    {/*
+      What each shade means — the same segmented-bar-with-value-labels card
+      the main map's on-map keys use (MapView.astro's refreshMapKeys), just
+      built once server-side instead of client-rebuilt, since these two
+      layers' bands never change while this view is open. Every band gets
+      its own label rather than just the two ends: five short values like
+      "0–5%"/"50%+" all fit, and a reader asking "what does this darkness
+      mean" wants the middle bands named too, not just the extremes.
+    */}
+    <div class="pointer-events-none absolute bottom-14 left-2 w-40 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:left-3">
+      <p class="mb-1 truncate leading-tight">{strings.comparePovertySide}</p>
+      <div class="flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800">
+        {povertyConfig.categoryColors.colors.map((c) => (
+          <span class="h-full flex-1" style={`background:${c.color}`}></span>
+        ))}
+      </div>
+      <div class="mt-0.5 flex justify-between gap-1 leading-tight text-ink-400">
+        {povertyConfig.categoryColors.colors.map((c) => (
+          <span class="flex-1 text-center">{c.value}</span>
+        ))}
+      </div>
+    </div>
+    <div class="pointer-events-none absolute right-2 bottom-14 w-40 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:right-3">
+      <p class="mb-1 truncate leading-tight">{strings.compareBlackSide}</p>
+      <div class="flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800">
+        {blackConfig.categoryColors.colors.map((c) => (
+          <span class="h-full flex-1" style={`background:${c.color}`}></span>
+        ))}
+      </div>
+      <div class="mt-0.5 flex justify-between gap-1 leading-tight text-ink-400">
+        {blackConfig.categoryColors.colors.map((c) => (
+          <span class="flex-1 text-center">{c.value}</span>
+        ))}
+      </div>
+    </div>
+
     <input
       type="range"
       id="compare-slider"
@@ -131,7 +169,7 @@ const strings = {
       value="50"
       step="1"
       aria-label={strings.compareSliderLabel}
-      class="absolute inset-x-4 bottom-4 sm:inset-x-8"
+      class="absolute inset-x-0 bottom-4"
     />
 
     <div id="compare-status" class="sr-only" role="status" aria-live="polite"></div>
@@ -146,6 +184,51 @@ const strings = {
     <a href="/data" class="underline hover:text-ink-200">{t('compareAccessibleLink')}</a>
   </p>
 </div>
+
+{/*
+  A fixed, known thumb size in both engines — the divider-alignment fix in
+  the client script below only works if it can assume an exact pixel width
+  for the thumb rather than trust whatever a browser's default happens to be
+  (Chrome, Firefox and Safari don't agree, and none of them expose it to
+  JS). The track itself is made invisible: the separate #compare-divider div
+  is the only visible line, so a second, differently-styled native track
+  drawn underneath it would just be a distracting sliver.
+*/}
+<style>
+  #compare-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 24px;
+    margin: 0;
+  }
+  #compare-slider::-webkit-slider-runnable-track {
+    background: transparent;
+  }
+  #compare-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    margin-top: 3px;
+    border-radius: 9999px;
+    background: var(--color-ink-100, #e7ecf3);
+    border: 2px solid var(--color-ink-950, #0a0c10);
+    cursor: ew-resize;
+  }
+  #compare-slider::-moz-range-track {
+    background: transparent;
+  }
+  #compare-slider::-moz-range-thumb {
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: var(--color-ink-100, #e7ecf3);
+    border: 2px solid var(--color-ink-950, #0a0c10);
+    cursor: ew-resize;
+  }
+</style>
 
 <script is:inline type="application/json" id="compare-config" set:html={JSON.stringify({ poverty: povertyConfig, black: blackConfig, alpr: alprConfig, strings })} />
 
@@ -307,11 +390,27 @@ const strings = {
     function layout() {
       mapA.resize();
       mapB.resize();
+      // The track's pixel width changed, so the thumb-to-divider mapping
+      // below has to be recomputed against the new width too.
+      applySlider(Number(slider.value));
     }
 
+    // A native <input type="range">'s thumb is NOT centred at value% of the
+    // track's width — the browser keeps the whole thumb inside the track,
+    // so at value=0 the thumb's *centre* sits half a thumb-width in from the
+    // left edge, and at value=100 it sits half a thumb-width in from the
+    // right. Positioning the divider at a bare `${percent}%` (the first cut
+    // of this feature) put it visibly off from the actual thumb except at
+    // the exact midpoint. This mirrors the browser's own formula instead,
+    // using the thumb width fixed in this component's <style> block — the
+    // slider spans the full width of #compare-root with no side padding
+    // (see its `inset-x-0` class) so that width doubles as the track width.
+    const THUMB_WIDTH = 18;
     function applySlider(percent: number) {
-      elB.style.clipPath = `inset(0 0 0 ${percent}%)`;
-      divider.style.left = `${percent}%`;
+      const trackWidth = slider.clientWidth;
+      const thumbCenterPx = THUMB_WIDTH / 2 + (percent / 100) * (trackWidth - THUMB_WIDTH);
+      elB.style.clipPath = `inset(0 0 0 ${thumbCenterPx}px)`;
+      divider.style.left = `${thumbCenterPx}px`;
       statusEl.textContent = `${config.poverty.label} ${percent}%, ${config.black.label} ${100 - percent}%`;
     }
 
@@ -349,7 +448,8 @@ const strings = {
       onOneLoaded();
     });
 
-    applySlider(Number(slider.value));
+    // layout() calls applySlider() itself, using the now-measurable track
+    // width — see its own comment for why that has to happen together.
     layout();
   }
 
