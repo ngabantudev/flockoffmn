@@ -51,6 +51,15 @@ export type LayerId =
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
   // A tract is an aggregate of thousands of people, never a household.
   | 'ej_cumulative'
+  // Three views of one Census ACS dataset (scripts/ingest/demographics.mjs),
+  // sharing a dataPath — Black population share, Latinx population share, and
+  // poverty rate, each toggled independently so a reader compares them the
+  // same way the HOLC and covenant layers are compared: two colours on the
+  // same map, not a computed overlap. Same tract-is-an-aggregate boundary as
+  // ej_cumulative.
+  | 'demographic_black_share'
+  | 'demographic_latinx_share'
+  | 'demographic_poverty_rate'
   // The vendor contract itself — the record every other surveillance layer's
   // hoverCard has, until now, had to say was absent. Not a live feed: a
   // vendor contract only exists when a records request produces one, so this
@@ -73,6 +82,43 @@ export type I18nString = Record<Locale, string>;
  * The UI must surface this rather than implying precision we do not have.
  */
 export type Confidence = 'confirmed' | 'reported' | 'probabilistic';
+
+/**
+ * Whether a documented vendor contract is currently in force.
+ *
+ * A contract entering `vendor_contract` used to mean only one thing:
+ * confirmed, ongoing, no expiry modelled at all. Summer 2026 broke that
+ * assumption — Minnesota cities began terminating, suspending, and declining
+ * to renew Flock Safety contracts within weeks of each other, so the schema
+ * now has to be able to say a documented agreement has ended without
+ * deleting the record of it having existed (§0.5: the fact of cancellation
+ * is itself part of the curve). `active` is the default for every record
+ * that has not had an ending event transcribed onto it.
+ *
+ * `suspended` is deliberately distinct from `terminated`: a suspension (a
+ * manager pausing use pending a council vote, say) is stated by the agency
+ * itself to be reversible, where a termination or non-renewal is not framed
+ * that way in the source. Collapsing the two would assert a permanence the
+ * record does not support.
+ *
+ * `Reported ended` is deliberately its own value rather than a confidence
+ * qualifier bolted onto `Suspended`/`Terminated`/etc.: those four describe
+ * what a Tier 1/2 document says happened, and several of August 2026's
+ * cancellations have no such document yet, only converging Tier 4 (and one
+ * Tier 3 social-media) reporting — see CLAUDE.md §3. Using it says two
+ * things a reader needs at once: this is not confirmed the way Columbia
+ * Heights’s termination is, and it is not settled either, which is
+ * generally true of these — several are announcements pending a council
+ * vote, or a manager’s action a council could still reverse. `confidence`
+ * on the record is set to `'reported'` alongside it, never `'confirmed'`.
+ *
+ * Not a closed TS union enforced by an exhaustive switch — ingest scripts
+ * are plain `.mjs`, outside the type checker — but closed in spirit: the
+ * registry's `status` filter and `categoryColors`/`markerIcon.byValue`
+ * entries for `vendor_contract` are the enforcement, and a value transcribed
+ * here that isn't named in all three renders as an unglossed fallback.
+ */
+export type ContractStatus = 'Active' | 'Suspended' | 'Terminated' | 'Not renewed' | 'Expired' | 'Reported ended';
 
 /** How often the upstream source is expected to change. */
 export type RefreshCadence = 'frequent' | 'periodic' | 'rare';
@@ -483,7 +529,23 @@ export interface LayerDefinition {
    */
   markerIcon?: {
     icon: string;
-    byValue?: { key: string; icons: Record<string, string> };
+    byValue?: {
+      key: string;
+      icons: Record<string, string>;
+      /**
+       * Override the glyph's ring and stroke colour per value — every value
+       * absent here draws in the layer's own `color`/`colorLight`, same as
+       * before this existed. For most `byValue` layers (a sheriff's star vs.
+       * a police shield) the shape alone is the real distinction and colour
+       * would be decoration, so this stays unset. `vendor_contract` is the
+       * exception: a contract's status is a fact worth reading in the same
+       * colour language as the jurisdiction wash it drives (see
+       * tintWhenRelated's `color`/`secondaryWhen` fields), so its glyph and
+       * that wash share a palette rather than the glyph carrying an
+       * unrelated colour of its own.
+       */
+      colors?: Record<string, { color: string; colorLight: string }>;
+    };
   };
   /**
    * A card shown on hover, summarising a record without selecting it.
@@ -627,6 +689,19 @@ export interface LayerDefinition {
     fromKey?: string;
     /** Attribute on that layer holding the same value. */
     joinKey: string;
+    /**
+     * A joined record whose named attribute holds one of these values does
+     * not count toward "at least one match" — the tint's whole claim (§1c:
+     * "a records request has produced something here") stops being true the
+     * day that something is transcribed as ended, and a jurisdiction whose
+     * only contract was terminated in June has no more business glowing
+     * green in August than one with no contract on record at all. The
+     * ended record itself stays fully on the map — this only governs the
+     * jurisdiction wash, never whether the joined layer draws or is
+     * clickable. Omit for a join with no notion of an ended state, which is
+     * every joined layer except `vendor_contract` today.
+     */
+    excludeWhen?: { key: string; values: string[] };
     /** Fill/outline colour applied while at least one match exists (dark basemap). */
     color: string;
     /**
@@ -640,6 +715,40 @@ export interface LayerDefinition {
      * made this field required in the first place.
      */
     colorLight: string;
+    /**
+     * A second, weaker wash for a jurisdiction whose only joined match is
+     * unconfirmed rather than absent — a contract several news outlets
+     * report as ended but that no Tier 1/2 document has yet settled (see
+     * `ContractStatus`'s `'Reported ended'` value). Only applied when no
+     * match clears `color`'s bar (a jurisdiction with one active and one
+     * reported-ended contract reads as fully documented, not contested) and
+     * no match clears `cancelledWhen`'s bar either — the three tiers rank
+     * confirmed-active above confirmed-cancelled above merely-reported, so a
+     * jurisdiction with both a confirmed cancellation and an unrelated
+     * reported one shows the confirmed fact. `secondaryWhen`'s own values
+     * are not also excluded above — the fields are independent tests, not a
+     * fallback chain, so declaring a value here without also naming it in
+     * `excludeWhen` would let a merely-reported record count as a confirmed
+     * one. Omit for a join with nothing worth flagging as contested rather
+     * than simply present or absent.
+     */
+    secondaryWhen?: { key: string; values: string[]; color: string; colorLight: string };
+    /**
+     * A third wash, ranked above `secondaryWhen` and below `color`, for a
+     * jurisdiction whose only joined match is a *confirmed* ending rather
+     * than merely absent or merely reported — `ContractStatus`'s
+     * `'Suspended'`/`'Terminated'`/`'Not renewed'`/`'Expired'` values. Unlike
+     * those statuses' effect on the point itself (see the `vendor_contract`
+     * registry entry's `markerIcon.byValue.colors` — the pin turns the same
+     * red), this is a genuine exception to `color`'s own "a document exists"
+     * claim: the jurisdiction is being told apart from one with *no* record
+     * at all, on purpose, because a reader scanning for what changed
+     * shouldn't have to click through to learn a contract there was
+     * cancelled. Same independent-test relationship to `excludeWhen` as
+     * `secondaryWhen`. Omit for a join with nothing worth flagging as
+     * cancelled rather than simply present or absent.
+     */
+    cancelledWhen?: { key: string; values: string[]; color: string; colorLight: string };
   };
   /**
    * The zooms across which this layer's records emerge.

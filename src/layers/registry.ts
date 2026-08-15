@@ -125,13 +125,94 @@ export const LAYERS: LayerDefinition[] = [
         en: 'The agency’s own redaction of its in-house search log was incomplete when released — it named individual staff and case numbers. This project does not publish or mirror that file; only a single monthly total of in-house searches is carried here. See the mirrored document folder’s README for what was withheld and why.',
         es: 'La propia redacción del registro interno de búsquedas de la agencia estaba incompleta al publicarse — nombraba personal individual y números de caso. Este proyecto no publica ni reproduce ese archivo; aquí solo consta un total mensual de búsquedas internas. Consulte el README de la carpeta de documentos reproducidos para ver qué se omitió y por qué.',
       },
+      {
+        en: 'Contract status (added August 2026, as Minnesota cities began ending Flock Safety contracts) distinguishes a Tier 1/2-documented ending — "Suspended," "Terminated," "Not renewed," "Expired" — from one that is only reported: "Reported ended" (a distinct glyph on the map, and "Reported" rather than "Confirmed" confidence) means multiple news outlets, but no council resolution, agency memo, or other primary record yet, describe this contract as ending. That is frequently a live, unsettled situation — a manager’s action a council could reverse, a story still developing — not a weaker version of a settled fact. Both the point and the jurisdiction under it show which kind: a confirmed ending washes red, a reported one a duller amber, and an active, confirmed contract green. A jurisdiction that shows none of the three is not evidence its contract continues — only that no report has reached this layer yet.',
+        es: 'El estado del contrato (agregado en agosto de 2026, cuando ciudades de Minnesota comenzaron a terminar contratos con Flock Safety) distingue una finalización documentada en Nivel 1/2 —"Suspendido", "Terminado", "No renovado", "Vencido"— de una que solo se reporta: "Finalización reportada" (un ícono distinto en el mapa, y confianza "Reportado" en lugar de "Confirmado") significa que varios medios periodísticos, pero aún ningún acuerdo del concejo, memorando de la agencia u otro registro primario, describen este contrato como finalizado. Con frecuencia se trata de una situación en curso y no resuelta —una acción de un gerente que un concejo podría revertir, una historia aún en desarrollo— no una versión más débil de un hecho ya resuelto. Tanto el punto como la jurisdicción debajo muestran de qué tipo se trata: una finalización confirmada se tiñe de rojo, una reportada de un ámbar más apagado, y un contrato activo y confirmado de verde. Que una jurisdicción no muestre ninguno de los tres no es evidencia de que su contrato continúe — solo de que ningún reporte ha llegado aún a esta capa.',
+      },
     ],
     geometry: 'point',
     color: '#facc15',
     colorLight: '#a16207',
-    markerIcon: { icon: 'FileText' },
-    // One documented contract so far — nothing yet to build a filter on.
-    filters: [],
+    markerIcon: {
+      icon: 'FileText',
+      // Both shape AND colour carry the status distinction, and every colour
+      // here is exactly the one the jurisdiction wash uses for the same
+      // statuses (tintWhenRelated's `color`/`cancelledWhen`/`secondaryWhen`
+      // below) — one palette, read the same way at the point and the
+      // polygon, so a reader learns green/red/amber once and it means the
+      // same thing wherever it shows up. Every value named here explicitly,
+      // `Active` included, rather than leaving it to the top-level
+      // `icon`/`color` fallback: a record with no `status` attribute at all
+      // (there shouldn't be one, but nothing enforces that at ingest — see
+      // ContractStatus's own comment in types.ts) still falls back to this
+      // layer's plain identity yellow, which reads as "unknown," not as a
+      // fourth, unlabelled status colour.
+      byValue: {
+        key: 'status',
+        icons: {
+          Active: 'FileText',
+          Suspended: 'FileX',
+          Terminated: 'FileX',
+          'Not renewed': 'FileX',
+          Expired: 'FileX',
+          // A different shape, not a paler FileX: this is the status for a
+          // record with no Tier 1/2 document behind it yet, only converging
+          // news coverage — see ContractStatus's own comment in types.ts.
+          'Reported ended': 'FileQuestion',
+        },
+        colors: {
+          // Same green as tintWhenRelated.color: an active, confirmed
+          // contract reads as one fact in one colour whether you're looking
+          // at the pin or the jurisdiction under it.
+          Active: { color: '#86efac', colorLight: '#064e3b' },
+          // Red for a confirmed ending — the one status change on this
+          // record a reader should catch without opening the panel. The
+          // jurisdiction it drives washes the same red (tintWhenRelated's
+          // `cancelledWhen` below), so the fact reads identically whether a
+          // reader is looking at the pin or the polygon under it.
+          Suspended: { color: '#f87171', colorLight: '#7f1d1d' },
+          Terminated: { color: '#f87171', colorLight: '#7f1d1d' },
+          'Not renewed': { color: '#f87171', colorLight: '#7f1d1d' },
+          Expired: { color: '#f87171', colorLight: '#7f1d1d' },
+          // Same amber as tintWhenRelated.secondaryWhen: "reported, not yet
+          // confirmed" is one colour wherever it appears.
+          'Reported ended': { color: '#fcd34d', colorLight: '#78350f' },
+        },
+      },
+    },
+    filters: [
+      {
+        key: 'status',
+        kind: 'enum',
+        label: { en: 'Contract status', es: 'Estado del contrato' },
+        valueDescriptions: {
+          Active: {
+            en: 'No ending event has been transcribed onto this record. The default for every documented contract.',
+            es: 'No se ha transcrito ningún evento de finalización en este registro. El estado por defecto de todo contrato documentado.',
+          },
+          Suspended: {
+            en: 'Use was paused by the agency, stated in the source as reversible — not a termination.',
+            es: 'El uso fue pausado por la agencia, y la fuente lo describe como reversible — no es una terminación.',
+          },
+          Terminated: {
+            en: 'The contract was ended before its term or renewal would otherwise have expired.',
+            es: 'El contrato terminó antes de que su plazo o renovación hubiera vencido de otro modo.',
+          },
+          'Not renewed': {
+            en: 'The agency let the contract lapse at the end of its term rather than renewing it.',
+            es: 'La agencia dejó vencer el contrato al final de su plazo en lugar de renovarlo.',
+          },
+          Expired: {
+            en: 'The contract’s term ended with no documented renewal or replacement on record.',
+            es: 'El plazo del contrato terminó sin que haya constancia documentada de renovación o reemplazo.',
+          },
+          'Reported ended': {
+            en: 'News coverage — not yet a council resolution, agency memo, or other primary record — reports this contract suspended, terminated, or not renewed. Often still unsettled: several of these are a manager’s action a council could reverse, or a decision made in the days since the last check of this record. Confidence on this record is “Reported,” not “Confirmed.”',
+            es: 'La cobertura periodística —todavía no una resolución del concejo, un memorando de la agencia u otro registro primario— reporta que este contrato fue suspendido, terminado o no renovado. A menudo aún no está resuelto: varios de estos casos son una decisión de un gerente que un concejo podría revertir, o una decisión tomada en los días posteriores a la última revisión de este registro. La confianza de este registro es "Reportado", no "Confirmado".',
+          },
+        },
+      },
+    ],
     hoverCard: {
       fields: ['vendor', 'executedDate', 'cameraCountCurrent', 'annualCost'],
       related: {
@@ -185,6 +266,16 @@ export const LAYERS: LayerDefinition[] = [
     detailFields: [
       { key: 'vendor', label: { en: 'Vendor', es: 'Proveedor' } },
       { key: 'product', label: { en: 'Product', es: 'Producto' } },
+      // Absent for a record with no ending event, which is why this sits
+      // above executedDate rather than at the bottom: a reader should not
+      // have to scroll past a dollar figure to learn a contract has ended.
+      { key: 'status', label: { en: 'Contract status', es: 'Estado del contrato' } },
+      { key: 'statusDate', label: { en: 'Status as of', es: 'Estado a partir de' }, format: 'date' },
+      {
+        key: 'statusSourceUrl',
+        label: { en: 'Source for status', es: 'Fuente del estado' },
+        format: 'link',
+      },
       { key: 'executedDate', label: { en: 'Contract executed', es: 'Contrato firmado' }, format: 'date' },
       { key: 'initialTermMonths', label: { en: 'Initial term (months)', es: 'Plazo inicial (meses)' } },
       { key: 'renewalType', label: { en: 'Renewal terms', es: 'Condiciones de renovación' } },
@@ -312,11 +403,21 @@ export const LAYERS: LayerDefinition[] = [
         joinKey: 'jurisdictionId',
       },
     },
-    // A green wash on a jurisdiction that has a documented vendor contract
-    // — see the field's own comment in types.ts for why this is a coverage
-    // cue and not a score. The only jurisdiction lit up today is the one
-    // MuckRock request has actually produced; every other polygon staying
-    // neutral is the honest state of the data, not a verdict on the agency.
+    // A green wash on a jurisdiction that has a documented, currently active
+    // vendor contract — see the field's own comment in types.ts for why this
+    // is a coverage cue and not a score. excludeWhen means a jurisdiction
+    // whose only contract has since ended, confirmed or merely reported
+    // (see ContractStatus's own comment in types.ts) stops glowing green on
+    // the strength of a record that no longer describes the present,
+    // without the record itself leaving the map. cancelledWhen and
+    // secondaryWhen then repaint that jurisdiction one of two other colours
+    // rather than plain neutral: red for a confirmed cancellation, a duller
+    // amber for one that's still only reported — so "confirmed cancelled,"
+    // "reported but contested," and "nothing on record" are three distinct
+    // visible states instead of collapsing "cancelled" and "never had one"
+    // into the same neutral. Only a polygon with no ending on record at all
+    // stays neutral, and that staying neutral is the honest state of the
+    // data, not a verdict on the agency.
     // Bright mint on dark, deep emerald on light — the first plain green
     // (Tailwind's own 500/600 step) read at roughly 1.1:1 against the light
     // basemap's neutral unselected grey, i.e. functionally invisible; both
@@ -328,8 +429,40 @@ export const LAYERS: LayerDefinition[] = [
     tintWhenRelated: {
       layerId: 'vendor_contract',
       joinKey: 'jurisdictionId',
+      excludeWhen: {
+        key: 'status',
+        values: ['Suspended', 'Terminated', 'Not renewed', 'Expired', 'Reported ended'],
+      },
       color: '#86efac',
       colorLight: '#064e3b',
+      // Red, matching the pin's own colour for the same statuses (see
+      // vendor_contract's markerIcon.byValue.colors) — a confirmed
+      // cancellation is the one status change a reader should be able to
+      // spot without a click, at the polygon as well as the point. Ranked
+      // above secondaryWhen: see applyRelatedTint's own comment for why a
+      // jurisdiction with both a confirmed cancellation and an unrelated
+      // reported one shows the confirmed fact.
+      cancelledWhen: {
+        key: 'status',
+        values: ['Suspended', 'Terminated', 'Not renewed', 'Expired'],
+        color: '#f87171',
+        colorLight: '#7f1d1d',
+      },
+      // A duller amber, not a paler green: a jurisdiction whose only
+      // documented contract is only *reported* ended (see ContractStatus's
+      // own comment in types.ts) is genuinely a different state from one
+      // with a confirmed, active contract, from one with a confirmed
+      // cancellation, and from one with none on record at all — visible
+      // without a click, the same way the other washes already are. Amber
+      // reads as "unsettled" against this basemap the way the confidence
+      // label already does in the detail panel; this is that same
+      // distinction made visible at the polygon.
+      secondaryWhen: {
+        key: 'status',
+        values: ['Reported ended'],
+        color: '#fcd34d',
+        colorLight: '#78350f',
+      },
     },
     action: {
       // Reuses the existing generic surveillance-inventory request template —
@@ -1898,5 +2031,194 @@ export const LAYERS: LayerDefinition[] = [
       detail: ['stressorCount', 'countyMedian', 'mpcaAdverse'],
       wide: true,
     },
+  },
+
+  {
+    id: 'demographic_black_share',
+    slug: 'demographics-black',
+    category: 'environment',
+    label: { en: 'Black population share', es: 'Proporción de población negra' },
+    summary: {
+      en: 'What share of each census tract is Black or African American, from the Census Bureau’s American Community Survey.',
+      es: 'Qué proporción de cada sección censal es negra o afroamericana, según la Encuesta sobre la Comunidad de la Census Bureau.',
+    },
+    whatThisMeans: {
+      en: 'The Census Bureau’s American Community Survey samples households continuously and publishes a five-year rolling average for every census tract — a few thousand residents each. This layer shows what share of each tract is Black or African American, counted separately from Hispanic or Latino origin so a Black Hispanic resident is not counted twice. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Black neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
+      es: 'La Encuesta sobre la Comunidad de la Census Bureau muestrea hogares de forma continua y publica un promedio móvil de cinco años para cada sección censal, de unos pocos miles de residentes cada una. Esta capa muestra qué proporción de cada sección es negra o afroamericana, contada por separado del origen hispano o latino para que un residente negro hispano no se cuente dos veces. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios negros — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
+    },
+    limitations: [
+      {
+        en: 'A five-year rolling average, not a count taken on any single date.',
+        es: 'Un promedio móvil de cinco años, no un recuento tomado en una fecha concreta.',
+      },
+      {
+        en: 'Margins of error can be large for a small population in a small tract. Tracts where the estimate’s coefficient of variation exceeds 40% — the Census Bureau’s own reliability cutoff — are marked in the detail panel rather than shown as precise; roughly seven in ten Minnesota tracts fall into that category for this specific estimate, since the statewide Black population is a small share spread thin across mostly rural tracts.',
+        es: 'Los márgenes de error pueden ser grandes para una población pequeña en una sección pequeña. Las secciones donde el coeficiente de variación de la estimación supera el 40% —el propio umbral de fiabilidad de la Census Bureau— se marcan en el panel de detalle en lugar de mostrarse como precisas; alrededor de siete de cada diez secciones de Minnesota caen en esa categoría para esta estimación en concreto, ya que la población negra estatal es una proporción pequeña repartida entre secciones mayormente rurales.',
+      },
+      {
+        en: 'A tract average says nothing about any block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#ec4899',
+    colorLight: '#be185d',
+    categoryColors: {
+      key: 'blackBand',
+      label: { en: 'Black population share', es: 'Proporción de población negra' },
+      colors: [
+        { value: '0–5%', color: '#fce7f3' },
+        { value: '5–15%', color: '#f9a8d4' },
+        { value: '15–30%', color: '#ec4899' },
+        { value: '30–50%', color: '#be185d' },
+        { value: '50%+', color: '#831843' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/demographics.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'U.S. Census Bureau, American Community Survey, table B03002',
+      sourceUrl: 'https://www.census.gov/data/developers/data-sets/acs-5year.html',
+      license: 'Public domain (U.S. federal statistical work)',
+      licenseUrl: null,
+      attribution: 'U.S. Census Bureau, American Community Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [{ key: 'blackBand', kind: 'enum', label: { en: 'Black population share', es: 'Proporción de población negra' } }],
+    detailFields: [
+      { key: 'blackPercent', label: { en: 'Black or African American, % of tract', es: 'Negra o afroamericana, % de la sección' } },
+      { key: 'blackPercentMoe', label: { en: '± margin of error, percentage points', es: '± margen de error, puntos porcentuales' } },
+      { key: 'blackHighUncertainty', label: { en: 'Estimate below the Census Bureau’s reliability threshold', es: 'Estimación por debajo del umbral de fiabilidad de la Census Bureau' } },
+      { key: 'totalPopulation', label: { en: 'Total tract population', es: 'Población total de la sección' } },
+    ],
+  },
+
+  {
+    id: 'demographic_latinx_share',
+    slug: 'demographics-latinx',
+    category: 'environment',
+    label: { en: 'Latinx population share', es: 'Proporción de población latina' },
+    summary: {
+      en: 'What share of each census tract is Hispanic or Latino, from the Census Bureau’s American Community Survey.',
+      es: 'Qué proporción de cada sección censal es hispana o latina, según la Encuesta sobre la Comunidad de la Census Bureau.',
+    },
+    whatThisMeans: {
+      en: 'The same American Community Survey five-year rolling average as the Black population share layer, showing what share of each tract is Hispanic or Latino of any race. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Latinx neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
+      es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que la capa de proporción de población negra, mostrando qué proporción de cada sección es hispana o latina de cualquier raza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios latinos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
+    },
+    limitations: [
+      {
+        en: 'A five-year rolling average, not a count taken on any single date.',
+        es: 'Un promedio móvil de cinco años, no un recuento tomado en una fecha concreta.',
+      },
+      {
+        en: 'Margins of error can be large for a small population in a small tract. Tracts where the estimate’s coefficient of variation exceeds 40% — the Census Bureau’s own reliability cutoff — are marked in the detail panel rather than shown as precise.',
+        es: 'Los márgenes de error pueden ser grandes para una población pequeña en una sección pequeña. Las secciones donde el coeficiente de variación de la estimación supera el 40% —el propio umbral de fiabilidad de la Census Bureau— se marcan en el panel de detalle en lugar de mostrarse como precisas.',
+      },
+      {
+        en: 'A tract average says nothing about any block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#6366f1',
+    colorLight: '#4338ca',
+    categoryColors: {
+      key: 'latinxBand',
+      label: { en: 'Latinx population share', es: 'Proporción de población latina' },
+      colors: [
+        { value: '0–5%', color: '#e0e7ff' },
+        { value: '5–15%', color: '#a5b4fc' },
+        { value: '15–30%', color: '#6366f1' },
+        { value: '30–50%', color: '#4338ca' },
+        { value: '50%+', color: '#312e81' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/demographics.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'U.S. Census Bureau, American Community Survey, table B03002',
+      sourceUrl: 'https://www.census.gov/data/developers/data-sets/acs-5year.html',
+      license: 'Public domain (U.S. federal statistical work)',
+      licenseUrl: null,
+      attribution: 'U.S. Census Bureau, American Community Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [{ key: 'latinxBand', kind: 'enum', label: { en: 'Latinx population share', es: 'Proporción de población latina' } }],
+    detailFields: [
+      { key: 'latinxPercent', label: { en: 'Hispanic or Latino, % of tract', es: 'Hispana o latina, % de la sección' } },
+      { key: 'latinxPercentMoe', label: { en: '± margin of error, percentage points', es: '± margen de error, puntos porcentuales' } },
+      { key: 'latinxHighUncertainty', label: { en: 'Estimate below the Census Bureau’s reliability threshold', es: 'Estimación por debajo del umbral de fiabilidad de la Census Bureau' } },
+      { key: 'totalPopulation', label: { en: 'Total tract population', es: 'Población total de la sección' } },
+    ],
+  },
+
+  {
+    id: 'demographic_poverty_rate',
+    slug: 'demographics-poverty',
+    category: 'environment',
+    label: { en: 'Poverty rate', es: 'Tasa de pobreza' },
+    summary: {
+      en: 'What share of each census tract lives below the federal poverty line, from the Census Bureau’s American Community Survey.',
+      es: 'Qué proporción de cada sección censal vive por debajo del umbral federal de pobreza, según la Encuesta sobre la Comunidad de la Census Bureau.',
+    },
+    whatThisMeans: {
+      en: 'The same American Community Survey five-year rolling average as the two population-share layers, showing what share of each tract’s residents live below the federal poverty line. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in low-income neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the rate itself.',
+      es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que las dos capas de proporción de población, mostrando qué proporción de los residentes de cada sección vive por debajo del umbral federal de pobreza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios de bajos ingresos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la tasa misma.',
+    },
+    limitations: [
+      {
+        en: 'A five-year rolling average, not a count taken on any single date.',
+        es: 'Un promedio móvil de cinco años, no un recuento tomado en una fecha concreta.',
+      },
+      {
+        en: 'This is the Census Bureau’s own pre-computed subject-table rate (table S1701), with its own published margin of error — shown in the detail panel, and flagged where the coefficient of variation exceeds the Bureau’s 40% reliability cutoff.',
+        es: 'Esta es la tasa ya calculada por la propia Census Bureau en su tabla temática (tabla S1701), con su propio margen de error publicado —mostrado en el panel de detalle y señalado cuando el coeficiente de variación supera el umbral de fiabilidad del 40% de la Oficina.',
+      },
+      {
+        en: 'A tract average says nothing about any block or household within it.',
+        es: 'Un promedio por sección censal no dice nada sobre una manzana o un hogar concreto dentro de ella.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#14b8a6',
+    colorLight: '#0f766e',
+    categoryColors: {
+      key: 'povertyBand',
+      label: { en: 'Poverty rate', es: 'Tasa de pobreza' },
+      colors: [
+        { value: '0–10%', color: '#ccfbf1' },
+        { value: '10–20%', color: '#5eead4' },
+        { value: '20–30%', color: '#14b8a6' },
+        { value: '30–40%', color: '#0f766e' },
+        { value: '40%+', color: '#134e4a' },
+      ],
+      fallback: '#6b7280',
+    },
+    dataPath: '/data/demographics.geojson',
+    csvPath: null,
+    provenance: {
+      source: 'U.S. Census Bureau, American Community Survey, table S1701',
+      sourceUrl: 'https://www.census.gov/data/developers/data-sets/acs-5year.html',
+      license: 'Public domain (U.S. federal statistical work)',
+      licenseUrl: null,
+      attribution: 'U.S. Census Bureau, American Community Survey',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [{ key: 'povertyBand', kind: 'enum', label: { en: 'Poverty rate', es: 'Tasa de pobreza' } }],
+    detailFields: [
+      { key: 'povertyPercent', label: { en: 'Below the poverty line, % of tract', es: 'Por debajo del umbral de pobreza, % de la sección' } },
+      { key: 'povertyPercentMoe', label: { en: '± margin of error, percentage points', es: '± margen de error, puntos porcentuales' } },
+      { key: 'povertyHighUncertainty', label: { en: 'Estimate below the Census Bureau’s reliability threshold', es: 'Estimación por debajo del umbral de fiabilidad de la Census Bureau' } },
+      { key: 'totalPopulation', label: { en: 'Total tract population', es: 'Población total de la sección' } },
+    ],
   },
 ];
