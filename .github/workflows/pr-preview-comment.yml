@@ -15,16 +15,29 @@ name: PR preview link
 # reviewer (or the person who asked for the change) clicking a link beats
 # anyone checking out a branch locally.
 #
-# Fires on `check_run` rather than `pull_request` because the Cloudflare
-# build takes real time — this reacts to the deploy actually finishing
-# instead of racing it. `pull_requests` is only populated by GitHub for
-# checks on a branch of this repo, so a PR from a fork won't get a comment;
-# there is no maintainer capacity here to chase that edge case, and a fork
-# contributor still has the Checks tab as a fallback.
+# Triggers on `pull_request`, then polls the Checks API for the Cloudflare
+# check to finish, rather than reacting to a `check_run` webhook — a prior
+# version of this workflow used `on: check_run`, which never fired: GitHub
+# only delivers that webhook for a check if the app that created it is
+# itself subscribed to send `check_run` events, and the Cloudflare Workers
+# and Pages app is subscribed to only `pull_request` and `push` (confirmed
+# via `GET /repos/:owner/:repo/commits/:sha/check-runs` → `app.events`).
+# Every run of that version showed `skipped` for exactly this reason — not
+# a timing issue, a webhook this repo will never receive. Polling sidesteps
+# needing that webhook at all.
+#
+# A PR opened from a fork still won't get a comment: `pull_request` (as
+# opposed to `pull_request_target`, deliberately not used here — it would
+# run this script against a fork's ref with a token that has write access,
+# which is the classic path to a fork's PR hijacking repo secrets) hands
+# forked-PR runs a read-only token no matter what `permissions:` above
+# claims, so the comment step fails closed. There is no maintainer capacity
+# here to chase that edge case; a fork contributor still has the Checks tab
+# as a fallback.
 
 on:
-  check_run:
-    types: [completed]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 permissions:
   pull-requests: write
@@ -32,19 +45,49 @@ permissions:
 
 jobs:
   comment-preview-link:
-    if: >
-      github.event.check_run.name == 'Cloudflare Pages' &&
-      github.event.check_run.conclusion == 'success' &&
-      github.event.check_run.pull_requests[0] != null
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     steps:
-      - name: Post or update the preview-link comment
+      - name: Wait for the Cloudflare Pages check, then post or update the preview-link comment
         uses: actions/github-script@v7
         with:
           script: |
-            const summary = context.payload.check_run.output.summary || '';
+            const sha = context.payload.pull_request.head.sha;
+            const prNumber = context.payload.pull_request.number;
+
+            // Poll rather than a single lookup: the Cloudflare check may not
+            // exist yet (its own webhook hasn't landed) or may still be
+            // in_progress when this job starts, since a real Pages build
+            // takes real time. 10s * 60 = 10 minutes, matching the job
+            // timeout above so a genuinely stuck build fails visibly
+            // instead of polling forever.
+            let checkRun = null;
+            for (let attempt = 0; attempt < 60; attempt++) {
+              const { data } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: sha,
+                check_name: 'Cloudflare Pages',
+              });
+              const found = data.check_runs[0];
+              if (found && found.status === 'completed') {
+                checkRun = found;
+                break;
+              }
+              await new Promise((resolve) => setTimeout(resolve, 10_000));
+            }
+
+            if (!checkRun) {
+              core.warning('Cloudflare Pages check never completed within the polling window.');
+              return;
+            }
+            if (checkRun.conclusion !== 'success') {
+              core.warning(`Cloudflare Pages check finished with conclusion "${checkRun.conclusion}", not "success" — no preview to link.`);
+              return;
+            }
+
+            const summary = checkRun.output?.summary || '';
             // Cloudflare's own check body — a small HTML table, not markdown.
             // The branch alias is preferred over the deploy-specific "Preview
             // URL" above it: it's stable across every push to this branch,
@@ -58,7 +101,6 @@ jobs:
               return;
             }
             const url = match[1];
-            const prNumber = context.payload.check_run.pull_requests[0].number;
             const marker = '<!-- cloudflare-preview-link -->';
             const body = `${marker}\n🔍 **Preview:** ${url}`;
 
