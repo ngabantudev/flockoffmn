@@ -82,6 +82,67 @@ const HOLC_GRADE_COLORS = {
 } as const;
 
 /**
+ * Shared `geometryNote` for every layer keyed to a census tract
+ * (ej_cumulative and the three demographic_* layers): a tract's own name is
+ * just a number, and nothing in the source data names it anything else — see
+ * tractLabel's comment in ej-cumulative.mjs for why no neighborhood name is
+ * invented here.
+ */
+const CENSUS_TRACT_NOTE = {
+  en: 'A census tract is a U.S. Census Bureau statistical area of roughly 1,200–8,000 residents, drawn for reporting — not an official neighborhood.',
+  es: 'Una sección censal es un área estadística de la Oficina del Censo de EE. UU. de aproximadamente 1200 a 8000 residentes, trazada para fines de informes — no un barrio oficial.',
+};
+
+/**
+ * Plain-language label for each of CI-MAP's 26 stressor codes, for the
+ * `ej_cumulative` layer's `adverseList` pill row.
+ *
+ * MPCA's own field ships snake_case codes joined by "; " — read straight
+ * through from the source, unmodified, so the raw record still matches the
+ * document (see ej-cumulative.mjs). This is presentation over that same
+ * value, the same role HOLC_GRADE_COLORS and each filter's
+ * `valueDescriptions` already play elsewhere: it renames nothing in the data,
+ * only in what a reader is shown.
+ */
+const EJ_STRESSOR_LABELS: Record<string, { en: string; es: string }> = {
+  age: { en: 'Older population', es: 'Población de mayor edad' },
+  asthma: { en: 'Asthma', es: 'Asma' },
+  cancer_risk: { en: 'Cancer risk', es: 'Riesgo de cáncer' },
+  childhood_lead_exposure: { en: 'Childhood lead exposure', es: 'Exposición infantil al plomo' },
+  cleanup_sites: { en: 'Contaminated cleanup sites', es: 'Sitios contaminados en limpieza' },
+  cost_burdened_households: { en: 'Cost-burdened households', es: 'Hogares con carga de costos' },
+  disability: { en: 'Disability', es: 'Discapacidad' },
+  education: { en: 'Limited educational attainment', es: 'Nivel educativo limitado' },
+  food_insecurity: { en: 'Food insecurity', es: 'Inseguridad alimentaria' },
+  groundwater_threats: { en: 'Groundwater contamination threats', es: 'Amenazas de contaminación de aguas subterráneas' },
+  heart_disease: { en: 'Heart disease', es: 'Enfermedad cardíaca' },
+  impaired_waters: { en: 'Impaired waters', es: 'Aguas degradadas' },
+  impervious_surfaces: { en: 'Impervious surfaces', es: 'Superficies impermeables' },
+  income_inequality: { en: 'Income inequality', es: 'Desigualdad de ingresos' },
+  industrial_runoff_exceedances: {
+    en: 'Industrial runoff exceedances',
+    es: 'Excesos de escorrentía industrial',
+  },
+  lack_recreation: { en: 'Lack of recreational access', es: 'Falta de acceso recreativo' },
+  lack_tree_canopy: { en: 'Lack of tree canopy', es: 'Falta de cobertura arbórea' },
+  non_cancer_risk: { en: 'Non-cancer health risk', es: 'Riesgo de salud no cancerígeno' },
+  ozone: { en: 'Ozone', es: 'Ozono' },
+  pm_2_5: { en: 'Fine particulate matter (PM2.5)', es: 'Partículas finas (PM2.5)' },
+  population_near_highways: {
+    en: 'Population near highways',
+    es: 'Población cerca de autopistas',
+  },
+  regulated_pollution_activities: {
+    en: 'Regulated pollution activities',
+    es: 'Actividades reguladas de contaminación',
+  },
+  solid_waste: { en: 'Solid waste facilities', es: 'Instalaciones de residuos sólidos' },
+  traffic_density: { en: 'Traffic density', es: 'Densidad de tráfico' },
+  unemployment: { en: 'Unemployment', es: 'Desempleo' },
+  uninsured: { en: 'Uninsured residents', es: 'Residentes sin seguro médico' },
+};
+
+/**
  * The layer registry — the single source of truth for what the map shows.
  *
  * Adding a layer means: write an ingest script that emits a LayerCollection to
@@ -1122,6 +1183,12 @@ export const LAYERS: LayerDefinition[] = [
     // The identifier HOLC printed on each zone — "A1", "D4" — drawn on the
     // ground the way the original sheet drew it.
     labelBy: { key: 'holcId' },
+    // Same hover-on-enabled treatment as holc_appraisal_detail beside it: a
+    // reader browsing this layer should get the grade at a glance without a
+    // click, same as agency_jurisdiction's ward browsing.
+    hoverCard: {
+      fields: ['grade', 'groupsNamed', 'city', 'dating'],
+    },
     dataPath: '/data/redlining.geojson',
     csvPath: null,
     provenance: {
@@ -1857,6 +1924,12 @@ export const LAYERS: LayerDefinition[] = [
     // parcel is metres wide rather than a fixed-size camera icon, so it needs
     // to be much closer before it reads as its own shape rather than noise.
     blockAggregate: { cellMeters: 300, blocksUntil: 12, detailFrom: 15 },
+    // Only when this layer is toggled on and a lot renders at real scale
+    // (not the zoomed-out block-aggregate cell — see blockAggregate above,
+    // which stays unclickable and unhoverable by design).
+    hoverCard: {
+      fields: ['deedYear', 'city'],
+    },
     dataPath: '/data/covenants.geojson',
     csvPath: null,
     provenance: {
@@ -1911,6 +1984,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'Minnesota’s 2023 cumulative impacts law (Minn. Stat. § 116.065) requires the state to weigh the burdens a community already carries before permitting new ones. CI-MAP is the Pollution Control Agency’s draft implementation: for every census tract it counts stressors — air pollution risk, cleanup sites, impaired waters, traffic, asthma and lead rates, tree cover and more, 26 indicators in all — and compares the count to county and state medians. Laid beside the 1930s redlining grades and the covenant map, it shows where the historical lines and present-day burdens coincide. A tract is an aggregate of thousands of people; nothing here describes a household.',
       es: 'La ley de impactos acumulativos de Minnesota de 2023 (Minn. Stat. § 116.065) exige al estado sopesar las cargas que una comunidad ya soporta antes de permitir otras nuevas. CI-MAP es la implementación preliminar de la Agencia de Control de la Contaminación: para cada sección censal cuenta factores de estrés — riesgo de contaminación del aire, sitios de limpieza, aguas degradadas, tráfico, tasas de asma y plomo, cobertura arbórea y más, 26 indicadores en total — y compara el recuento con las medianas del condado y del estado. Junto a las calificaciones de redlining de los años 30 y el mapa de convenios, muestra dónde coinciden las líneas históricas y las cargas actuales. Una sección censal agrega a miles de personas; nada aquí describe un hogar.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'CI-MAP is a public draft first published in December 2025; scores and methodology may change as rulemaking under the statute proceeds.',
@@ -1942,6 +2016,12 @@ export const LAYERS: LayerDefinition[] = [
       ],
       fallback: '#6b7280',
     },
+    // Same hover-on-enabled treatment as the historical-policy layers beside
+    // it: a reader browsing tracts should get the burden band at a glance
+    // without a click.
+    hoverCard: {
+      fields: ['stressorSummary', 'burdenBand', 'mpcaAdverse'],
+    },
     dataPath: '/data/ej-cumulative.geojson',
     csvPath: null,
     provenance: {
@@ -1967,8 +2047,21 @@ export const LAYERS: LayerDefinition[] = [
     ],
     detailFields: [
       {
-        key: 'stressorCount',
-        label: { en: 'Stressors present, of 26', es: 'Factores presentes, de 26' },
+        // "19 / 26" — the count as MPCA counts it, and the fixed denominator
+        // CI-MAP's methodology uses (see whatThisMeans above). Computed once
+        // in ej-cumulative.mjs alongside the raw stressorCount, which stays a
+        // plain number for the band calculation and any future export; this
+        // is display text only.
+        key: 'stressorSummary',
+        label: { en: 'Cumulative stressors', es: 'Factores de estrés acumulativos' },
+      },
+      {
+        // Same wording the map's own legend and fill color already use for
+        // this field (categoryColors.label above) — one judgment about a
+        // tract's burden, read the same way wherever it appears, not a
+        // second scale invented for this row alone.
+        key: 'burdenBand',
+        label: { en: 'Burden vs county median', es: 'Carga frente a la mediana del condado' },
       },
       {
         key: 'countyMedian',
@@ -1991,6 +2084,8 @@ export const LAYERS: LayerDefinition[] = [
           en: 'Stressors MPCA marks adverse here',
           es: 'Factores que la MPCA marca como adversos aquí',
         },
+        format: 'pills',
+        pillLabels: EJ_STRESSOR_LABELS,
       },
       {
         key: 'tribeNames',
@@ -2028,7 +2123,7 @@ export const LAYERS: LayerDefinition[] = [
         en: 'This point is not inside a Minnesota census tract with CI-MAP data.',
         es: 'Este punto no está dentro de una sección censal de Minnesota con datos de CI-MAP.',
       },
-      detail: ['stressorCount', 'countyMedian', 'mpcaAdverse'],
+      detail: ['stressorSummary', 'burdenBand', 'countyMedian', 'mpcaAdverse'],
       wide: true,
     },
   },
@@ -2046,6 +2141,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'The Census Bureau’s American Community Survey samples households continuously and publishes a five-year rolling average for every census tract — a few thousand residents each. This layer shows what share of each tract is Black or African American, counted separately from Hispanic or Latino origin so a Black Hispanic resident is not counted twice. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Black neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
       es: 'La Encuesta sobre la Comunidad de la Census Bureau muestrea hogares de forma continua y publica un promedio móvil de cinco años para cada sección censal, de unos pocos miles de residentes cada una. Esta capa muestra qué proporción de cada sección es negra o afroamericana, contada por separado del origen hispano o latino para que un residente negro hispano no se cuente dos veces. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios negros — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'A five-year rolling average, not a count taken on any single date.',
@@ -2074,6 +2170,10 @@ export const LAYERS: LayerDefinition[] = [
         { value: '50%+', color: '#831843' },
       ],
       fallback: '#6b7280',
+    },
+    // Same hover-on-enabled treatment as the other tract-level layers.
+    hoverCard: {
+      fields: ['blackPercent', 'blackHighUncertainty', 'totalPopulation'],
     },
     dataPath: '/data/demographics.geojson',
     csvPath: null,
@@ -2109,6 +2209,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'The same American Community Survey five-year rolling average as the Black population share layer, showing what share of each tract is Hispanic or Latino of any race. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in Latinx neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the population share itself.',
       es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que la capa de proporción de población negra, mostrando qué proporción de cada sección es hispana o latina de cualquier raza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios latinos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la proporción de población misma.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'A five-year rolling average, not a count taken on any single date.',
@@ -2137,6 +2238,10 @@ export const LAYERS: LayerDefinition[] = [
         { value: '50%+', color: '#312e81' },
       ],
       fallback: '#6b7280',
+    },
+    // Same hover-on-enabled treatment as the other tract-level layers.
+    hoverCard: {
+      fields: ['latinxPercent', 'latinxHighUncertainty', 'totalPopulation'],
     },
     dataPath: '/data/demographics.geojson',
     csvPath: null,
@@ -2172,6 +2277,7 @@ export const LAYERS: LayerDefinition[] = [
       en: 'The same American Community Survey five-year rolling average as the two population-share layers, showing what share of each tract’s residents live below the federal poverty line. Laid beside the ALPR and agency-jurisdiction layers, it lets a reader ask whether surveillance and enforcement infrastructure concentrates in low-income neighborhoods — a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the rate itself.',
       es: 'El mismo promedio móvil de cinco años de la Encuesta sobre la Comunidad que las dos capas de proporción de población, mostrando qué proporción de los residentes de cada sección vive por debajo del umbral federal de pobreza. Junto a las capas de ALPR y jurisdicciones policiales, permite preguntar si la infraestructura de vigilancia y aplicación de la ley se concentra en barrios de bajos ingresos — una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo la tasa misma.',
     },
+    geometryNote: CENSUS_TRACT_NOTE,
     limitations: [
       {
         en: 'A five-year rolling average, not a count taken on any single date.',
@@ -2200,6 +2306,10 @@ export const LAYERS: LayerDefinition[] = [
         { value: '40%+', color: '#134e4a' },
       ],
       fallback: '#6b7280',
+    },
+    // Same hover-on-enabled treatment as the other tract-level layers.
+    hoverCard: {
+      fields: ['povertyPercent', 'povertyHighUncertainty', 'totalPopulation'],
     },
     dataPath: '/data/demographics.geojson',
     csvPath: null,
