@@ -486,13 +486,21 @@ const strings = {
         positioning is scoped to the map canvas, not the layer panel beside
         it. The overlay it opens is not built until first opened — see
         CompareView.astro's start()/IntersectionObserver.
+
+        top-left rather than alongside reset-view at the bottom: the bottom
+        of the map is already the most crowded strip on screen — the
+        colour-coded key, the scale bar, and the attribution control all
+        live there, and on a narrow phone that's not enough room for a
+        fourth thing. A first pass put this button at bottom-right and it
+        overlapped the attribution control badly enough that a scripted
+        click on a 375px-wide viewport landed on attribution instead of the
+        button. Top-left has nothing else on it at any breakpoint.
       */}
       <button
         id="open-compare"
         type="button"
         title={t('compareOpenButton')}
-        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
-        class="absolute right-12 rounded-full border border-ink-700 bg-ink-900/90 px-3 py-1.5 text-xs font-medium text-ink-100 hover:bg-ink-800 motion-safe:transition-[bottom]"
+        class="absolute top-2 left-2 max-w-[75vw] rounded-full border border-ink-700 bg-ink-900/90 px-3 py-1.5 text-xs font-medium text-ink-100 hover:bg-ink-800"
       >
         {t('compareOpenButton')}
       </button>

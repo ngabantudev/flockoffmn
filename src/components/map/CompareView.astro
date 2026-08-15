@@ -89,11 +89,19 @@ const strings = {
 ---
 
 <div class="flex h-full min-h-0 flex-col">
-  <div class="border-b border-ink-800 bg-ink-900 px-4 py-3 sm:px-6">
-    <h1 class="text-base font-semibold text-ink-100 sm:text-lg">{t('compareTitle')}</h1>
-    <p class="mt-1 max-w-3xl text-sm text-ink-300">{t('compareIntro')}</p>
+  {/*
+    A first pass measured out at 253px of header on a 375×812 phone against
+    269px left for the actual map — the explanation was nearly as tall as
+    the thing it explains. text-xs + line-clamp-2 (full text stays available
+    at sm: and up, where there's room) fixes that without cutting the intro
+    or source line outright — a reader can still open it at any width, this
+    just stops it from eating the interactive area on the smallest screens.
+  */}
+  <div class="shrink-0 border-b border-ink-800 bg-ink-900 px-4 py-2 sm:py-3 sm:px-6">
+    <h1 class="text-sm font-semibold text-ink-100 sm:text-lg">{t('compareTitle')}</h1>
+    <p class="mt-1 line-clamp-2 max-w-3xl text-xs text-ink-300 sm:line-clamp-none sm:text-sm">{t('compareIntro')}</p>
     {vintageDisplay && (
-      <p class="mt-1 text-xs text-ink-400">
+      <p class="mt-1 truncate text-[10px] text-ink-400 sm:text-xs">
         {t('compareSourceLabel')}{' '}
         <a href={sourceUrl} class="underline hover:text-ink-200" target="_blank" rel="noopener">
           {t('compareVintage')} {vintageDisplay}
@@ -112,16 +120,35 @@ const strings = {
          a native range thumb's centre isn't at value% of the track width. -->
     <div id="compare-divider" class="pointer-events-none absolute inset-y-0 w-0.5 bg-ink-100 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" style="left:50%"></div>
 
-    <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-start justify-between gap-2 px-3 text-xs sm:px-4">
-      <span class="pointer-events-auto rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow" style={`border-left:3px solid ${povertyConfig.color}`}>
-        {strings.comparePovertySide}{vintageDisplay ? ` (${vintageDisplay})` : ''}
+    {/*
+      pr-14/pr-16 rather than a matching px-3/px-4: mapA carries a
+      NavigationControl (zoom +/-) docked at MapLibre's own top-right, which
+      this row would otherwise sit right underneath — the same top-3
+      distance from the edge as the control's own margin. The extra right
+      clearance keeps the Black-share chip from drawing under those buttons
+      at any width; nothing on the left needs it, so it's asymmetric rather
+      than a wider px-* on both sides.
+    */}
+    {/*
+      The "(2020–2024)" suffix is dropped below sm: rather than baked into
+      one string, so it can fold away by itself on a phone — three chips
+      each carrying their full vintage text is most of why this row wrapped
+      to three separate lines and ate ~100px a phone can't spare. The
+      vintage is still stated once, above, in the header block; this is a
+      second copy for convenience at a glance, not the only place it lives.
+    */}
+    <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-wrap items-start justify-between gap-1.5 py-0 pr-14 pl-3 text-[11px] sm:gap-2 sm:pr-16 sm:pl-4 sm:text-xs">
+      <span class="pointer-events-auto rounded bg-ink-900/85 px-1.5 py-0.5 font-medium text-ink-100 shadow sm:px-2 sm:py-1" style={`border-left:3px solid ${povertyConfig.color}`}>
+        {strings.comparePovertySide}
+        {vintageDisplay && <span class="hidden sm:inline">{' '}({vintageDisplay})</span>}
       </span>
-      <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow">
+      <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-1.5 py-0.5 font-medium text-ink-100 shadow sm:px-2 sm:py-1">
         <input type="checkbox" id="compare-show-alpr" checked style={`accent-color:${alprConfig.color}`} />
         {strings.compareShowAlpr}
       </label>
-      <span class="pointer-events-auto rounded bg-ink-900/85 px-2 py-1 font-medium text-ink-100 shadow" style={`border-right:3px solid ${blackConfig.color}`}>
-        {strings.compareBlackSide}{vintageDisplay ? ` (${vintageDisplay})` : ''}
+      <span class="pointer-events-auto rounded bg-ink-900/85 px-1.5 py-0.5 font-medium text-ink-100 shadow sm:px-2 sm:py-1" style={`border-right:3px solid ${blackConfig.color}`}>
+        {strings.compareBlackSide}
+        {vintageDisplay && <span class="hidden sm:inline">{' '}({vintageDisplay})</span>}
       </span>
     </div>
 
@@ -134,7 +161,7 @@ const strings = {
       "0–5%"/"50%+" all fit, and a reader asking "what does this darkness
       mean" wants the middle bands named too, not just the extremes.
     */}
-    <div class="pointer-events-none absolute bottom-14 left-2 w-40 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:left-3">
+    <div class="pointer-events-none absolute bottom-14 left-2 w-28 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:left-3 sm:w-40">
       <p class="mb-1 truncate leading-tight">{strings.comparePovertySide}</p>
       <div class="flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800">
         {povertyConfig.categoryColors.colors.map((c) => (
@@ -147,7 +174,7 @@ const strings = {
         ))}
       </div>
     </div>
-    <div class="pointer-events-none absolute right-2 bottom-14 w-40 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:right-3">
+    <div class="pointer-events-none absolute right-2 bottom-14 w-28 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:right-3 sm:w-40">
       <p class="mb-1 truncate leading-tight">{strings.compareBlackSide}</p>
       <div class="flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800">
         {blackConfig.categoryColors.colors.map((c) => (
@@ -178,7 +205,14 @@ const strings = {
     </div>
   </div>
 
-  <p class="border-t border-ink-800 bg-ink-900 px-4 py-3 text-xs text-ink-400 sm:px-6">
+  {/*
+    shrink-0 + a smaller mobile font, same reasoning as the header block
+    above: this note is important (it's the accessibility disclosure) so it
+    never gets line-clamped or hidden, but its font can still shrink a step
+    on a phone so it doesn't out-compete #compare-root for the vertical
+    space a flex layout with no explicit basis would otherwise hand it.
+  */}
+  <p class="shrink-0 border-t border-ink-800 bg-ink-900 px-4 py-2 text-[11px] text-ink-400 sm:px-6 sm:py-3 sm:text-xs">
     {t('compareAccessibleNote')}
     {' '}
     <a href="/data" class="underline hover:text-ink-200">{t('compareAccessibleLink')}</a>
