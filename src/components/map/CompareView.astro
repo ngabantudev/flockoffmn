@@ -1,0 +1,486 @@
+---
+/**
+ * A CNU/Esri-Instant-App-style swipe comparison: poverty rate under one
+ * MapLibre map, Black population share under a second one stacked on top of
+ * it and clipped to a draggable divider, both reading the same
+ * demographics.geojson the toggleable layers on the main map already use
+ * (scripts/ingest/demographics.mjs).
+ *
+ * Deliberately a separate page from the main map (src/pages/compare.astro),
+ * not a mode bolted onto MapController — that class is already the load-
+ * bearing 3000-line surface every other layer depends on, and a two-map-
+ * instance compare view is a genuinely different rendering model (two WebGL
+ * contexts, a synced viewport, a clipped container) that has nothing to gain
+ * from sharing its code. Keeping it standalone means this experiment can be
+ * deleted or rebuilt without touching the layer registry, filters, hover
+ * cards or the accessible record list every other layer relies on.
+ *
+ * Accessibility (CLAUDE.md §4/Part 0 §0.7): a pixel-swipe has no non-visual
+ * reading — nothing here pretends otherwise. The divider is a real
+ * <input type="range">, so it is keyboard-operable and its value is
+ * announced, but "which shade is under the divider right now" is still a
+ * visual question with no textual answer. `compareAccessibleNote` says so
+ * plainly and points to the same data in a form that does have one: the two
+ * toggleable single-metric layers on the main map, and the CSV/GeoJSON
+ * download.
+ */
+import type { Locale } from '~/layers/types';
+import { LAYERS } from '~/layers/registry';
+import { loadLayer, mergedProvenance } from '~/layers/data';
+import { useTranslations, pick } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const povertyLayer = LAYERS.find((l) => l.id === 'demographic_poverty_rate')!;
+const blackLayer = LAYERS.find((l) => l.id === 'demographic_black_share')!;
+const alprLayer = LAYERS.find((l) => l.id === 'alpr')!;
+
+// The registry's own provenance.sourceDate is a static placeholder (null,
+// same as every other layer — see registry.ts's comment on why); the real
+// ACS vintage is only known once the ingest has actually run, so it's read
+// off the generated file itself, the same "the file wins" rule the sources
+// page uses (mergedProvenance). Both demographic layers share one dataset,
+// so either resolves the same vintage.
+const povertyLoaded = await loadLayer(povertyLayer);
+const povertyProvenance = mergedProvenance(povertyLoaded);
+const vintage = povertyProvenance.sourceDate as string | null;
+// "2020-2024" as ingested -> "2020–2024" as displayed, the same en-dash
+// style every ACS-range date already uses elsewhere on the site.
+const vintageDisplay = vintage?.replace('-', '–') ?? null;
+const sourceUrl = povertyProvenance.sourceUrl as string;
+
+// Only what the client script needs to paint and legend each side — not the
+// full registry entry (whatThisMeans, limitations, filters, etc. stay on the
+// main map's layer panel, one canonical copy of that prose rather than two).
+const povertyConfig = {
+  dataPath: povertyLayer.dataPath,
+  color: povertyLayer.color,
+  categoryColors: povertyLayer.categoryColors!,
+  label: pick(povertyLayer.label, locale),
+};
+const blackConfig = {
+  dataPath: blackLayer.dataPath,
+  color: blackLayer.color,
+  categoryColors: blackLayer.categoryColors!,
+  label: pick(blackLayer.label, locale),
+};
+// A fixed single colour and a plain circle, not the main map's full
+// operator-colour/direction-cone treatment (categoryColors, bearingKey) —
+// this view exists to show where the cameras sit against the demographic
+// choropleths, not to re-explain who runs each one. The main map's ALPR
+// layer, linked from the accessible note below, is still the complete record.
+const alprConfig = {
+  dataPath: alprLayer.dataPath,
+  color: alprLayer.color,
+  strokeColor: alprLayer.pointStrokeColor ?? '#ffffff',
+};
+
+const strings = {
+  compareSliderLabel: t('compareSliderLabel'),
+  comparePovertySide: t('comparePovertySide'),
+  compareBlackSide: t('compareBlackSide'),
+  loading: t('loading'),
+  compareShowAlpr: t('compareShowAlpr'),
+};
+---
+
+<div class="flex h-full min-h-0 flex-col">
+  {/*
+    A first pass measured out at 253px of header on a 375×812 phone against
+    269px left for the actual map — the explanation was nearly as tall as
+    the thing it explains. text-xs + line-clamp-2 (full text stays available
+    at sm: and up, where there's room) fixes that without cutting the intro
+    or source line outright — a reader can still open it at any width, this
+    just stops it from eating the interactive area on the smallest screens.
+  */}
+  <div class="shrink-0 border-b border-ink-800 bg-ink-900 px-4 py-2 sm:py-3 sm:px-6">
+    <h1 class="text-sm font-semibold text-ink-100 sm:text-lg">{t('compareTitle')}</h1>
+    <p class="mt-1 line-clamp-2 max-w-3xl text-xs text-ink-300 sm:line-clamp-none sm:text-sm">{t('compareIntro')}</p>
+    {vintageDisplay && (
+      <p class="mt-1 truncate text-[10px] text-ink-400 sm:text-xs">
+        {t('compareSourceLabel')}{' '}
+        <a href={sourceUrl} class="underline hover:text-ink-200" target="_blank" rel="noopener">
+          {t('compareVintage')} {vintageDisplay}
+        </a>
+      </p>
+    )}
+  </div>
+
+  <div class="relative min-h-0 flex-1" id="compare-root">
+    <div class="absolute inset-0" id="compare-map-a" role="img" aria-label={strings.comparePovertySide}></div>
+    <div class="pointer-events-none absolute inset-0" id="compare-map-b" role="img" aria-label={strings.compareBlackSide}></div>
+
+    <!-- The divider line follows the slider's value; drawn purely for sighted
+         users, the slider beneath it is the actual control. Positioned in
+         pixels, not a naive percentage — see the client script's note on why
+         a native range thumb's centre isn't at value% of the track width. -->
+    <div id="compare-divider" class="pointer-events-none absolute inset-y-0 w-0.5 bg-ink-100 shadow-[0_0_0_1px_rgba(0,0,0,0.35)]" style="left:50%"></div>
+
+    {/*
+      No Poverty Rate / Black Population Share pills up here any more —
+      which side is which is already answered by the colour-band legends at
+      the bottom of the map, so this was a second, redundant copy of the
+      same two names. The ALPR checkbox is the only thing left that needs a
+      control up here, so it's centred rather than fighting mapA's zoom
+      +/- buttons for the right-hand corner the old three-item row had to
+      dodge with asymmetric padding.
+    */}
+    <div class="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+      <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 text-[11px] font-medium text-ink-100 shadow sm:text-xs">
+        <input type="checkbox" id="compare-show-alpr" checked style={`accent-color:${alprConfig.color}`} />
+        {strings.compareShowAlpr}
+      </label>
+    </div>
+
+    {/*
+      What each shade means — the same segmented-bar-with-value-labels card
+      the main map's on-map keys use (MapView.astro's refreshMapKeys), just
+      built once server-side instead of client-rebuilt, since these two
+      layers' bands never change while this view is open. Every band gets
+      its own label rather than just the two ends: five short values like
+      "0–5%"/"50%+" all fit, and a reader asking "what does this darkness
+      mean" wants the middle bands named too, not just the extremes.
+    */}
+    <div class="pointer-events-none absolute bottom-14 left-2 w-28 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:left-3 sm:w-40">
+      <p class="mb-1 truncate leading-tight">{strings.comparePovertySide}</p>
+      <div class="flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800">
+        {povertyConfig.categoryColors.colors.map((c) => (
+          <span class="h-full flex-1" style={`background:${c.color}`}></span>
+        ))}
+      </div>
+      <div class="mt-0.5 flex justify-between gap-1 leading-tight text-ink-400">
+        {povertyConfig.categoryColors.colors.map((c) => (
+          <span class="flex-1 text-center">{c.value}</span>
+        ))}
+      </div>
+    </div>
+    <div class="pointer-events-none absolute right-2 bottom-14 w-28 rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 text-[10px] text-ink-300 shadow backdrop-blur-sm sm:right-3 sm:w-40">
+      <p class="mb-1 truncate leading-tight">{strings.compareBlackSide}</p>
+      <div class="flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800">
+        {blackConfig.categoryColors.colors.map((c) => (
+          <span class="h-full flex-1" style={`background:${c.color}`}></span>
+        ))}
+      </div>
+      <div class="mt-0.5 flex justify-between gap-1 leading-tight text-ink-400">
+        {blackConfig.categoryColors.colors.map((c) => (
+          <span class="flex-1 text-center">{c.value}</span>
+        ))}
+      </div>
+    </div>
+
+    <input
+      type="range"
+      id="compare-slider"
+      min="0"
+      max="100"
+      value="50"
+      step="1"
+      aria-label={strings.compareSliderLabel}
+      class="absolute inset-x-0 bottom-4"
+    />
+
+    <div id="compare-status" class="sr-only" role="status" aria-live="polite"></div>
+    <div id="compare-loading" class="absolute inset-0 flex items-center justify-center bg-ink-950 text-sm text-ink-300">
+      {strings.loading}
+    </div>
+  </div>
+
+  {/*
+    shrink-0 + a smaller mobile font, same reasoning as the header block
+    above: this note is important (it's the accessibility disclosure) so it
+    never gets line-clamped or hidden, but its font can still shrink a step
+    on a phone so it doesn't out-compete #compare-root for the vertical
+    space a flex layout with no explicit basis would otherwise hand it.
+  */}
+  <p class="shrink-0 border-t border-ink-800 bg-ink-900 px-4 py-2 text-[11px] text-ink-400 sm:px-6 sm:py-3 sm:text-xs">
+    {t('compareAccessibleNote')}
+    {' '}
+    <a href="/data" class="underline hover:text-ink-200">{t('compareAccessibleLink')}</a>
+  </p>
+</div>
+
+{/*
+  A fixed, known thumb size in both engines — the divider-alignment fix in
+  the client script below only works if it can assume an exact pixel width
+  for the thumb rather than trust whatever a browser's default happens to be
+  (Chrome, Firefox and Safari don't agree, and none of them expose it to
+  JS). The track itself is made invisible: the separate #compare-divider div
+  is the only visible line, so a second, differently-styled native track
+  drawn underneath it would just be a distracting sliver.
+*/}
+<style>
+  #compare-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    height: 24px;
+    margin: 0;
+  }
+  #compare-slider::-webkit-slider-runnable-track {
+    background: transparent;
+  }
+  #compare-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    margin-top: 3px;
+    border-radius: 9999px;
+    background: var(--color-ink-100, #e7ecf3);
+    border: 2px solid var(--color-ink-950, #0a0c10);
+    cursor: ew-resize;
+  }
+  #compare-slider::-moz-range-track {
+    background: transparent;
+  }
+  #compare-slider::-moz-range-thumb {
+    box-sizing: border-box;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: var(--color-ink-100, #e7ecf3);
+    border: 2px solid var(--color-ink-950, #0a0c10);
+    cursor: ew-resize;
+  }
+</style>
+
+<script is:inline type="application/json" id="compare-config" set:html={JSON.stringify({ poverty: povertyConfig, black: blackConfig, alpr: alprConfig, strings })} />
+
+<script>
+  import maplibregl from 'maplibre-gl';
+  import { Protocol as PMTilesProtocol } from 'pmtiles';
+  import { baseStyle, MN_CENTER } from '~/lib/mapStyle';
+  import { initialMapStyle } from '~/lib/theme';
+
+  // Registering twice (once here, once if MapController's module also loads
+  // on this page) is harmless — addProtocol just overwrites the same handler
+  // with an equivalent one — but this page never imports mapController.ts, so
+  // it needs its own registration rather than relying on that module having
+  // run first.
+  maplibregl.addProtocol('pmtiles', new PMTilesProtocol().tile);
+
+  type CategoryColors = {
+    key: string;
+    colors: Array<{ value: string; color: string }>;
+    fallback: string;
+  };
+  type SideConfig = { dataPath: string; color: string; categoryColors: CategoryColors; label: string };
+  type AlprConfig = { dataPath: string; color: string; strokeColor: string };
+
+  const config = JSON.parse(document.getElementById('compare-config')!.textContent!) as {
+    poverty: SideConfig;
+    black: SideConfig;
+    alpr: AlprConfig;
+  };
+
+  const elA = document.getElementById('compare-map-a')!;
+  const elB = document.getElementById('compare-map-b')!;
+  const divider = document.getElementById('compare-divider')!;
+  const slider = document.getElementById('compare-slider') as HTMLInputElement;
+  const statusEl = document.getElementById('compare-status')!;
+  const loadingEl = document.getElementById('compare-loading')!;
+  const alprCheckbox = document.getElementById('compare-show-alpr') as HTMLInputElement;
+
+  function fillExpression(cc: CategoryColors): maplibregl.ExpressionSpecification {
+    return [
+      'match',
+      // Band values live under properties.attributes (the shared feature
+      // schema — see FeatureProperties in src/layers/types.ts), not at the
+      // top level MapLibre's bare ['get', key] reads by default. The
+      // three-argument form reads inside that nested object instead of
+      // silently returning undefined and falling through to `fallback` for
+      // every feature, which is what shipped here first — every tract read
+      // as unmatched and rendered in the one grey fallback colour, which
+      // looked exactly like "no data at all".
+      ['get', cc.key, ['get', 'attributes']],
+      ...cc.colors.flatMap(({ value, color }) => [value, color]),
+      cc.fallback,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  function addChoropleth(map: maplibregl.Map, side: SideConfig) {
+    map.addSource('demographics', { type: 'geojson', data: side.dataPath });
+    map.addLayer({
+      id: 'demographics-fill',
+      type: 'fill',
+      source: 'demographics',
+      paint: {
+        'fill-color': fillExpression(side.categoryColors),
+        'fill-opacity': 0.82,
+      },
+    });
+    map.addLayer({
+      id: 'demographics-outline',
+      type: 'line',
+      source: 'demographics',
+      paint: { 'line-color': 'rgba(0,0,0,0.25)', 'line-width': 0.5 },
+    });
+  }
+
+  /**
+   * Cameras, drawn identically on both maps. With mapB clipped to the right
+   * of the divider, a camera added to mapA alone would vanish the moment the
+   * divider passed it, and one added to mapB alone would never appear left
+   * of the divider at all. Duplicating the same source/layer onto both is
+   * what makes a dot read as one continuous thing as the divider moves
+   * across it, not two different dots that happen to line up.
+   *
+   * Deliberately not the main map's full ALPR treatment: one colour, one
+   * plain circle, no operator category, no direction cone — this view is
+   * "where are the cameras relative to these two layers", not a rebuild of
+   * the ALPR record itself. `compareAccessibleNote` points to the real thing.
+   */
+  function addAlpr(map: maplibregl.Map, alpr: AlprConfig) {
+    map.addSource('alpr', { type: 'geojson', data: alpr.dataPath });
+    map.addLayer({
+      id: 'alpr-points',
+      type: 'circle',
+      source: 'alpr',
+      paint: {
+        'circle-radius': 3.5,
+        'circle-color': alpr.color,
+        'circle-stroke-color': alpr.strokeColor,
+        'circle-stroke-width': 1,
+      },
+    });
+  }
+
+  /**
+   * Two full MapLibre instances is real weight — a second WebGL context, a
+   * second copy of the basemap style, a second fetch of the 3.5 MB
+   * demographics file. Deferred behind `start()` so that weight is only ever
+   * paid by a reader who actually opens this view, never by every visitor to
+   * the page it's embedded in (see the IntersectionObserver below).
+   */
+  let started = false;
+  function start() {
+    if (started) return;
+    started = true;
+
+    const style = baseStyle(initialMapStyle());
+    const sharedOptions: Partial<maplibregl.MapOptions> = {
+      style,
+      center: MN_CENTER,
+      zoom: 5.2,
+      minZoom: 3,
+      maxZoom: 14,
+      attributionControl: { compact: true },
+      dragRotate: false,
+      pitchWithRotate: false,
+      // The clipped top map is never the one a reader's pointer lands on
+      // close to the divider; only the bottom map handles interaction, and
+      // its moves are mirrored onto the top one below. Interacting on the
+      // top map's own (clipped-visible) region would desync the two until
+      // the next mirrored move, so it is disabled outright rather than
+      // half-supported.
+      interactive: false,
+    };
+
+    const mapA = new maplibregl.Map({ ...sharedOptions, container: elA, interactive: true } as maplibregl.MapOptions);
+    const mapB = new maplibregl.Map({ ...sharedOptions, container: elB } as maplibregl.MapOptions);
+
+    mapA.addControl(new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }), 'top-right');
+
+    let syncing = false;
+    mapA.on('move', () => {
+      if (syncing) return;
+      syncing = true;
+      mapB.jumpTo({ center: mapA.getCenter(), zoom: mapA.getZoom(), bearing: mapA.getBearing(), pitch: mapA.getPitch() });
+      syncing = false;
+    });
+
+    /**
+     * `elB` (the Black-share map) stays the same full-size, same-position
+     * box as `elA` at all times — never resized or offset — so its content
+     * lines up pixel-for-pixel with the map underneath it as both pan and
+     * zoom together. Only its `clip-path` moves, hiding everything left of
+     * the divider so `elA` shows through there instead. Clipping this way
+     * (rather than shrinking a wrapper with `overflow: hidden`) sidesteps
+     * the coordinate offset that approach would otherwise introduce, and
+     * modern browsers exclude the clipped-away region from hit-testing too
+     * — though `elB` is also marked `pointer-events-none` outright, so
+     * panning always reaches `elA` regardless of where the divider sits.
+     */
+    function layout() {
+      mapA.resize();
+      mapB.resize();
+      // The track's pixel width changed, so the thumb-to-divider mapping
+      // below has to be recomputed against the new width too.
+      applySlider(Number(slider.value));
+    }
+
+    // A native <input type="range">'s thumb is NOT centred at value% of the
+    // track's width — the browser keeps the whole thumb inside the track,
+    // so at value=0 the thumb's *centre* sits half a thumb-width in from the
+    // left edge, and at value=100 it sits half a thumb-width in from the
+    // right. Positioning the divider at a bare `${percent}%` (the first cut
+    // of this feature) put it visibly off from the actual thumb except at
+    // the exact midpoint. This mirrors the browser's own formula instead,
+    // using the thumb width fixed in this component's <style> block — the
+    // slider spans the full width of #compare-root with no side padding
+    // (see its `inset-x-0` class) so that width doubles as the track width.
+    const THUMB_WIDTH = 18;
+    function applySlider(percent: number) {
+      const trackWidth = slider.clientWidth;
+      const thumbCenterPx = THUMB_WIDTH / 2 + (percent / 100) * (trackWidth - THUMB_WIDTH);
+      elB.style.clipPath = `inset(0 0 0 ${thumbCenterPx}px)`;
+      divider.style.left = `${thumbCenterPx}px`;
+      statusEl.textContent = `${config.poverty.label} ${percent}%, ${config.black.label} ${100 - percent}%`;
+    }
+
+    slider.addEventListener('input', () => applySlider(Number(slider.value)));
+    window.addEventListener('resize', layout);
+
+    function setAlprVisibility(visible: boolean) {
+      const v = visible ? 'visible' : 'none';
+      for (const map of [mapA, mapB]) {
+        if (map.getLayer('alpr-points')) map.setLayoutProperty('alpr-points', 'visibility', v);
+      }
+    }
+    alprCheckbox.addEventListener('change', () => setAlprVisibility(alprCheckbox.checked));
+
+    let loadedCount = 0;
+    function onOneLoaded() {
+      loadedCount++;
+      if (loadedCount === 2) {
+        loadingEl.remove();
+        // Both layers exist by now regardless of which map's 'load' fired
+        // last; setting this once here (rather than per-map, per-load) is
+        // what makes it correct regardless of that ordering.
+        setAlprVisibility(alprCheckbox.checked);
+      }
+    }
+
+    mapA.on('load', () => {
+      addChoropleth(mapA, config.poverty);
+      addAlpr(mapA, config.alpr);
+      onOneLoaded();
+    });
+    mapB.on('load', () => {
+      addChoropleth(mapB, config.black);
+      addAlpr(mapB, config.alpr);
+      onOneLoaded();
+    });
+
+    // layout() calls applySlider() itself, using the now-measurable track
+    // width — see its own comment for why that has to happen together.
+    layout();
+  }
+
+  // Fires as soon as the element has real, on-screen geometry — immediately
+  // for a standalone page where it's visible from first paint, or the moment
+  // an embedding page reveals it (e.g. by clearing a `hidden` attribute),
+  // whichever applies. Either way `start()` only ever runs once.
+  const root = document.getElementById('compare-root')!;
+  const observer = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      start();
+      observer.disconnect();
+    }
+  });
+  observer.observe(root);
+</script>
