@@ -46,10 +46,12 @@ const alprLayer = LAYERS.find((l) => l.id === 'alpr')!;
 // page uses (mergedProvenance). Both demographic layers share one dataset,
 // so either resolves the same vintage.
 const povertyLoaded = await loadLayer(povertyLayer);
-const vintage = mergedProvenance(povertyLoaded).sourceDate as string | null;
+const povertyProvenance = mergedProvenance(povertyLoaded);
+const vintage = povertyProvenance.sourceDate as string | null;
 // "2020-2024" as ingested -> "2020–2024" as displayed, the same en-dash
 // style every ACS-range date already uses elsewhere on the site.
 const vintageDisplay = vintage?.replace('-', '–') ?? null;
+const sourceUrl = povertyProvenance.sourceUrl as string;
 
 // Only what the client script needs to paint and legend each side — not the
 // full registry entry (whatThisMeans, limitations, filters, etc. stay on the
@@ -90,7 +92,14 @@ const strings = {
   <div class="border-b border-ink-800 bg-ink-900 px-4 py-3 sm:px-6">
     <h1 class="text-base font-semibold text-ink-100 sm:text-lg">{t('compareTitle')}</h1>
     <p class="mt-1 max-w-3xl text-sm text-ink-300">{t('compareIntro')}</p>
-    {vintageDisplay && <p class="mt-1 text-xs text-ink-400">{t('compareVintage')} {vintageDisplay}</p>}
+    {vintageDisplay && (
+      <p class="mt-1 text-xs text-ink-400">
+        {t('compareSourceLabel')}{' '}
+        <a href={sourceUrl} class="underline hover:text-ink-200" target="_blank" rel="noopener">
+          {t('compareVintage')} {vintageDisplay}
+        </a>
+      </p>
+    )}
   </div>
 
   <div class="relative min-h-0 flex-1" id="compare-root">
