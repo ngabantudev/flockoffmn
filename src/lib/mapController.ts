@@ -17,6 +17,7 @@ import type { DetailFieldFormat } from '../layers/types';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
+import { ResetViewControl } from './resetViewControl';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -145,6 +146,8 @@ export interface ControllerEvents {
   onCounts?: (counts: Record<string, { shown: number; total: number }>) => void;
   onLayerReady?: (layerId: string, features: LoadedFeature[]) => void;
   onError?: (layerId: string, message: string) => void;
+  /** Localized label for the corner "reset view" control — see ResetViewControl. */
+  resetViewLabel?: string;
 }
 
 const REDUCED_MOTION =
@@ -496,14 +499,27 @@ export class MapController {
       pitchWithRotate: false,
     });
 
-    // Added before NavigationControl so it stacks above the zoom buttons —
-    // MapLibre stacks same-position controls in the order they're added, and
-    // "map theme / site theme" reads as a settings entry point, which belongs
-    // above the more frequently-used zoom controls, not buried below them.
-    this.map.addControl(new ThemeControl(), 'top-right');
+    // Bottom-right, not MapLibre's top-right default — matches the
+    // wealldobettermn.org reference layout, and keeps every interactive
+    // control within thumb's reach of the bottom corner on a phone instead
+    // of forcing a reach across the screen. Added before NavigationControl
+    // so it stacks above the zoom buttons — MapLibre stacks same-position
+    // controls in the order they're added, and "map theme / site theme"
+    // reads as a settings entry point, which belongs above the
+    // more frequently-used zoom controls, not buried below them.
+    this.map.addControl(new ThemeControl(), 'bottom-right');
     this.map.addControl(
       new maplibregl.NavigationControl({ showCompass: false, visualizePitch: false }),
-      'top-right',
+      'bottom-right',
+    );
+    // MapLibre stacks a corner's controls with the first-added nearest the
+    // true corner, so this — added last among the bottom-right group — ends
+    // up farthest from it, above the zoom buttons it resets the view
+    // relative to. Still the same clustered corner as the reference; just
+    // the top of the stack instead of the bottom.
+    this.map.addControl(
+      new ResetViewControl(events.resetViewLabel ?? 'Reset view', () => this.resetView()),
+      'bottom-right',
     );
     this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
 
