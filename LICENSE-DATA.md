@@ -221,6 +221,24 @@ rendering of it — so it ships under attribution alone. The source `.osm.pbf`
 extract itself is never modified or redistributed, so no offer-back
 obligation is triggered either way.
 
+## The four basemap styles
+
+A separate license from the tile archive above, covering a separate thing:
+not the *data* being rendered, but the *colors/layers* it's rendered with,
+plus the sprite icons and font glyphs used to draw it.
+`src/lib/basemapStyles/{fiord,liberty,positron,dark}.json` are mirrored from
+[OpenFreeMap](https://openfreemap.org) (MIT-licensed) by
+`scripts/tiles/mirror-basemap-styles.mjs`, matching wealldobettermn.org's own
+basemap catalog. Each style's vector *source* is rewritten to point at this
+project's own `minnesota.pmtiles` archive above, not OpenFreeMap's — only the
+style definition, plus the shared sprite set (`public/sprites/`) and two
+additional font weights (`public/fonts/Noto Sans Bold/`,
+`Noto Sans Italic/`), come from OpenFreeMap. No attribution requirement
+attaches beyond MIT's standard copyright-notice preservation, which doesn't
+apply here since these are derived/rewritten assets, not OpenFreeMap's
+source code redistributed verbatim — see `public/sprites/README.md` and
+`public/fonts/README.md` for what's vendored and why.
+
 ## A note on scope
 
 No dataset here names or identifies a private individual, and none ever will.

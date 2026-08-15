@@ -42,15 +42,12 @@ export function setTheme(theme: Theme): void {
   }
   document.dispatchEvent(new CustomEvent<{ theme: Theme }>(THEME_CHANGE_EVENT, { detail: { theme } }));
   // Site theme and map theme are paired, not independent — matching
-  // wealldobettermn.org's THEME_BASEMAP pairing (src/lib/mapStyles.ts):
-  // picking Light always switches the basemap to Light too, overriding
-  // whatever basemap was picked before. `theme` itself is the paired
-  // MapStyleId here (their literal values are the same two strings), so no
-  // separate lookup table is needed the way the reference's four-basemap
-  // catalog requires one. A visitor can still hand-pick a basemap
-  // afterwards via the in-map "Map theme" control — that choice sticks
-  // until the next site-theme switch, same as the reference.
-  setMapStyle(theme);
+  // wealldobettermn.org's THEME_BASEMAP pairing exactly (see below): picking
+  // Light always switches the basemap to its partner too, overriding
+  // whatever basemap was picked before. A visitor can still hand-pick a
+  // different basemap afterwards via the in-map "Map theme" control — that
+  // choice sticks until the next site-theme switch, same as the reference.
+  setMapStyle(THEME_BASEMAP[theme]);
 }
 
 /**
@@ -67,33 +64,44 @@ export function onThemeChange(handler: (theme: Theme) => void): () => void {
 }
 
 /**
- * Map basemap flavors. Paired with the site theme (see setTheme above) —
- * switching Light/Dark always switches the basemap to match, though a
- * visitor can hand-pick a basemap afterwards via the in-map "Map theme"
- * control (mapController.ts's ThemeControl); that choice sticks until the
- * next site-theme switch.
+ * Map basemap flavors — the same four wealldobettermn.org offers (fiord,
+ * liberty, positron, dark), same ids, same labels, same light/dark flags
+ * (see its src/lib/mapStyles.ts). Unlike the reference, none of these are
+ * fetched live from OpenFreeMap at runtime: they're mirrored into this repo
+ * (src/lib/basemapStyles/*.json, scripts/tiles/mirror-basemap-styles.mjs)
+ * with their vector source repointed at this site's own self-hosted
+ * PMTiles archive and their sprite/glyphs repointed at this site's own
+ * origin — see that script's header for the full reasoning (in short:
+ * §0.7/§0.8/§4 rule out a live third-party request on every visitor's pan
+ * and zoom, the same way this repo already avoids that for fonts — see
+ * public/fonts/README.md, which predates this and made the same call).
  *
- * Only two flavors, where wealldobettermn.org's OpenFreeMap-backed catalog
- * has four (fiord, liberty, positron, dark): this site's basemap is a
- * single self-hosted PMTiles archive (see mapStyle.ts's TILES_URL comment
- * for why — no tile-provider vendor, no rate ceiling, no third party that
- * sees a visitor's pan/zoom traffic) rendered through hand-maintained
- * paint code (BASEMAP_LAYERS) that has to stay legible under every data
- * layer this site carries. Multiplying that to four flavors is a real
- * option — either four more self-hosted palettes reusing the same archive
- * and paint pipeline, or adopting an external vendor like the reference
- * does — but it's an architecture decision, not a styling tweak, and isn't
- * done here; flagged rather than silently matched or silently skipped.
+ * Paired with the site theme (see setTheme above and THEME_BASEMAP below):
+ * switching Light/Dark always switches the basemap to its partner, though a
+ * visitor can hand-pick a different basemap afterwards via the in-map "Map
+ * theme" control (mapController.ts's ThemeControl); that choice sticks
+ * until the next site-theme switch.
  */
-export type MapStyleId = 'dark' | 'light';
+export type MapStyleId = 'fiord' | 'liberty' | 'positron' | 'dark';
 
 export const MAP_STYLES: Record<MapStyleId, { label: string; dark: boolean }> = {
-  dark: { label: 'Dark', dark: true },
-  light: { label: 'Light', dark: false },
+  fiord: { label: 'Fiord (Muted)', dark: true },
+  liberty: { label: 'Liberty', dark: false },
+  positron: { label: 'Light Minimal', dark: false },
+  dark: { label: 'Dark Mode', dark: true },
 };
 
-export const DEFAULT_DARK_STYLE: MapStyleId = 'dark';
-export const DEFAULT_LIGHT_STYLE: MapStyleId = 'light';
+/**
+ * Which basemap each site theme pairs with — matching wealldobettermn.org's
+ * own THEME_BASEMAP exactly. `dark` happens to share a name with the
+ * MapStyleId it maps to; that's the same coincidence the reference has
+ * (its own 'dark' style id), not a rule this depends on — 'light' maps to
+ * 'positron', not to a same-named style, because there isn't one.
+ */
+export const THEME_BASEMAP: Record<Theme, MapStyleId> = {
+  light: 'positron',
+  dark: 'dark',
+};
 
 export const MAP_STYLE_STORAGE_KEY = 'flockoff:map-style';
 export const MAP_STYLE_CHANGE_EVENT = 'flockoff:map-style-change';
@@ -114,7 +122,7 @@ export function storedMapStyle(): MapStyleId | null {
 
 /** What the map should actually show right now: the explicit choice, or the default that matches the current site theme. */
 export function initialMapStyle(): MapStyleId {
-  return storedMapStyle() ?? (currentTheme() === 'light' ? DEFAULT_LIGHT_STYLE : DEFAULT_DARK_STYLE);
+  return storedMapStyle() ?? THEME_BASEMAP[currentTheme()];
 }
 
 export function setMapStyle(id: MapStyleId): void {

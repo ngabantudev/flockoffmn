@@ -16,23 +16,31 @@ disclosed and attributed.
 - `Noto Sans Regular/0-255.pbf` — Basic Latin and Latin-1 Supplement.
 - `Noto Sans Regular/256-511.pbf` — Latin Extended-A, which covers the
   macrons in Dakota and Ojibwe place names (e.g. Bdóte, Mní Sóta) that the
-  basemap's `base-place-label`/`base-transportation-name` layers draw
-  (mapStyle.ts). Missing this range means those specific names would
+  basemap draws. Missing this range means those specific names would
   silently fail to render while every ASCII name kept working — the kind of
   gap that's easy not to notice, which is exactly why it's vendored now
   instead of waiting to be reported.
+- `Noto Sans Bold/` and `Noto Sans Italic/` — same two ranges each. Added
+  alongside the four wealldobettermn.org-matching basemap styles
+  (`src/lib/basemapStyles/*.json`, `scripts/tiles/mirror-basemap-styles.mjs`)
+  — `liberty` and `positron` both use bold and italic text for some labels
+  (road shields, water-feature names), which Regular alone can't stand in
+  for; MapLibre just fails to draw a label whose declared weight is missing,
+  it doesn't fall back to a different one it has.
 
-Two ranges are vendored because the basemap now draws place and road-name
-labels (it didn't before — the old MapTiler raster tiles baked labels into
-the image instead), on top of the cluster-count digits every other layer on
+Two ranges per weight because the basemap draws place and road-name labels
+(it didn't before — the old MapTiler raster tiles baked labels into the
+image instead), on top of the cluster-count digits every other layer on
 this map has always needed.
 
 If you add a map layer that renders text outside this range (place labels, or
-any non-Latin script), fetch the additional ranges and drop them in alongside:
+any non-Latin script), fetch the additional ranges and drop them in alongside
+— from OpenFreeMap, same source as the basemap styles themselves, so the
+glyphs are guaranteed to match what those styles expect:
 
 ```bash
-curl -o "public/fonts/Noto Sans Regular/256-511.pbf" \
-  "https://demotiles.maplibre.org/font/Noto%20Sans%20Regular/256-511.pbf"
+curl -o "public/fonts/Noto Sans Regular/512-767.pbf" \
+  "https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/512-767.pbf"
 ```
 
 Missing ranges fail quietly — the text simply does not draw — so check the
