@@ -57,15 +57,11 @@ export type LayerId =
   // is a small hand-curated set of documented agreements, each one mirrored
   // in full under public/data/docs/, starting with the first: University of
   // Minnesota PD's Flock Safety contract, released via a MuckRock MGDPA
-  // request. See scripts/ingest/vendor-contracts.mjs.
-  | 'vendor_contract'
-  // The other end of the same relation: an agency terminating, pausing, or
-  // declining to renew a vendor contract. Kept separate from vendor_contract
-  // because the evidentiary bar for "it ended" is lighter than for the full
-  // signed terms — see scripts/ingest/vendor-contract-terminations.mjs for
-  // why a mapped feature here needs a document or two corroborating sources,
-  // and why a single news report becomes a knownGaps lead, not a pin.
-  | 'vendor_contract_termination';
+  // request. A contract's end — terminated, paused, not renewed — is a
+  // status on this same record, not a second layer: see the `status` field
+  // in scripts/ingest/vendor-contracts.mjs and that file's LEADS array for
+  // why a single news report of an ending doesn't get a pin on its own.
+  | 'vendor_contract';
 
 export type Locale = 'en' | 'es';
 
@@ -647,6 +643,26 @@ export interface LayerDefinition {
      * made this field required in the first place.
      */
     colorLight: string;
+    /**
+     * Attribute on the target layer whose value decides *which* colour a
+     * match paints, rather than just whether one exists. Omit for a plain
+     * has-a-match wash (`color`/`colorLight` only).
+     *
+     * Built for `vendor_contract`'s `status`: a jurisdiction whose only
+     * documented contracts have all ended reads differently from one with a
+     * confirmed active contract — "we have a receipt here" and "the receipt
+     * says it's over" are two different findings, not one. A jurisdiction
+     * with at least one match whose status is *not* in `endedValues` still
+     * reads as `color`/`colorLight` (active); one whose matches are *all* in
+     * `endedValues` reads as `endedColor`/`endedColorLight`.
+     */
+    statusKey?: string;
+    /** Values of `statusKey` that count as "ended" for the check above. */
+    endedValues?: string[];
+    /** Fill/outline colour when every match is ended (dark basemap). Required with `statusKey`. */
+    endedColor?: string;
+    /** `endedColor`'s light-basemap counterpart — same contrast rule as `colorLight`. */
+    endedColorLight?: string;
   };
   /**
    * The zooms across which this layer's records emerge.

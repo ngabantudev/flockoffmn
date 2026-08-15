@@ -105,17 +105,25 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Contratos de proveedores documentados',
     },
     summary: {
-      en: 'The actual contract behind a camera system — vendor, cost, term and data-sharing terms — for the agencies a records request has produced one from.',
-      es: 'El contrato real detrás de un sistema de cámaras — proveedor, costo, plazo y condiciones de intercambio de datos — para las agencias de las que una solicitud de registros lo obtuvo.',
+      en: 'The actual contract behind a camera system — vendor, cost, term, data-sharing terms, and whether it’s still active — for the agencies a records request has produced one from.',
+      es: 'El contrato real detrás de un sistema de cámaras — proveedor, costo, plazo, condiciones de intercambio de datos, y si sigue vigente — para las agencias de las que una solicitud de registros lo obtuvo.',
     },
     whatThisMeans: {
-      en: 'Every other surveillance layer on this map can say an agency operates a camera system; almost none of them can say who sold it, what it cost, or who else gets to search it. This layer is where that answer lives once a public records request produces it — a hand-curated set, not an automatic feed, because no agency publishes an index of its own vendor contracts. The first entry is University of Minnesota Police Department’s Flock Safety contract, released through a Minnesota Government Data Practices Act request filed via MuckRock: the signed services agreement, a later 5-camera expansion order, and two months of network audit logs showing every outside agency that searched UMPD’s camera network and how often. The dollar figures, terms and signers below are transcribed from those documents, which are mirrored in full for anyone to check.',
-      es: 'Cualquier otra capa de vigilancia de este mapa puede decir que una agencia opera un sistema de cámaras; casi ninguna puede decir quién lo vendió, cuánto costó, o quién más puede buscar en él. Esta capa es donde vive esa respuesta una vez que una solicitud de registros públicos la produce — un conjunto curado a mano, no una fuente automática, porque ninguna agencia publica un índice de sus propios contratos con proveedores. La primera entrada es el contrato de Flock Safety del Departamento de Policía de la Universidad de Minnesota, obtenido mediante una solicitud bajo la Ley de Prácticas de Datos Gubernamentales de Minnesota presentada vía MuckRock: el acuerdo de servicios firmado, una orden de expansión posterior de 5 cámaras, y dos meses de registros de auditoría de red que muestran cada agencia externa que buscó en la red de cámaras de la UMPD y con qué frecuencia. Las cifras, plazos y firmantes abajo se transcriben de esos documentos, que se reproducen íntegros para que cualquiera los verifique.',
+      en: 'Every other surveillance layer on this map can say an agency operates a camera system; almost none of them can say who sold it, what it cost, or who else gets to search it. This layer is where that answer lives once a public records request produces it — a hand-curated set, not an automatic feed, because no agency publishes an index of its own vendor contracts. The first entry is University of Minnesota Police Department’s Flock Safety contract, released through a Minnesota Government Data Practices Act request filed via MuckRock: the signed services agreement, a later 5-camera expansion order, and two months of network audit logs showing every outside agency that searched UMPD’s camera network and how often. The dollar figures, terms and signers below are transcribed from those documents, which are mirrored in full for anyone to check. A contract has a beginning and, sometimes, an end — a termination, a lapsed non-renewal, or a paused trial reads the same record with its status updated (a red crossed-out document glyph instead of gold), held to the same bar: a document or two corroborating sources, not a single news report. What’s currently only reported, not yet documented, is listed in "what this map can’t see" below rather than drawn on the map.',
+      es: 'Cualquier otra capa de vigilancia de este mapa puede decir que una agencia opera un sistema de cámaras; casi ninguna puede decir quién lo vendió, cuánto costó, o quién más puede buscar en él. Esta capa es donde vive esa respuesta una vez que una solicitud de registros públicos la produce — un conjunto curado a mano, no una fuente automática, porque ninguna agencia publica un índice de sus propios contratos con proveedores. La primera entrada es el contrato de Flock Safety del Departamento de Policía de la Universidad de Minnesota, obtenido mediante una solicitud bajo la Ley de Prácticas de Datos Gubernamentales de Minnesota presentada vía MuckRock: el acuerdo de servicios firmado, una orden de expansión posterior de 5 cámaras, y dos meses de registros de auditoría de red que muestran cada agencia externa que buscó en la red de cámaras de la UMPD y con qué frecuencia. Las cifras, plazos y firmantes abajo se transcriben de esos documentos, que se reproducen íntegros para que cualquiera los verifique. Un contrato tiene un inicio y, a veces, un final — una terminación, una no renovación vencida, o una pausa de prueba se registra en el mismo registro con su estado actualizado (un ícono de documento tachado en rojo en vez de dorado), sujeto al mismo estándar: un documento o dos fuentes que se corroboren, no un solo reportaje periodístico. Lo que actualmente solo se ha reportado, sin documentar aún, aparece en «lo que este mapa no puede ver» abajo en vez de dibujarse en el mapa.',
     },
     limitations: [
       {
         en: 'A hand-curated set, not a survey. A contract appears here only once a records request has produced and mirrored it — an agency missing here has not been shown to lack a vendor contract, only to not yet have one documented.',
         es: 'Un conjunto curado a mano, no una encuesta. Un contrato aparece aquí solo una vez que una solicitud de registros lo produjo y se mirroreó — una agencia ausente aquí no ha demostrado carecer de contrato con un proveedor, solo que aún no está documentado.',
+      },
+      {
+        en: 'The same bar applies to a contract’s end. A single news report of a termination, however directly an official is quoted, does not by itself move a record’s status on the map — see this layer’s knownGaps for what is currently tracked only as a lead, and what would be needed to confirm it.',
+        es: 'El mismo estándar aplica al final de un contrato. Un solo reportaje periodístico sobre una terminación, por directamente que cite a un funcionario, no cambia por sí solo el estado de un registro en el mapa — véanse los knownGaps de esta capa para lo que actualmente solo se rastrea como pista, y lo que se necesitaría para confirmarlo.',
+      },
+      {
+        en: 'Records the fact and the reason an agency itself gave for ending a contract, not an assessment of whether that reason is the true or complete one. Two documented facts side by side are for the reader to weigh — see CLAUDE.md §1c.',
+        es: 'Registra el hecho y el motivo que la propia agencia dio para terminar un contrato, no una evaluación de si ese motivo es verdadero o completo. Dos hechos documentados uno junto al otro son para que el lector los sopese — véase CLAUDE.md §1c.',
       },
       {
         en: 'Network query figures cover only the months included in the records response that produced them — two months here — not the contract’s full history.',
@@ -129,11 +137,40 @@ export const LAYERS: LayerDefinition[] = [
     geometry: 'point',
     color: '#facc15',
     colorLight: '#a16207',
-    markerIcon: { icon: 'FileText' },
-    // One documented contract so far — nothing yet to build a filter on.
-    filters: [],
+    markerIcon: {
+      icon: 'FileText',
+      byValue: { key: 'status', icons: { terminated: 'FileX', paused: 'FileX', 'non-renewed': 'FileX' } },
+    },
+    // Same glyph distinction, in colour: circle-color always reads
+    // categoryColors once a dot exists (radius/opacity are what fade in by
+    // zoom, not colour — see mapController's addLayer), so a terminated
+    // record reads red as soon as it's visible at all, at any scale.
+    categoryColors: {
+      key: 'status',
+      label: { en: 'Contract status', es: 'Estado del contrato' },
+      colors: [
+        { value: 'active', color: '#facc15' },
+        { value: 'terminated', color: '#f87171' },
+        { value: 'paused', color: '#fb923c' },
+        { value: 'non-renewed', color: '#f87171' },
+      ],
+      fallback: '#facc15',
+    },
+    filters: [
+      {
+        key: 'status',
+        label: { en: 'Status', es: 'Estado' },
+        kind: 'enum',
+        valueDescriptions: {
+          active: { en: 'Currently in effect', es: 'Actualmente vigente' },
+          terminated: { en: 'Ended before its term expired', es: 'Terminado antes de vencer su plazo' },
+          'non-renewed': { en: 'Allowed to lapse at the end of its term', es: 'Se permitió que venciera al final de su plazo' },
+          paused: { en: 'Suspended, not necessarily ended', es: 'Suspendido, no necesariamente terminado' },
+        },
+      },
+    ],
     hoverCard: {
-      fields: ['vendor', 'executedDate', 'cameraCountCurrent', 'annualCost'],
+      fields: ['vendor', 'status', 'executedDate', 'cameraCountCurrent', 'annualCost'],
       related: {
         layerId: 'alpr_reported',
         fromKey: 'jurisdictionId',
@@ -185,6 +222,10 @@ export const LAYERS: LayerDefinition[] = [
     detailFields: [
       { key: 'vendor', label: { en: 'Vendor', es: 'Proveedor' } },
       { key: 'product', label: { en: 'Product', es: 'Producto' } },
+      { key: 'status', label: { en: 'Status', es: 'Estado' } },
+      { key: 'statusDate', label: { en: 'Status date', es: 'Fecha del estado' }, format: 'date' },
+      { key: 'reason', label: { en: 'Reason given for ending', es: 'Motivo dado para terminar' } },
+      { key: 'decidedBy', label: { en: 'Ending announced by', es: 'Terminación anunciada por' } },
       { key: 'executedDate', label: { en: 'Contract executed', es: 'Contrato firmado' }, format: 'date' },
       { key: 'initialTermMonths', label: { en: 'Initial term (months)', es: 'Plazo inicial (meses)' } },
       { key: 'renewalType', label: { en: 'Renewal terms', es: 'Condiciones de renovación' } },
@@ -216,106 +257,6 @@ export const LAYERS: LayerDefinition[] = [
       empty: {
         en: 'No documented vendor contract near this point — most agencies have none on record here yet, documented or not.',
         es: 'Ningún contrato de proveedor documentado cerca de este punto — la mayoría de las agencias aún no tienen ninguno registrado aquí, documentado o no.',
-      },
-      detail: ['vendor', 'annualCost'],
-    },
-  },
-
-  {
-    id: 'vendor_contract_termination',
-    slug: 'vendor-contract-terminations',
-    category: 'enforcement',
-    defaultOn: true,
-    label: {
-      en: 'Contracts terminated, paused, or not renewed',
-      es: 'Contratos terminados, pausados o no renovados',
-    },
-    summary: {
-      en: 'Agencies that ended, paused, or declined to renew a vendor contract for an ALPR system — the other half of the vendor-contract story.',
-      es: 'Agencias que terminaron, pausaron o no renovaron un contrato con un proveedor de sistemas ALPR — la otra mitad de la historia del contrato con proveedores.',
-    },
-    whatThisMeans: {
-      en: 'A vendor contract has a beginning and, sometimes, an end — a termination, a lapsed non-renewal, or a paused trial. This layer tracks that second event with the same discipline the "Documented vendor contracts" layer applies to the first: a record appears here as a mapped feature only once a document (a termination or non-renewal notice, board or council minutes ending the program) or two independent sources corroborate it. A single news report, however directly an official is quoted, is not enough on its own — that is a tracked lead, listed in this layer\'s "what this map can\'t see" section with what would be needed to confirm it, not a pin on the map. As of this layer\'s last build, no contract ending has cleared that bar for a Minnesota agency; the leads section below is where that work is visible while it is pending.',
-      es: 'Un contrato con un proveedor tiene un inicio y, a veces, un final — una terminación, una no renovación, o una pausa de prueba. Esta capa rastrea ese segundo evento con la misma disciplina que la capa "Contratos de proveedores documentados" aplica al primero: un registro aparece aquí como un elemento del mapa solo una vez que un documento (un aviso de terminación o no renovación, actas de la junta o el concejo que terminan el programa) o dos fuentes independientes lo corroboran. Un solo reportaje periodístico, por directamente que cite a un funcionario, no basta por sí solo — eso es una pista rastreada, listada en la sección "lo que este mapa no puede ver" de esta capa junto con lo que se necesitaría para confirmarla, no un punto en el mapa. Al momento de la última construcción de esta capa, ninguna terminación de contrato ha superado ese umbral para una agencia de Minnesota; la sección de pistas abajo es donde ese trabajo es visible mientras está pendiente.',
-    },
-    limitations: [
-      {
-        en: 'A hand-curated set, not a live feed. Nobody publishes an index of ended law-enforcement vendor contracts, so an agency’s absence here has not been shown to mean its contract is still active — only that no ending has yet been documented or corroborated for it.',
-        es: 'Un conjunto curado a mano, no una fuente en vivo. Nadie publica un índice de contratos con proveedores de aplicación de la ley que hayan terminado, por lo que la ausencia de una agencia aquí no ha demostrado que su contrato siga activo — solo que aún no se ha documentado o corroborado un final para ella.',
-      },
-      {
-        en: 'Records the fact and the reason an agency itself gave, not an assessment of whether that reason is the true or complete one. Two documented facts side by side are for the reader to weigh — see CLAUDE.md §1c.',
-        es: 'Registra el hecho y el motivo que la propia agencia dio, no una evaluación de si ese motivo es verdadero o completo. Dos hechos documentados uno junto al otro son para que el lector los sopese — véase CLAUDE.md §1c.',
-      },
-      {
-        en: 'A single news report on a contract ending, however directly an official is quoted, does not by itself produce a mapped feature — see this layer’s knownGaps for what is currently tracked only as a lead, and what would be needed to confirm it.',
-        es: 'Un solo reportaje periodístico sobre el final de un contrato, por directamente que cite a un funcionario, no produce por sí solo un elemento del mapa — véanse los knownGaps de esta capa para lo que actualmente solo se rastrea como pista, y lo que se necesitaría para confirmarlo.',
-      },
-    ],
-    geometry: 'point',
-    color: '#f87171',
-    colorLight: '#b91c1c',
-    markerIcon: { icon: 'FileX' },
-    filters: [
-      {
-        key: 'status',
-        label: { en: 'Status', es: 'Estado' },
-        kind: 'enum',
-        valueDescriptions: {
-          terminated: { en: 'Contract ended before its term expired', es: 'Contrato terminado antes de vencer su plazo' },
-          'non-renewed': { en: 'Allowed to lapse at the end of its term', es: 'Se permitió que venciera al final de su plazo' },
-          paused: { en: 'Suspended, not necessarily ended', es: 'Suspendido, no necesariamente terminado' },
-        },
-      },
-    ],
-    hoverCard: {
-      fields: ['vendor', 'status', 'statusDate', 'reason'],
-      note: {
-        en: 'The document or corroborating sources behind this record are linked below.',
-        es: 'El documento o las fuentes que corroboran este registro están enlazados abajo.',
-      },
-    },
-    action: {
-      requestType: 'procurement',
-      label: {
-        en: 'Request this agency’s termination or non-renewal notice',
-        es: 'Solicitar el aviso de terminación o no renovación de esta agencia',
-      },
-      bodyKey: 'jurisdictionName',
-      fallbackBody: 'name',
-    },
-    dataPath: '/data/vendor-contract-terminations.geojson',
-    csvPath: '/data/vendor-contract-terminations.csv',
-    provenance: {
-      source: 'Agency terminations and non-renewals of ALPR vendor contracts, documented or corroborated per CLAUDE.md §3',
-      sourceUrl: 'https://www.revisor.mn.gov/statutes/cite/13',
-      license: 'Public government data (Minnesota Government Data Practices Act, Minn. Stat. ch. 13), where the confirming document is a public record',
-      licenseUrl: 'https://www.revisor.mn.gov/statutes/cite/13',
-      attribution: 'Varies per record — see each feature’s own source fields',
-      sourceDate: null,
-      lastUpdated: null,
-      refresh: 'periodic',
-    },
-    detailFields: [
-      { key: 'vendor', label: { en: 'Vendor', es: 'Proveedor' } },
-      { key: 'product', label: { en: 'Product', es: 'Producto' } },
-      { key: 'status', label: { en: 'Status', es: 'Estado' } },
-      { key: 'statusDate', label: { en: 'Date', es: 'Fecha' }, format: 'date' },
-      { key: 'reason', label: { en: 'Reason given', es: 'Motivo dado' } },
-      { key: 'decidedBy', label: { en: 'Announced by', es: 'Anunciado por' } },
-      { key: 'priorCameraCount', label: { en: 'Cameras operated before ending', es: 'Cámaras operadas antes de terminar' } },
-      { key: 'relatedVendorContractId', label: { en: 'Related documented contract', es: 'Contrato documentado relacionado' } },
-      { key: 'sourceName', label: { en: 'Source', es: 'Fuente' } },
-      { key: 'sourceUrl', label: { en: 'Source link', es: 'Enlace de la fuente' }, format: 'link' },
-      { key: 'sourceDate', label: { en: 'Source date', es: 'Fecha de la fuente' }, format: 'date' },
-      { key: 'documentUrl', label: { en: 'Termination or non-renewal document', es: 'Documento de terminación o no renovación' }, format: 'link' },
-    ],
-    nearMe: {
-      mode: 'nearest',
-      title: { en: 'Nearest documented contract ending', es: 'Final de contrato documentado más cercano' },
-      empty: {
-        en: 'No documented contract ending near this point yet — see the layer’s tracked leads for reports still awaiting confirmation.',
-        es: 'Aún no hay ningún final de contrato documentado cerca de este punto — véanse las pistas rastreadas de la capa para reportes que aún esperan confirmación.',
       },
       detail: ['vendor', 'status'],
     },
@@ -358,8 +299,8 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Comparado con los límites municipales del Censo: la mayoría de los departamentos de una sola ciudad siguen los límites de su ciudad casi con exactitud, pero no todos. Algunos, como St. Anthony, también atienden a una segunda ciudad bajo contrato. Cuatro — Lakes Area, South Lake Minnetonka, West Hennepin y Centennial Lakes police — son departamentos conjuntos compartidos por varias ciudades pequeñas y no coinciden con ningún municipio único. Otros cuatro son fuerzas institucionales que se ubican dentro o a través de los límites municipales en lugar de ser una ciudad en sí: la policía de la Universidad de Minnesota, la Comisión Metropolitana de Aeropuertos, Asuntos de Veteranos y la Feria Estatal de Minnesota.',
       },
       {
-        en: 'A jurisdiction washes green once at least one of its agencies has a documented vendor contract on the "Documented vendor contracts" layer — right now, that is University of Minnesota Police alone. The colour marks that a records request has produced something, nothing more: a jurisdiction left uncoloured has not been shown to lack a contract, only that nobody has yet requested and mirrored one for it.',
-        es: 'Una jurisdicción se tiñe de verde en cuanto al menos una de sus agencias tiene un contrato con proveedores documentado en la capa «Contratos de proveedores documentados» — por ahora, solo la Policía de la Universidad de Minnesota. El color solo indica que una solicitud de registros produjo algo, nada más: una jurisdicción sin colorear no ha demostrado carecer de un contrato, solo que nadie lo ha solicitado y reproducido todavía.',
+        en: 'A jurisdiction washes green once at least one of its agencies has a documented, currently active vendor contract on the "Documented vendor contracts" layer — right now, that is University of Minnesota Police alone. It washes red instead once every documented contract on file for it has ended (terminated, paused, or not renewed) and none remains active. Either colour marks only that a records request has produced something, nothing more: a jurisdiction left uncoloured has not been shown to lack a contract, only that nobody has yet requested and mirrored one for it — and a jurisdiction reading green is not shown to be free of an undocumented contract that has since quietly ended.',
+        es: 'Una jurisdicción se tiñe de verde en cuanto al menos una de sus agencias tiene un contrato con proveedores documentado y actualmente vigente en la capa «Contratos de proveedores documentados» — por ahora, solo la Policía de la Universidad de Minnesota. Se tiñe de rojo en cambio una vez que todos los contratos documentados que tiene han terminado (por terminación, pausa o no renovación) y ninguno sigue vigente. Cualquiera de los dos colores solo indica que una solicitud de registros produjo algo, nada más: una jurisdicción sin colorear no ha demostrado carecer de un contrato, solo que nadie lo ha solicitado y reproducido todavía — y una jurisdicción en verde no ha demostrado estar libre de un contrato no documentado que haya terminado silenciosamente.',
       },
     ],
     geometry: 'polygon',
@@ -412,24 +353,30 @@ export const LAYERS: LayerDefinition[] = [
         joinKey: 'jurisdictionId',
       },
     },
-    // A green wash on a jurisdiction that has a documented vendor contract
-    // — see the field's own comment in types.ts for why this is a coverage
-    // cue and not a score. The only jurisdiction lit up today is the one
-    // MuckRock request has actually produced; every other polygon staying
-    // neutral is the honest state of the data, not a verdict on the agency.
-    // Bright mint on dark, deep emerald on light — the first plain green
-    // (Tailwind's own 500/600 step) read at roughly 1.1:1 against the light
-    // basemap's neutral unselected grey, i.e. functionally invisible; both
-    // ends here clear ~3:1 against their basemap's own neutral polygon
-    // colour as well as the basemap itself. Also see the fill-opacity/
-    // line-width bump mapController gives a `related` ward specifically —
-    // the hue alone was never going to read at a 0.16-opacity / 1.1px wash,
-    // the same strength every other unselected ward already draws at.
+    // A green wash on a jurisdiction that has a documented, active vendor
+    // contract; red once every documented contract there has ended — see
+    // the field's own comment in types.ts for why this is a coverage cue,
+    // not a score. The only jurisdiction lit up today is the one MuckRock
+    // request has actually produced (green, still active); every other
+    // polygon staying neutral is the honest state of the data, not a
+    // verdict on the agency. Bright mint / soft red on dark, deep emerald /
+    // deep red on light — the first plain green or red (Tailwind's own
+    // 300/900 step) reads at roughly 1.1:1 against the light basemap's
+    // neutral unselected grey, i.e. functionally invisible; both pairs here
+    // clear ~3:1 against their basemap's own neutral polygon colour as well
+    // as the basemap itself. Also see the fill-opacity/line-width bump
+    // mapController gives a `related` ward specifically — the hue alone was
+    // never going to read at a 0.16-opacity / 1.1px wash, the same strength
+    // every other unselected ward already draws at.
     tintWhenRelated: {
       layerId: 'vendor_contract',
       joinKey: 'jurisdictionId',
       color: '#86efac',
       colorLight: '#064e3b',
+      statusKey: 'status',
+      endedValues: ['terminated', 'paused', 'non-renewed'],
+      endedColor: '#fca5a5',
+      endedColorLight: '#7f1d1d',
     },
     action: {
       // Reuses the existing generic surveillance-inventory request template —

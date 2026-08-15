@@ -100,7 +100,17 @@ export interface ClientLayer {
     pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
   };
   /** See LayerDefinition's own comment in layers/types.ts. */
-  tintWhenRelated?: { layerId: LayerId; fromKey?: string; joinKey: string; color: string; colorLight: string };
+  tintWhenRelated?: {
+    layerId: LayerId;
+    fromKey?: string;
+    joinKey: string;
+    color: string;
+    colorLight: string;
+    statusKey?: string;
+    endedValues?: string[];
+    endedColor?: string;
+    endedColorLight?: string;
+  };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -643,21 +653,26 @@ export class MapController {
   private polygonFillColor(layer: ClientLayer): maplibregl.ExpressionSpecification {
     if (layer.polygonClick === 'highlight') {
       // The tint is one layer (vendor_contract) painted onto another
-      // (agency_jurisdiction) — Documented vendor contracts and the green
-      // wash over jurisdictions with a contract are one feature to the
-      // reader, so unticking the source layer has to take the wash with it,
-      // not just leave it floating on feature-state that was set once and
-      // never revisited.
-      const unselected = layer.tintWhenRelated && this.visible.has(layer.tintWhenRelated.layerId)
+      // (agency_jurisdiction) — Documented vendor contracts and the
+      // green/red wash over jurisdictions with a contract are one feature to
+      // the reader, so unticking the source layer has to take the wash with
+      // it, not just leave it floating on feature-state that was set once
+      // and never revisited.
+      const rel = layer.tintWhenRelated;
+      const unselected = rel && this.visible.has(rel.layerId)
         ? // Read from feature-state (applyRelatedTint sets it once the
           // target layer's data is in), not a literal id list baked into
           // the expression — the join can finish loading well after this
           // paint property is first set, and feature-state repaints on its
-          // own the moment it changes.
+          // own the moment it changes. "ended" is checked first: a
+          // jurisdiction only reads that way once every match is ended, so
+          // it is strictly more specific than the plain has-a-match case.
           ([
             'case',
+            ['==', ['feature-state', 'relatedStatus'], 'ended'],
+            this.basemapDark ? (rel.endedColor ?? rel.color) : (rel.endedColorLight ?? rel.colorLight),
             ['boolean', ['feature-state', 'related'], false],
-            this.basemapDark ? layer.tintWhenRelated.color : layer.tintWhenRelated.colorLight,
+            this.basemapDark ? rel.color : rel.colorLight,
             this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
           ] as unknown as maplibregl.ExpressionSpecification)
         : (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT);
@@ -1364,13 +1379,15 @@ export class MapController {
   /**
    * Marks every polygon of `layer` that has at least one match in
    * `layer.tintWhenRelated`'s target with a `related` feature-state flag,
-   * which polygonFillColor reads (alongside the target layer's on/off
-   * state — see repaintTintDependents). Loads the target layer's data first
-   * if it isn't already in `this.data` — ensureDataLoaded's own cross-layer
-   * path, so the join is ready the moment a reader does switch that layer
-   * on, rather than racing a fetch at toggle time — and only then builds
-   * the join index, so a call that runs before the fetch completes can't
-   * poison joinIndex's cache with an empty result.
+   * and — when the target names a `statusKey` — a finer `relatedStatus`
+   * flag ("active" or "ended"), both of which polygonFillColor reads
+   * (alongside the target layer's on/off state — see
+   * repaintTintDependents). Loads the target layer's data first if it isn't
+   * already in `this.data` — ensureDataLoaded's own cross-layer path, so the
+   * join is ready the moment a reader does switch that layer on, rather
+   * than racing a fetch at toggle time — and only then builds the join
+   * index, so a call that runs before the fetch completes can't poison
+   * joinIndex's cache with an empty result.
    */
   private async applyRelatedTint(layer: ClientLayer): Promise<void> {
     const rel = layer.tintWhenRelated;
@@ -1380,9 +1397,22 @@ export class MapController {
     const src = this.sourceId(layer.id);
     for (const feature of this.data.get(layer.id) ?? []) {
       const value = this.joinValueOf(feature, rel.fromKey);
-      if (value != null && index.has(value)) {
-        this.map.setFeatureState({ source: src, id: feature.properties.id }, { related: true });
+      const matches = value != null ? index.get(value) : undefined;
+      if (!matches?.length) continue;
+      // `related` stays a plain boolean — polygonFillOpacity/polygonLineWidth
+      // key off it as "is this tinted at all" and know nothing about status.
+      // `relatedStatus` is the finer read, only meaningful when statusKey is
+      // set: "ended" if every match's status is one of endedValues, "active"
+      // otherwise — a jurisdiction with even one still-active contract reads
+      // as active, not ended.
+      const state: Record<string, boolean | string> = { related: true };
+      if (rel.statusKey) {
+        const allEnded = matches.every((m) =>
+          rel.endedValues?.includes(String(m.properties.attributes[rel.statusKey!])),
+        );
+        state.relatedStatus = allEnded ? 'ended' : 'active';
       }
+      this.map.setFeatureState({ source: src, id: feature.properties.id }, state);
     }
   }
 
@@ -2302,9 +2332,10 @@ export class MapController {
   }
 
   /**
-   * `tintWhenRelated` paints one layer's colour onto another (the green wash
-   * `agency_jurisdiction` takes on wherever `vendor_contract` has a
-   * documented contract). polygonFillColor already keys that wash on the
+   * `tintWhenRelated` paints one layer's colour onto another (the green/red
+   * wash `agency_jurisdiction` takes on wherever `vendor_contract` has a
+   * documented contract — red once every documented contract there has
+   * ended). polygonFillColor already keys that wash on the
    * source layer's visibility, but a MapLibre paint expression only
    * re-evaluates when its inputs change — `this.visible` is plain JS state,
    * invisible to the style until something re-sets the paint property. So
