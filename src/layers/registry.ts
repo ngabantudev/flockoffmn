@@ -776,7 +776,10 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'vendor_contract',
     slug: 'vendor-contracts',
-    category: 'surveillance',
+    // What the device is doing, and what the agency signed up to run it —
+    // filed with the agreements and the agencies that hold them, not with
+    // the cameras themselves.
+    category: 'enforcement',
     defaultOn: true,
     label: {
       en: 'Documented vendor contracts',
