@@ -17,6 +17,26 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
+  // Compare slider
+  // Title Case here — compareTitle is a visible <h1>, comparePovertySide/
+  // compareBlackSide are legend headers, compareOpenButton/compareShowAlpr
+  // are button/control labels. compareIntro, compareAccessibleNote and
+  // compareVintage are body prose and stay sentence case on purpose.
+  compareTitle: 'Poverty Rate And Black Population Share, Side By Side',
+  compareIntro:
+    'Drag the slider to compare two census-tract layers on the same map: poverty rate on the left, Black population share on the right. Both come from the same U.S. Census Bureau American Community Survey estimates as the toggleable layers on the main map — this view puts them side by side rather than one at a time.',
+  compareSliderLabel: 'Move the divider between poverty rate and Black population share',
+  comparePovertySide: 'Poverty Rate',
+  compareBlackSide: 'Black Population Share',
+  compareSourceLabel: 'Source:',
+  compareVintage: 'Census Bureau’s American Community Survey, 5-year estimates,',
+  compareShowAlpr: 'Show ALPR Cameras',
+  compareAccessibleNote:
+    'This split view is a visual comparison tool and has no non-visual equivalent — a screen reader cannot describe which shade sits under a moving divider. For the same data in an accessible form, close this view and switch on the Poverty rate and Black population share layers one at a time, or download the underlying table from Open data.',
+  compareAccessibleLink: 'Open data downloads',
+  compareOpenButton: 'Compare Poverty & Black Population',
+  compareClose: 'Close comparison view',
+
   // Map chrome
   layers: 'Layers',
   filters: 'Filters',

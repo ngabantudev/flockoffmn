@@ -183,10 +183,31 @@ export function basemapBackgroundColor(id: MapStyleId): string {
  * mirror time — see TILES_URL's comment above), so a fork running its own
  * bucket needs that string swapped for its own TILES_URL on every read,
  * not just once at mirror time.
+ *
+ * Also resolves `sprite`/`glyphs` from mirror-time-relative
+ * ('/sprites/ofm', '/fonts/{fontstack}/{range}.pbf') to genuinely absolute
+ * URLs against the current origin. Not cosmetic: MapLibre's own sprite
+ * loader calls `new URL(spriteUrl)` with no base argument, which throws
+ * for any relative string ("Invalid sprite URL ... must be absolute") —
+ * confirmed live, and confirmed it fails silently (a console *warning*,
+ * "Image ... could not be loaded", not a thrown error) on a lone map, which
+ * is why this went unnoticed until CompareView.astro ran a second map on
+ * the same page and its own `await`-chained sprite fetch surfaced the
+ * rejection as an actual error instead. `window.location.origin` rather
+ * than a hardcoded domain: this repo has no single fixed origin (branch
+ * previews, production, a fork's own domain), and it's always correct
+ * regardless of which one is currently serving the page.
  */
 export function baseStyle(id: MapStyleId): StyleSpecification {
   const style = structuredClone(STYLES[id]);
   const source = style.sources.openmaptiles as { url?: string };
   if (source?.url) source.url = source.url.replace(MIRRORED_TILES_URL, TILES_URL);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  if (style.sprite && typeof style.sprite === 'string' && style.sprite.startsWith('/')) {
+    style.sprite = `${origin}${style.sprite}`;
+  }
+  if (style.glyphs?.startsWith('/')) {
+    style.glyphs = `${origin}${style.glyphs}`;
+  }
   return style;
 }
