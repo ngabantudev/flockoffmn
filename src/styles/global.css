@@ -301,28 +301,14 @@
 /*
  * Below `lg` the detail panel is a sheet floating over the bottom of the map
  * rather than a sibling beside it (see #detail-panel in MapView.astro), which
- * would otherwise bury MapLibre's own bottom-anchored controls under it. The
- * scale bar going missing is a nuisance; the attribution going missing is an
- * OpenStreetMap licence term, so this is not cosmetic. `--map-sheet-h` is
- * published by MapView from the sheet's measured height and is 0px whenever no
- * sheet is open, which is what makes one unconditional rule safe.
- *
- * Only `.maplibregl-ctrl-bottom-left` (ScaleControl) is still docked in one
- * of MapLibre's own corner containers — everything else that used to live
- * in `.maplibregl-ctrl-bottom-right` (theme toggle, reset button, zoom,
- * attribution) is hand-mounted into #map-corner-controls now (see
- * mapController.ts's constructor), so that div carries the same lift itself,
- * below.
+ * would otherwise bury bottom-anchored controls under it. The attribution
+ * going missing is an OpenStreetMap licence term, not cosmetic — see
+ * #map-corner-controls' own `bottom` rule below, which is what actually
+ * carries this lift now that no control is docked in either of MapLibre's
+ * own bottom-left/bottom-right corner containers (ScaleControl, the one
+ * control that used to live in bottom-left, is gone — no reference
+ * equivalent; see mapController.ts's constructor comment).
  */
-.maplibregl-ctrl-bottom-left {
-  bottom: var(--map-sheet-h, 0px);
-  transition: bottom 150ms ease;
-}
-@media (prefers-reduced-motion: reduce) {
-  .maplibregl-ctrl-bottom-left {
-    transition: none;
-  }
-}
 /*
  * Map control geometry, matched to wealldobettermn.org's own
  * #map-corner-controls (see its WardMap.tsx and globals.css) — one flex

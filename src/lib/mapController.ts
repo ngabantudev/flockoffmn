@@ -559,12 +559,6 @@ export class MapController {
       collapseAttribOnce();
     }
 
-    // No reference equivalent — wealldobettermn.org has no scale bar. Kept
-    // as its own addControl at the opposite corner: a distance reference
-    // is useful here in a way it apparently isn't there, and bottom-left
-    // is empty space the corner-controls stack doesn't touch.
-    this.map.addControl(new maplibregl.ScaleControl({ unit: 'imperial' }), 'bottom-left');
-
     // The basemap is independent of every other layer here — swapping it is
     // just re-setting BASEMAP_LAYERS' paint properties, never map.setStyle()
     // (which would drop every registry layer this class has added). Queued
