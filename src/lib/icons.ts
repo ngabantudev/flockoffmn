@@ -1,4 +1,4 @@
-import { Shield, Star, Landmark, Route, Fingerprint, Speech, FileText, type IconNode } from 'lucide';
+import { Shield, Star, Landmark, Route, Fingerprint, Speech, FileText, FileX, type IconNode } from 'lucide';
 
 /**
  * Every lucide glyph the registry may name, by the exact string it writes.
@@ -24,4 +24,8 @@ export const MARKER_ICONS: Record<string, IconNode> = {
   Fingerprint,
   Speech,
   FileText,
+  // A contract still in force draws FileText; one that has ended — by any
+  // of the statuses in ContractStatus other than "Active" — draws FileX. See
+  // the vendor_contract registry entry's markerIcon.byValue.
+  FileX,
 };

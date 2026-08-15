@@ -100,7 +100,14 @@ export interface ClientLayer {
     pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
   };
   /** See LayerDefinition's own comment in layers/types.ts. */
-  tintWhenRelated?: { layerId: LayerId; fromKey?: string; joinKey: string; color: string; colorLight: string };
+  tintWhenRelated?: {
+    layerId: LayerId;
+    fromKey?: string;
+    joinKey: string;
+    excludeWhen?: { key: string; values: string[] };
+    color: string;
+    colorLight: string;
+  };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -1380,7 +1387,17 @@ export class MapController {
     const src = this.sourceId(layer.id);
     for (const feature of this.data.get(layer.id) ?? []) {
       const value = this.joinValueOf(feature, rel.fromKey);
-      if (value != null && index.has(value)) {
+      const matches = value != null ? index.get(value) : undefined;
+      // `some`, not `has`/length: a jurisdiction with one terminated and one
+      // still-active contract on record should keep glowing for the one that
+      // is — excludeWhen drops individual matches from counting, not the
+      // whole bucket the moment any of them has ended.
+      const counts = matches?.some(
+        (m) =>
+          !rel.excludeWhen ||
+          !rel.excludeWhen.values.includes(String(m.properties.attributes[rel.excludeWhen.key])),
+      );
+      if (counts) {
         this.map.setFeatureState({ source: src, id: feature.properties.id }, { related: true });
       }
     }

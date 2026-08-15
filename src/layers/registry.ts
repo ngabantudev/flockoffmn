@@ -125,13 +125,55 @@ export const LAYERS: LayerDefinition[] = [
         en: 'The agency’s own redaction of its in-house search log was incomplete when released — it named individual staff and case numbers. This project does not publish or mirror that file; only a single monthly total of in-house searches is carried here. See the mirrored document folder’s README for what was withheld and why.',
         es: 'La propia redacción del registro interno de búsquedas de la agencia estaba incompleta al publicarse — nombraba personal individual y números de caso. Este proyecto no publica ni reproduce ese archivo; aquí solo consta un total mensual de búsquedas internas. Consulte el README de la carpeta de documentos reproducidos para ver qué se omitió y por qué.',
       },
+      {
+        en: 'Contract status (added August 2026, as Minnesota cities began ending Flock Safety contracts) is transcribed only where a source documents an ending event directly — a news article alone does not move a record off "Active" here. A city working through this in the press but with no primary record yet transcribed is not shown as ended, which is a limit of this layer\'s sourcing bar, not a claim that its contract continues.',
+        es: 'El estado del contrato (agregado en agosto de 2026, cuando ciudades de Minnesota comenzaron a terminar contratos con Flock Safety) se transcribe solo cuando una fuente documenta directamente un evento de finalización — un artículo periodístico por sí solo no cambia un registro de "Activo". Una ciudad en proceso según la prensa pero sin un registro primario aún transcrito no se muestra como finalizada, lo cual es un límite del umbral de fuentes de esta capa, no una afirmación de que su contrato continúa.',
+      },
     ],
     geometry: 'point',
     color: '#facc15',
     colorLight: '#a16207',
-    markerIcon: { icon: 'FileText' },
-    // One documented contract so far — nothing yet to build a filter on.
-    filters: [],
+    markerIcon: {
+      icon: 'FileText',
+      // The glyph carries the status distinction rather than the dot's
+      // colour: see FileX's own comment in lib/icons.ts for why a marker
+      // layer's colour can't vary per record, and ContractStatus's comment
+      // in layers/types.ts for why "ended" is a fact worth drawing rather
+      // than a reason to make the record disappear.
+      byValue: {
+        key: 'status',
+        icons: { Suspended: 'FileX', Terminated: 'FileX', 'Not renewed': 'FileX', Expired: 'FileX' },
+      },
+    },
+    filters: [
+      {
+        key: 'status',
+        kind: 'enum',
+        label: { en: 'Contract status', es: 'Estado del contrato' },
+        valueDescriptions: {
+          Active: {
+            en: 'No ending event has been transcribed onto this record. The default for every documented contract.',
+            es: 'No se ha transcrito ningún evento de finalización en este registro. El estado por defecto de todo contrato documentado.',
+          },
+          Suspended: {
+            en: 'Use was paused by the agency, stated in the source as reversible — not a termination.',
+            es: 'El uso fue pausado por la agencia, y la fuente lo describe como reversible — no es una terminación.',
+          },
+          Terminated: {
+            en: 'The contract was ended before its term or renewal would otherwise have expired.',
+            es: 'El contrato terminó antes de que su plazo o renovación hubiera vencido de otro modo.',
+          },
+          'Not renewed': {
+            en: 'The agency let the contract lapse at the end of its term rather than renewing it.',
+            es: 'La agencia dejó vencer el contrato al final de su plazo en lugar de renovarlo.',
+          },
+          Expired: {
+            en: 'The contract’s term ended with no documented renewal or replacement on record.',
+            es: 'El plazo del contrato terminó sin que haya constancia documentada de renovación o reemplazo.',
+          },
+        },
+      },
+    ],
     hoverCard: {
       fields: ['vendor', 'executedDate', 'cameraCountCurrent', 'annualCost'],
       related: {
@@ -185,6 +227,16 @@ export const LAYERS: LayerDefinition[] = [
     detailFields: [
       { key: 'vendor', label: { en: 'Vendor', es: 'Proveedor' } },
       { key: 'product', label: { en: 'Product', es: 'Producto' } },
+      // Absent for a record with no ending event, which is why this sits
+      // above executedDate rather than at the bottom: a reader should not
+      // have to scroll past a dollar figure to learn a contract has ended.
+      { key: 'status', label: { en: 'Contract status', es: 'Estado del contrato' } },
+      { key: 'statusDate', label: { en: 'Status as of', es: 'Estado a partir de' }, format: 'date' },
+      {
+        key: 'statusSourceUrl',
+        label: { en: 'Source for status', es: 'Fuente del estado' },
+        format: 'link',
+      },
       { key: 'executedDate', label: { en: 'Contract executed', es: 'Contrato firmado' }, format: 'date' },
       { key: 'initialTermMonths', label: { en: 'Initial term (months)', es: 'Plazo inicial (meses)' } },
       { key: 'renewalType', label: { en: 'Renewal terms', es: 'Condiciones de renovación' } },
@@ -312,11 +364,14 @@ export const LAYERS: LayerDefinition[] = [
         joinKey: 'jurisdictionId',
       },
     },
-    // A green wash on a jurisdiction that has a documented vendor contract
-    // — see the field's own comment in types.ts for why this is a coverage
-    // cue and not a score. The only jurisdiction lit up today is the one
-    // MuckRock request has actually produced; every other polygon staying
-    // neutral is the honest state of the data, not a verdict on the agency.
+    // A green wash on a jurisdiction that has a documented, currently active
+    // vendor contract — see the field's own comment in types.ts for why this
+    // is a coverage cue and not a score. excludeWhen means a jurisdiction
+    // whose only contract has since ended (see ContractStatus's own comment
+    // in types.ts) stops glowing on the strength of a record that no longer
+    // describes the present, without the record itself leaving the map.
+    // Every other polygon staying neutral is the honest state of the data,
+    // not a verdict on the agency.
     // Bright mint on dark, deep emerald on light — the first plain green
     // (Tailwind's own 500/600 step) read at roughly 1.1:1 against the light
     // basemap's neutral unselected grey, i.e. functionally invisible; both
@@ -328,6 +383,7 @@ export const LAYERS: LayerDefinition[] = [
     tintWhenRelated: {
       layerId: 'vendor_contract',
       joinKey: 'jurisdictionId',
+      excludeWhen: { key: 'status', values: ['Suspended', 'Terminated', 'Not renewed', 'Expired'] },
       color: '#86efac',
       colorLight: '#064e3b',
     },
