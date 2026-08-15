@@ -257,6 +257,10 @@ export const LAYERS: LayerDefinition[] = [
         en: 'Checked against Census city boundaries: most single-city departments track their city\'s limits almost exactly, but not all. A few, like St. Anthony, also serve a second contracting city under agreement. Four — Lakes Area, South Lake Minnetonka, West Hennepin, and Centennial Lakes police — are joint departments shared by several small cities and match no single municipality. Four more are institutional forces that sit inside or across city lines rather than being a city themselves: University of Minnesota, Metropolitan Airports Commission, Veterans Affairs, and Minnesota State Fair police.',
         es: 'Comparado con los límites municipales del Censo: la mayoría de los departamentos de una sola ciudad siguen los límites de su ciudad casi con exactitud, pero no todos. Algunos, como St. Anthony, también atienden a una segunda ciudad bajo contrato. Cuatro — Lakes Area, South Lake Minnetonka, West Hennepin y Centennial Lakes police — son departamentos conjuntos compartidos por varias ciudades pequeñas y no coinciden con ningún municipio único. Otros cuatro son fuerzas institucionales que se ubican dentro o a través de los límites municipales en lugar de ser una ciudad en sí: la policía de la Universidad de Minnesota, la Comisión Metropolitana de Aeropuertos, Asuntos de Veteranos y la Feria Estatal de Minnesota.',
       },
+      {
+        en: 'A jurisdiction washes green once at least one of its agencies has a documented vendor contract on the "Documented vendor contracts" layer — right now, that is University of Minnesota Police alone. The colour marks that a records request has produced something, nothing more: a jurisdiction left uncoloured has not been shown to lack a contract, only that nobody has yet requested and mirrored one for it.',
+        es: 'Una jurisdicción se tiñe de verde en cuanto al menos una de sus agencias tiene un contrato con proveedores documentado en la capa «Contratos de proveedores documentados» — por ahora, solo la Policía de la Universidad de Minnesota. El color solo indica que una solicitud de registros produjo algo, nada más: una jurisdicción sin colorear no ha demostrado carecer de un contrato, solo que nadie lo ha solicitado y reproducido todavía.',
+      },
     ],
     geometry: 'polygon',
     // Doubles as the selected-jurisdiction highlight colour (see
@@ -307,6 +311,16 @@ export const LAYERS: LayerDefinition[] = [
         layerId: 'alpr_reported',
         joinKey: 'jurisdictionId',
       },
+    },
+    // A green wash on a jurisdiction that has a documented vendor contract
+    // — see the field's own comment in types.ts for why this is a coverage
+    // cue and not a score. The only jurisdiction lit up today is the one
+    // MuckRock request has actually produced; every other polygon staying
+    // neutral is the honest state of the data, not a verdict on the agency.
+    tintWhenRelated: {
+      layerId: 'vendor_contract',
+      joinKey: 'jurisdictionId',
+      color: '#22c55e',
     },
     action: {
       // Reuses the existing generic surveillance-inventory request template —

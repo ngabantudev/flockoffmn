@@ -604,6 +604,33 @@ export interface LayerDefinition {
     };
   };
   /**
+   * Tint a `polygonClick: 'highlight'` polygon's unselected fill while at
+   * least one record in another layer joins to it — for a jurisdiction, "a
+   * records request has produced something here" made visible without a
+   * click.
+   *
+   * A coverage cue, not a score (§1c): the tint says a document exists, and
+   * its absence says only that no request has produced one *yet*, never
+   * that an agency has nothing to find — the same distinction every
+   * `related.empty` string on this map already has to hold, just read off a
+   * fill colour instead of a hover card. It is computed at render time from
+   * data both layers already load (the same "no record of its own" rule
+   * `blockAggregate` documents) and never becomes a field of its own: not in
+   * `detailFields`, not in a download, not part of the accessible record
+   * list — a visual-only cue layered on top of a relation that is
+   * independently inspectable through the layer it points at.
+   */
+  tintWhenRelated?: {
+    /** The layer whose presence lights this polygon up. */
+    layerId: LayerId;
+    /** Attribute on THIS layer holding the joining value; defaults to `id`. */
+    fromKey?: string;
+    /** Attribute on that layer holding the same value. */
+    joinKey: string;
+    /** Fill colour applied while at least one match exists. */
+    color: string;
+  };
+  /**
    * The zooms across which this layer's records emerge.
    *
    * A point layer answers a different question at every scale. Across a

@@ -75,6 +75,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
       }
     : undefined,
   relatedBuildings: d.relatedBuildings,
+  tintWhenRelated: d.tintWhenRelated,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
     : undefined,
@@ -539,7 +540,7 @@ const strings = {
   import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { formatValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
-  import { createElement, Target } from 'lucide';
+  import { createElement, Crosshair } from 'lucide';
   // The same closed allow-list the map's own marker glyphs resolve through —
   // see its comment for why there is one map and not two.
   import { MARKER_ICONS } from '~/lib/icons';
@@ -1022,7 +1023,7 @@ const strings = {
   });
 
   const resetViewButton = document.getElementById('reset-view');
-  resetViewButton?.appendChild(createElement(Target, { width: 16, height: 16 }));
+  resetViewButton?.appendChild(createElement(Crosshair, { width: 16, height: 16 }));
   resetViewButton?.addEventListener('click', () => controller.resetView());
 
   /* ------------------------------- Search ------------------------------- */

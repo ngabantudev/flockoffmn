@@ -99,6 +99,8 @@ export interface ClientLayer {
     hubKey?: string;
     pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
   };
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  tintWhenRelated?: { layerId: LayerId; fromKey?: string; joinKey: string; color: string };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -640,6 +642,19 @@ export class MapController {
    */
   private polygonFillColor(layer: ClientLayer): maplibregl.ExpressionSpecification {
     if (layer.polygonClick === 'highlight') {
+      const unselected = layer.tintWhenRelated
+        ? // Read from feature-state (applyRelatedTint sets it once the
+          // target layer's data is in), not a literal id list baked into
+          // the expression — the join can finish loading well after this
+          // paint property is first set, and feature-state repaints on its
+          // own the moment it changes.
+          ([
+            'case',
+            ['boolean', ['feature-state', 'related'], false],
+            layer.tintWhenRelated.color,
+            this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
+          ] as unknown as maplibregl.ExpressionSpecification)
+        : (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT);
       return [
         'case',
         [
@@ -648,7 +663,7 @@ export class MapController {
           ['boolean', ['feature-state', 'hover'], false],
         ],
         this.layerColor(layer),
-        this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
+        unselected,
       ] as unknown as maplibregl.ExpressionSpecification;
     }
     if (layer.categoryColors) {
@@ -1280,6 +1295,29 @@ export class MapController {
     return index;
   }
 
+  /**
+   * Marks every polygon of `layer` that has at least one match in
+   * `layer.tintWhenRelated`'s target with a `related` feature-state flag,
+   * which polygonFillColor reads. Loads the target layer's data first if it
+   * isn't already in `this.data` — ensureDataLoaded's own cross-layer path,
+   * so the tint appears whether or not a reader has switched that layer on
+   * — and only then builds the join index, so a call that runs before the
+   * fetch completes can't poison joinIndex's cache with an empty result.
+   */
+  private async applyRelatedTint(layer: ClientLayer): Promise<void> {
+    const rel = layer.tintWhenRelated;
+    if (!rel) return;
+    await this.ensureDataLoaded(rel.layerId);
+    const index = this.joinIndex(rel.layerId, rel.joinKey);
+    const src = this.sourceId(layer.id);
+    for (const feature of this.data.get(layer.id) ?? []) {
+      const value = this.joinValueOf(feature, rel.fromKey);
+      if (value != null && index.has(value)) {
+        this.map.setFeatureState({ source: src, id: feature.properties.id }, { related: true });
+      }
+    }
+  }
+
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
   async loadLayer(layer: ClientLayer): Promise<void> {
     if (this.loading.has(layer.id)) return;
@@ -1498,6 +1536,7 @@ export class MapController {
         },
         under,
       );
+      if (layer.tintWhenRelated) void this.applyRelatedTint(layer);
       if (layer.labelBy) {
         // The identifier the source printed on the area, in the area's own
         // colour over a basemap-dark halo. Null attributes draw nothing, and
