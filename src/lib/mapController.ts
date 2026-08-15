@@ -1478,12 +1478,19 @@ export class MapController {
                 // (see showRelatedBuildings), so the polygon settles rather
                 // than blazing full-strength the way a plain highlight layer
                 // still would (see the outline width below for that case).
+                // `tintWhenRelated` is the one exception: that colour has to
+                // read as a finding on its own, with no click, so a related
+                // ward sits a full step above the plain 0.16 wash — the same
+                // 0.16 was the whole reason the tint first read as invisible.
                 ([
                   'case',
                   ['boolean', ['feature-state', 'selected'], false],
                   subtle ? 0.24 : 0.42,
                   ['boolean', ['feature-state', 'hover'], false],
                   0.28,
+                  ...(layer.tintWhenRelated
+                    ? [['boolean', ['feature-state', 'related'], false], 0.34]
+                    : []),
                   0.16,
                 ] as unknown as maplibregl.ExpressionSpecification)
               : layer.blockAggregate
@@ -1518,6 +1525,9 @@ export class MapController {
                   subtle ? 1.6 : 2.5,
                   ['boolean', ['feature-state', 'hover'], false],
                   1.8,
+                  ...(layer.tintWhenRelated
+                    ? [['boolean', ['feature-state', 'related'], false], 2.2]
+                    : []),
                   1.1,
                 ] as unknown as maplibregl.ExpressionSpecification)
               : 1.1,

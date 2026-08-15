@@ -317,15 +317,18 @@ export const LAYERS: LayerDefinition[] = [
     // cue and not a score. The only jurisdiction lit up today is the one
     // MuckRock request has actually produced; every other polygon staying
     // neutral is the honest state of the data, not a verdict on the agency.
-    // Bright emerald on dark, deep emerald on light — the first plain green
+    // Bright mint on dark, deep emerald on light — the first plain green
     // (Tailwind's own 500/600 step) read at roughly 1.1:1 against the light
     // basemap's neutral unselected grey, i.e. functionally invisible; both
     // ends here clear ~3:1 against their basemap's own neutral polygon
-    // colour as well as the basemap itself.
+    // colour as well as the basemap itself. Also see the fill-opacity/
+    // line-width bump mapController gives a `related` ward specifically —
+    // the hue alone was never going to read at a 0.16-opacity / 1.1px wash,
+    // the same strength every other unselected ward already draws at.
     tintWhenRelated: {
       layerId: 'vendor_contract',
       joinKey: 'jurisdictionId',
-      color: '#6ee7b7',
+      color: '#86efac',
       colorLight: '#064e3b',
     },
     action: {
