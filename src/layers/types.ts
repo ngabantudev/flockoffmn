@@ -627,8 +627,19 @@ export interface LayerDefinition {
     fromKey?: string;
     /** Attribute on that layer holding the same value. */
     joinKey: string;
-    /** Fill colour applied while at least one match exists. */
+    /** Fill/outline colour applied while at least one match exists (dark basemap). */
     color: string;
+    /**
+     * `color`'s counterpart for a light basemap — the same pairing every
+     * layer's own `color`/`colorLight` already makes, and required rather
+     * than optional here: this colour has to clear WCAG non-text contrast
+     * (~3:1) against both the light basemap *and* the neutral grey every
+     * other unselected polygon already draws in, and one hex rarely clears
+     * both a near-black and a near-white background at once. Omitting it
+     * would silently reuse `color`, which is exactly the failure mode that
+     * made this field required in the first place.
+     */
+    colorLight: string;
   };
   /**
    * The zooms across which this layer's records emerge.

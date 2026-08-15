@@ -317,10 +317,16 @@ export const LAYERS: LayerDefinition[] = [
     // cue and not a score. The only jurisdiction lit up today is the one
     // MuckRock request has actually produced; every other polygon staying
     // neutral is the honest state of the data, not a verdict on the agency.
+    // Bright emerald on dark, deep emerald on light — the first plain green
+    // (Tailwind's own 500/600 step) read at roughly 1.1:1 against the light
+    // basemap's neutral unselected grey, i.e. functionally invisible; both
+    // ends here clear ~3:1 against their basemap's own neutral polygon
+    // colour as well as the basemap itself.
     tintWhenRelated: {
       layerId: 'vendor_contract',
       joinKey: 'jurisdictionId',
-      color: '#22c55e',
+      color: '#6ee7b7',
+      colorLight: '#064e3b',
     },
     action: {
       // Reuses the existing generic surveillance-inventory request template —

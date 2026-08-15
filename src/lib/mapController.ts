@@ -100,7 +100,7 @@ export interface ClientLayer {
     pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
   };
   /** See LayerDefinition's own comment in layers/types.ts. */
-  tintWhenRelated?: { layerId: LayerId; fromKey?: string; joinKey: string; color: string };
+  tintWhenRelated?: { layerId: LayerId; fromKey?: string; joinKey: string; color: string; colorLight: string };
   /** Scale this line layer's width by a magnitude in its own data. */
   weightBy?: { key: string; label: string; stops: Array<[number, number]> };
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
@@ -651,7 +651,7 @@ export class MapController {
           ([
             'case',
             ['boolean', ['feature-state', 'related'], false],
-            layer.tintWhenRelated.color,
+            this.basemapDark ? layer.tintWhenRelated.color : layer.tintWhenRelated.colorLight,
             this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT,
           ] as unknown as maplibregl.ExpressionSpecification)
         : (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT);
