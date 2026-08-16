@@ -1,0 +1,105 @@
+---
+import type { Locale } from '~/layers/types';
+import { useTranslations, localePath, stripLocale } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+
+const here = stripLocale(Astro.url.pathname);
+
+/*
+ * Same seven destinations as the header's link row (Nav.astro) — this bar
+ * replaces that row below `sm`, it doesn't add a second information
+ * architecture. `icon` names a key in ICON_IMPORTS below; the two are kept
+ * in sync by the check at the bottom of this frontmatter.
+ */
+const items = [
+  { href: '/', label: t('navMapShort'), icon: 'Map' },
+  { href: '/near-me', label: t('navNearMeShort'), icon: 'LocateFixed' },
+  { href: '/explainer', label: t('navExplainerShort'), icon: 'BookOpen' },
+  { href: '/act', label: t('navActShort'), icon: 'Megaphone' },
+  { href: '/data', label: t('navDataShort'), icon: 'Database' },
+  { href: '/sources', label: t('navSourcesShort'), icon: 'FileText' },
+  { href: '/about', label: t('navAboutShort'), icon: 'Info' },
+] as const;
+
+const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWith(href));
+---
+
+<!--
+  Fixed to the app shell's own flex column (see Base.astro), not the
+  viewport — `sticky` rather than `fixed` so it takes up real space as a
+  flex sibling and `main` shrinks to fit around it automatically. That's
+  what keeps it from ever covering the map view or a page's last paragraph:
+  no separate padding-bottom rule to keep in sync, and nothing in
+  mapController.ts's obstruction math (--map-sheet-h) needs to know this
+  bar exists, because the map's own container never extends underneath it.
+-->
+<nav
+  aria-label="Primary"
+  class="sticky bottom-0 z-30 shrink-0 border-t border-ink-800 bg-ink-900 sm:hidden"
+  style="padding-bottom: env(safe-area-inset-bottom)"
+>
+  <ul class="grid grid-cols-7">
+    {
+      items.map((item) => {
+        const active = isActive(item.href);
+        return (
+          <li>
+            <a
+              href={localePath(locale, item.href)}
+              aria-current={active ? 'page' : undefined}
+              class:list={[
+                'flex flex-col items-center gap-1 border-t-2 px-1 py-2 text-center transition-colors',
+                active ? 'border-accent text-accent' : 'border-transparent text-ink-400 hover:text-ink-100',
+              ]}
+            >
+              <span data-icon={item.icon} aria-hidden="true" class="flex h-[22px] w-[22px] items-center justify-center" />
+              <span class="w-full truncate text-[10px] leading-none">{item.label}</span>
+            </a>
+          </li>
+        );
+      })
+    }
+  </ul>
+</nav>
+
+<script>
+  /*
+   * Icons are hydrated client-side rather than rendered to markup in the
+   * frontmatter above, matching the pattern already used for the map's
+   * detail-panel and control icons (see MapView.astro, themeControl.ts):
+   * lucide's `createElement` builds real DOM nodes via `document`, which
+   * doesn't exist during Astro's server render.
+   */
+  import {
+    createElement,
+    Map as MapIcon,
+    LocateFixed,
+    BookOpen,
+    Megaphone,
+    Database,
+    FileText,
+    Info,
+    type IconNode,
+  } from 'lucide';
+
+  const ICONS: Record<string, IconNode> = {
+    Map: MapIcon as IconNode,
+    LocateFixed: LocateFixed as IconNode,
+    BookOpen: BookOpen as IconNode,
+    Megaphone: Megaphone as IconNode,
+    Database: Database as IconNode,
+    FileText: FileText as IconNode,
+    Info: Info as IconNode,
+  };
+
+  for (const slot of document.querySelectorAll<HTMLElement>('[data-icon]')) {
+    const icon = ICONS[slot.dataset.icon ?? ''];
+    if (!icon) continue;
+    slot.appendChild(createElement(icon, { width: 20, height: 20, 'stroke-width': 1.75 }));
+  }
+</script>

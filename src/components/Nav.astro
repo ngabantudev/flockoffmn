@@ -43,17 +43,23 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     </a>
 
     {/*
+      Below `sm` this row is replaced by BottomNav.astro, a fixed tab bar
+      docked to the bottom of the screen — the same seven destinations, app
+      style, rather than a header row fighting a 320px viewport for space.
+      At `sm` and up there's room for it here again, so it reappears and the
+      bottom bar hides itself (see BottomNav.astro's own `sm:hidden`).
+
       The link list scrolls sideways rather than wrapping — 725px of labels
-      into 288px on a 320px phone, and wrapping them onto three rows would
-      spend 90px of a 568px screen on navigation. Everything is reachable by
-      swiping; what was missing was any sign of it. A label sliced mid-word
-      at the right edge reads as a layout bug, not as an invitation, so the
-      fades below mark whichever side still has links on it.
+      into a header row would wrap onto three lines on a narrow tablet, and
+      swiping is one gesture instead of a page of navigation. A label sliced
+      mid-word at the right edge reads as a layout bug, not as an
+      invitation, so the fades below mark whichever side still has links on
+      it.
     */}
     <nav
       aria-label="Primary"
       data-nav-overflow="none"
-      class="relative order-3 w-full sm:order-0 sm:w-auto sm:flex-1"
+      class="relative hidden w-full sm:order-0 sm:block sm:w-auto sm:flex-1"
     >
       <ul data-nav-scroller class="scroll-slim flex items-center gap-0.5 overflow-x-auto text-sm">
         {

@@ -19,6 +19,15 @@ export const es: Record<string, string> = {
   navAbout: 'Qué es esto',
   skipToContent: 'Saltar al contenido principal',
 
+  // Short forms for the mobile bottom tab bar — see en.ts for why these exist.
+  navMapShort: 'Mapa',
+  navNearMeShort: 'Cerca',
+  navExplainerShort: 'Conexión',
+  navActShort: 'Actuar',
+  navDataShort: 'Datos',
+  navSourcesShort: 'Fuentes',
+  navAboutShort: 'Sobre',
+
   // Comparador deslizante
   // Mayúscula inicial en cada palabra aquí — compareTitle es un <h1> visible,
   // comparePovertySide/compareBlackSide son encabezados de leyenda,
