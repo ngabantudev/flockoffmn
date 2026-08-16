@@ -1,6 +1,7 @@
 ---
 import '~/styles/global.css';
 import Nav from '~/components/Nav.astro';
+import BottomNav from '~/components/BottomNav.astro';
 import Footer from '~/components/Footer.astro';
 import { localeFromUrl, useTranslations } from '~/lib/i18n';
 
@@ -58,6 +59,7 @@ const pageDescription = description ?? t('tagline');
         <slot />
       </main>
       {!fullBleed && <Footer locale={locale} />}
+      <BottomNav locale={locale} />
     </div>
   </body>
 </html>

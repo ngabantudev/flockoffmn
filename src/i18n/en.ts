@@ -17,6 +17,16 @@ export const en: Record<string, string> = {
   navAbout: 'What this is',
   skipToContent: 'Skip to main content',
 
+  // Short forms for the mobile bottom tab bar — one word under an icon,
+  // where the full-length labels above ("Sources & methodology") would wrap.
+  navMapShort: 'Map',
+  navNearMeShort: 'Near me',
+  navExplainerShort: 'Explainer',
+  navActShort: 'Act',
+  navDataShort: 'Data',
+  navSourcesShort: 'Sources',
+  navAboutShort: 'About',
+
   // Compare slider
   // Title Case here — compareTitle is a visible <h1>, comparePovertySide/
   // compareBlackSide are legend headers, compareOpenButton/compareShowAlpr
