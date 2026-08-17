@@ -92,14 +92,16 @@ const strings = {
   {/*
     A first pass measured out at 253px of header on a 375×812 phone against
     269px left for the actual map — the explanation was nearly as tall as
-    the thing it explains. text-xs + line-clamp-2 (full text stays available
-    at sm: and up, where there's room) fixes that without cutting the intro
-    or source line outright — a reader can still open it at any width, this
-    just stops it from eating the interactive area on the smallest screens.
+    the thing it explains. line-clamp-2 (full text stays available at sm:
+    and up, where there's room) cut that down without dropping the intro or
+    source line outright, but was still eating enough of the map area on
+    the smallest screens to be worth clamping further: line-clamp-1 below
+    `sm` — mobile only, matching the same "full text stays one tap away at
+    sm: and up" reasoning, just tighter.
   */}
   <div class="shrink-0 border-b border-ink-800 bg-ink-900 px-4 py-2 sm:py-3 sm:px-6">
     <h1 class="text-sm font-semibold text-ink-100 sm:text-lg">{t('compareTitle')}</h1>
-    <p class="mt-1 line-clamp-2 max-w-3xl text-xs text-ink-300 sm:line-clamp-none sm:text-sm">{t('compareIntro')}</p>
+    <p class="mt-1 line-clamp-1 max-w-3xl text-xs text-ink-300 sm:line-clamp-none sm:text-sm">{t('compareIntro')}</p>
     {vintageDisplay && (
       <p class="mt-1 truncate text-[10px] text-ink-400 sm:text-xs">
         {t('compareSourceLabel')}{' '}
