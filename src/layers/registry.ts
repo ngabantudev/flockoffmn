@@ -882,6 +882,11 @@ export const LAYERS: LayerDefinition[] = [
     categoryColors: {
       key: 'operatorType',
       label: { en: 'Who runs it', es: 'Quién lo opera' },
+      // Nine categories, two of which the bar can label (see
+      // `showOnMapKey`'s doc comment) — and, per the `limitations` entry
+      // above, a keyword guess rather than a verified value. The filter
+      // fieldset in the layer panel is the real, fully-labelled key.
+      showOnMapKey: false,
       colors: [
         // First, because it is the answer four readers in five give — but not
         // muted. A desaturated grey here used to read as "no camera," the

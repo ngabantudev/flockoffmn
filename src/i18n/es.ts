@@ -17,6 +17,14 @@ export const es: Record<string, string> = {
   navData: 'Datos abiertos',
   navContribute: 'Contribuir',
   navAbout: 'Qué es esto',
+  // See en.ts's own comment — short forms for the bottom icon bar.
+  navMapShort: 'Mapa',
+  navNearMeShort: 'Cerca',
+  navSourcesShort: 'Fuentes',
+  navExplainerShort: 'Red',
+  navActShort: 'Actuar',
+  navDataShort: 'Datos',
+  navAboutShort: 'Qué es',
   skipToContent: 'Saltar al contenido principal',
 
   // Comparador deslizante

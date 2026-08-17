@@ -68,6 +68,8 @@ export interface ClientLayer {
     label: string;
     colors: Array<{ value: string; color: string }>;
     fallback: string;
+    /** See LayerDefinition's own comment in layers/types.ts. */
+    showOnMapKey?: boolean;
   };
   /** Write an attribute's value on each polygon, the way the source document did. */
   labelBy?: { key: string; minzoom?: number };
