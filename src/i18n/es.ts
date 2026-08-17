@@ -59,6 +59,7 @@ export const es: Record<string, string> = {
   resetView: 'Volver a Minnesota',
   closePanel: 'Cerrar panel',
   noResults: 'Ningún registro coincide con los filtros actuales.',
+  recordPanel: 'Registro',
 
   searchPlaceholder: 'Busque una ciudad, municipio rural, condado o agencia',
   searchLabel: 'Buscar ciudades, municipios rurales, condados y agencias',
