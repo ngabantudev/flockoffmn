@@ -1,23 +1,26 @@
 ---
+import { Map, LocateFixed, Network, Megaphone, Database, BookOpen, Info } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
 import { useTranslations, localePath, stripLocale, LOCALES, LOCALE_NAMES } from '~/lib/i18n';
 
 interface Props {
   locale: Locale;
+  /** See this component's own comment on the bottom-bar `<nav>` below. */
+  fullBleed?: boolean;
 }
-const { locale } = Astro.props;
+const { locale, fullBleed = false } = Astro.props;
 const t = useTranslations(locale);
 
 const here = stripLocale(Astro.url.pathname);
 
 const links = [
-  { href: '/', label: t('navMap') },
-  { href: '/near-me', label: t('navNearMe') },
-  { href: '/explainer', label: t('navExplainer') },
-  { href: '/act', label: t('navAct') },
-  { href: '/data', label: t('navData') },
-  { href: '/sources', label: t('navSources') },
-  { href: '/about', label: t('navAbout') },
+  { href: '/', label: t('navMap'), shortLabel: t('navMapShort'), icon: Map },
+  { href: '/near-me', label: t('navNearMe'), shortLabel: t('navNearMeShort'), icon: LocateFixed },
+  { href: '/explainer', label: t('navExplainer'), shortLabel: t('navExplainerShort'), icon: Network },
+  { href: '/act', label: t('navAct'), shortLabel: t('navActShort'), icon: Megaphone },
+  { href: '/data', label: t('navData'), shortLabel: t('navDataShort'), icon: Database },
+  { href: '/sources', label: t('navSources'), shortLabel: t('navSourcesShort'), icon: BookOpen },
+  { href: '/about', label: t('navAbout'), shortLabel: t('navAboutShort'), icon: Info },
 ];
 
 const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWith(href));
@@ -43,17 +46,20 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     </a>
 
     {/*
-      The link list scrolls sideways rather than wrapping — 725px of labels
-      into 288px on a 320px phone, and wrapping them onto three rows would
-      spend 90px of a 568px screen on navigation. Everything is reachable by
-      swiping; what was missing was any sign of it. A label sliced mid-word
-      at the right edge reads as a layout bug, not as an invitation, so the
-      fades below mark whichever side still has links on it.
+      Below `lg` this becomes the bottom icon bar (see the second <nav>
+      below this header) instead — the scrolling row was reachable but
+      nothing on a 320px phone signalled that seven links continued past
+      the edge, and it cost the map real height on top of that (see
+      #controls' own comment in MapView.astro for the same trade). At `lg`
+      it's back to the row it's always been: the link list scrolls sideways
+      rather than wrapping, so a label sliced mid-word at the right edge
+      reads as a layout bug, not as an invitation, and the fades below mark
+      whichever side still has links on it.
     */}
     <nav
       aria-label="Primary"
       data-nav-overflow="none"
-      class="relative order-3 w-full sm:order-0 sm:w-auto sm:flex-1"
+      class="relative order-3 hidden w-full lg:order-0 lg:block lg:w-auto lg:flex-1"
     >
       <ul data-nav-scroller class="scroll-slim flex items-center gap-0.5 overflow-x-auto text-sm">
         {
@@ -99,6 +105,54 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     </div>
   </div>
 </header>
+
+{/*
+  Below `lg`, the seven destination links move down here as icons rather
+  than staying a second row of text at the top — a phone's thumb reach is
+  the bottom of the screen, not the top, and an icon a reader already
+  recognises (the map, a book) costs less width than its own label would,
+  which is what makes room for a label under it instead of losing the
+  label entirely to icon-only.
+
+  Two different ways to sit at the bottom, matched to whether the page
+  under it scrolls. The map page (`fullBleed`) manages its own
+  non-scrolling layout already — see #controls' own comment in
+  MapView.astro — so this reorders into the tail of that same flex column,
+  landing directly beneath the search row for free, no coordinate math
+  required. Every other page scrolls normally, so this has to be `fixed`
+  to stay reachable regardless of scroll position; Base.astro's own
+  padding-bottom is what keeps that page's last content, footer included,
+  from ending up underneath it.
+*/}
+<nav
+  aria-label="Primary"
+  class:list={[
+    'border-t border-ink-800 bg-ink-900 pb-[env(safe-area-inset-bottom)] lg:hidden',
+    fullBleed ? 'order-last shrink-0' : 'fixed inset-x-0 bottom-0 z-40',
+  ]}
+>
+  <ul class="flex items-stretch">
+    {
+      links.map((link) => (
+        <li class="flex-1">
+          <a
+            href={localePath(locale, link.href)}
+            aria-current={isActive(link.href) ? 'page' : undefined}
+            class:list={[
+              'flex flex-col items-center gap-0.5 px-1 py-2 text-center transition-colors',
+              isActive(link.href) ? 'text-accent' : 'text-ink-300 hover:text-ink-100',
+            ]}
+          >
+            <link.icon class="h-5 w-5 shrink-0" aria-hidden="true" stroke-width={2} />
+            <span class="w-full truncate text-center text-[10px] leading-tight font-medium tracking-wide">
+              {link.shortLabel}
+            </span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</nav>
 
 <script>
   /*
