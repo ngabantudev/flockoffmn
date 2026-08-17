@@ -964,7 +964,15 @@ const strings = {
       );
     }
 
-    const close = el('button', 'shrink-0 rounded p-1 text-ink-400 hover:text-ink-100', '✕');
+    // h-9 w-9, not the p-1 the glyph alone needs — this is the detail
+    // panel's most-tapped mobile control (every selection opens the sheet
+    // this closes), and a ~24px hit area is the WCAG AA floor, not a
+    // comfortable one. Matches #close-compare's own h-8/w-8 sizing choice.
+    const close = el(
+      'button',
+      'flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-400 hover:text-ink-100',
+      '✕',
+    );
     close.setAttribute('type', 'button');
     close.setAttribute('aria-label', S.closePanel);
     close.addEventListener('click', () => {
