@@ -15,6 +15,16 @@ export const en: Record<string, string> = {
   navData: 'Open data',
   navContribute: 'Contribute',
   navAbout: 'What this is',
+  // Short forms for the bottom icon bar below `lg` — one word each, close
+  // enough in length that seven of them read as one evenly-spaced row
+  // instead of some truncating and others sitting in a lot of empty space.
+  navMapShort: 'Map',
+  navNearMeShort: 'Nearby',
+  navSourcesShort: 'Sources',
+  navExplainerShort: 'Network',
+  navActShort: 'Act',
+  navDataShort: 'Data',
+  navAboutShort: 'About',
   skipToContent: 'Skip to main content',
 
   // Compare slider
