@@ -215,21 +215,31 @@ const strings = {
   {/*
     ---------------------------- Controls ----------------------------
     At `lg` this is the full-height sidebar it has always been. Below `lg`
-    only the search row stays in the flow; the layers list drops out of it
-    into #layer-drawer, an overlay hung under the search row.
+    neither the search row nor the layers list stay in the document flow —
+    both are fixed to the bottom of the screen instead (#map-search-bar,
+    #layer-drawer), stacked above #bottom-nav via --bottom-nav-h (published
+    by BottomNav.astro). <aside> itself carries no chrome below `lg`; it
+    exists there only as the anchor the two fixed children are positioned
+    relative to.
 
-    It was costing the map too much to keep. In the flow the list never
-    compressed below about 256px — a search box and five group rows is what
-    it is — so on a 320x568 phone the nav and this panel took 61% of the
-    screen before the map was dealt in, leaving 223px of map. Landscape was
-    worse: 162px. The map is the page, and it was the only region yielding.
+    It was costing the map too much to keep at the top. Even trimmed to just
+    the search row, anything in the flow above the map is height the map
+    never gets back — a phone screen is short enough that every row spent on
+    chrome above the fold is a row of the actual map gone. Fixed-to-the-
+    bottom costs nothing from that budget: the map fills the full height
+    above #bottom-nav, and the search bar floats over it, the same way the
+    bottom nav itself does.
   */}
   <aside
     id="controls"
     aria-label={t('layers')}
-    class="scroll-slim relative z-30 flex shrink-0 flex-col border-b border-ink-800 bg-ink-900 lg:w-84 lg:overflow-y-auto lg:border-r lg:border-b-0"
+    class="scroll-slim relative z-30 flex shrink-0 flex-col lg:w-84 lg:overflow-y-auto lg:border-r lg:border-b-0 lg:border-ink-800 lg:bg-ink-900"
   >
-    <div class="border-b border-ink-800 p-3">
+    <div
+      id="map-search-bar"
+      style="bottom: var(--bottom-nav-h, 0px)"
+      class="fixed inset-x-0 z-30 border-t border-ink-800 bg-ink-900 p-3 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] lg:static lg:border-t-0 lg:border-b lg:shadow-none"
+    >
       <div class="flex items-center gap-2">
         <label for="map-search" class="sr-only">{t('searchLabel')}</label>
         <input
@@ -267,9 +277,16 @@ const strings = {
       </ul>
     </div>
 
+    {/*
+      Anchored above the search bar rather than below it — see
+      #map-search-bar above. calc() stacks this bar's own height on top of
+      --bottom-nav-h, so opening it pushes its top edge up rather than
+      sliding new content in from underneath the search row it hangs off of.
+    */}
     <div
       id="layer-drawer"
-      class="scroll-slim absolute inset-x-0 top-full z-30 max-h-[70dvh] overflow-y-auto border-b border-ink-800 bg-ink-900 p-3 shadow-[0_8px_24px_rgb(0_0_0/0.35)] lg:static lg:max-h-none lg:overflow-visible lg:border-b-0 lg:shadow-none"
+      style="bottom: calc(var(--bottom-nav-h, 0px) + var(--search-bar-h, 0px))"
+      class="scroll-slim fixed inset-x-0 z-30 max-h-[70dvh] overflow-y-auto border-b border-ink-800 bg-ink-900 p-3 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] lg:static lg:max-h-none lg:overflow-visible lg:border-b-0 lg:shadow-none"
     >
       <div class="mb-2 flex items-baseline justify-between">
         <h2 class="text-xs font-semibold tracking-wider text-ink-400 uppercase">{t('layers')}</h2>
@@ -511,21 +528,6 @@ const strings = {
           ×
         </button>
         <CompareView locale={locale} />
-      </div>
-
-      {/*
-        On-map keys for colour-coded layers, one bar per visible layer that
-        declares categoryColors. Rebuilt from the layer toggles on every change, so a key can never
-        outlive the layer it explains. aria-hidden because the same table
-        already exists accessibly in the layer panel beside the map — this is
-        the glanceable duplicate, not the record.
-      */}
-      <div
-        id="map-keys"
-        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
-        class="pointer-events-none absolute left-2 z-10 flex w-56 max-w-[70vw] flex-col gap-1.5 motion-safe:transition-[bottom]"
-        aria-hidden="true"
-      >
       </div>
     </div>
 
@@ -944,6 +946,21 @@ const strings = {
 
   /* ------------------------------ Controls ------------------------------ */
 
+  /*
+   * Published so #layer-drawer (fixed above the search bar below `lg` — see
+   * its own comment) knows how much to clear. Same pattern as BottomNav.astro
+   * publishing --bottom-nav-h: a ResizeObserver rather than a one-time read,
+   * because the search row's own height changes with font size and zoom.
+   */
+  const searchBarEl = document.getElementById('map-search-bar');
+  if (searchBarEl) {
+    const publishSearchBarHeight = () => {
+      document.documentElement.style.setProperty('--search-bar-h', `${searchBarEl.offsetHeight}px`);
+    };
+    publishSearchBarHeight();
+    new ResizeObserver(publishSearchBarHeight).observe(searchBarEl);
+  }
+
   /**
    * What a closed section says about itself.
    *
@@ -953,62 +970,6 @@ const strings = {
    * headings agree with the map afterwards.
    */
   const groupEls = document.querySelectorAll<HTMLDetailsElement>('[data-layer-group]');
-
-  /**
-   * The on-map keys, rebuilt from the toggles' current state.
-   *
-   * Generated from the same categoryColors table as the paint expression and
-   * the panel swatches, so the three cannot disagree. Every value is labelled
-   * beneath its own segment when the values are short enough to fit; a longer
-   * scale labels its two ends, which for an ordered ramp (decades, bands) is
-   * the reading that matters.
-   */
-  const mapKeysEl = document.getElementById('map-keys');
-  function refreshMapKeys() {
-    if (!mapKeysEl) return;
-    mapKeysEl.replaceChildren();
-    for (const layer of layers) {
-      const cc = layer.categoryColors;
-      if (!cc) continue;
-      const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${layer.id}"]`);
-      if (!input?.checked) continue;
-
-      const card = document.createElement('div');
-      card.className = 'rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm';
-
-      const title = document.createElement('p');
-      title.className = 'mb-1 truncate text-[10px] leading-tight text-ink-300';
-      title.textContent = cc.label;
-      card.appendChild(title);
-
-      const bar = document.createElement('div');
-      bar.className = 'flex h-1.5 w-full overflow-hidden rounded-full border border-ink-800';
-      for (const c of cc.colors) {
-        const seg = document.createElement('span');
-        seg.className = 'h-full flex-1';
-        seg.style.background = c.color;
-        bar.appendChild(seg);
-      }
-      card.appendChild(bar);
-
-      const labelEach = cc.colors.every((c) => c.value.length <= 3);
-      const row = document.createElement('p');
-      row.className = 'mt-0.5 flex justify-between gap-1 text-[10px] leading-tight text-ink-400';
-      const values = labelEach
-        ? cc.colors.map((c) => c.value)
-        : [cc.colors[0]?.value ?? '', cc.colors[cc.colors.length - 1]?.value ?? ''];
-      for (const [i, value] of values.entries()) {
-        const span = document.createElement('span');
-        if (labelEach) span.className = 'flex-1 text-center';
-        else span.className = i === 0 ? '' : 'text-right';
-        span.textContent = value;
-        row.appendChild(span);
-      }
-      card.appendChild(row);
-
-      mapKeysEl.appendChild(card);
-    }
-  }
 
   function refreshGroups() {
     groupEls.forEach((group) => {
@@ -1025,7 +986,6 @@ const strings = {
     // of records nothing on screen accounts for.
     const total = document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]:checked').length;
     for (const el of document.querySelectorAll('[data-layers-on]')) el.textContent = String(total);
-    refreshMapKeys();
   }
 
   document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {

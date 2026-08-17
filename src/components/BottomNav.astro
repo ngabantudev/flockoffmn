@@ -34,11 +34,16 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
   viewport — `sticky` rather than `fixed` so it takes up real space as a
   flex sibling and `main` shrinks to fit around it automatically. That's
   what keeps it from ever covering the map view or a page's last paragraph:
-  no separate padding-bottom rule to keep in sync, and nothing in
-  mapController.ts's obstruction math (--map-sheet-h) needs to know this
-  bar exists, because the map's own container never extends underneath it.
+  no separate padding-bottom rule to keep in sync for ordinary page content.
+
+  One thing below `sm` does need to know its rendered height: the map page's
+  own search bar, also fixed to the bottom of the screen (see MapView.astro),
+  has to sit above this one rather than under it. The script below publishes
+  that height as --bottom-nav-h, the same pattern mapController.ts already
+  uses for --map-sheet-h. It's 0 at `sm`+, where this bar is display:none.
 -->
 <nav
+  id="bottom-nav"
   aria-label="Primary"
   class="sticky bottom-0 z-30 shrink-0 border-t border-ink-800 bg-ink-900 sm:hidden"
   style="padding-bottom: env(safe-area-inset-bottom)"
@@ -101,5 +106,21 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     const icon = ICONS[slot.dataset.icon ?? ''];
     if (!icon) continue;
     slot.appendChild(createElement(icon, { width: 20, height: 20, 'stroke-width': 1.75 }));
+  }
+
+  /*
+   * Publish this bar's own rendered height (including the safe-area padding)
+   * as --bottom-nav-h, for anything fixed to the bottom of the screen below
+   * it to offset against — currently just the map page's search bar. A
+   * ResizeObserver rather than a one-time read: the bar's height changes with
+   * font size, zoom level, and the safe-area inset itself (device rotation).
+   */
+  const navEl = document.getElementById('bottom-nav');
+  if (navEl) {
+    const publish = () => {
+      document.documentElement.style.setProperty('--bottom-nav-h', `${navEl.offsetHeight}px`);
+    };
+    publish();
+    new ResizeObserver(publish).observe(navEl);
   }
 </script>

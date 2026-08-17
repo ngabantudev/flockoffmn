@@ -353,25 +353,11 @@
   margin: 0 !important;
 }
 /*
- * The strip of map left above an open sheet on a phone is a couple of hundred
- * pixels, and the colour keys were taking a quarter of it to explain a layer
- * the reader is no longer looking at — they are `aria-hidden` decoration whose
- * accessible original is the table in the layer panel, so they are the one
- * thing on the map that can go. The scale bar, the attribution and the reset
- * button all stay, lifted by the rule above. Falls back to keeping the keys
- * visible wherever :has() is unsupported, which is the pre-existing behaviour.
- */
-/*
  * The two panels dock at different widths — see #detail-panel in
  * MapView.astro for why — so the rules that belong to "the detail panel is a
  * sheet" and "the layers list is a drawer" are keyed to different queries
  * rather than sharing one.
  */
-@media (width < 80rem) {
-  #map-shell:has(#detail-panel:not([hidden])) #map-keys {
-    display: none;
-  }
-}
 @media (width < 64rem) {
   /*
    * The layers list is a drawer below `lg` — see #controls in MapView.astro.
