@@ -467,6 +467,19 @@ export interface LayerDefinition {
     colors: Array<{ value: string; color: string }>;
     /** Colour for any value not named above. */
     fallback: string;
+    /**
+     * Draw the glanceable colour bar over the map for this layer.
+     *
+     * Defaults to true. The bar is `aria-hidden` decoration — the accessible
+     * record is this same table rendered as a filter fieldset in the layer
+     * panel (MapView.astro's `filters`, keyed to this `key`) — so setting
+     * this false loses no information, only the on-map duplicate. Set it
+     * false where the bar can't earn its space: a category count too high
+     * for the bar to label more than its two ends, or a classification
+     * whose own `limitations` entry says it's a rough guess rather than a
+     * verified value.
+     */
+    showOnMapKey?: boolean;
   };
   /**
    * Write an attribute's value on each polygon, the way the source document

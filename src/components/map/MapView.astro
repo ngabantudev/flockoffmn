@@ -55,6 +55,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
         label: pick(d.categoryColors.label, locale),
         colors: d.categoryColors.colors,
         fallback: d.categoryColors.fallback,
+        showOnMapKey: d.categoryColors.showOnMapKey,
       }
     : undefined,
   labelBy: d.labelBy,
@@ -215,8 +216,13 @@ const strings = {
   {/*
     ---------------------------- Controls ----------------------------
     At `lg` this is the full-height sidebar it has always been. Below `lg`
-    only the search row stays in the flow; the layers list drops out of it
-    into #layer-drawer, an overlay hung under the search row.
+    only the search row stays in the flow, docked to the bottom of the
+    screen within thumb reach; the layers list drops out of it into
+    #layer-drawer, an overlay hung above the search row. `order-last` moves
+    it there without touching source order, so tab order stays the search
+    row first regardless of viewport — the same predictable order this panel
+    has always had at `lg`, not a mobile-only reversal a keyboard user has to
+    relearn.
 
     It was costing the map too much to keep. In the flow the list never
     compressed below about 256px — a search box and five group rows is what
@@ -227,9 +233,9 @@ const strings = {
   <aside
     id="controls"
     aria-label={t('layers')}
-    class="scroll-slim relative z-30 flex shrink-0 flex-col border-b border-ink-800 bg-ink-900 lg:w-84 lg:overflow-y-auto lg:border-r lg:border-b-0"
+    class="scroll-slim relative z-30 order-last flex shrink-0 flex-col border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] lg:order-0 lg:w-84 lg:overflow-y-auto lg:border-t-0 lg:border-r lg:shadow-none"
   >
-    <div class="border-b border-ink-800 p-3">
+    <div class="relative border-b border-ink-800 p-3">
       <div class="flex items-center gap-2">
         <label for="map-search" class="sr-only">{t('searchLabel')}</label>
         <input
@@ -259,17 +265,28 @@ const strings = {
           </span>
         </button>
       </div>
+      {/*
+        Below `lg` the row it belongs to is now the bottom-most thing on
+        screen, so there is no room under it to open into — it opens upward
+        instead, absolutely positioned against the relative row above rather
+        than pushed downward in the flow.
+      */}
       <ul
         id="search-results"
-        class="mt-1.5 hidden max-h-56 overflow-y-auto rounded-md border border-ink-700 bg-ink-850 text-sm"
+        class="absolute inset-x-3 bottom-full mb-1.5 hidden max-h-56 overflow-y-auto rounded-md border border-ink-700 bg-ink-850 text-sm shadow-[0_-4px_16px_rgb(0_0_0/0.35)] lg:static lg:inset-x-auto lg:bottom-auto lg:mb-0 lg:mt-1.5 lg:shadow-none"
         role="listbox"
       >
       </ul>
     </div>
 
+    {/*
+      Anchored to the search row's own edge, not the viewport's — below `lg`
+      that row is now at the bottom of the screen, so the drawer has to open
+      upward into the map to have anywhere to go at all.
+    */}
     <div
       id="layer-drawer"
-      class="scroll-slim absolute inset-x-0 top-full z-30 max-h-[70dvh] overflow-y-auto border-b border-ink-800 bg-ink-900 p-3 shadow-[0_8px_24px_rgb(0_0_0/0.35)] lg:static lg:max-h-none lg:overflow-visible lg:border-b-0 lg:shadow-none"
+      class="scroll-slim absolute inset-x-0 bottom-full z-30 max-h-[70dvh] overflow-y-auto border-t border-ink-800 bg-ink-900 p-3 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] lg:static lg:max-h-none lg:overflow-visible lg:border-t-0 lg:shadow-none"
     >
       <div class="mb-2 flex items-baseline justify-between">
         <h2 class="text-xs font-semibold tracking-wider text-ink-400 uppercase">{t('layers')}</h2>
@@ -969,7 +986,7 @@ const strings = {
     mapKeysEl.replaceChildren();
     for (const layer of layers) {
       const cc = layer.categoryColors;
-      if (!cc) continue;
+      if (!cc || cc.showOnMapKey === false) continue;
       const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${layer.id}"]`);
       if (!input?.checked) continue;
 
