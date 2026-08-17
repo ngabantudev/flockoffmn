@@ -254,12 +254,6 @@ const strings = {
           placeholder={t('searchPlaceholder')}
           class="min-w-0 flex-1 rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
         />
-        {/*
-          A closed drawer still has to report itself, the same rule the layer
-          sections already follow — the map opens with records on it and
-          something visible has to claim responsibility for them. Hence the
-          count rather than a bare icon.
-        */}
         <button
           id="layers-toggle"
           type="button"
@@ -268,10 +262,6 @@ const strings = {
           class="flex shrink-0 items-center gap-1.5 rounded-md border border-ink-700 bg-ink-850 px-2.5 py-2 text-sm text-ink-200 hover:text-ink-100 lg:hidden"
         >
           {t('layers')}
-          <span class="font-mono text-[11px] text-ink-400">
-            <span data-layers-on>0</span>
-            <span class="sr-only"> {t('layersOn')}</span>
-          </span>
         </button>
       </div>
       {/*
@@ -496,6 +486,11 @@ const strings = {
         wire up. Visual styling is Tailwind utilities in the markup; see
         global.css's `.panel-tab` rules for the one thing utilities can't
         express (the light-mode shadow swap) plus the chevron rotation.
+
+        Bare arrows, no visible label or count — matching wealldobettermn's
+        own pull tabs. Each still carries a real accessible name via a
+        visually-hidden (not aria-hidden) span, since the chevron itself is
+        aria-hidden and a button needs *some* text content to announce.
       */}
       <button
         id="layers-tab"
@@ -503,9 +498,9 @@ const strings = {
         hidden
         aria-expanded="true"
         aria-controls="controls"
-        class="panel-tab absolute top-1/2 left-0 z-20 hidden w-8 -translate-y-1/2 items-center gap-1.5 rounded-r-lg border border-l-0 border-ink-700 bg-ink-850 py-3 text-ink-300 shadow-[0_10px_30px_rgba(0,0,0,.5)] [writing-mode:vertical-rl] hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100 active:bg-ink-800 lg:flex"
+        class="panel-tab absolute top-1/2 left-0 z-20 hidden h-12 w-6 -translate-y-1/2 items-center justify-center rounded-r-lg border border-l-0 border-ink-700 bg-ink-850 text-ink-300 shadow-[0_10px_30px_rgba(0,0,0,.5)] hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100 active:bg-ink-800 lg:flex"
       >
-        <svg class="panel-tab-chevron h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg class="panel-tab-chevron h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="m6 9 6 6 6-6"
             stroke="currentColor"
@@ -514,11 +509,7 @@ const strings = {
             stroke-linejoin="round"
           />
         </svg>
-        <span class="text-xs normal-case">{t('layers')}</span>
-        <span class="font-mono text-[11px]" style="color:var(--color-accent)">
-          <span data-layers-on>0</span>
-        </span>
-        <span class="sr-only"> {t('layersOn')}</span>
+        <span class="sr-only">{t('layers')}</span>
       </button>
 
       <button
@@ -527,9 +518,9 @@ const strings = {
         hidden
         aria-expanded="true"
         aria-controls="detail-panel"
-        class="panel-tab absolute top-1/2 right-0 z-20 hidden w-8 -translate-y-1/2 items-center gap-1.5 rounded-l-lg border border-r-0 border-ink-700 bg-ink-850 py-3 text-ink-300 shadow-[0_10px_30px_rgba(0,0,0,.5)] [writing-mode:vertical-rl] hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100 active:bg-ink-800 xl:flex"
+        class="panel-tab absolute top-1/2 right-0 z-20 hidden h-12 w-6 -translate-y-1/2 items-center justify-center rounded-l-lg border border-r-0 border-ink-700 bg-ink-850 text-ink-300 shadow-[0_10px_30px_rgba(0,0,0,.5)] hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100 active:bg-ink-800 xl:flex"
       >
-        <svg class="panel-tab-chevron h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg class="panel-tab-chevron h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="m6 9 6 6 6-6"
             stroke="currentColor"
@@ -538,7 +529,7 @@ const strings = {
             stroke-linejoin="round"
           />
         </svg>
-        <span class="text-xs normal-case">{t('recordPanel')}</span>
+        <span class="sr-only">{t('recordPanel')}</span>
         {/* Populated in renderDetail with the selected record's name, so a
             screen reader's announcement of this button effectively reads
             "Record, {name}" rather than a bare "Record" no matter which
@@ -923,7 +914,7 @@ const strings = {
     const p = feature.properties;
     const attrs = p.attributes as Record<string, unknown>;
     const detailTabName = document.querySelector('[data-detail-tab-name]');
-    if (detailTabName) detailTabName.textContent = p.name;
+    if (detailTabName) detailTabName.textContent = `, ${p.name}`;
 
     const header = el('div', 'flex items-start justify-between gap-2 border-b border-ink-800 p-3');
     const titleWrap = el('div', 'min-w-0');
@@ -1228,11 +1219,6 @@ const strings = {
         dot?.classList.toggle('opacity-25', !toggle.checked);
       }
     });
-    // What the closed drawer reports on a phone — the same tally the group
-    // rows carry, summed, so the button is never a bare icon over a map full
-    // of records nothing on screen accounts for.
-    const total = document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]:checked').length;
-    for (const el of document.querySelectorAll('[data-layers-on]')) el.textContent = String(total);
     refreshMapKeys();
   }
 
