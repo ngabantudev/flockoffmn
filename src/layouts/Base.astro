@@ -32,7 +32,13 @@ const pageDescription = description ?? t('tagline');
       the flash this exists to prevent.
     -->
     <script is:inline src="/theme-init.js"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/*
+      viewport-fit=cover is what makes env(safe-area-inset-bottom) resolve to
+      a real number instead of 0 — needed below `lg` now that primary nav is
+      a bar fixed to the true bottom of the screen, past the iPhone home
+      indicator, on every page rather than just the map.
+    */}
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{pageTitle}</title>
     <meta name="description" content={pageDescription} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -52,8 +58,22 @@ const pageDescription = description ?? t('tagline');
   <body class={fullBleed ? 'h-full overflow-hidden' : ''}>
     <a href="#main" class="skip-link">{t('skipToContent')}</a>
 
-    <div class={fullBleed ? 'flex h-full flex-col' : 'flex min-h-dvh flex-col'}>
-      <Nav locale={locale} />
+    {/*
+      Below `lg`, primary nav is a bar docked to the bottom of the screen
+      (see Nav.astro) rather than the scrolling row at top. On a page that
+      scrolls, that bar is `fixed` and stays put regardless of scroll
+      position, so nothing else knows it's there — this padding is what
+      keeps the last thing on the page, footer included, from ending up
+      underneath it. The map page needs none of this: its own page doesn't
+      scroll, and Nav reorders into the same flex column that page already
+      manages instead (see Nav's own comment).
+    */}
+    <div
+      class={fullBleed
+        ? 'flex h-full flex-col'
+        : 'flex min-h-dvh flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0'}
+    >
+      <Nav locale={locale} fullBleed={fullBleed} />
       <main id="main" class={fullBleed ? 'relative min-h-0 flex-1' : 'flex-1'} tabindex="-1">
         <slot />
       </main>
