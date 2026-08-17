@@ -797,19 +797,25 @@
 .panel-tab-chevron {
   transition: transform 200ms ease-out;
 }
-/* Points toward the direction each tab collapses in when expanded, and
-   toward the map (the direction it will expand) when collapsed. */
-#layers-tab[aria-expanded='true'] .panel-tab-chevron {
-  transform: rotate(90deg);
+/*
+ * Points toward the direction each tab collapses in when expanded, and
+ * toward the map (the direction it will expand) when collapsed — mirrored
+ * for the two tabs, which `data-side` on the button (see MapView.astro)
+ * carries instead of hardcoding each tab's id twice below.
+ */
+.panel-tab[data-side='left'] {
+  --tab-open-rot: 90deg;
+  --tab-closed-rot: -90deg;
 }
-#layers-tab[aria-expanded='false'] .panel-tab-chevron {
-  transform: rotate(-90deg);
+.panel-tab[data-side='right'] {
+  --tab-open-rot: -90deg;
+  --tab-closed-rot: 90deg;
 }
-#detail-tab[aria-expanded='true'] .panel-tab-chevron {
-  transform: rotate(-90deg);
+.panel-tab[aria-expanded='true'] .panel-tab-chevron {
+  transform: rotate(var(--tab-open-rot));
 }
-#detail-tab[aria-expanded='false'] .panel-tab-chevron {
-  transform: rotate(90deg);
+.panel-tab[aria-expanded='false'] .panel-tab-chevron {
+  transform: rotate(var(--tab-closed-rot));
 }
 @media (prefers-reduced-motion: reduce) {
   .panel-tab,
