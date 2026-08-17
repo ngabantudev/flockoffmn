@@ -540,8 +540,23 @@ export class MapController {
   private containerResize: ResizeObserver | null = null;
   /** Fallback for browsers without ResizeObserver; same handler as containerResize. */
   private windowResizeHandler: (() => void) | null = null;
-  /** rAF handle so a burst of resize notifications during one animated collapse costs one resize, not one per frame. */
-  private resizeRaf: number | null = null;
+  /**
+   * Debounce timer, not an rAF handle. A CSS `width` transition (e.g. a
+   * collapsing sidebar) fires a ResizeObserver notification on essentially
+   * every animation frame while the box is still changing size — an rAF
+   * coalesces those down to one call per *frame*, which is still ~12 calls
+   * over a 200ms transition, and each map.resize() call reallocates and
+   * clears the WebGL drawing buffer, forcing a full repaint. That's a
+   * visible flash/blink on every collapse and expand. Debouncing instead —
+   * resetting the timer on every notification and only actually resizing
+   * once the container's size has been quiet for a beat — collapses that
+   * burst into the single resize the container's *settled* size actually
+   * needs, regardless of what caused the burst (an animated sidebar, a
+   * window drag, a devtools reflow). That's also why this lives here
+   * rather than as a `transitionend` hook tied to the sidebars' specific
+   * CSS class names: this class stays agnostic to what's animating it.
+   */
+  private resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -662,22 +677,27 @@ export class MapController {
       this.clearSelection();
     });
 
-    // See containerResize's comment above. rAF-coalesced so a CSS width
-    // transition firing many ResizeObserver notifications per animation
-    // costs at most one map.resize() per frame, not one per notification.
+    // See resizeSettleTimer's comment above — debounced, not rAF-coalesced,
+    // so a burst of notifications during an animated collapse settles into
+    // one resize instead of one per animation frame.
     const handleContainerResize = () => {
-      if (this.resizeRaf != null) return;
-      this.resizeRaf = requestAnimationFrame(() => {
-        this.resizeRaf = null;
+      if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
+      this.resizeSettleTimer = setTimeout(() => {
+        this.resizeSettleTimer = null;
         this.resizeIfNeeded();
-      });
+      }, 100);
     };
     if (typeof ResizeObserver !== 'undefined') {
       this.containerResize = new ResizeObserver(handleContainerResize);
       this.containerResize.observe(container);
+    } else {
+      // Fallback only where ResizeObserver itself is unsupported — a plain
+      // window resize already produces a ResizeObserver notification for
+      // this container in every browser that has one, so registering both
+      // unconditionally would fire the same handler twice per resize.
+      this.windowResizeHandler = handleContainerResize;
+      window.addEventListener('resize', this.windowResizeHandler);
     }
-    this.windowResizeHandler = handleContainerResize;
-    window.addEventListener('resize', this.windowResizeHandler);
   }
 
   /**
@@ -3436,7 +3456,7 @@ export class MapController {
     this.hoverPopup?.remove();
     this.containerResize?.disconnect();
     if (this.windowResizeHandler) window.removeEventListener('resize', this.windowResizeHandler);
-    if (this.resizeRaf != null) cancelAnimationFrame(this.resizeRaf);
+    if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
     // Explicit onRemove() for all four — map.remove() only tears down
     // controls added via map.addControl(), and these were deliberately
     // kept out of that list (see the constructor).

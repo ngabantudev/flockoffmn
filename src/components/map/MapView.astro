@@ -878,6 +878,21 @@ const strings = {
     detailTabEl.hidden = !open;
   }
 
+  // #controls only ever collapses (visually, via CSS) at >=1024px — see the
+  // `@media (width >= 64rem)` block in global.css. `inert` has no such
+  // built-in breakpoint awareness, so it has to be kept in sync by hand: a
+  // reader who collapses #controls on a desktop-width window and then
+  // narrows past 1024px (or loads the persisted flag on a phone) would
+  // otherwise get a search box and layers button that are unfocusable and
+  // invisible to a screen reader, with no visible tab below `lg` to undo it
+  // (#layers-tab is itself `hidden lg:flex`).
+  const CONTROLS_DOCK_QUERY = '(width >= 64rem)';
+  function syncControlsInert() {
+    controlsEl.inert =
+      controlsEl.hasAttribute('data-collapsed') && window.matchMedia(CONTROLS_DOCK_QUERY).matches;
+  }
+  window.matchMedia(CONTROLS_DOCK_QUERY).addEventListener('change', syncControlsInert);
+
   // Sync the tabs' chrome to whatever /panels-init.js already stamped on
   // #controls pre-paint (or to the untouched default, if it stamped
   // nothing), then reveal both — see NO-JS in the panels spec for why they
@@ -888,7 +903,7 @@ const strings = {
   {
     const startCollapsed = controlsEl.hasAttribute('data-collapsed');
     layersTabEl.setAttribute('aria-expanded', String(!startCollapsed));
-    controlsEl.inert = startCollapsed;
+    syncControlsInert();
     layersTabEl.hidden = false;
     setDetailOpen(false);
     controlsEl.setAttribute('data-ready', '');
@@ -905,11 +920,13 @@ const strings = {
     // panel open even if the reader had pulled it closed for a previous
     // one. Hover cards are separate popup elements that never touch
     // #detail-panel, so nothing here needs to guard against a mere hover
-    // reopening it.
+    // reopening it. Routed through setPanelCollapsed (not a direct
+    // attribute clear) so data-animating gets set the same as any other
+    // expand — otherwise the CSS min-width pin never applies here and the
+    // panel's freshly-rendered content squishes into place instead of
+    // sliding open like every other expand does.
     if (detailEl.hasAttribute('data-collapsed')) {
-      detailEl.removeAttribute('data-collapsed');
-      detailEl.inert = false;
-      detailTabEl.setAttribute('aria-expanded', 'true');
+      setPanelCollapsed(detailEl, detailTabEl, false);
     }
     const p = feature.properties;
     const attrs = p.attributes as Record<string, unknown>;
