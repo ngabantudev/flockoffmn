@@ -233,8 +233,17 @@ const strings = {
   <aside
     id="controls"
     aria-label={t('layers')}
-    class="scroll-slim relative z-30 order-last flex shrink-0 flex-col border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] lg:order-0 lg:w-84 lg:overflow-y-auto lg:border-t-0 lg:border-r lg:shadow-none"
+    class="scroll-slim relative z-30 order-last flex shrink-0 flex-col border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] lg:order-0 lg:overflow-x-hidden lg:overflow-y-auto lg:border-t-0 lg:border-r lg:shadow-none"
   >
+    {/*
+      Anti-flash: reads the persisted collapse state and stamps
+      data-collapsed on this element before first paint — see that file's
+      own comment for why it has to be the aside's first child rather than
+      a preceding sibling. Mirrors theme-init.js's mechanism exactly (same
+      localStorage try/catch, same is:inline external-file requirement per
+      this site's CSP).
+    */}
+    <script is:inline src="/panels-init.js"></script>
     <div class="relative border-b border-ink-800 p-3">
       <div class="flex items-center gap-2">
         <label for="map-search" class="sr-only">{t('searchLabel')}</label>
@@ -245,12 +254,6 @@ const strings = {
           placeholder={t('searchPlaceholder')}
           class="min-w-0 flex-1 rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
         />
-        {/*
-          A closed drawer still has to report itself, the same rule the layer
-          sections already follow — the map opens with records on it and
-          something visible has to claim responsibility for them. Hence the
-          count rather than a bare icon.
-        */}
         <button
           id="layers-toggle"
           type="button"
@@ -259,10 +262,6 @@ const strings = {
           class="flex shrink-0 items-center gap-1.5 rounded-md border border-ink-700 bg-ink-850 px-2.5 py-2 text-sm text-ink-200 hover:text-ink-100 lg:hidden"
         >
           {t('layers')}
-          <span class="font-mono text-[11px] text-ink-400">
-            <span data-layers-on>0</span>
-            <span class="sr-only"> {t('layersOn')}</span>
-          </span>
         </button>
       </div>
       {/*
@@ -475,6 +474,82 @@ const strings = {
       </div>
 
       {/*
+        Pull tabs for the two collapsible side panels — #controls (left)
+        and #detail-panel (right). Deliberately mounted here, inside the
+        map wrapper, rather than inside either panel: this box's edges are
+        the map's own current edges, so each tab is always drawn exactly
+        where the panel it controls currently meets the map, with no
+        transform math needed as either panel resizes. Both ship a bare
+        `hidden` attribute for a no-JS visitor (see the inline module
+        script's start-up section, which is what removes it) — undoing that
+        pre-emptively would show a dead button with nothing behind it to
+        wire up. Visual styling is Tailwind utilities in the markup; see
+        global.css's `.panel-tab` rules for the one thing utilities can't
+        express (the light-mode shadow swap) plus the chevron rotation.
+
+        Bare arrows, no visible label or count — matching wealldobettermn's
+        own pull tabs. Each still carries a real accessible name via a
+        visually-hidden (not aria-hidden) span, since the chevron itself is
+        aria-hidden and a button needs *some* text content to announce.
+
+        One template, not two hand-copied buttons — the two only ever
+        differed in which edge/panel/breakpoint they belong to, and
+        `data-side` (read by global.css's `.panel-tab[data-side=...]` rules)
+        is what lets the chevron-rotation CSS stay one pair of rules instead
+        of four hardcoded per-id ones.
+      */}
+      {
+        [
+          {
+            id: 'layers-tab',
+            side: 'left' as const,
+            controls: 'controls',
+            edge: 'left-0',
+            shape: 'rounded-r-lg border-l-0',
+            dock: 'lg:flex',
+            label: t('layers'),
+          },
+          {
+            id: 'detail-tab',
+            side: 'right' as const,
+            controls: 'detail-panel',
+            edge: 'right-0',
+            shape: 'rounded-l-lg border-r-0',
+            dock: 'xl:flex',
+            label: t('recordPanel'),
+          },
+        ].map((tab) => (
+          <button
+            id={tab.id}
+            type="button"
+            hidden
+            aria-expanded="true"
+            aria-controls={tab.controls}
+            data-side={tab.side}
+            class={`panel-tab absolute top-1/2 ${tab.edge} z-20 hidden h-12 w-6 -translate-y-1/2 items-center justify-center ${tab.shape} border border-ink-700 bg-ink-850 text-ink-300 shadow-[0_10px_30px_rgba(0,0,0,.5)] hover:border-ink-600 hover:bg-ink-800 hover:text-ink-100 active:bg-ink-800 ${tab.dock}`}
+          >
+            <svg class="panel-tab-chevron h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="m6 9 6 6 6-6"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="sr-only">{tab.label}</span>
+            {tab.id === 'detail-tab' && (
+              // Populated in renderDetail with the selected record's name, so a
+              // screen reader's announcement of this button effectively reads
+              // "Record, {name}" rather than a bare "Record" no matter which
+              // record is open.
+              <span data-detail-tab-name class="sr-only" />
+            )}
+          </button>
+        ))
+      }
+
+      {/*
         One wrapper for everything that lives in the map's bottom-right
         corner — matching wealldobettermn.org's own #map-corner-controls
         exactly (see its WardMap.tsx): the theme toggle, the reset-view
@@ -580,7 +655,7 @@ const strings = {
       id="detail-panel"
       aria-label={t('whatThisMeans')}
       hidden
-      class="scroll-slim absolute inset-x-0 bottom-0 z-20 max-h-[45%] shrink-0 overflow-y-auto rounded-t-xl border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] xl:static xl:max-h-none xl:w-[24rem] xl:rounded-none xl:border-t-0 xl:border-l xl:shadow-none"
+      class="scroll-slim absolute inset-x-0 bottom-0 z-20 max-h-[45%] shrink-0 overflow-x-hidden overflow-y-auto rounded-t-xl border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] xl:static xl:max-h-none xl:rounded-none xl:border-t-0 xl:border-l xl:shadow-none"
     >
     </aside>
   </div>
@@ -591,7 +666,7 @@ const strings = {
 <script is:inline type="application/json" id="act-path" set:html={JSON.stringify(localePath(locale, '/act'))} />
 
 <script>
-  import { MapController, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
+  import { MapController, REDUCED_MOTION, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { formatValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
   import { createElement } from 'lucide';
@@ -617,8 +692,15 @@ const strings = {
   const ACT_PATH = JSON.parse(document.getElementById('act-path')!.textContent!) as string;
 
   const mapEl = document.getElementById('map')!;
+  const controlsEl = document.getElementById('controls')!;
   const detailEl = document.getElementById('detail-panel')!;
   const statusEl = document.getElementById('map-status')!;
+  const layersTabEl = document.getElementById('layers-tab')!;
+  const detailTabEl = document.getElementById('detail-tab')!;
+  // Static descendant of detailTabEl, populated per-selection in
+  // renderDetail — scoped/cached here instead of a fresh
+  // document.querySelector on every single record selection.
+  const detailTabNameEl = detailTabEl.querySelector('[data-detail-tab-name]')!;
 
   // Keyed by plain string: lookups come from DOM datasets and event payloads,
   // which are untyped by definition.
@@ -725,14 +807,144 @@ const strings = {
   const fill = (template: string, values: Record<string, string | number>) =>
     template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 
+  /* ------------------------- Collapsible side panels ----------------------
+     #controls (docks >=1024px) and #detail-panel (docks >=1280px, only
+     while a record is selected) are independent, push-content panels — see
+     global.css for the geometry these attributes drive, and
+     mapController.ts's containerResize for what keeps the map's canvas in
+     sync with the reflow toggling either one causes. */
+
+  const MAP_LAYERS_COLLAPSED_KEY = 'mapLayersCollapsed';
+
+  /**
+   * Collapse/expand one panel and its pull tab together. Mirrors
+   * lib/theme.ts's localStorage try/catch pattern for the one persisted
+   * key this feature has — #controls only; see setDetailOpen's callers and
+   * the PERSISTENCE note below for why #detail-panel's own collapse state
+   * is deliberately never written to storage.
+   */
+  function setPanelCollapsed(
+    panelEl: HTMLElement,
+    tabEl: HTMLElement,
+    collapsed: boolean,
+    storageKey?: string,
+  ) {
+    // Under reduced motion there is no width transition, so `transitionend`
+    // for `width` never fires — setting data-animating here would leave it
+    // stuck forever. Skipping it also means visibility flips in the same
+    // frame as width instead of 200ms later (see global.css), which is
+    // what keeps this to one resize instead of one per would-be frame.
+    if (!REDUCED_MOTION) panelEl.setAttribute('data-animating', '');
+    panelEl.toggleAttribute('data-collapsed', collapsed);
+    tabEl.setAttribute('aria-expanded', String(!collapsed));
+    // Move focus off whatever's inside the panel before `inert` is applied
+    // — order matters: `inert` on an element that contains
+    // document.activeElement can strand focus with nowhere to go.
+    if (collapsed && panelEl.contains(document.activeElement)) tabEl.focus();
+    panelEl.inert = collapsed;
+    if (storageKey) {
+      try {
+        window.localStorage.setItem(storageKey, collapsed ? '1' : '0');
+      } catch {
+        // Storage can throw (e.g. Safari private browsing) — the toggle
+        // above still takes effect for this page view, it just won't
+        // persist.
+      }
+    }
+  }
+
+  // Attached once per panel, not once per toggle — clears data-animating
+  // only when the *width* transition (not some unrelated property) is what
+  // actually finished.
+  function clearAnimatingOnWidthEnd(panelEl: HTMLElement) {
+    panelEl.addEventListener('transitionend', (e) => {
+      if (e.propertyName === 'width') panelEl.removeAttribute('data-animating');
+    });
+  }
+  clearAnimatingOnWidthEnd(controlsEl);
+  clearAnimatingOnWidthEnd(detailEl);
+
+  // Both tabs wire up the same way — click toggles the panel's current
+  // collapsed state — differing only in whether the state persists.
+  function wireTab(panelEl: HTMLElement, tabEl: HTMLElement, storageKey?: string) {
+    tabEl.addEventListener('click', () => {
+      setPanelCollapsed(panelEl, tabEl, !panelEl.hasAttribute('data-collapsed'), storageKey);
+    });
+  }
+  wireTab(controlsEl, layersTabEl, MAP_LAYERS_COLLAPSED_KEY);
+  // No storageKey: #detail-panel's collapse state is intentionally
+  // in-memory only. It is hidden-until-selected, and every explicit
+  // selection force-expands it (see renderDetail below) — a persisted flag
+  // could never be observed by anyone, so there is deliberately only the
+  // one storage key, on #controls.
+  wireTab(detailEl, detailTabEl);
+
+  /**
+   * The single place that shows/hides #detail-panel and its pull tab
+   * together — routes every place that used to touch `detailEl.hidden`
+   * directly (the no-selection branch of renderDetail, its own end, the
+   * header close button, and the Escape key handler) through one function
+   * so the tab can never end up visible over a hidden panel or vice versa.
+   */
+  function setDetailOpen(open: boolean) {
+    detailEl.hidden = !open;
+    detailTabEl.hidden = !open;
+  }
+
+  // #controls only ever collapses (visually, via CSS) at >=1024px — see the
+  // `@media (width >= 64rem)` block in global.css. `inert` has no such
+  // built-in breakpoint awareness, so it has to be kept in sync by hand: a
+  // reader who collapses #controls on a desktop-width window and then
+  // narrows past 1024px (or loads the persisted flag on a phone) would
+  // otherwise get a search box and layers button that are unfocusable and
+  // invisible to a screen reader, with no visible tab below `lg` to undo it
+  // (#layers-tab is itself `hidden lg:flex`).
+  // One MediaQueryList, not a fresh one per call — matchMedia() allocates,
+  // and syncControlsInert runs on every dock/undock as well as at startup.
+  const controlsDockMql = window.matchMedia('(width >= 64rem)');
+  function syncControlsInert() {
+    controlsEl.inert = controlsEl.hasAttribute('data-collapsed') && controlsDockMql.matches;
+  }
+  controlsDockMql.addEventListener('change', syncControlsInert);
+
+  // Sync the tabs' chrome to whatever /panels-init.js already stamped on
+  // #controls pre-paint (or to the untouched default, if it stamped
+  // nothing), then reveal both — see NO-JS in the panels spec for why they
+  // ship `hidden` in the markup rather than being visible from the start.
+  // [data-ready] goes on last: it's what turns transitions on, and doing
+  // that after this sync is what keeps a restored collapsed state from
+  // visibly animating open on load.
+  {
+    const startCollapsed = controlsEl.hasAttribute('data-collapsed');
+    layersTabEl.setAttribute('aria-expanded', String(!startCollapsed));
+    syncControlsInert();
+    layersTabEl.hidden = false;
+    setDetailOpen(false);
+    controlsEl.setAttribute('data-ready', '');
+    detailEl.setAttribute('data-ready', '');
+  }
+
   function renderDetail(feature: LoadedFeature | null, layer?: ClientLayer) {
     detailEl.textContent = '';
     if (!feature || !layer) {
-      detailEl.hidden = true;
+      setDetailOpen(false);
       return;
+    }
+    // An explicit selection is a request to see the record — force the
+    // panel open even if the reader had pulled it closed for a previous
+    // one. Hover cards are separate popup elements that never touch
+    // #detail-panel, so nothing here needs to guard against a mere hover
+    // reopening it. Routed through setPanelCollapsed (not a direct
+    // attribute clear) so data-animating gets set the same as any other
+    // expand — otherwise the CSS min-width pin never applies here and the
+    // panel's freshly-rendered content squishes into place instead of
+    // sliding open like every other expand does.
+    if (detailEl.hasAttribute('data-collapsed')) {
+      setPanelCollapsed(detailEl, detailTabEl, false);
     }
     const p = feature.properties;
     const attrs = p.attributes as Record<string, unknown>;
+    detailTabNameEl.textContent = `, ${p.name}`;
 
     const header = el('div', 'flex items-start justify-between gap-2 border-b border-ink-800 p-3');
     const titleWrap = el('div', 'min-w-0');
@@ -765,11 +977,19 @@ const strings = {
       );
     }
 
-    const close = el('button', 'shrink-0 rounded p-1 text-ink-400 hover:text-ink-100', '✕');
+    // h-9 w-9, not the p-1 the glyph alone needs — this is the detail
+    // panel's most-tapped mobile control (every selection opens the sheet
+    // this closes), and a ~24px hit area is the WCAG AA floor, not a
+    // comfortable one. Matches #close-compare's own h-8/w-8 sizing choice.
+    const close = el(
+      'button',
+      'flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-400 hover:text-ink-100',
+      '✕',
+    );
     close.setAttribute('type', 'button');
     close.setAttribute('aria-label', S.closePanel);
     close.addEventListener('click', () => {
-      detailEl.hidden = true;
+      setDetailOpen(false);
       (document.getElementById('map-search') as HTMLElement)?.focus();
     });
     header.append(titleWrap, close);
@@ -955,7 +1175,7 @@ const strings = {
     body.append(prov);
 
     detailEl.append(header, body);
-    detailEl.hidden = false;
+    setDetailOpen(true);
     detailEl.scrollTop = 0;
   }
 
@@ -1037,11 +1257,6 @@ const strings = {
         dot?.classList.toggle('opacity-25', !toggle.checked);
       }
     });
-    // What the closed drawer reports on a phone — the same tally the group
-    // rows carry, summed, so the button is never a bare icon over a map full
-    // of records nothing on screen accounts for.
-    const total = document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]:checked').length;
-    for (const el of document.querySelectorAll('[data-layers-on]')) el.textContent = String(total);
     refreshMapKeys();
   }
 
@@ -1311,7 +1526,7 @@ const strings = {
       layersToggle.focus();
       return;
     }
-    if (!detailEl.hidden) detailEl.hidden = true;
+    if (!detailEl.hidden) setDetailOpen(false);
   });
 
   /* ------------------------------ Start-up ------------------------------ */

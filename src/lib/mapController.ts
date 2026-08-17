@@ -175,7 +175,10 @@ export interface ControllerEvents {
   resetViewLabel?: string;
 }
 
-const REDUCED_MOTION =
+// Exported so MapView.astro's own panel-collapse toggle (setPanelCollapsed)
+// can skip animating under reduced motion using this exact detection rather
+// than re-querying matchMedia ad hoc in a second place.
+export const REDUCED_MOTION =
   typeof window !== 'undefined' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -527,6 +530,36 @@ export class MapController {
   private navControl: maplibregl.NavigationControl | null = null;
   private attribControl: maplibregl.AttributionControl | null = null;
   private attribObserver: MutationObserver | null = null;
+  /**
+   * Keeps MapLibre's canvas in sync with the container's real size whenever
+   * something *other* than this class resizes it — the collapsible side
+   * panels (#controls, #detail-panel in MapView.astro) push-resize the
+   * map's box by animating a CSS `width`, and nothing else here calls
+   * map.resize() for that. See resizeIfNeeded() and the constructor.
+   *
+   * One disposer, not a separate nullable field per watch mechanism
+   * (ResizeObserver vs. the window-resize fallback) — the constructor picks
+   * exactly one of the two and stores how to tear down *that* one; destroy()
+   * doesn't need to know which.
+   */
+  private disposeContainerWatch: (() => void) | null = null;
+  /**
+   * Debounce timer, not an rAF handle. A CSS `width` transition (e.g. a
+   * collapsing sidebar) fires a ResizeObserver notification on essentially
+   * every animation frame while the box is still changing size — an rAF
+   * coalesces those down to one call per *frame*, which is still ~12 calls
+   * over a 200ms transition, and each map.resize() call reallocates and
+   * clears the WebGL drawing buffer, forcing a full repaint. That's a
+   * visible flash/blink on every collapse and expand. Debouncing instead —
+   * resetting the timer on every notification and only actually resizing
+   * once the container's size has been quiet for a beat — collapses that
+   * burst into the single resize the container's *settled* size actually
+   * needs, regardless of what caused the burst (an animated sidebar, a
+   * window drag, a devtools reflow). That's also why this lives here
+   * rather than as a `transitionend` hook tied to the sidebars' specific
+   * CSS class names: this class stays agnostic to what's animating it.
+   */
+  private resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -646,6 +679,29 @@ export class MapController {
       if (this.map.queryRenderedFeatures(e.point, { layers: ids }).length) return;
       this.clearSelection();
     });
+
+    // See resizeSettleTimer's comment above — debounced, not rAF-coalesced,
+    // so a burst of notifications during an animated collapse settles into
+    // one resize instead of one per animation frame.
+    const handleContainerResize = () => {
+      if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
+      this.resizeSettleTimer = setTimeout(() => {
+        this.resizeSettleTimer = null;
+        this.resizeIfNeeded();
+      }, 100);
+    };
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(handleContainerResize);
+      observer.observe(container);
+      this.disposeContainerWatch = () => observer.disconnect();
+    } else {
+      // Fallback only where ResizeObserver itself is unsupported — a plain
+      // window resize already produces a ResizeObserver notification for
+      // this container in every browser that has one, so registering both
+      // unconditionally would fire the same handler twice per resize.
+      window.addEventListener('resize', handleContainerResize);
+      this.disposeContainerWatch = () => window.removeEventListener('resize', handleContainerResize);
+    }
   }
 
   /**
@@ -2821,6 +2877,29 @@ export class MapController {
     this.events.onCounts?.(counts);
   }
 
+  /**
+   * `map.resize()` with a no-op fast path: MapLibre's own resize() has none
+   * — it forces a synchronous layout, reassigns canvas.width (which
+   * reallocates and clears the WebGL drawing buffer, forcing a full repaint
+   * of every layer), and fires a movestart/move/moveend cascade regardless
+   * of whether the container's size actually changed. Shared by
+   * focusFeature (called on every selection — the overwhelmingly common
+   * case is an already-open panel whose size didn't just change) and the
+   * containerResize/window-resize handler set up in the constructor, which
+   * fires on every collapsible-panel toggle whether or not it changed the
+   * map's own box.
+   */
+  private resizeIfNeeded() {
+    const canvas = this.map.getCanvas();
+    const container = this.map.getContainer();
+    if (
+      canvas.clientWidth !== container.clientWidth ||
+      canvas.clientHeight !== container.clientHeight
+    ) {
+      this.map.resize();
+    }
+  }
+
   /** Centre on a feature and open its detail. Used by the record list and search. */
   focusFeature(layerId: string, featureId: string) {
     const feature = this.featureById(layerId, featureId);
@@ -2854,14 +2933,7 @@ export class MapController {
     // dimension (it floats over the map; see setOverlay), so this correctly
     // does nothing there and fitPadding does the work instead.
     this.events.onSelect?.(feature, layer);
-    const canvas = this.map.getCanvas();
-    const container = this.map.getContainer();
-    if (
-      canvas.clientWidth !== container.clientWidth ||
-      canvas.clientHeight !== container.clientHeight
-    ) {
-      this.map.resize();
-    }
+    this.resizeIfNeeded();
 
     const duration = REDUCED_MOTION ? 0 : 500;
     if (feature.geometry.type === 'Point') {
@@ -3386,6 +3458,8 @@ export class MapController {
     this.cancelThrow();
     this.popup?.remove();
     this.hoverPopup?.remove();
+    this.disposeContainerWatch?.();
+    if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
     // Explicit onRemove() for all four — map.remove() only tears down
     // controls added via map.addControl(), and these were deliberately
     // kept out of that list (see the constructor).
