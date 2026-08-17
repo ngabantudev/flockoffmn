@@ -175,7 +175,10 @@ export interface ControllerEvents {
   resetViewLabel?: string;
 }
 
-const REDUCED_MOTION =
+// Exported so MapView.astro's own panel-collapse toggle (setPanelCollapsed)
+// can skip animating under reduced motion using this exact detection rather
+// than re-querying matchMedia ad hoc in a second place.
+export const REDUCED_MOTION =
   typeof window !== 'undefined' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -527,6 +530,18 @@ export class MapController {
   private navControl: maplibregl.NavigationControl | null = null;
   private attribControl: maplibregl.AttributionControl | null = null;
   private attribObserver: MutationObserver | null = null;
+  /**
+   * Keeps MapLibre's canvas in sync with the container's real size whenever
+   * something *other* than this class resizes it — the collapsible side
+   * panels (#controls, #detail-panel in MapView.astro) push-resize the
+   * map's box by animating a CSS `width`, and nothing else here calls
+   * map.resize() for that. See resizeIfNeeded() and the constructor.
+   */
+  private containerResize: ResizeObserver | null = null;
+  /** Fallback for browsers without ResizeObserver; same handler as containerResize. */
+  private windowResizeHandler: (() => void) | null = null;
+  /** rAF handle so a burst of resize notifications during one animated collapse costs one resize, not one per frame. */
+  private resizeRaf: number | null = null;
 
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
@@ -646,6 +661,23 @@ export class MapController {
       if (this.map.queryRenderedFeatures(e.point, { layers: ids }).length) return;
       this.clearSelection();
     });
+
+    // See containerResize's comment above. rAF-coalesced so a CSS width
+    // transition firing many ResizeObserver notifications per animation
+    // costs at most one map.resize() per frame, not one per notification.
+    const handleContainerResize = () => {
+      if (this.resizeRaf != null) return;
+      this.resizeRaf = requestAnimationFrame(() => {
+        this.resizeRaf = null;
+        this.resizeIfNeeded();
+      });
+    };
+    if (typeof ResizeObserver !== 'undefined') {
+      this.containerResize = new ResizeObserver(handleContainerResize);
+      this.containerResize.observe(container);
+    }
+    this.windowResizeHandler = handleContainerResize;
+    window.addEventListener('resize', this.windowResizeHandler);
   }
 
   /**
@@ -2821,6 +2853,29 @@ export class MapController {
     this.events.onCounts?.(counts);
   }
 
+  /**
+   * `map.resize()` with a no-op fast path: MapLibre's own resize() has none
+   * — it forces a synchronous layout, reassigns canvas.width (which
+   * reallocates and clears the WebGL drawing buffer, forcing a full repaint
+   * of every layer), and fires a movestart/move/moveend cascade regardless
+   * of whether the container's size actually changed. Shared by
+   * focusFeature (called on every selection — the overwhelmingly common
+   * case is an already-open panel whose size didn't just change) and the
+   * containerResize/window-resize handler set up in the constructor, which
+   * fires on every collapsible-panel toggle whether or not it changed the
+   * map's own box.
+   */
+  private resizeIfNeeded() {
+    const canvas = this.map.getCanvas();
+    const container = this.map.getContainer();
+    if (
+      canvas.clientWidth !== container.clientWidth ||
+      canvas.clientHeight !== container.clientHeight
+    ) {
+      this.map.resize();
+    }
+  }
+
   /** Centre on a feature and open its detail. Used by the record list and search. */
   focusFeature(layerId: string, featureId: string) {
     const feature = this.featureById(layerId, featureId);
@@ -2854,14 +2909,7 @@ export class MapController {
     // dimension (it floats over the map; see setOverlay), so this correctly
     // does nothing there and fitPadding does the work instead.
     this.events.onSelect?.(feature, layer);
-    const canvas = this.map.getCanvas();
-    const container = this.map.getContainer();
-    if (
-      canvas.clientWidth !== container.clientWidth ||
-      canvas.clientHeight !== container.clientHeight
-    ) {
-      this.map.resize();
-    }
+    this.resizeIfNeeded();
 
     const duration = REDUCED_MOTION ? 0 : 500;
     if (feature.geometry.type === 'Point') {
@@ -3386,6 +3434,9 @@ export class MapController {
     this.cancelThrow();
     this.popup?.remove();
     this.hoverPopup?.remove();
+    this.containerResize?.disconnect();
+    if (this.windowResizeHandler) window.removeEventListener('resize', this.windowResizeHandler);
+    if (this.resizeRaf != null) cancelAnimationFrame(this.resizeRaf);
     // Explicit onRemove() for all four — map.remove() only tears down
     // controls added via map.addControl(), and these were deliberately
     // kept out of that list (see the constructor).

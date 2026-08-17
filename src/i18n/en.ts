@@ -59,6 +59,11 @@ export const en: Record<string, string> = {
   resetView: 'Reset to Minnesota',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
+  // Label for the pull tab that collapses/expands the detail panel — see
+  // #detail-tab in MapView.astro. Not reused from `whatThisMeans` or any
+  // existing detail-panel string: this one names the panel itself, not its
+  // content.
+  recordPanel: 'Record',
 
   // Search / near me
   searchPlaceholder: 'Search a city, township, county, or agency',
