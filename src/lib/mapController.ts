@@ -536,10 +536,13 @@ export class MapController {
    * panels (#controls, #detail-panel in MapView.astro) push-resize the
    * map's box by animating a CSS `width`, and nothing else here calls
    * map.resize() for that. See resizeIfNeeded() and the constructor.
+   *
+   * One disposer, not a separate nullable field per watch mechanism
+   * (ResizeObserver vs. the window-resize fallback) — the constructor picks
+   * exactly one of the two and stores how to tear down *that* one; destroy()
+   * doesn't need to know which.
    */
-  private containerResize: ResizeObserver | null = null;
-  /** Fallback for browsers without ResizeObserver; same handler as containerResize. */
-  private windowResizeHandler: (() => void) | null = null;
+  private disposeContainerWatch: (() => void) | null = null;
   /**
    * Debounce timer, not an rAF handle. A CSS `width` transition (e.g. a
    * collapsing sidebar) fires a ResizeObserver notification on essentially
@@ -688,15 +691,16 @@ export class MapController {
       }, 100);
     };
     if (typeof ResizeObserver !== 'undefined') {
-      this.containerResize = new ResizeObserver(handleContainerResize);
-      this.containerResize.observe(container);
+      const observer = new ResizeObserver(handleContainerResize);
+      observer.observe(container);
+      this.disposeContainerWatch = () => observer.disconnect();
     } else {
       // Fallback only where ResizeObserver itself is unsupported — a plain
       // window resize already produces a ResizeObserver notification for
       // this container in every browser that has one, so registering both
       // unconditionally would fire the same handler twice per resize.
-      this.windowResizeHandler = handleContainerResize;
-      window.addEventListener('resize', this.windowResizeHandler);
+      window.addEventListener('resize', handleContainerResize);
+      this.disposeContainerWatch = () => window.removeEventListener('resize', handleContainerResize);
     }
   }
 
@@ -3454,8 +3458,7 @@ export class MapController {
     this.cancelThrow();
     this.popup?.remove();
     this.hoverPopup?.remove();
-    this.containerResize?.disconnect();
-    if (this.windowResizeHandler) window.removeEventListener('resize', this.windowResizeHandler);
+    this.disposeContainerWatch?.();
     if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
     // Explicit onRemove() for all four — map.remove() only tears down
     // controls added via map.addControl(), and these were deliberately
