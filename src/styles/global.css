@@ -323,6 +323,11 @@
 :root {
   --map-ctrl-edge: 10px;
   --map-ctrl-gap: 10px;
+  /* #controls' and #detail-panel's docked width — see the collapsible
+     side-panel rules below, and their `width` utility classes' removal in
+     MapView.astro (these replace `lg:w-84` and `xl:w-[24rem]`). */
+  --controls-w: 21rem;
+  --detail-w: 24rem;
 }
 #map-corner-controls {
   position: absolute;
@@ -665,4 +670,164 @@
 .scroll-slim::-webkit-scrollbar-thumb {
   background: var(--color-ink-600);
   border-radius: 4px;
+}
+
+/*
+ * Collapsible side panels — #controls (docks at >=1024px) and #detail-panel
+ * (docks at >=1280px, and only while a record is selected). Both are
+ * push-content flex siblings of the map (`width` animates to 0, nothing is
+ * translated off-canvas or overlaid), so the map's own box genuinely
+ * shrinks and grows with them — see mapController.ts's containerResize,
+ * which is what keeps MapLibre's canvas in sync with that reflow, and
+ * MapView.astro's setPanelCollapsed/setDetailOpen for the state that drives
+ * the attributes these rules key off.
+ *
+ * Below each panel's own dock breakpoint none of this applies at all — the
+ * mobile drawer (#layer-drawer) and the detail sheet's own pre-existing
+ * `xl:` rules are untouched, which is why every geometry rule here is
+ * nested inside the matching `width >=` query rather than left unscoped.
+ */
+#controls,
+#detail-panel {
+  /* No transition until the init script stamps [data-ready] (after any
+     persisted collapsed state has already been restored — see
+     /panels-init.js and MapView.astro's inline module script), so a
+     collapsed #controls restored from localStorage never visibly animates
+     open on load. */
+  transition: none;
+}
+
+@media (width >= 64rem) {
+  #controls {
+    width: var(--controls-w);
+  }
+  #controls[data-ready] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s;
+  }
+  /* Collapsing only: visibility flips once width finishes collapsing, not
+     immediately, so the panel leaves the tab order / a11y tree at the same
+     moment it actually disappears — the fix that works even where `inert`
+     itself is unsupported. Expanding is the unconditional rule above:
+     visibility returns immediately so content is present the instant width
+     starts opening. */
+  #controls[data-ready][data-collapsed] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s linear 200ms;
+  }
+  #controls[data-collapsed] {
+    width: 0;
+    border-right-width: 0;
+    visibility: hidden;
+  }
+  /* Children pinned to the panel's full width only while collapsing or
+     collapsed — never permanently: #controls carries a scroll-slim
+     scrollbar (not no-scrollbar), and a permanent min-width pin clips a few
+     pixels of it on some platforms. Pinned width is what makes the content
+     clip/slide during the animation instead of reflowing/squishing. */
+  #controls[data-collapsed] > *,
+  #controls[data-animating] > * {
+    min-width: var(--controls-w);
+  }
+}
+
+@media (width >= 80rem) {
+  #detail-panel {
+    width: var(--detail-w);
+  }
+  #detail-panel[data-ready] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s;
+  }
+  #detail-panel[data-ready][data-collapsed] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s linear 200ms;
+  }
+  #detail-panel[data-collapsed] {
+    width: 0;
+    border-left-width: 0;
+    visibility: hidden;
+  }
+  #detail-panel[data-collapsed] > *,
+  #detail-panel[data-animating] > * {
+    min-width: var(--detail-w);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+   * With no transition, visibility flips in the same frame as width
+   * instead of 200ms later, which is also what makes `transitionend` never
+   * fire for `width` here — see MapView.astro's setPanelCollapsed, which
+   * skips setting [data-animating] under reduced motion for exactly that
+   * reason (an event that will never come would otherwise leave the
+   * attribute stuck).
+   */
+  #controls,
+  #controls[data-ready],
+  #controls[data-ready][data-collapsed],
+  #detail-panel,
+  #detail-panel[data-ready],
+  #detail-panel[data-ready][data-collapsed] {
+    transition: none;
+  }
+}
+
+/*
+ * Pull tabs — #layers-tab and #detail-tab in MapView.astro. Both live
+ * inside the map wrapper, not the panels themselves, so they're always
+ * drawn at the map box's current edge with no transform math needed as the
+ * panels resize. Positioning/sizing/color is Tailwind utilities on the
+ * element in the markup; only what Tailwind can't express as a utility —
+ * the theme-aware shadow swap (same pattern as .theme-control-panel above),
+ * the literal transition timing, and the chevron rotation — lives here.
+ */
+.panel-tab {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+:root[data-theme='light'] .panel-tab {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+.panel-tab-chevron {
+  transition: transform 200ms ease-out;
+}
+/* Points toward the direction each tab collapses in when expanded, and
+   toward the map (the direction it will expand) when collapsed. */
+#layers-tab[aria-expanded='true'] .panel-tab-chevron {
+  transform: rotate(90deg);
+}
+#layers-tab[aria-expanded='false'] .panel-tab-chevron {
+  transform: rotate(-90deg);
+}
+#detail-tab[aria-expanded='true'] .panel-tab-chevron {
+  transform: rotate(-90deg);
+}
+#detail-tab[aria-expanded='false'] .panel-tab-chevron {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel-tab,
+  .panel-tab-chevron {
+    transition: none;
+  }
+}
+
+/*
+ * NO-JS: both tabs ship `hidden` in the markup (see MapView.astro) and are
+ * revealed by the init script only once it actually runs. The Tailwind
+ * `hidden lg:flex` / `hidden xl:flex` utility classes already on the same
+ * element share one specificity tier with the `[hidden]` attribute, so
+ * without this override a desktop-width no-JS visitor could see the button
+ * anyway once the viewport crosses lg/xl — a dead control, which is exactly
+ * what shipping `hidden` in the markup was meant to prevent.
+ */
+#layers-tab[hidden],
+#detail-tab[hidden] {
+  display: none !important;
 }
