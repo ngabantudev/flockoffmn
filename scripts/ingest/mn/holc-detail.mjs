@@ -102,8 +102,8 @@ import {
   without,
   log,
   slugId,
-} from './lib/util.mjs';
-import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
+} from '../lib/util.mjs';
+import { findContaining, representativePoint } from '../../../src/lib/geo.mjs';
 
 const SERVICE =
   'https://arcgis.metc.state.mn.us/data1/rest/services/planning/Other_Plan_Areas_Public/FeatureServer/0';

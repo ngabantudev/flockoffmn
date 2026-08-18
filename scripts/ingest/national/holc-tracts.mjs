@@ -53,7 +53,7 @@
  * present-day condition follows from a 1930s line (§1c).
  */
 
-import { fetchWithRetry, writeReference, text, log } from './lib/util.mjs';
+import { fetchWithRetry, writeReference, text, log } from '../lib/util.mjs';
 
 const SOURCE =
   'https://raw.githubusercontent.com/americanpanorama/mapping-inequality-census-crosswalk/main/MIv3Areas_2020TractCrosswalk.geojson';

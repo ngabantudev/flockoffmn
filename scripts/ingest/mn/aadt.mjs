@@ -25,7 +25,7 @@ import {
   normaliseCounty,
   thinRing,
   log,
-} from './lib/util.mjs';
+} from '../lib/util.mjs';
 
 const SERVICE =
   'https://webgis.dot.state.mn.us/65agsf1/rest/services/sdw_incdt/AADT_SEGMENT_CURRENT/FeatureServer/0';

@@ -28,15 +28,15 @@
  * comparable paper behind it to anchor the other direction).
  */
 
-import { loadPublicJson, writeLayer, writeReference, log } from './lib/util.mjs';
-import { haversineMeters } from '../../src/lib/geo.mjs';
+import { loadPublicJson, writeLayer, writeReference, log } from '../lib/util.mjs';
+import { haversineMeters } from '../../../src/lib/geo.mjs';
 
 const THRESHOLD_M = 50;
 
 async function main() {
   const [osm, bca] = await Promise.all([
-    loadPublicJson('alpr.geojson', { runFirst: 'node scripts/ingest/alpr.mjs' }),
-    loadPublicJson('alpr-reported.geojson', { runFirst: 'node scripts/ingest/alpr-reported.mjs' }),
+    loadPublicJson('alpr.geojson', { runFirst: 'node scripts/ingest/national/alpr.mjs' }),
+    loadPublicJson('alpr-reported.geojson', { runFirst: 'node scripts/ingest/mn/alpr-reported.mjs' }),
   ]);
 
   if (!osm?.features?.length) throw new Error('alpr.geojson missing or empty — run alpr.mjs first');

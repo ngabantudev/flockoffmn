@@ -32,10 +32,15 @@ source fixes it for every project built on that data, not just this one.
 ## Suggesting a new source or layer
 
 Use the **New source** issue template. A layer is added with exactly two
-files — an ingest script under `scripts/ingest/` and one entry in
+files — an ingest script under `scripts/ingest/national/` or
+`scripts/ingest/mn/` (see [PORTING.md](PORTING.md) for which) and one entry in
 [`src/layers/registry.ts`](src/layers/registry.ts) — so a good source
 suggestion is one we can act on directly: a link to the primary record, what
 agency or body publishes it, and how often it updates.
+
+Forking this project for a state or country other than Minnesota? PORTING.md
+is written for you specifically — it's a layer-by-layer map of what ports as
+configuration, what's a template to adapt, and what to skip.
 
 ## The one rule for all contributions
 

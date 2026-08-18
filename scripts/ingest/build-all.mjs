@@ -10,6 +10,17 @@
  * volunteer-run Overpass mirrors and federal web servers that go down without
  * notice; when one is unavailable we keep the previous file on disk and report
  * the failure rather than replacing good data with nothing.
+ *
+ * Scripts live in two folders — see PORTING.md for the full explanation:
+ *
+ *  - national/  Works for any US state via STATE_FIPS/STATE_USPS/STATE_ISO
+ *               env vars (see .env.example). Start here on a fork.
+ *  - mn/        Built against a Minnesota-specific statute, agency, or
+ *               dataset (MESB, the BCA's § 13.824 filings, MnDOT, MPCA's
+ *               CI-MAP, Mapping Prejudice's MN county coverage, and the
+ *               hand-curated public-records vendor-contracts file). A fork
+ *               either adapts these to its own state's equivalent — if one
+ *               exists — or drops them; nothing in national/ depends on them.
  */
 
 import { spawn } from 'node:child_process';
@@ -19,55 +30,60 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const STEPS = [
-  { name: 'counties', script: 'counties.mjs', required: true },
+  { name: 'counties', script: 'national/counties.mjs', required: true },
   // Needs the county reference to name each subdivision's county, so it
   // follows counties and precedes nothing — no layer depends on it. It is the
   // index that turns a point into the government that has to answer for it.
-  { name: 'jurisdictions', script: 'jurisdictions.mjs' },
-  { name: '287g', script: 'agencies-287g.mjs' },
+  { name: 'jurisdictions', script: 'national/jurisdictions.mjs' },
+  { name: '287g', script: 'national/agencies-287g.mjs' },
   // Reference only, not a layer — writes the BCA cross-reference
   // agency-jurisdictions.mjs reads next. See that script's own comment.
-  { name: 'agencies-lpr-bca', script: 'agencies-lpr-bca.mjs' },
+  // Minnesota-specific — see mn/README.md.
+  { name: 'agencies-lpr-bca', script: 'mn/agencies-lpr-bca.mjs' },
   // Needs the county reference to tag each polygon's county, and the BCA
   // reference just above to cross-reference reported ALPR use.
-  { name: 'agency-jurisdictions', script: 'agency-jurisdictions.mjs' },
+  { name: 'agency-jurisdictions', script: 'mn/agency-jurisdictions.mjs' },
   // Needs agency-jurisdictions.geojson to join each building to its agency's
   // canonical name — see that script's own comment on why it runs after.
-  { name: 'agency-buildings', script: 'agency-buildings.mjs' },
+  { name: 'agency-buildings', script: 'mn/agency-buildings.mjs' },
   // Needs agency-buildings.geojson to resolve each documented contract's
   // location and jurisdiction; reads its own mirrored PDFs/CSVs under
   // public/data/docs, not the network, so it has nothing else to wait on.
-  { name: 'vendor-contracts', script: 'vendor-contracts.mjs' },
+  { name: 'vendor-contracts', script: 'mn/vendor-contracts.mjs' },
   // Needs the BCA reference for the filings, the jurisdictions and buildings
   // to anchor each agency's road search, so it follows all three.
-  { name: 'alpr-reported', script: 'alpr-reported.mjs' },
-  { name: 'alpr', script: 'alpr.mjs' },
+  { name: 'alpr-reported', script: 'mn/alpr-reported.mjs' },
+  { name: 'alpr', script: 'national/alpr.mjs' },
   // Needs both alpr.geojson and alpr-reported.geojson finished — it reads
   // them back off disk and re-stamps both with the "cross-listed corner"
   // proximity match. See its own header for what that match does and does
-  // not claim.
-  { name: 'alpr-cross-source', script: 'alpr-cross-source.mjs' },
-  { name: 'detention', script: 'detention.mjs' },
-  { name: 'data-centers', script: 'data-centers.mjs' },
+  // not claim. Lives in mn/ rather than national/ because it is only ever
+  // meaningful alongside mn/alpr-reported.mjs's BCA filings.
+  { name: 'alpr-cross-source', script: 'mn/alpr-cross-source.mjs' },
+  { name: 'detention', script: 'national/detention.mjs' },
+  { name: 'data-centers', script: 'national/data-centers.mjs' },
   // Independent of every other layer: MnDOT names the county on each segment,
   // so this needs the county reference only to resolve a GEOID from that name.
-  { name: 'aadt', script: 'aadt.mjs' },
+  { name: 'aadt', script: 'mn/aadt.mjs' },
   // Reference only, not a layer — the edge between the 1930s graded areas and
   // 2020 census tracts, which redlining.mjs reads next to put each area's
   // tracts and coverage shares on it. See that script's own header for why it
   // stopped being a drawn layer.
-  { name: 'holc-tracts', script: 'holc-tracts.mjs' },
-  { name: 'redlining', script: 'redlining.mjs' },
-  { name: 'covenants', script: 'covenants.mjs' },
-  { name: 'ej-cumulative', script: 'ej-cumulative.mjs' },
+  { name: 'holc-tracts', script: 'national/holc-tracts.mjs' },
+  { name: 'redlining', script: 'national/redlining.mjs' },
+  { name: 'covenants', script: 'mn/covenants.mjs' },
+  { name: 'ej-cumulative', script: 'mn/ej-cumulative.mjs' },
   // Reads ej-cumulative.geojson for its 2020 tract geometry and GEOIDs rather
-  // than refetching tract boundaries a second time. See its own header.
-  { name: 'demographics', script: 'demographics.mjs' },
+  // than refetching tract boundaries a second time — see demographics.mjs's
+  // own header. That makes this "national" script depend, as shipped, on a
+  // Minnesota-specific reference file; a fork without an ej-cumulative
+  // equivalent needs to point demographics.mjs at TIGERweb directly instead.
+  { name: 'demographics', script: 'national/demographics.mjs' },
   // Last of the historical layers, because it reads two of the others:
   // redlining.geojson for the area label drawn on each block and for the
   // agreement check it measures every run, and ej-cumulative.geojson for the
   // 2020 tract boundaries each block resolves against. See its own header.
-  { name: 'holc-detail', script: 'holc-detail.mjs' },
+  { name: 'holc-detail', script: 'mn/holc-detail.mjs' },
 ];
 
 function run(script) {
