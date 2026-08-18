@@ -71,28 +71,15 @@
  * sourced fill rather than an interpolated guess. Same reasoning as that
  * file's own provenance comment — a brand color is still a claim, so it's
  * cross-checked against source rather than eyeballed off a screenshot.
- *
- * ink-950/900/850/800/700/600 and --color-well are the one deliberate
- * departure from that source match: mn.gov's cool, near-neutral grays read
- * as stark white on an actual screen once --color-well (elevated cards)
- * sits at pure #ffffff next to a #f0f0f0 canvas — direct user feedback,
- * 2026-08-17. Warmed a few points toward eggshell (a soft yellow-white,
- * not full cream) at each of those six steps, same lightness ordering and
- * same relative spacing wealldobettermn's own ramp uses, so the "off-
- * white" the comment above already promised actually reads as one. Text
- * (ink-400 through ink-100), accent, and warn are untouched — the
- * complaint was about surfaces being too bright, not about legibility or
- * the sourced brand colors, and warming near-black body text would just
- * be a second, unrelated change riding along with this one.
  */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
-    --color-ink-950: #f2efe6;
-    --color-ink-900: #f5f2e9;
-    --color-ink-850: #eae4d2;
-    --color-ink-800: #e2dac4;
-    --color-ink-700: #d4c9ac;
-    --color-ink-600: #8c8371;
+    --color-ink-950: #f0f0f0;
+    --color-ink-900: #f2f2f2;
+    --color-ink-850: #e9e9e9;
+    --color-ink-800: #e5e5e5;
+    --color-ink-700: #d9d9d9;
+    --color-ink-600: #828282;
     --color-ink-400: #666666;
     --color-ink-300: #555555;
     --color-ink-200: #333333;
@@ -102,20 +89,20 @@
     --color-warn: #b45309;
 
     --color-on-accent: #ffffff;
-    --color-well: #faf8f0;
-    --color-ctrl-attrib-bg: rgba(250, 248, 240, 0.85);
+    --color-well: #ffffff;
+    --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
 
     color-scheme: light;
   }
 }
 
 :root[data-theme='light'] {
-  --color-ink-950: #f2efe6;
-  --color-ink-900: #f5f2e9;
-  --color-ink-850: #eae4d2;
-  --color-ink-800: #e2dac4;
-  --color-ink-700: #d4c9ac;
-  --color-ink-600: #8c8371;
+  --color-ink-950: #f0f0f0;
+  --color-ink-900: #f2f2f2;
+  --color-ink-850: #e9e9e9;
+  --color-ink-800: #e5e5e5;
+  --color-ink-700: #d9d9d9;
+  --color-ink-600: #828282;
   --color-ink-400: #666666;
   --color-ink-300: #555555;
   --color-ink-200: #333333;
@@ -125,8 +112,8 @@
   --color-warn: #b45309;
 
   --color-on-accent: #ffffff;
-  --color-well: #faf8f0;
-  --color-ctrl-attrib-bg: rgba(250, 248, 240, 0.85);
+  --color-well: #ffffff;
+  --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
 
   color-scheme: light;
 }
