@@ -118,6 +118,49 @@
   color-scheme: light;
 }
 
+/*
+ * The flag band — `.nav-band`, applied to Nav.astro's top `<header>` and
+ * bottom mobile `<nav>`, light mode only. wealldobettermn.org's own header
+ * (`SiteHeader.tsx`'s `.band` class, src/app/globals.css) doesn't carry the
+ * mn.gov neutral palette above at all — it's the three colors the State
+ * Emblems Redesign Commission published for the 2024 Minnesota flag: Night
+ * Sky Blue (Pantone 648, the field), Water Blue (Pantone 305), and the
+ * white North Star. Same source, same three colors, no fourth one invented
+ * for a hover or a border — Water Blue at 32% over the field stands in for
+ * both (`.band`'s own --hair), and the row-hover fill is Night Sky Blue
+ * stepped one shade lighter (`.band`'s own --hover, #0d4673).
+ *
+ * Dark mode is deliberately untouched — no override exists below the
+ * `@media`/`[data-theme='light']` selectors above, so the header just
+ * falls through to the ordinary ink-900/ink-800 neutral every other dark
+ * panel uses. That matches wealldobettermn's own `.dark .band`, which
+ * drops the flag rather than giving dark mode a second, invented palette.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .nav-band {
+    --color-ink-900: #002d5d;
+    --color-ink-850: #0d4673;
+    --color-ink-800: #52c9e852;
+    --color-ink-400: #ffffffa3;
+    --color-ink-300: #ffffffb8;
+    --color-ink-100: #ffffff;
+
+    --color-accent: #52c9e8;
+    --color-on-accent: #002d5d;
+  }
+}
+
+:root[data-theme='light'] .nav-band {
+  --color-ink-900: #002d5d;
+  --color-ink-850: #0d4673;
+  --color-ink-800: #52c9e852;
+  --color-ink-300: #ffffffb8;
+  --color-ink-100: #ffffff;
+
+  --color-accent: #52c9e8;
+  --color-on-accent: #002d5d;
+}
+
 :root[data-theme='dark'] {
   --color-ink-950: #0a0c10;
   --color-ink-900: #11141b;
