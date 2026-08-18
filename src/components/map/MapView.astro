@@ -1230,7 +1230,14 @@ const strings = {
           ? fill(nearMissText, { d: String(attrs.crossSourceNearMissMeters ?? '') })
           : layer.crossSource.unmatched;
       cross.append(el('p', 'text-xs leading-relaxed text-ink-200', body_));
-      if (matched && attrs.crossSourceContested) {
+      // Not gated on `matched`: the losing filing in a contested pairing
+      // between two different agencies never gets its own crossSourceSiteId
+      // (see alpr-cross-source.mjs pass 2 — assignment always goes to the
+      // *nearer* filing), so a matched-only guard here would silently drop
+      // the contested flag for that record and show it the plain
+      // "no record nearby" `unmatched` copy instead — which is false, since
+      // a record within 50 m does exist, it just lost the tie.
+      if (attrs.crossSourceContested) {
         cross.append(el('p', 'mt-1.5 text-xs leading-relaxed text-warn', layer.crossSource.contested));
       }
       if (matched && attrs.crossSourceAnchorAmbiguous) {

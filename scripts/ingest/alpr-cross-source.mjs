@@ -28,9 +28,7 @@
  * comparable paper behind it to anchor the other direction).
  */
 
-import { writeFile, mkdir } from 'node:fs/promises';
-import path from 'node:path';
-import { loadPublicJson, writeLayer, log, PUBLIC_DATA } from './lib/util.mjs';
+import { loadPublicJson, writeLayer, writeReference, log } from './lib/util.mjs';
 import { haversineMeters } from '../../src/lib/geo.mjs';
 
 const THRESHOLD_M = 50;
@@ -273,48 +271,37 @@ async function main() {
     layer: 'alpr',
     provenance: osm.metadata,
     knownGaps: osm.metadata.knownGaps,
-    features: osmFeatures.map((f) => ({
-      ...f,
-      properties: { ...f.properties, attributes: f.properties.attributes },
-    })),
+    features: osmFeatures,
   });
 
   await writeLayer('alpr-reported', {
     layer: 'alpr_reported',
     provenance: bca.metadata,
     knownGaps: bca.metadata.knownGaps,
-    features: bcaFeatures.map((f) => ({
-      ...f,
-      properties: { ...f.properties, attributes: f.properties.attributes },
-    })),
+    features: bcaFeatures,
   });
 
-  await mkdir(path.join(PUBLIC_DATA, 'reference'), { recursive: true });
-  await writeFile(
-    path.join(PUBLIC_DATA, 'reference', 'alpr-cross-source.json'),
-    JSON.stringify(
-      {
-        metadata: {
-          note: 'Proximity match this project computed between two independent ALPR records — not a document connecting them. See CLAUDE.md §1c.',
-          thresholdMeters: THRESHOLD_M,
-          osmLastUpdated: osm.metadata.lastUpdated,
-          bcaLastUpdated: bca.metadata.lastUpdated,
-          runAt: new Date().toISOString(),
-          bcaMatchedCount,
-          osmMatchedCount,
-          bcaTotal: bca.features.length,
-          osmTotal: osm.features.length,
-        },
-        sites: siteEntries,
-        discardedSameAgencyPairings: discardedSameAgency,
-        contestedPairings: contestedPairs,
-        nearMisses: nearMissEntries,
-      },
-      null,
-      2,
-    ),
-  );
-  log('alpr-cross-source', 'wrote public/data/reference/alpr-cross-source.json');
+  // writeReference (not a hand-rolled mkdir+writeFile) so a run that finds
+  // the same matches as last time leaves the file's `lastUpdated` alone —
+  // see that helper's own comment on why a restamped clock makes the weekly
+  // refresh's `git diff --quiet` check permanently noisy. No `runAt` field:
+  // writeReference already owns that clock.
+  await writeReference('reference/alpr-cross-source.json', {
+    metadata: {
+      note: 'Proximity match this project computed between two independent ALPR records — not a document connecting them. See CLAUDE.md §1c.',
+      thresholdMeters: THRESHOLD_M,
+      osmLastUpdated: osm.metadata.lastUpdated,
+      bcaLastUpdated: bca.metadata.lastUpdated,
+      bcaMatchedCount,
+      osmMatchedCount,
+      bcaTotal: bca.features.length,
+      osmTotal: osm.features.length,
+    },
+    sites: siteEntries,
+    discardedSameAgencyPairings: discardedSameAgency,
+    contestedPairings: contestedPairs,
+    nearMisses: nearMissEntries,
+  });
 }
 
 main().catch((err) => {
