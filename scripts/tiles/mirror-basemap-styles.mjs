@@ -27,7 +27,7 @@
  * public/fonts/README.md's own vendoring convention. No R2, no wrangler, no
  * Cloudflare credentials needed to run this: the only external request this
  * script makes is the one-time mirror fetch, same shape as any
- * scripts/ingest/**/*.mjs run.
+ * any scripts/ingest ingest script run.
  *
  * What this drops, deliberately: the `ne2_shaded` Natural Earth hillshade
  * source `liberty` alone references (a raster-opacity effect visible only
