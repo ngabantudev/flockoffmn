@@ -254,6 +254,12 @@ const strings = {
           placeholder={t('searchPlaceholder')}
           class="min-w-0 flex-1 rounded-md border border-ink-700 bg-ink-850 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent focus:outline-none"
         />
+        {/*
+          A closed drawer still has to report itself, the same rule the layer
+          sections already follow — the map opens with records on it and
+          something visible has to claim responsibility for them. Hence the
+          count rather than a bare icon.
+        */}
         <button
           id="layers-toggle"
           type="button"
@@ -262,6 +268,10 @@ const strings = {
           class="flex shrink-0 items-center gap-1.5 rounded-md border border-ink-700 bg-ink-850 px-2.5 py-2 text-sm text-ink-200 hover:text-ink-100 lg:hidden"
         >
           {t('layers')}
+          <span class="font-mono text-[11px] text-ink-400">
+            <span data-layers-on>0</span>
+            <span class="sr-only"> {t('layersOn')}</span>
+          </span>
         </button>
       </div>
       {/*
@@ -907,6 +917,19 @@ const strings = {
   }
   controlsDockMql.addEventListener('change', syncControlsInert);
 
+  // #detail-panel only ever collapses (visually, via CSS) at >=1280px — see
+  // the `@media (width >= 80rem)` block in global.css. Same breakpoint gap
+  // as #controls above: collapse the panel at >=1280px, then narrow below
+  // 1280px, and without this the panel renders visibly again (CSS no
+  // longer hides it) but stays `inert` — unfocusable and invisible to a
+  // screen reader, with no tab below `xl` to undo it (#detail-tab is
+  // itself `hidden xl:flex`).
+  const detailDockMql = window.matchMedia('(width >= 80rem)');
+  function syncDetailInert() {
+    detailEl.inert = detailEl.hasAttribute('data-collapsed') && detailDockMql.matches;
+  }
+  detailDockMql.addEventListener('change', syncDetailInert);
+
   // Sync the tabs' chrome to whatever /panels-init.js already stamped on
   // #controls pre-paint (or to the untouched default, if it stamped
   // nothing), then reveal both — see NO-JS in the panels spec for why they
@@ -918,6 +941,7 @@ const strings = {
     const startCollapsed = controlsEl.hasAttribute('data-collapsed');
     layersTabEl.setAttribute('aria-expanded', String(!startCollapsed));
     syncControlsInert();
+    syncDetailInert();
     layersTabEl.hidden = false;
     setDetailOpen(false);
     controlsEl.setAttribute('data-ready', '');
@@ -1257,6 +1281,11 @@ const strings = {
         dot?.classList.toggle('opacity-25', !toggle.checked);
       }
     });
+    // What the closed drawer reports on a phone — the same tally the group
+    // rows carry, summed, so the button is never a bare icon over a map full
+    // of records nothing on screen accounts for.
+    const total = document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]:checked').length;
+    for (const el of document.querySelectorAll('[data-layers-on]')) el.textContent = String(total);
     refreshMapKeys();
   }
 
