@@ -65,9 +65,12 @@
  * transparency site, which in turn matches the State of Minnesota's own
  * web portal (mn.gov's core.css): off-white nav levels (#f0f0f0/#f2f2f2,
  * hover #e6e6e6), striped-row gray (#e9e9e9), body type (#1b1b1b/#333333),
- * and link blue (#0062b2). Same reasoning as that file's own provenance
- * comment — a brand color is still a claim, so it's cross-checked against
- * source rather than eyeballed off a screenshot.
+ * and link blue (#0062b2). ink-600 (#828282) is that file's
+ * `--sidebar-hover` — the only token there that lands in the gap between
+ * the hairline gray (ink-700) and muted text (ink-400), so it's the
+ * sourced fill rather than an interpolated guess. Same reasoning as that
+ * file's own provenance comment — a brand color is still a claim, so it's
+ * cross-checked against source rather than eyeballed off a screenshot.
  */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
@@ -76,7 +79,7 @@
     --color-ink-850: #e9e9e9;
     --color-ink-800: #e5e5e5;
     --color-ink-700: #d9d9d9;
-    --color-ink-600: #a3a3a3;
+    --color-ink-600: #828282;
     --color-ink-400: #666666;
     --color-ink-300: #555555;
     --color-ink-200: #333333;
@@ -99,7 +102,7 @@
   --color-ink-850: #e9e9e9;
   --color-ink-800: #e5e5e5;
   --color-ink-700: #d9d9d9;
-  --color-ink-600: #a3a3a3;
+  --color-ink-600: #828282;
   --color-ink-400: #666666;
   --color-ink-300: #555555;
   --color-ink-200: #333333;
