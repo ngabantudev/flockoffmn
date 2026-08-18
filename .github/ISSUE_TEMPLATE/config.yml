@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Something else / general discussion
+    url: https://github.com/ngabantudev/flockoffmn/discussions
+    about: For open-ended questions or data-gap discussion that isn't a specific correction or source suggestion.

@@ -1,0 +1,39 @@
+name: Data correction
+description: A location, date, contract, or other record on the map is wrong, stale, or misread.
+title: "[correction]: "
+labels: ["data-correction"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for checking our work. Before filing: if this is about a **camera location**, it usually belongs upstream on [OpenStreetMap](https://www.openstreetmap.org) — our ingest re-queries OSM on every refresh, so a fix there fixes it here automatically, and everywhere else built on the same data. Still file it here if you're not sure which is which; we'll help sort it out.
+
+        Please do not include names, badge numbers, plate numbers, or any other person-level detail in this report — see [AGENTS.md §1b](../../AGENTS.md). Reports describing a person instead of a record will be rejected.
+  - type: input
+    id: layer
+    attributes:
+      label: Which layer or page?
+      placeholder: e.g. "287(g) agreements", "ALPR cameras", "detention facilities"
+    validations:
+      required: true
+  - type: input
+    id: feature
+    attributes:
+      label: Which specific record?
+      description: A feature name, address, agency, or a link to the detail panel.
+    validations:
+      required: true
+  - type: textarea
+    id: whats-wrong
+    attributes:
+      label: What's wrong, and what should it say instead?
+      description: Be as specific as you can — wrong coordinates, an expired contract, a dead source link, a misread document.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source for the correction
+      description: A link or citation for the correct information (a document, a public records response, an official page). "No source, just flagging it looks wrong" is fine too.
+    validations:
+      required: false

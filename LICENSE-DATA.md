@@ -1,8 +1,8 @@
 # Data licensing
 
-The **code** in this repository is MIT (see `LICENSE`). Data is a separate
-question, and it is not uniform. Read this before redistributing anything from
-`public/data/`.
+The **code** in this repository is AGPL-3.0 (see `LICENSE`). Data is a
+separate question, and it is not uniform. Read this before redistributing
+anything from `public/data/`.
 
 ## What we license
 
@@ -23,6 +23,8 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 |---|---|---|---|
 | ALPR cameras | `alpr.geojson` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) | **Share-alike.** Derived databases must stay open under ODbL. Attribution to OpenStreetMap contributors required. |
 | 287(g) agreements | `287g.geojson` | Public domain (US federal work) | Free for any use. |
+| Documented vendor contracts | `vendor-contracts.geojson` | Public government data (MGDPA, Minn. Stat. ch. 13) | Free for any use. Records obtained via public records request and mirrored under `public/data/docs/`; attribute the releasing agency and MuckRock. |
+| Roadway traffic volume (AADT) | `aadt.geojson` | No formal licence published; acknowledgement of MnDOT requested | Attribute the Minnesota Department of Transportation. Geometry generalised by MnDOT's own server before we touch it — see the layer's `knownGaps`. |
 | Detention facilities | `detention.geojson` | Public domain (US federal work) | Free for any use. |
 | Police & sheriff jurisdictions | `agency-jurisdictions.geojson` | No formal licence published; MESB disclaims warranty | Attribute MESB. Metro region only — see the layer's `knownGaps`. Carries a cross-referenced fact from a second Tier 1 source (BCA) as an attribute; see below. |
 | Police & sheriff buildings | `agency-buildings.geojson` | No formal licence published; U-Spatial/USGS disclaim warranty | Attribute U-Spatial (University of Minnesota) and USGS. |
@@ -48,6 +50,9 @@ Reproduce these when redistributing the corresponding layer:
 
 - **Cameras** — © OpenStreetMap contributors, ODbL. Mapped by DeFlock volunteers.
 - **287(g), detention** — U.S. Immigration and Customs Enforcement.
+- **Documented vendor contracts** — the releasing agency (e.g. University of
+  Minnesota Police Department), records obtained via MuckRock.
+- **Roadway traffic volume** — Minnesota Department of Transportation.
 - **Police & sheriff jurisdictions** — Metropolitan Emergency Services Board,
   MESB Region PSAPs and Emergency Response Agencies. ALPR-reporting status
   cross-referenced from the Minnesota Bureau of Criminal Apprehension.
