@@ -667,9 +667,16 @@ export class MapController {
     // construction — the record list is the accessible primary interface
     // and never depended on tiles.
     this.map.on('error', (e) => {
-      const err = e as unknown as { sourceId?: string };
+      const err = e as unknown as { sourceId?: string; error?: Error };
       if (err.sourceId === 'basemap') {
         this.events.onError?.('basemap', 'Base map unavailable — layers and search still work.');
+      } else if (import.meta.env.DEV) {
+        // Every other 'error' here is MapLibre refusing something silently —
+        // most often a bad paint expression, which drops the whole layer
+        // with no exception and no other signal (see pointStrokeWidthExpr's
+        // own comment for the one that cost real debugging time before this
+        // line existed). Dev-only: a build has no console to read anyway.
+        console.error('[mapController] map error:', err.error?.message ?? err);
       }
     });
 
@@ -829,21 +836,36 @@ export class MapController {
    * A point layer's `circle-stroke-width`, doubled (roughly) for a matched
    * record and stepped up more modestly for a near miss, on the same
    * emergeFrom→pointsFrom fade every stroke already uses — neither ring may
-   * ever appear before `pointsFrom` any more than the base stroke does, so
-   * all three branches share the same two zoom anchors and differ only in
-   * the value they reach.
+   * ever appear before `pointsFrom` any more than the base stroke does.
+   *
+   * The `case` has to sit *inside* the `interpolate` as the value at the
+   * `pointsFrom` stop, not the other way around: the style spec allows only
+   * one zoom-based interpolate/step per expression, so three separate
+   * `interpolate(zoom, …)` branches under one outer `case` — which is what
+   * this looked like before — fails validation and silently drops the whole
+   * layer (MapLibre logs "Only one zoom-based … subexpression may be used"
+   * and emits an `error` event instead of adding it; nothing in the console
+   * says "layer not added"). One interpolate, data-driven at its stop.
    */
   private pointStrokeWidthExpr(tier: {
     emergeFrom: number;
     pointsFrom: number;
   }): maplibregl.ExpressionSpecification {
     return [
-      'case',
-      ['!=', ['get', 'crossSourceSiteId'], null],
-      ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 2.2],
-      ['==', ['get', 'crossSourceNearMiss'], true],
-      ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 1.6],
-      ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 1.2],
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      tier.emergeFrom,
+      0,
+      tier.pointsFrom,
+      [
+        'case',
+        ['!=', ['get', 'crossSourceSiteId'], null],
+        2.2,
+        ['==', ['get', 'crossSourceNearMiss'], true],
+        1.6,
+        1.2,
+      ],
     ] as unknown as maplibregl.ExpressionSpecification;
   }
 
@@ -2246,8 +2268,6 @@ export class MapController {
          * two can never disagree about when the ring is allowed to appear.
          */
         'circle-stroke-width': this.pointStrokeWidthExpr(tier),
-        // See pointStrokeOpacityExpr's own comment — the ring's opacity, not
-        // the dot's; `circle-opacity` just below is unrelated and untouched.
         'circle-stroke-opacity': this.pointStrokeOpacityExpr(),
         /*
          * Opacity follows the same two-branch shape as radius, just above.
