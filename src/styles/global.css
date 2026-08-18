@@ -594,6 +594,19 @@
 :root[data-theme='light'] .theme-control-panel {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
 }
+/*
+ * The `[data-theme='light']` rule above only covers an explicit choice —
+ * missed the OS-preference case every other theme-aware rule in this file
+ * handles (see `.maplibregl-ctrl-group button .maplibregl-ctrl-icon`
+ * above), so an OS-light visitor who'd never touched the toggle got every
+ * ink token switched but this one shadow left at the dark rule's 50%-black
+ * weight.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .theme-control-panel {
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  }
+}
 .theme-control-section + .theme-control-section {
   margin-top: 0.625rem;
   padding-top: 0.625rem;
@@ -848,6 +861,12 @@
 }
 :root[data-theme='light'] .panel-tab {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+/* Same OS-preference gap as .theme-control-panel above — see that comment. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .panel-tab {
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  }
 }
 .panel-tab-chevron {
   transition: transform 200ms ease-out;
