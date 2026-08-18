@@ -166,6 +166,9 @@ export const en: Record<string, string> = {
   limitations: 'Limitations',
   county: 'County',
   viewRecord: 'View the original record',
+  crossListedCorner: 'Cross-listed corner',
+  crossListedNearMissLegend:
+    'Near miss — a filing had a volunteer-mapped device nearby, but it counted as a match on a closer filing by the same agency instead.',
 
   confidenceConfirmed: 'Confirmed — documented in an official public record.',
   confidenceReported: 'Reported — from permit filings or secondary records that may be out of date.',

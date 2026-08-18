@@ -94,6 +94,9 @@ export const es: Record<string, string> = {
   limitations: 'Limitaciones',
   county: 'Condado',
   viewRecord: 'Ver el registro original',
+  crossListedCorner: 'Esquina de doble registro',
+  crossListedNearMissLegend:
+    'Casi acierto: una declaración tenía cerca un dispositivo mapeado por voluntarios, pero se contó como coincidencia de una declaración más cercana de la misma agencia.',
 
   // Quién responde aquí
   whoAnswersTitle: 'Quién le debe respuesta aquí',

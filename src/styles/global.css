@@ -43,6 +43,18 @@
   --color-accent: #f5a524;
   --color-warn: #fbbf24;
 
+  /*
+   * The "cross-listed corner" ring — see mapController.ts's crossSource
+   * stroke logic and the layer panel's static legend swatch in
+   * MapView.astro. A brass ring, deliberately distinct from every layer's
+   * own identity colour above: it marks a relationship between two
+   * records, not a category of either one, so it needed a colour neither
+   * layer already owns. Dark default here; the light-mode overrides below
+   * use the darker #6b5414 for contrast against a light background — the
+   * same pairing the map's own basemap-dependent ring uses.
+   */
+  --color-cross-source-ring: #b98f3f;
+
   /* On-accent text and recessed/well surfaces are distinct roles from
      ink-950 even though they share its dark-mode hex value — see the light
      overrides below, where they diverge. */
@@ -86,7 +98,14 @@
     --color-ink-100: #1b1b1b;
 
     --color-accent: #0062b2;
-    --color-warn: #b45309;
+    /* #b45309 (the old --color-accent's hex, reused here) is 4.14:1 against
+       this block's own --color-ink-850 (#e9e9e9) — under WCAG AA's 4.5:1 for
+       normal text, and this token paints the cross-listed-corner "contested"
+       note and the confidence line at 11px. #92400e is the pre-palette-swap
+       --color-warn value; it clears 5.8:1 against the new ink-850. */
+    --color-warn: #92400e;
+
+    --color-cross-source-ring: #6b5414;
 
     --color-on-accent: #ffffff;
     --color-well: #ffffff;
@@ -109,7 +128,10 @@
   --color-ink-100: #1b1b1b;
 
   --color-accent: #0062b2;
-  --color-warn: #b45309;
+  /* See the OS-preference block above for the contrast math. */
+  --color-warn: #92400e;
+
+  --color-cross-source-ring: #6b5414;
 
   --color-on-accent: #ffffff;
   --color-well: #ffffff;
@@ -154,6 +176,13 @@
   --color-ink-900: #002d5d;
   --color-ink-850: #0d4673;
   --color-ink-800: #52c9e852;
+  /* Missing here previously: fell through to the base :root's dark-oriented
+     --color-ink-400 (#7c8798, ~3.8:1 on this navy band) instead of this
+     override — see the @media block above, which sets it correctly for the
+     OS-preference case (#ffffffa3, ~13.7:1). An explicit light-theme choice
+     got noticeably harder-to-read muted text in the nav band than an
+     OS-preference light visitor got for free. */
+  --color-ink-400: #ffffffa3;
   --color-ink-300: #ffffffb8;
   --color-ink-100: #ffffff;
 
@@ -175,6 +204,8 @@
 
   --color-accent: #f5a524;
   --color-warn: #fbbf24;
+
+  --color-cross-source-ring: #b98f3f;
 
   --color-on-accent: #0a0c10;
   --color-well: #0a0c10;
