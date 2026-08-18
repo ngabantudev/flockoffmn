@@ -1,8 +1,8 @@
 # Data licensing
 
-The **code** in this repository is MIT (see `LICENSE`). Data is a separate
-question, and it is not uniform. Read this before redistributing anything from
-`public/data/`.
+The **code** in this repository is AGPL-3.0 (see `LICENSE`). Data is a
+separate question, and it is not uniform. Read this before redistributing
+anything from `public/data/`.
 
 ## What we license
 
