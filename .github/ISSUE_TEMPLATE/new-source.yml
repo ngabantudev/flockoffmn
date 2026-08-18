@@ -1,0 +1,44 @@
+name: New source or layer suggestion
+description: Point us at a primary record, document, or dataset we're missing.
+title: "[source]: "
+labels: ["new-source"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A layer is added to this project as exactly two files — an ingest script and a registry entry (see [AGENTS.md §2](../../AGENTS.md)) — so the more concrete this is, the more directly actionable it is.
+
+        Per [AGENTS.md's source tiering](../../AGENTS.md), government primary records (contracts, MOAs, dockets, permits, roll calls) are the strongest kind of lead. Journalism and advocacy trackers are welcome too, but they become `knownGaps` entries rather than map pins until a primary source confirms them.
+  - type: input
+    id: what
+    attributes:
+      label: What does this source document?
+      placeholder: e.g. "County board votes on ICE 287(g) renewals", "vendor contracts for ALPR systems"
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Link to the source
+      description: The primary record, the portal, or the agency page where it's published.
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: What kind of source is it?
+      options:
+        - Government primary record (contract, MOA, docket, permit, roll call)
+        - Federal record or regulated filing
+        - First-party non-governmental (vendor docs, operator-submitted registry)
+        - Journalism, advocacy tracker, or aggregator
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else useful?
+      description: How often it updates, whether it needs a records request, known gaps or caveats, related layers it should connect to.
+    validations:
+      required: false

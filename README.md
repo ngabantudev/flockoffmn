@@ -4,7 +4,7 @@
 
 **A free, open-source map of the systems watching your neighbourhood — built by the community, for the community. Starting in Minnesota.**
 
-[![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
+[![Code: AGPL v3](https://img.shields.io/badge/code-AGPLv3-blue.svg)](LICENSE)
 [![Data: CC BY 4.0](https://img.shields.io/badge/data-CC%20BY%204.0-green.svg)](LICENSE-DATA.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing--we-need-you)
 
@@ -46,25 +46,40 @@ This is a public good, not a product.
   your address, the search runs *in your browser* against a place list shipped
   with the page — nothing you type is sent anywhere, because there's nowhere
   for it to go.
-- **Open code (MIT), open data (CC BY 4.0),** and every dataset rebuildable
+- **Open code (AGPL v3), open data (CC BY 4.0),** and every dataset rebuildable
   from scratch with no API keys. If you don't trust our numbers, regenerate
   them yourself in one command.
 
 ## What's on the map
 
+14 layers, grouped into enforcement, surveillance, infrastructure, and
+historical/environmental context:
+
 | Layer | MN records | Where it comes from |
 |---|---:|---|
 | **287(g) agency agreements** | 10 | ICE's own published list (2,179 nationally) |
-| **ALPR Cameras (Community Reported)** | ~1,400 | OpenStreetMap, mapped by volunteers |
+| **Documented vendor contracts** | 9 | MGDPA public records requests (e.g. UMPD's Flock Safety contract, via MuckRock) |
+| **Police & sheriff jurisdictions** | 99 | Metropolitan Emergency Services Board (10-county metro) |
+| **Police & sheriff buildings** | 505 | U-Spatial (Univ. of Minnesota) / USGS, statewide |
+| **ALPR Cameras (Community Reported)** | ~1,430 | OpenStreetMap, mapped by volunteers |
+| **ALPR Cameras (BCA Reported)** | 276 | Agencies' own filings under Minn. Stat. § 13.824 |
+| **Roadway traffic volume (AADT)** | ~40,300 segments | MnDOT — context for reading where cameras sit relative to traffic |
 | **Redlining zones (HOLC)** | 168 | Mapping Inequality, Univ. of Richmond |
-| **ICE-contract detention facilities** | 5 | ICE Over-72-Hour Facility List |
-| **Data centers** | 20 | FracTracker Alliance FOIA records |
-| **Racial covenants (aggregate)** | 2,567 cells | Mapping Prejudice, Univ. of Minnesota — 34,741 covenants across 8 counties |
+| **HOLC appraisal, block by block** | ~11,600 | Metropolitan Council retrace of the same HOLC sheet at building scale |
+| **Racial covenants** | ~34,700 parcels, 8 counties | Mapping Prejudice, Univ. of Minnesota |
+| **ICE-contract detention facilities** | 6 | ICE Over-72-Hour Facility List |
+| **Data centers** | ~100 | FracTracker Alliance + three other trackers, plus community campaigns |
+| **Cumulative environmental stressors** | 1,505 census tracts | MPCA's draft CI-MAP (Minn. Stat. § 116.065) |
+| **Demographics** (Black share, Latinx share, poverty rate) | 1,505 census tracts | U.S. Census Bureau, American Community Survey |
 
-The covenants layer is a deliberate aggregate: each record is a fixed 250-metre
-cell reporting how many covenants were recorded inside it, never a row for one
-property. The per-property data is Mapping Prejudice's to publish, not ours to
-copy.
+The covenants layer ships one record per parcel a covenant was written onto —
+the deed year, city and clause text, with the buyer/seller names, present-day
+address and parcel number deliberately never ingested. Zoomed out past a city,
+the map draws those parcels as a shaded grid cell purely so the count reads at
+a distance; that cell is a drawing convenience, not a record — it isn't
+searchable or clickable, and disappears once you're close enough to see the
+real lots underneath. The per-property research data belongs to Mapping
+Prejudice to publish, not to us to copy.
 
 Plus the features that make it usable: a **"near me"** view that answers every
 one of those questions about a single place at once, filters and search, a
@@ -90,7 +105,10 @@ computes that from the shipped data, so it updates when reality does.
 
 **This map is only as good as the community that builds it.** Several layers
 are literally community data, and the most useful contributions require no
-coding at all.
+coding at all. See [CONTRIBUTING.md](CONTRIBUTING.md) for the fuller
+walkthrough (setup, sourcing standards, the AI-tooling disclosure) and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) for how we expect people to treat
+each other here.
 
 ### 🎯 Map a camera (highest impact, no coding)
 
@@ -214,6 +232,13 @@ cameras · [**Mapping Inequality**](https://dsl.richmond.edu/panorama/redlining/
 Prejudice**](https://mappingprejudice.umn.edu/) (Univ. of Minnesota) ·
 [**FracTracker Alliance**](https://www.fractracker.org/) · [**EFF Atlas of
 Surveillance**](https://atlasofsurveillance.org/) · the **U.S. Census Bureau**
+· the **Metropolitan Emergency Services Board** and **U-Spatial** (Univ. of
+Minnesota) for the police/sheriff jurisdiction and building layers · the
+**Minnesota Bureau of Criminal Apprehension** for agency-reported ALPR
+filings · **MnDOT** for traffic volume · the **Metropolitan Council** and the
+**Minnesota Pollution Control Agency** for the block-level HOLC retrace and
+cumulative-stressors data · [**MuckRock**](https://www.muckrock.com/) for the
+public-records infrastructure behind the vendor-contracts layer
 
 ## Deploying / mirroring
 
@@ -235,10 +260,11 @@ build and host its own archive instead (see "Base map tiles" in that doc).
 
 ## Licence
 
-Code **MIT**. Data we compile **CC BY 4.0**. Upstream layers keep their own
-terms — the camera layer is ODbL share-alike, redlining is CC BY-NC-SA — and
-those aren't ours to relax. Read [LICENSE-DATA.md](LICENSE-DATA.md) before
-redistributing.
+Code **AGPL v3** — if you run a modified version as a public service, you
+must publish your changes; see [LICENSE](LICENSE). Data we compile **CC BY
+4.0**. Upstream layers keep their own terms — the camera layer is ODbL
+share-alike, redlining is CC BY-NC-SA — and those aren't ours to relax. Read
+[LICENSE-DATA.md](LICENSE-DATA.md) before redistributing.
 
 ## Not legal advice
 
