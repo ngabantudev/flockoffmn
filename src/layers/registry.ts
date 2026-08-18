@@ -1442,7 +1442,7 @@ export const LAYERS: LayerDefinition[] = [
         label: { en: 'Class on the sheet', es: 'Clase en la lámina' },
         // The nine meanings live here rather than on every polygon: nine
         // strings across 11,561 records was most of two megabytes to say one
-        // of nine things. See GRADE_OF_CLASS in scripts/ingest/holc-detail.mjs.
+        // of nine things. See GRADE_OF_CLASS in scripts/ingest/mn/holc-detail.mjs.
         valueDescriptions: {
           Best: {
             en: 'Grade A. “Best” — new and homogeneous; in practice, restricted to white residents.',

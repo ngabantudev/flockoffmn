@@ -32,8 +32,8 @@ import {
   agencyType,
   loadPublicJson,
   thinGeometry,
-} from './lib/util.mjs';
-import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
+} from '../lib/util.mjs';
+import { findContaining, representativePoint } from '../../../src/lib/geo.mjs';
 
 // Cataloged on the Minnesota Geospatial Commons; this is the service its own
 // dataset page links to.

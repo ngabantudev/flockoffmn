@@ -15,8 +15,8 @@
  * layer is complete or current — see the layer's limitations in the registry.
  */
 
-import { writeLayer, log, loadCounties, slugId, queryOverpass } from './lib/util.mjs';
-import { findContaining } from '../../src/lib/geo.mjs';
+import { writeLayer, log, loadCounties, slugId, queryOverpass } from '../lib/util.mjs';
+import { findContaining } from '../../../src/lib/geo.mjs';
 
 const STATE_ISO = process.env.STATE_ISO ?? 'US-MN';
 const STATE_USPS = process.env.STATE_USPS ?? 'MN';

@@ -15,7 +15,7 @@
  */
 
 import { readXlsx, fetchWithRetry, excelDate, loadCounties, normaliseCounty, writeLayer, log, slugId }
-  from './lib/util.mjs';
+  from '../lib/util.mjs';
 
 const LANDING = 'https://www.ice.gov/identify-and-arrest/287g';
 const STATE_NAME = (process.env.STATE_NAME ?? 'MINNESOTA').toUpperCase();
