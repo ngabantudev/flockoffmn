@@ -22,6 +22,7 @@
     "data:agency-jurisdictions": "node scripts/ingest/agency-jurisdictions.mjs",
     "data:agency-buildings": "node scripts/ingest/agency-buildings.mjs",
     "data:alpr-reported": "node scripts/ingest/alpr-reported.mjs",
+    "data:alpr-cross-source": "node scripts/ingest/alpr-cross-source.mjs",
     "data:detention": "node scripts/ingest/detention.mjs",
     "data:datacenters": "node scripts/ingest/data-centers.mjs",
     "data:redlining": "node scripts/ingest/redlining.mjs",

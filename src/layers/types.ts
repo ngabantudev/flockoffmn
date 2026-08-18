@@ -927,6 +927,52 @@ export interface LayerDefinition {
      */
     fallbackBody?: 'countySheriff' | 'county' | 'name';
   };
+  /**
+   * "Cross-listed corner" — the ALPR cross-source proximity match.
+   *
+   * scripts/ingest/alpr-cross-source.mjs stamps `crossSource*` attributes on
+   * both `alpr` and `alpr_reported` records where a BCA filing and an
+   * independently-mapped OSM point land within 50 m of each other. This
+   * carries the copy for the four states a stamped record can be in — the
+   * strings differ between the two layers because each names the *other*
+   * layer's document, so this cannot be one shared block.
+   *
+   * Deliberately not folded into `hoverCard`/`detailFields`: the match is
+   * conveyed as its own detail-panel section (see MapView.astro's
+   * renderDetail), because §1c requires the full explanation — what the
+   * match does and does not claim — every time it's shown, not a bare field
+   * value a reader could skim past. Never say "confirmed"/"verified"/
+   * "validated"/"corroborated" about the match itself in any of these
+   * strings — those words describe a document, and no document made this
+   * match; a distance calculation did.
+   */
+  crossSource?: {
+    /** Legend/key row shown as a static swatch in the layer panel (§4). */
+    legend: I18nString;
+    /**
+     * One line appended to the hover card (`aria-hidden`, a shortcut only —
+     * see `hoverCard`'s own comment), shown only when matched. Shorter than
+     * `matched` below, which carries the full explanation and is what a
+     * screen-reader user actually gets, in the detail panel. `{d}` =
+     * crossSourceMeters, `{agency}` = crossSourceAgencyName (alpr only).
+     */
+    hoverNote: I18nString;
+    /**
+     * Detail panel, matched record. `{n}` = crossSourceCount, `{d}` =
+     * crossSourceMeters, `{agency}` = crossSourceAgencyName (alpr only).
+     */
+    matched: I18nString;
+    /** Detail panel, unmatched record — the normal case, not a finding. */
+    unmatched: I18nString;
+    /** Appended when `crossSourceContested`. */
+    contested: I18nString;
+    /** Appended when `crossSourceAnchorAmbiguous`. */
+    ambiguousAnchor: I18nString;
+    /** Inline glossary gloss for the term itself. */
+    glossary: I18nString;
+    /** Appended to a matched record's accessible search-result name. */
+    searchSuffix: I18nString;
+  };
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
   csvPath: string | null;

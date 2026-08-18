@@ -188,6 +188,21 @@ const loaded = await loadAllLayers();
         <code>confidence</code> is not decoration. <code>probabilistic</code> on the camera layer
         means a record may be stale or wrong; treat it accordingly in any analysis.
       </p>
+      <p>
+        <code>alpr</code> and <code>alpr_reported</code> carry six more attributes —
+        <code>crossSourceSiteId</code>, <code>crossSourceCount</code>, <code>crossSourceMeters</code>,
+        <code>crossSourceThresholdM</code>, <code>crossSourceContested</code>,
+        <code>crossSourceAnchorAmbiguous</code> (<code>alpr</code> also carries
+        <code>crossSourceAgencyName</code>) — recording a "cross-listed corner": a BCA filing and a
+        volunteer-mapped point that landed within 50 m of each other.
+        <code>crossSourceSiteId</code> is a proximity match this project computed at build time from
+        two already-approximate coordinates, not a documentary link between the two records — it is
+        not evidence the two describe the same device, and it says nothing about whether either
+        camera is there today. <code>crossSourceSiteId</code> is <code>null</code> on the large
+        majority of records in both layers, which is the expected, unremarkable case, not a gap. See
+        <code>public/data/reference/alpr-cross-source.json</code> for the full match list, including
+        pairings this project's assignment rule discarded.
+      </p>
     </div>
   </section>
 

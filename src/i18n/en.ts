@@ -166,6 +166,7 @@ export const en: Record<string, string> = {
   limitations: 'Limitations',
   county: 'County',
   viewRecord: 'View the original record',
+  crossListedCorner: 'Cross-listed corner',
 
   confidenceConfirmed: 'Confirmed — documented in an official public record.',
   confidenceReported: 'Reported — from permit filings or secondary records that may be out of date.',

@@ -77,6 +77,18 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
         note: d.hoverCard.note ? pick(d.hoverCard.note, locale) : undefined,
       }
     : undefined,
+  crossSource: d.crossSource
+    ? {
+        legend: pick(d.crossSource.legend, locale),
+        hoverNote: pick(d.crossSource.hoverNote, locale),
+        matched: pick(d.crossSource.matched, locale),
+        unmatched: pick(d.crossSource.unmatched, locale),
+        contested: pick(d.crossSource.contested, locale),
+        ambiguousAnchor: pick(d.crossSource.ambiguousAnchor, locale),
+        glossary: pick(d.crossSource.glossary, locale),
+        searchSuffix: pick(d.crossSource.searchSuffix, locale),
+      }
+    : undefined,
   relatedBuildings: d.relatedBuildings,
   tintWhenRelated: d.tintWhenRelated,
   weightBy: d.weightBy
@@ -170,6 +182,7 @@ const strings = {
   actionPickBody: t('actionPickBody'),
   filtersCleared: t('filtersCleared'),
   resetView: t('resetView'),
+  crossListedCorner: t('crossListedCorner'),
 };
 ---
 
@@ -388,6 +401,25 @@ const strings = {
                               </p>
                             </div>
                           </div>
+
+                          {/*
+                            "Cross-listed corner" static legend row (§4 of
+                            the spec this shipped from). Not a FilterDefinition
+                            — nothing here is checkable or wired into the
+                            filter system, it only explains what the brass
+                            ring on some of this layer's points means. Real
+                            DOM text, not an aria-hidden canvas decoration, so
+                            it's reachable by a screen reader on its own.
+                          */}
+                          {layer.crossSource && (
+                            <div class="flex items-start gap-2 border-t border-ink-800 px-2.5 py-2">
+                              <span
+                                class="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border-2 border-cross-source-ring bg-ink-700"
+                                aria-hidden="true"
+                              />
+                              <p class="text-[11px] leading-snug text-ink-400">{layer.crossSource.legend}</p>
+                            </div>
+                          )}
 
                           {layer.filters.length > 0 && (
                             <details class="border-t border-ink-800">
@@ -1144,6 +1176,36 @@ const strings = {
       body.append(dl);
     }
 
+    // "Cross-listed corner" — a dedicated section, not a detailFields row,
+    // because §1c requires the full explanation every time this shows, not a
+    // value a reader can skim past. Always rendered when the layer names
+    // crossSource, matched or not: an unmatched record needs the "this is
+    // normal, not a finding" copy just as much as a matched one needs its
+    // own caveats — see CLAUDE.md §1c and the registry's own comment on
+    // LayerDefinition.crossSource.
+    if (layer.crossSource) {
+      const matched = attrs.crossSourceSiteId != null;
+      const cross = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
+      cross.append(el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.crossListedCorner));
+      const body_ = matched
+        ? fill(layer.crossSource.matched, {
+            n: String(attrs.crossSourceCount ?? ''),
+            d: String(attrs.crossSourceMeters ?? ''),
+            agency: String(attrs.crossSourceAgencyName ?? ''),
+          })
+        : layer.crossSource.unmatched;
+      cross.append(el('p', 'text-xs leading-relaxed text-ink-200', body_));
+      if (matched && attrs.crossSourceContested) {
+        cross.append(el('p', 'mt-1.5 text-xs leading-relaxed text-warn', layer.crossSource.contested));
+      }
+      if (matched && attrs.crossSourceAnchorAmbiguous) {
+        cross.append(
+          el('p', 'mt-1.5 text-xs leading-relaxed text-ink-300', layer.crossSource.ambiguousAnchor),
+        );
+      }
+      body.append(cross);
+    }
+
     // Confidence and limitations (spec F8).
     const conf = el('div');
     conf.append(
@@ -1474,6 +1536,13 @@ const strings = {
         el('span', 'block truncate text-xs text-ink-100', feature.properties.name),
         el('span', 'block truncate text-[11px] text-ink-400', feature.properties.county ?? layer.label),
       );
+      // The ring/width difference the map draws for a matched record (see
+      // mapController's crossSource paint case) is otherwise canvas-only —
+      // this is the accessible copy of that state, on the one interface a
+      // screen reader actually gets (spec §4). Real text, not aria-hidden.
+      if (layer.crossSource && feature.properties.attributes.crossSourceSiteId) {
+        text.append(el('span', 'sr-only', layer.crossSource.searchSuffix));
+      }
       button.append(dot, text);
       button.addEventListener('click', () => {
         controller.focusFeature(layer.id, feature.properties.id);

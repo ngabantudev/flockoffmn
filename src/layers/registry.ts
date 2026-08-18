@@ -867,6 +867,10 @@ export const LAYERS: LayerDefinition[] = [
         en: 'Several cameras sharing a pole ("321;109") are drawn as one cone per recorded heading over a single dot. A record tagged "0-360" is drawn as a full circle, meaning the surveyor recorded no single direction at all.',
         es: 'Varias cámaras que comparten un poste («321;109») se dibujan con un cono por cada orientación registrada sobre un solo punto. Un registro etiquetado «0-360» se dibuja como un círculo completo, lo que significa que no se registró ninguna dirección concreta.',
       },
+      {
+        en: 'A brass ring marks a "cross-listed corner": this project found a BCA-reported reader within 50 m of this camera. That is a proximity calculation between two already-approximate coordinates — a road-junction estimate on the BCA side, a hand-placed pin on this one — not a document linking the two records, and not a claim they describe the same device or that either camera is still there. See the record\'s own detail panel for what a match here does and does not mean.',
+        es: 'Un anillo bronce marca una «esquina de doble registro»: este proyecto encontró un lector reportado al BCA a menos de 50 m de esta cámara. Es un cálculo de proximidad entre dos coordenadas ya aproximadas —una estimación de cruce vial del lado del BCA, un pin colocado a mano de este lado— no un documento que vincule ambos registros, y no una afirmación de que describan el mismo dispositivo o de que alguna de las dos cámaras siga allí. Consulte el panel de detalle del registro para ver qué significa y qué no significa una coincidencia aquí.',
+      },
     ],
     geometry: 'point',
     color: '#38bdf8',
@@ -985,6 +989,44 @@ export const LAYERS: LayerDefinition[] = [
         es: 'De origen comunitario e incompleto: la ausencia de una cámara aquí no prueba que no exista ninguna.',
       },
     },
+    // "Cross-listed corner" — see alpr-cross-source.mjs and
+    // LayerDefinition.crossSource's own comment in layers/types.ts. This is
+    // the alpr (OSM) side: the copy names the *agency*, because that's the
+    // fact this side's match adds that the record didn't already carry.
+    crossSource: {
+      legend: {
+        en: 'Cross-listed corner — an agency reported a fixed reader at this corner, and volunteers separately mapped ALPR hardware within 50 m of it. Two independent records point at the same place. Neither says a camera is there today.',
+        es: 'Esquina de doble registro: una agencia reportó un lector fijo en esta esquina, y voluntarios mapearon por separado equipo ALPR a menos de 50 m de allí. Dos registros independientes señalan el mismo lugar. Ninguno afirma que haya una cámara allí hoy.',
+      },
+      hoverNote: {
+        en: 'Also reported to the state by {agency} ({d} m away).',
+        es: 'También reportado al estado por {agency} (a {d} m de distancia).',
+      },
+      matched: {
+        en: '{agency} reported a fixed licence plate reader at this corner under Minn. Stat. § 13.824, {d} m from this mapped device. The two records were matched by distance (50 m), not by any document linking them — so this is two independent records naming one corner, not proof that this specific device is the one the agency reported, and not a statement that either is still in place.',
+        es: '{agency} reportó un lector fijo de matrículas en esta esquina bajo Minn. Stat. § 13.824, a {d} m de este dispositivo mapeado. Ambos registros se emparejaron por distancia (50 m), no por ningún documento que los vincule, así que se trata de dos registros independientes que nombran una esquina, no una prueba de que este dispositivo en particular sea el que reportó la agencia, ni una afirmación de que alguno de los dos siga en su lugar.',
+      },
+      unmatched: {
+        en: 'No record from the other source falls within 50 m of this one. The two sources cover different things — one is what agencies filed with the state, the other is what volunteers happened to map — so an unmatched record is the normal case, not a doubt about this one.',
+        es: 'Ningún registro de la otra fuente se encuentra a menos de 50 m de este. Las dos fuentes cubren cosas distintas —una es lo que las agencias declararon al estado, la otra es lo que los voluntarios llegaron a mapear— así que un registro sin coincidencia es el caso normal, no una duda sobre este registro.',
+      },
+      contested: {
+        en: 'More than one agency reported a reader near this corner. Both filings are linked above; this project does not choose between them.',
+        es: 'Más de una agencia reportó un lector cerca de esta esquina. Ambas declaraciones están enlazadas arriba; este proyecto no elige entre ellas.',
+      },
+      ambiguousAnchor: {
+        en: 'The two roads in this filing meet in more than one place, so the corner shown is one of several the filing could mean. Read this match accordingly.',
+        es: 'Las dos vías de esta declaración se cruzan en más de un lugar, así que la esquina mostrada es una de varias que la declaración podría significar. Interprete esta coincidencia en consecuencia.',
+      },
+      glossary: {
+        en: 'Cross-listed corner — A place where two independent records land within 50 metres of each other: an agency\'s own filing to the state that it operates a fixed licence plate reader there, and a camera mapped at that spot by an OpenStreetMap volunteer. The match is measured by this project from the two coordinates; no document says the two records describe the same device. It says the corner turns up in two separate paper trails. It does not say a camera is there today.',
+        es: 'Esquina de doble registro: un lugar donde dos registros independientes caen a menos de 50 metros el uno del otro: la propia declaración de una agencia al estado de que opera allí un lector fijo de matrículas, y una cámara mapeada en ese punto por un voluntario de OpenStreetMap. Este proyecto mide la coincidencia a partir de las dos coordenadas; ningún documento afirma que ambos registros describan el mismo dispositivo. Indica que la esquina aparece en dos rastros documentales independientes. No indica que haya una cámara allí hoy.',
+      },
+      searchSuffix: {
+        en: ' — cross-listed corner',
+        es: ' — esquina de doble registro',
+      },
+    },
   },
 
   {
@@ -1021,6 +1063,10 @@ export const LAYERS: LayerDefinition[] = [
       {
         en: 'A reported location is where the agency says a reader is, not a guarantee it is still there or was ever installed.',
         es: 'Una ubicación reportada es donde la agencia dice que hay un lector, no una garantía de que siga allí o de que se haya instalado.',
+      },
+      {
+        en: 'A brass ring marks a "cross-listed corner": this project found a volunteer-mapped camera within 50 m of this filing. That is a proximity calculation between two already-approximate coordinates — this project\'s own resolution of the filing\'s words against road geometry, and a hand-placed OpenStreetMap pin — not a document linking the two records. Most filings have no such match; that is the normal case, not a doubt about the filing. See the record\'s own detail panel for what a match here does and does not mean.',
+        es: 'Un anillo bronce marca una «esquina de doble registro»: este proyecto encontró una cámara mapeada por voluntarios a menos de 50 m de esta declaración. Es un cálculo de proximidad entre dos coordenadas ya aproximadas —la resolución que hace este proyecto de las palabras de la declaración contra la geometría vial, y un pin de OpenStreetMap colocado a mano— no un documento que vincule ambos registros. La mayoría de las declaraciones no tienen tal coincidencia; ese es el caso normal, no una duda sobre la declaración. Consulte el panel de detalle del registro para ver qué significa y qué no significa una coincidencia aquí.',
       },
     ],
     geometry: 'point',
@@ -1120,6 +1166,44 @@ export const LAYERS: LayerDefinition[] = [
       caveat: {
         en: 'Only readers agencies reported to the state. An agency that filed nothing does not appear.',
         es: 'Solo lectores que las agencias reportaron al estado. Una agencia que no presentó nada no aparece.',
+      },
+    },
+    // "Cross-listed corner" — see alpr-cross-source.mjs and
+    // LayerDefinition.crossSource's own comment in layers/types.ts. This is
+    // the alpr_reported (BCA) side: the copy counts volunteer-mapped devices
+    // near the filing, since that's the fact this side's match adds.
+    crossSource: {
+      legend: {
+        en: 'Cross-listed corner — an agency reported a fixed reader at this corner, and volunteers separately mapped ALPR hardware within 50 m of it. Two independent records point at the same place. Neither says a camera is there today.',
+        es: 'Esquina de doble registro: una agencia reportó un lector fijo en esta esquina, y voluntarios mapearon por separado equipo ALPR a menos de 50 m de allí. Dos registros independientes señalan el mismo lugar. Ninguno afirma que haya una cámara allí hoy.',
+      },
+      hoverNote: {
+        en: 'Also mapped by volunteers ({d} m away).',
+        es: 'También mapeado por voluntarios (a {d} m de distancia).',
+      },
+      matched: {
+        en: 'Volunteers have mapped {n} ALPR device(s) within {d} m of this corner, independently of this filing. That is two separate records pointing at the same corner — a filing by the agency, and hardware someone saw on a pole. It is not proof they describe the same device, and it is not a statement that anything is there now. Cameras are removed, moved and re-aimed without notice, and this project matched the two by distance (50 m), not by any document connecting them.',
+        es: 'Voluntarios han mapeado {n} dispositivo(s) ALPR a menos de {d} m de esta esquina, de forma independiente a esta declaración. Son dos registros separados que señalan la misma esquina: una declaración de la agencia, y equipo que alguien vio en un poste. No es prueba de que describan el mismo dispositivo, ni una afirmación de que algo esté allí ahora. Las cámaras se retiran, se mueven y se reorientan sin previo aviso, y este proyecto emparejó ambos registros por distancia (50 m), no por ningún documento que los conecte.',
+      },
+      unmatched: {
+        en: 'No record from the other source falls within 50 m of this one. The two sources cover different things — one is what agencies filed with the state, the other is what volunteers happened to map — so an unmatched record is the normal case, not a doubt about this one.',
+        es: 'Ningún registro de la otra fuente se encuentra a menos de 50 m de este. Las dos fuentes cubren cosas distintas —una es lo que las agencias declararon al estado, la otra es lo que los voluntarios llegaron a mapear— así que un registro sin coincidencia es el caso normal, no una duda sobre este registro.',
+      },
+      contested: {
+        en: 'More than one agency reported a reader near this corner. Both filings are linked above; this project does not choose between them.',
+        es: 'Más de una agencia reportó un lector cerca de esta esquina. Ambas declaraciones están enlazadas arriba; este proyecto no elige entre ellas.',
+      },
+      ambiguousAnchor: {
+        en: 'The two roads in this filing meet in more than one place, so the corner shown is one of several the filing could mean. Read this match accordingly.',
+        es: 'Las dos vías de esta declaración se cruzan en más de un lugar, así que la esquina mostrada es una de varias que la declaración podría significar. Interprete esta coincidencia en consecuencia.',
+      },
+      glossary: {
+        en: 'Cross-listed corner — A place where two independent records land within 50 metres of each other: an agency\'s own filing to the state that it operates a fixed licence plate reader there, and a camera mapped at that spot by an OpenStreetMap volunteer. The match is measured by this project from the two coordinates; no document says the two records describe the same device. It says the corner turns up in two separate paper trails. It does not say a camera is there today.',
+        es: 'Esquina de doble registro: un lugar donde dos registros independientes caen a menos de 50 metros el uno del otro: la propia declaración de una agencia al estado de que opera allí un lector fijo de matrículas, y una cámara mapeada en ese punto por un voluntario de OpenStreetMap. Este proyecto mide la coincidencia a partir de las dos coordenadas; ningún documento afirma que ambos registros describan el mismo dispositivo. Indica que la esquina aparece en dos rastros documentales independientes. No indica que haya una cámara allí hoy.',
+      },
+      searchSuffix: {
+        en: ' — cross-listed corner',
+        es: ' — esquina de doble registro',
       },
     },
   },

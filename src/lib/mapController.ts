@@ -133,6 +133,17 @@ export interface ClientLayer {
     bodyKey?: string;
     fallbackBody?: 'countySheriff' | 'county' | 'name';
   };
+  /** See LayerDefinition's own comment in layers/types.ts. Strings already localised. */
+  crossSource?: {
+    legend: string;
+    hoverNote: string;
+    matched: string;
+    unmatched: string;
+    contested: string;
+    ambiguousAnchor: string;
+    glossary: string;
+    searchSuffix: string;
+  };
   dataPath: string;
   filters: {
     key: string;
@@ -772,6 +783,54 @@ export class MapController {
   }
 
   /**
+   * The brass ring drawn around a "cross-listed corner" match, for the
+   * current basemap. See `--color-cross-source-ring` in global.css for the
+   * same pairing drawn as a static swatch in the layer panel's legend row —
+   * that one keys off the *site* theme, this one off the *basemap*, same
+   * split every other themed paint property in this file already makes.
+   */
+  private get crossSourceRingColor(): string {
+    return this.basemapDark ? '#b98f3f' : '#6b5414';
+  }
+
+  /**
+   * A point layer's `circle-stroke-color`, with a `case` branch for a
+   * "cross-listed corner" match (crossSourceSiteId != null — see
+   * alpr-cross-source.mjs). Only `alpr`/`alpr_reported` records ever carry
+   * that attribute, so this is a no-op fallback-through for every other
+   * point layer rather than a special case per layer id — the GL expression
+   * itself is what stays generic.
+   */
+  private pointStrokeColorExpr(layer: ClientLayer): maplibregl.ExpressionSpecification | string {
+    const base = layer.pointStrokeColor ?? this.basemapColor;
+    return [
+      'case',
+      ['!=', ['get', 'crossSourceSiteId'], null],
+      this.crossSourceRingColor,
+      base,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
+   * A point layer's `circle-stroke-width`, doubled (roughly) for a matched
+   * record, on the same emergeFrom→pointsFrom fade every stroke already
+   * uses — a matched ring must never appear before `pointsFrom` any more
+   * than the base stroke does, so both branches share the same two zoom
+   * anchors and differ only in the value they reach.
+   */
+  private pointStrokeWidthExpr(tier: {
+    emergeFrom: number;
+    pointsFrom: number;
+  }): maplibregl.ExpressionSpecification {
+    return [
+      'case',
+      ['!=', ['get', 'crossSourceSiteId'], null],
+      ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 2.2],
+      ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 1.2],
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
    * A point layer's `circle-color` expression — category colour at every
    * zoom if the layer names one, else the plain identity colour. The single
    * source of truth for this expression: used at layer creation, in the
@@ -1017,7 +1076,7 @@ export class MapController {
         this.map.setPaintProperty(
           `${layer.id}-points`,
           'circle-stroke-color',
-          layer.pointStrokeColor ?? this.basemapColor,
+          this.pointStrokeColorExpr(layer),
         );
         // The glow shares the dot's exact colour (see pointCircleColor) —
         // only ever the categoryColors match branch, since the glow layer
@@ -2135,7 +2194,7 @@ export class MapController {
             ]
           : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
         ) as unknown as maplibregl.ExpressionSpecification,
-        'circle-stroke-color': layer.pointStrokeColor ?? this.basemapColor,
+        'circle-stroke-color': this.pointStrokeColorExpr(layer),
         /*
          * Dots fade in rather than switching on at a single zoom.
          *
@@ -2145,14 +2204,15 @@ export class MapController {
          * one drawing with another. A layer that names no scale is solid
          * throughout, which is every layer whose records are readable as dots
          * from the whole state.
+         *
+         * A "cross-listed corner" match (see pointStrokeColorExpr's own
+         * comment) doubles the final width on the same curve — still 0 before
+         * `emergeFrom`, still solid by `pointsFrom`, just a thicker ring once
+         * it's there. `pointStrokeWidthExpr` is the one place this ratio is
+         * declared, shared with the theme-independent zoom curve here so the
+         * two can never disagree about when the ring is allowed to appear.
          */
-        'circle-stroke-width': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          tier.emergeFrom, 0,
-          tier.pointsFrom, 1.2,
-        ] as unknown as maplibregl.ExpressionSpecification,
+        'circle-stroke-width': this.pointStrokeWidthExpr(tier),
         /*
          * Opacity follows the same two-branch shape as radius, just above.
          * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
@@ -2424,6 +2484,21 @@ export class MapController {
       const note = document.createElement('p');
       note.className = 'hover-card-note';
       note.textContent = spec.note;
+      root.append(note);
+    }
+
+    // "Cross-listed corner" — only ever added when this record actually
+    // matched (see alpr-cross-source.mjs), never for the unmatched majority,
+    // because an unmatched record needs the full explanation in the detail
+    // panel (§1c: absence is not a finding), not a clipped hover line that
+    // could read as one. The full copy — what the match does and does not
+    // claim — lives only in the detail panel; this is a pointer to it.
+    if (layer.crossSource && attrs.crossSourceSiteId != null) {
+      const note = document.createElement('p');
+      note.className = 'hover-card-note';
+      note.textContent = layer.crossSource.hoverNote
+        .replace('{d}', String(attrs.crossSourceMeters ?? ''))
+        .replace('{agency}', String(attrs.crossSourceAgencyName ?? ''));
       root.append(note);
     }
     return root;

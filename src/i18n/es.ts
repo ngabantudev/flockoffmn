@@ -94,6 +94,7 @@ export const es: Record<string, string> = {
   limitations: 'Limitaciones',
   county: 'Condado',
   viewRecord: 'Ver el registro original',
+  crossListedCorner: 'Esquina de doble registro',
 
   // Quién responde aquí
   whoAnswersTitle: 'Quién le debe respuesta aquí',
