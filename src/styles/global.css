@@ -59,25 +59,34 @@
  * dark values. These three selectors cover: OS-level light preference with
  * no explicit user choice, an explicit "light" choice, and an explicit
  * "dark" choice (which must win even under an OS light preference).
+ *
+ * Values matched to wealldobettermn.org (github.com/ngabantudev/
+ * wealldobettermn, src/app/globals.css) — a sister Minnesota civic-
+ * transparency site, which in turn matches the State of Minnesota's own
+ * web portal (mn.gov's core.css): off-white nav levels (#f0f0f0/#f2f2f2,
+ * hover #e6e6e6), striped-row gray (#e9e9e9), body type (#1b1b1b/#333333),
+ * and link blue (#0062b2). Same reasoning as that file's own provenance
+ * comment — a brand color is still a claim, so it's cross-checked against
+ * source rather than eyeballed off a screenshot.
  */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
-    --color-ink-950: #ffffff;
-    --color-ink-900: #f4f6f9;
-    --color-ink-850: #e9edf3;
-    --color-ink-800: #d7dde7;
-    --color-ink-700: #b9c3d1;
-    --color-ink-600: #8e9aac;
-    --color-ink-400: #5c6779;
-    --color-ink-300: #455061;
-    --color-ink-200: #2c3543;
-    --color-ink-100: #131a24;
+    --color-ink-950: #f0f0f0;
+    --color-ink-900: #f2f2f2;
+    --color-ink-850: #e9e9e9;
+    --color-ink-800: #e5e5e5;
+    --color-ink-700: #d9d9d9;
+    --color-ink-600: #a3a3a3;
+    --color-ink-400: #666666;
+    --color-ink-300: #555555;
+    --color-ink-200: #333333;
+    --color-ink-100: #1b1b1b;
 
-    --color-accent: #b45309;
-    --color-warn: #92400e;
+    --color-accent: #0062b2;
+    --color-warn: #b45309;
 
     --color-on-accent: #ffffff;
-    --color-well: #eef1f6;
+    --color-well: #ffffff;
     --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
 
     color-scheme: light;
@@ -85,22 +94,22 @@
 }
 
 :root[data-theme='light'] {
-  --color-ink-950: #ffffff;
-  --color-ink-900: #f4f6f9;
-  --color-ink-850: #e9edf3;
-  --color-ink-800: #d7dde7;
-  --color-ink-700: #b9c3d1;
-  --color-ink-600: #8e9aac;
-  --color-ink-400: #5c6779;
-  --color-ink-300: #455061;
-  --color-ink-200: #2c3543;
-  --color-ink-100: #131a24;
+  --color-ink-950: #f0f0f0;
+  --color-ink-900: #f2f2f2;
+  --color-ink-850: #e9e9e9;
+  --color-ink-800: #e5e5e5;
+  --color-ink-700: #d9d9d9;
+  --color-ink-600: #a3a3a3;
+  --color-ink-400: #666666;
+  --color-ink-300: #555555;
+  --color-ink-200: #333333;
+  --color-ink-100: #1b1b1b;
 
-  --color-accent: #b45309;
-  --color-warn: #92400e;
+  --color-accent: #0062b2;
+  --color-warn: #b45309;
 
   --color-on-accent: #ffffff;
-  --color-well: #eef1f6;
+  --color-well: #ffffff;
   --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
 
   color-scheme: light;
