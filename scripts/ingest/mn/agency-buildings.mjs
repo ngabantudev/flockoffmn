@@ -28,8 +28,8 @@ import {
   normaliseAgency,
   agencyType,
   loadPublicJson,
-} from './lib/util.mjs';
-import { findContaining } from '../../src/lib/geo.mjs';
+} from '../lib/util.mjs';
+import { findContaining } from '../../../src/lib/geo.mjs';
 
 const SERVICE =
   'https://services.arcgis.com/8df8p0NlLFEShl0r/arcgis/rest/services/ci_all_gdb_2_view/FeatureServer/0/query';

@@ -23,8 +23,8 @@
 
 import {
   readXlsx, fetchWithRetry, unzip, loadCounties, normaliseCounty, writeLayer, log, slugId,
-} from './lib/util.mjs';
-import { findContaining } from '../../src/lib/geo.mjs';
+} from '../lib/util.mjs';
+import { findContaining } from '../../../src/lib/geo.mjs';
 
 const LANDING = 'https://www.ice.gov/detain/detention-management';
 const FACILITY_LIST = 'https://www.ice.gov/doclib/detention/Over72HourFacilities.xlsx';

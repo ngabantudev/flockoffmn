@@ -165,7 +165,7 @@ block sits inside exactly one tract and resolves its own.
 
 **Why the agreement rate is recomputed rather than remembered.** The
 Metropolitan Council's metadata states plainly that its source image was
-non-georeferenced and its accuracy unknown. `scripts/ingest/holc-detail.mjs`
+non-georeferenced and its accuracy unknown. `scripts/ingest/mn/holc-detail.mjs`
 therefore tests every polygon against the independently georeferenced areas on
 every run and writes the measured rate into the file's own provenance and known
 gaps — a check a reader can see, rather than a number someone typed once and
@@ -187,7 +187,7 @@ the layer now shows the lots the source shows.
 The line that did not move is personal data. The upstream record carries the
 seller and buyer named in the original deed, the present-day street address,
 the county parcel PIN and the deed document number. None of that is ingested;
-`scripts/ingest/covenants.mjs` fails the build rather than write a file
+`scripts/ingest/mn/covenants.mjs` fails the build rather than write a file
 containing a name, an address, or a parcel identifier, and it drops or
 redacts clause text that embeds an address or a document number.
 

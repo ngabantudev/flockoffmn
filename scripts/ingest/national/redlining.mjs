@@ -30,8 +30,8 @@ import {
   loadPublicJson,
   log,
   slugId,
-} from './lib/util.mjs';
-import { findContaining, representativePoint } from '../../src/lib/geo.mjs';
+} from '../lib/util.mjs';
+import { findContaining, representativePoint } from '../../../src/lib/geo.mjs';
 
 const SOURCE =
   'https://dsl.richmond.edu/panorama/redlining/static/mappinginequality.json';

@@ -93,7 +93,7 @@ async function main() {
     // fetchWithRetry, not a bare fetch: GitHub Releases is generally solid but
     // this is a one-time-per-machine ~90MB download with no resume, so a
     // transient failure shouldn't hard-fail the whole build on attempt one —
-    // same reasoning scripts/ingest/*.mjs already applies to every upstream
+    // same reasoning scripts/ingest/**/*.mjs already applies to every upstream
     // fetch (see that module's header on the Good-Citizen Fetcher rule).
     const res = await fetchWithRetry(PLANETILER_VERSION_URL, { redirect: 'follow' });
     writeFileSync(PLANETILER_JAR, Buffer.from(await res.arrayBuffer()));

@@ -25,7 +25,7 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fetchWithRetry, log, decodeXml, PUBLIC_DATA } from './lib/util.mjs';
+import { fetchWithRetry, log, decodeXml, PUBLIC_DATA } from '../lib/util.mjs';
 
 const LANDING = 'https://dps.mn.gov/divisions/bca/data-and-reports/agencies-use-lprs-lpr';
 

@@ -18,16 +18,16 @@ export type LayerId =
   // Every agency's own jurisdiction, not an internal subdivision like
   // Minneapolis's numbered precincts — the boundary a records request or a
   // council question actually has to be addressed to. See
-  // scripts/ingest/agency-jurisdictions.mjs for the metro-only scope and why.
+  // scripts/ingest/mn/agency-jurisdictions.mjs for the metro-only scope and why.
   | 'agency_jurisdiction'
   // One point per building, not per agency — resolves the very subdivision
   // agency_jurisdiction folds into one polygon (Minneapolis's five numbered
   // precincts are five separate points here). See
-  // scripts/ingest/agency-buildings.mjs.
+  // scripts/ingest/mn/agency-buildings.mjs.
   | 'agency_building'
   // Readers the operating agency itself reported to the state under Minn.
   // Stat. § 13.824 — the only camera records on this map whose operator is
-  // documented rather than guessed. See scripts/ingest/alpr-reported.mjs.
+  // documented rather than guessed. See scripts/ingest/mn/alpr-reported.mjs.
   | 'alpr_reported'
   | 'data_center'
   // How much traffic each stretch of road carries on an average day. The
@@ -39,19 +39,19 @@ export type LayerId =
   // Metropolitan Council — two cities instead of eight, no area identifier and
   // so no appraiser's prose, but roughly seventy times the resolution and the
   // lakes and parks excluded rather than swallowed. Neither layer supersedes
-  // the other; see scripts/ingest/holc-detail.mjs.
+  // the other; see scripts/ingest/mn/holc-detail.mjs.
   | 'holc_appraisal_detail'
   // The only layer whose upstream source is a transaction between named
   // private individuals. It is published parcel by parcel — the lot shape,
   // the deed year and the clause — with every name, address and parcel
   // identifier stripped, and its ingest strips and then asserts. See
-  // scripts/ingest/covenants.mjs for the full reasoning and its history.
+  // scripts/ingest/mn/covenants.mjs for the full reasoning and its history.
   | 'racial_covenant'
   // Present-day counterpart to the historical layers: MPCA's cumulative
   // impacts draft under Minn. Stat. § 116.065, one record per census tract.
   // A tract is an aggregate of thousands of people, never a household.
   | 'ej_cumulative'
-  // Three views of one Census ACS dataset (scripts/ingest/demographics.mjs),
+  // Three views of one Census ACS dataset (scripts/ingest/national/demographics.mjs),
   // sharing a dataPath — Black population share, Latinx population share, and
   // poverty rate, each toggled independently so a reader compares them the
   // same way the HOLC and covenant layers are compared: two colours on the
@@ -66,7 +66,7 @@ export type LayerId =
   // is a small hand-curated set of documented agreements, each one mirrored
   // in full under public/data/docs/, starting with the first: University of
   // Minnesota PD's Flock Safety contract, released via a MuckRock MGDPA
-  // request. See scripts/ingest/vendor-contracts.mjs.
+  // request. See scripts/ingest/mn/vendor-contracts.mjs.
   | 'vendor_contract';
 
 export type Locale = 'en' | 'es';
@@ -644,7 +644,7 @@ export interface LayerDefinition {
    *
    * Those paths are never an assertion that the building operates the
    * device — see `pathsTo.joinKey`'s own comment for why, and
-   * scripts/ingest/agency-buildings.mjs / agencies-lpr-bca.mjs for where the
+   * scripts/ingest/mn/agency-buildings.mjs / agencies-lpr-bca.mjs for where the
    * two facts they actually rest on come from. The join is what makes a path
    * publishable at all: a line is only worth asking a reader to look at once
    * a cited document connects the two ends, never because one happens to
