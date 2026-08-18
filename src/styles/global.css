@@ -59,25 +59,37 @@
  * dark values. These three selectors cover: OS-level light preference with
  * no explicit user choice, an explicit "light" choice, and an explicit
  * "dark" choice (which must win even under an OS light preference).
+ *
+ * Values matched to wealldobettermn.org (github.com/ngabantudev/
+ * wealldobettermn, src/app/globals.css) — a sister Minnesota civic-
+ * transparency site, which in turn matches the State of Minnesota's own
+ * web portal (mn.gov's core.css): off-white nav levels (#f0f0f0/#f2f2f2,
+ * hover #e6e6e6), striped-row gray (#e9e9e9), body type (#1b1b1b/#333333),
+ * and link blue (#0062b2). ink-600 (#828282) is that file's
+ * `--sidebar-hover` — the only token there that lands in the gap between
+ * the hairline gray (ink-700) and muted text (ink-400), so it's the
+ * sourced fill rather than an interpolated guess. Same reasoning as that
+ * file's own provenance comment — a brand color is still a claim, so it's
+ * cross-checked against source rather than eyeballed off a screenshot.
  */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme]) {
-    --color-ink-950: #ffffff;
-    --color-ink-900: #f4f6f9;
-    --color-ink-850: #e9edf3;
-    --color-ink-800: #d7dde7;
-    --color-ink-700: #b9c3d1;
-    --color-ink-600: #8e9aac;
-    --color-ink-400: #5c6779;
-    --color-ink-300: #455061;
-    --color-ink-200: #2c3543;
-    --color-ink-100: #131a24;
+    --color-ink-950: #f0f0f0;
+    --color-ink-900: #f2f2f2;
+    --color-ink-850: #e9e9e9;
+    --color-ink-800: #e5e5e5;
+    --color-ink-700: #d9d9d9;
+    --color-ink-600: #828282;
+    --color-ink-400: #666666;
+    --color-ink-300: #555555;
+    --color-ink-200: #333333;
+    --color-ink-100: #1b1b1b;
 
-    --color-accent: #b45309;
-    --color-warn: #92400e;
+    --color-accent: #0062b2;
+    --color-warn: #b45309;
 
     --color-on-accent: #ffffff;
-    --color-well: #eef1f6;
+    --color-well: #ffffff;
     --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
 
     color-scheme: light;
@@ -85,25 +97,68 @@
 }
 
 :root[data-theme='light'] {
-  --color-ink-950: #ffffff;
-  --color-ink-900: #f4f6f9;
-  --color-ink-850: #e9edf3;
-  --color-ink-800: #d7dde7;
-  --color-ink-700: #b9c3d1;
-  --color-ink-600: #8e9aac;
-  --color-ink-400: #5c6779;
-  --color-ink-300: #455061;
-  --color-ink-200: #2c3543;
-  --color-ink-100: #131a24;
+  --color-ink-950: #f0f0f0;
+  --color-ink-900: #f2f2f2;
+  --color-ink-850: #e9e9e9;
+  --color-ink-800: #e5e5e5;
+  --color-ink-700: #d9d9d9;
+  --color-ink-600: #828282;
+  --color-ink-400: #666666;
+  --color-ink-300: #555555;
+  --color-ink-200: #333333;
+  --color-ink-100: #1b1b1b;
 
-  --color-accent: #b45309;
-  --color-warn: #92400e;
+  --color-accent: #0062b2;
+  --color-warn: #b45309;
 
   --color-on-accent: #ffffff;
-  --color-well: #eef1f6;
+  --color-well: #ffffff;
   --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
 
   color-scheme: light;
+}
+
+/*
+ * The flag band — `.nav-band`, applied to Nav.astro's top `<header>` and
+ * bottom mobile `<nav>`, light mode only. wealldobettermn.org's own header
+ * (`SiteHeader.tsx`'s `.band` class, src/app/globals.css) doesn't carry the
+ * mn.gov neutral palette above at all — it's the three colors the State
+ * Emblems Redesign Commission published for the 2024 Minnesota flag: Night
+ * Sky Blue (Pantone 648, the field), Water Blue (Pantone 305), and the
+ * white North Star. Same source, same three colors, no fourth one invented
+ * for a hover or a border — Water Blue at 32% over the field stands in for
+ * both (`.band`'s own --hair), and the row-hover fill is Night Sky Blue
+ * stepped one shade lighter (`.band`'s own --hover, #0d4673).
+ *
+ * Dark mode is deliberately untouched — no override exists below the
+ * `@media`/`[data-theme='light']` selectors above, so the header just
+ * falls through to the ordinary ink-900/ink-800 neutral every other dark
+ * panel uses. That matches wealldobettermn's own `.dark .band`, which
+ * drops the flag rather than giving dark mode a second, invented palette.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .nav-band {
+    --color-ink-900: #002d5d;
+    --color-ink-850: #0d4673;
+    --color-ink-800: #52c9e852;
+    --color-ink-400: #ffffffa3;
+    --color-ink-300: #ffffffb8;
+    --color-ink-100: #ffffff;
+
+    --color-accent: #52c9e8;
+    --color-on-accent: #002d5d;
+  }
+}
+
+:root[data-theme='light'] .nav-band {
+  --color-ink-900: #002d5d;
+  --color-ink-850: #0d4673;
+  --color-ink-800: #52c9e852;
+  --color-ink-300: #ffffffb8;
+  --color-ink-100: #ffffff;
+
+  --color-accent: #52c9e8;
+  --color-on-accent: #002d5d;
 }
 
 :root[data-theme='dark'] {
@@ -539,6 +594,19 @@
 :root[data-theme='light'] .theme-control-panel {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
 }
+/*
+ * The `[data-theme='light']` rule above only covers an explicit choice —
+ * missed the OS-preference case every other theme-aware rule in this file
+ * handles (see `.maplibregl-ctrl-group button .maplibregl-ctrl-icon`
+ * above), so an OS-light visitor who'd never touched the toggle got every
+ * ink token switched but this one shadow left at the dark rule's 50%-black
+ * weight.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .theme-control-panel {
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  }
+}
 .theme-control-section + .theme-control-section {
   margin-top: 0.625rem;
   padding-top: 0.625rem;
@@ -793,6 +861,12 @@
 }
 :root[data-theme='light'] .panel-tab {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+/* Same OS-preference gap as .theme-control-panel above — see that comment. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .panel-tab {
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  }
 }
 .panel-tab-chevron {
   transition: transform 200ms ease-out;
