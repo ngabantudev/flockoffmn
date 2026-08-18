@@ -42,6 +42,11 @@ const STEPS = [
   // to anchor each agency's road search, so it follows all three.
   { name: 'alpr-reported', script: 'alpr-reported.mjs' },
   { name: 'alpr', script: 'alpr.mjs' },
+  // Needs both alpr.geojson and alpr-reported.geojson finished — it reads
+  // them back off disk and re-stamps both with the "cross-listed corner"
+  // proximity match. See its own header for what that match does and does
+  // not claim.
+  { name: 'alpr-cross-source', script: 'alpr-cross-source.mjs' },
   { name: 'detention', script: 'detention.mjs' },
   { name: 'data-centers', script: 'data-centers.mjs' },
   // Independent of every other layer: MnDOT names the county on each segment,
