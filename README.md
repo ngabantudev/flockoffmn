@@ -4,7 +4,7 @@
 
 **A free, open-source map of the systems watching your neighbourhood — built by the community, for the community. Starting in Minnesota.**
 
-[![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
+[![Code: AGPL v3](https://img.shields.io/badge/code-AGPLv3-blue.svg)](LICENSE)
 [![Data: CC BY 4.0](https://img.shields.io/badge/data-CC%20BY%204.0-green.svg)](LICENSE-DATA.md)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing--we-need-you)
 
@@ -46,7 +46,7 @@ This is a public good, not a product.
   your address, the search runs *in your browser* against a place list shipped
   with the page — nothing you type is sent anywhere, because there's nowhere
   for it to go.
-- **Open code (MIT), open data (CC BY 4.0),** and every dataset rebuildable
+- **Open code (AGPL v3), open data (CC BY 4.0),** and every dataset rebuildable
   from scratch with no API keys. If you don't trust our numbers, regenerate
   them yourself in one command.
 
@@ -235,10 +235,11 @@ build and host its own archive instead (see "Base map tiles" in that doc).
 
 ## Licence
 
-Code **MIT**. Data we compile **CC BY 4.0**. Upstream layers keep their own
-terms — the camera layer is ODbL share-alike, redlining is CC BY-NC-SA — and
-those aren't ours to relax. Read [LICENSE-DATA.md](LICENSE-DATA.md) before
-redistributing.
+Code **AGPL v3** — if you run a modified version as a public service, you
+must publish your changes; see [LICENSE](LICENSE). Data we compile **CC BY
+4.0**. Upstream layers keep their own terms — the camera layer is ODbL
+share-alike, redlining is CC BY-NC-SA — and those aren't ours to relax. Read
+[LICENSE-DATA.md](LICENSE-DATA.md) before redistributing.
 
 ## Not legal advice
 
