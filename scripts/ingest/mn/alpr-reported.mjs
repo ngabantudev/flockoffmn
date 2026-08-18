@@ -42,8 +42,8 @@ import {
   loadPublicJson,
   PUBLIC_DATA,
   ROOT,
-} from './lib/util.mjs';
-import { bboxOf, haversineMeters } from '../../src/lib/geo.mjs';
+} from '../lib/util.mjs';
+import { bboxOf, haversineMeters } from '../../../src/lib/geo.mjs';
 
 /** Metres within which two roads count as meeting. */
 const JUNCTION_METERS = 30;

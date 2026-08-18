@@ -303,19 +303,20 @@ grounds. The posture that follows from that:
   from upstream with no credentials, the datasets survive the loss of this
   repository.
 
-## Extending nationally
+## Extending nationally, or to another state
 
-The geocoding already keys on Census GEOIDs, so the state scope is a parameter,
-not an assumption:
+See [PORTING.md](../PORTING.md) for the full breakdown — which ingest scripts
+work unmodified via env vars, which are Minnesota-specific templates to
+adapt, and what a fork needs to do about the basemap archive and the
+records-request generator. The short version:
 
 ```bash
 STATE_FIPS=06 STATE_USPS=CA STATE_ISO=US-CA npm run data:counties
 SCOPE=national npm run data:287g
 ```
 
-The main work is a national county reference — `counties.mjs` currently
-requests one state from TIGERweb and would need to page through all of them, or
-consume the national Gazetteer plus a national boundary file. Expect the
-boundary payload to grow well beyond the ~100 KB Minnesota subset, at which
-point the "near me" county lookup should move to tiles or a spatial index
-rather than shipping every polygon to the browser.
+If you're running `SCOPE=national` for every state at once rather than
+porting to a single one, expect `counties.mjs`'s boundary payload to grow well
+beyond the ~100 KB Minnesota subset, at which point the "near me" county
+lookup should move to tiles or a spatial index rather than shipping every
+polygon to the browser.

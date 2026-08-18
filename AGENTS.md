@@ -175,7 +175,9 @@ The layer registry is the single source of truth. `src/layers/registry.ts` drive
 map, legend, filters, detail panels, sources page, downloads, and "near me" view.
 
 * **Two-File Additions:** Adding a layer requires **exactly two files**:
-  1. An ingest script in `scripts/ingest/` that emits the shared schema to `public/data/`.
+  1. An ingest script in `scripts/ingest/national/` (works for any US state via env
+     vars) or `scripts/ingest/mn/` (built against a Minnesota-specific statute, agency,
+     or dataset — see PORTING.md) that emits the shared schema to `public/data/`.
   2. One entry in `src/layers/registry.ts`.
   * *Do NOT edit UI components directly to add layers.*
 * **Relations Are Layers Too:** Per §0.1, edges between features are registry entries

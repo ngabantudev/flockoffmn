@@ -33,7 +33,7 @@
 
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fetchWithRetry, log, loadCounties, PUBLIC_DATA } from './lib/util.mjs';
+import { fetchWithRetry, log, loadCounties, PUBLIC_DATA } from '../lib/util.mjs';
 
 const STATE_FIPS = process.env.STATE_FIPS ?? '27'; // Minnesota
 const STATE_USPS = process.env.STATE_USPS ?? 'MN';

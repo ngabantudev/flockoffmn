@@ -58,7 +58,7 @@
  * reliability cutoff — is flagged `highUncertainty` rather than hidden.
  */
 
-import { loadPublicJson, writeLayer, log } from './lib/util.mjs';
+import { loadPublicJson, writeLayer, log } from '../lib/util.mjs';
 
 const STATE_FIPS = process.env.STATE_FIPS ?? '27'; // Minnesota
 

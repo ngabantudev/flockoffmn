@@ -46,7 +46,7 @@
 
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { writeLayer, log, loadPublicJson, without, PUBLIC_DATA } from './lib/util.mjs';
+import { writeLayer, log, loadPublicJson, without, PUBLIC_DATA } from '../lib/util.mjs';
 
 /**
  * Parse a CSV that may carry a quoted field with an embedded newline (the

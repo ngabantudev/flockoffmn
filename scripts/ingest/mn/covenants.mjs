@@ -34,7 +34,7 @@
  * so in both languages.
  */
 
-import { fetchWithRetry, writeLayer, log, slugId } from './lib/util.mjs';
+import { fetchWithRetry, writeLayer, log, slugId } from '../lib/util.mjs';
 
 /**
  * Mapping Prejudice publish one repository directory per county. The GeoJSON

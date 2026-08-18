@@ -183,13 +183,18 @@ database, no accounts — which keeps it cheap to host, trivial to mirror, and
 hard to take down.
 
 ```
-scripts/ingest/     Node ETL — one script per layer, dependency-free
-src/layers/         the schema (types.ts) and layer registry (registry.ts)
-src/lib/            map controller, i18n, shared geometry
-src/components/     map UI and page content
-public/data/        generated GeoJSON + CSV — the published open datasets
-data/community/     community-maintained overlays
+scripts/ingest/national/  Node ETL that works for any US state via env vars — start here on a fork
+scripts/ingest/mn/        Node ETL built against Minnesota-specific statutes/agencies/datasets
+src/layers/                the schema (types.ts) and layer registry (registry.ts)
+src/lib/                   map controller, i18n, shared geometry
+src/components/            map UI and page content
+public/data/                generated GeoJSON + CSV — the published open datasets
+data/community/             community-maintained overlays
 ```
+
+Forking this for another state or country? See [PORTING.md](PORTING.md) — it's
+a layer-by-layer breakdown of what works unmodified, what's a template to
+adapt, and what to skip.
 
 <details>
 <summary><strong>Design decisions worth knowing</strong></summary>

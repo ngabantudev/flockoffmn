@@ -22,7 +22,7 @@
  * demographic flags this dataset embeds.
  */
 
-import { fetchWithRetry, writeLayer, log, slugId } from './lib/util.mjs';
+import { fetchWithRetry, writeLayer, log, slugId } from '../lib/util.mjs';
 
 // `maxAllowableOffset` generalises the tract outlines to ~10 m and
 // `geometryPrecision` trims coordinates to five decimals (~1 m). A tract is a

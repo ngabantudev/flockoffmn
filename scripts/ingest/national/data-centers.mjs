@@ -29,8 +29,8 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fetchWithRetry, writeLayer, loadCounties, log, slugId, ROOT } from './lib/util.mjs';
-import { findContaining } from '../../src/lib/geo.mjs';
+import { fetchWithRetry, writeLayer, loadCounties, log, slugId, ROOT } from '../lib/util.mjs';
+import { findContaining } from '../../../src/lib/geo.mjs';
 
 const SERVICE =
   'https://services.arcgis.com/jDGuO8tYggdCCnUJ/arcgis/rest/services/MasterFileFOIAs/FeatureServer/0';
