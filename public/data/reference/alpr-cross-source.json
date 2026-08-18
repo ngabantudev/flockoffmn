@@ -2,9 +2,9 @@
   "metadata": {
     "note": "Proximity match this project computed between two independent ALPR records — not a document connecting them. See CLAUDE.md §1c.",
     "thresholdMeters": 50,
-    "osmLastUpdated": "2026-07-31T16:28:13.333Z",
-    "bcaLastUpdated": "2026-08-14T06:52:58.148Z",
-    "runAt": "2026-08-18T05:16:30.884Z",
+    "osmLastUpdated": "2026-08-18T05:16:30.842Z",
+    "bcaLastUpdated": "2026-08-18T05:16:30.877Z",
+    "runAt": "2026-08-18T11:41:33.732Z",
     "bcaMatchedCount": 136,
     "osmMatchedCount": 155,
     "bcaTotal": 276,
@@ -1904,5 +1904,55 @@
       "meters": 25
     }
   ],
-  "contestedPairings": []
+  "contestedPairings": [],
+  "nearMisses": [
+    {
+      "bcaRecordId": "alpr-reported-belle-plaine-police-department-enterprise-drive-east-and-meridian-street-south",
+      "agencyName": "Belle Plaine Police Department",
+      "meters": 38,
+      "wonBySiteId": "cross-alpr-reported-belle-plaine-police-department-enterprise-drive-west-and-meridian-street-south"
+    },
+    {
+      "bcaRecordId": "alpr-reported-blaine-police-department-main-street-ne-at-university-avenue-ne-eastbound",
+      "agencyName": "Blaine Police Department",
+      "meters": 30,
+      "wonBySiteId": "cross-alpr-reported-blaine-police-department-university-avenue-ne-at-main-street-ne-southbound"
+    },
+    {
+      "bcaRecordId": "alpr-reported-brooklyn-center-police-department-51st-avenue-north-and-brooklyn-boulevard-southbound",
+      "agencyName": "Brooklyn Center Police Department",
+      "meters": 10,
+      "wonBySiteId": "cross-alpr-reported-brooklyn-center-police-department-51st-avenue-north-and-brooklyn-boulevard-northbound"
+    },
+    {
+      "bcaRecordId": "alpr-reported-cottage-grove-police-department-east-point-douglas-road-at-jamaica-avenue-eastbound",
+      "agencyName": "Cottage Grove Police Department",
+      "meters": 21,
+      "wonBySiteId": "cross-alpr-reported-cottage-grove-police-department-jamaica-avenue-south-at-east-point-douglas-road-northbound"
+    },
+    {
+      "bcaRecordId": "alpr-reported-mounds-view-police-department-mounds-view-boulevard-at-long-lake-road-eastbound",
+      "agencyName": "Mounds View Police Department",
+      "meters": 49,
+      "wonBySiteId": "cross-alpr-reported-mounds-view-police-department-mounds-view-boulevard-at-long-lake-road-westbound"
+    },
+    {
+      "bcaRecordId": "alpr-reported-stillwater-police-department-osgood-avenue-north-at-62nd-street-southbound",
+      "agencyName": "Stillwater Police Department",
+      "meters": 25,
+      "wonBySiteId": "cross-alpr-reported-stillwater-police-department-osgood-avenue-north-at-62nd-street-northbound"
+    },
+    {
+      "bcaRecordId": "alpr-reported-woodbury-police-department-weir-drive-at-tamarack-road",
+      "agencyName": "Woodbury Police Department",
+      "meters": 16,
+      "wonBySiteId": "cross-alpr-reported-woodbury-police-department-weir-drive-at-tamarack-road-southbound"
+    },
+    {
+      "bcaRecordId": "alpr-reported-woodbury-police-department-hudson-road-at-woodbury-drive",
+      "agencyName": "Woodbury Police Department",
+      "meters": 40,
+      "wonBySiteId": "cross-alpr-reported-woodbury-police-department-hudson-road-at-woodbury-drive-eastbound"
+    }
+  ]
 }

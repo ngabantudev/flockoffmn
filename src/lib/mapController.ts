@@ -139,10 +139,14 @@ export interface ClientLayer {
     hoverNote: string;
     matched: string;
     unmatched: string;
+    /** See LayerDefinition.crossSource.nearMiss's own comment. */
+    nearMiss?: string;
     contested: string;
     ambiguousAnchor: string;
     glossary: string;
     searchSuffix: string;
+    /** See LayerDefinition.crossSource.nearMissSearchSuffix's own comment. */
+    nearMissSearchSuffix?: string;
   };
   dataPath: string;
   filters: {
@@ -800,12 +804,22 @@ export class MapController {
    * that attribute, so this is a no-op fallback-through for every other
    * point layer rather than a special case per layer id — the GL expression
    * itself is what stays generic.
+   *
+   * A "near miss" (crossSourceNearMiss — see alpr-cross-source.mjs's own
+   * comment) shares this exact colour rather than getting a hue of its own:
+   * it's the same corroboration idea at lower confidence, not a different
+   * kind of fact, so `pointStrokeWidthExpr` and `pointStrokeOpacityExpr` are
+   * the only two places a near miss reads as visually weaker than a match.
    */
   private pointStrokeColorExpr(layer: ClientLayer): maplibregl.ExpressionSpecification | string {
     const base = layer.pointStrokeColor ?? this.basemapColor;
     return [
       'case',
-      ['!=', ['get', 'crossSourceSiteId'], null],
+      [
+        'any',
+        ['!=', ['get', 'crossSourceSiteId'], null],
+        ['==', ['get', 'crossSourceNearMiss'], true],
+      ],
       this.crossSourceRingColor,
       base,
     ] as unknown as maplibregl.ExpressionSpecification;
@@ -813,10 +827,11 @@ export class MapController {
 
   /**
    * A point layer's `circle-stroke-width`, doubled (roughly) for a matched
-   * record, on the same emergeFrom→pointsFrom fade every stroke already
-   * uses — a matched ring must never appear before `pointsFrom` any more
-   * than the base stroke does, so both branches share the same two zoom
-   * anchors and differ only in the value they reach.
+   * record and stepped up more modestly for a near miss, on the same
+   * emergeFrom→pointsFrom fade every stroke already uses — neither ring may
+   * ever appear before `pointsFrom` any more than the base stroke does, so
+   * all three branches share the same two zoom anchors and differ only in
+   * the value they reach.
    */
   private pointStrokeWidthExpr(tier: {
     emergeFrom: number;
@@ -826,7 +841,25 @@ export class MapController {
       'case',
       ['!=', ['get', 'crossSourceSiteId'], null],
       ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 2.2],
+      ['==', ['get', 'crossSourceNearMiss'], true],
+      ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 1.6],
       ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 1.2],
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
+   * A point layer's `circle-stroke-opacity`. Every layer's base stroke stays
+   * fully opaque (MapLibre's own default) — this exists purely to fade a
+   * near-miss ring down against a matched one, since colour and width alone
+   * (see the two expressions above) still read close enough at a glance to
+   * blur the distinction this attribute exists to keep clear.
+   */
+  private pointStrokeOpacityExpr(): maplibregl.ExpressionSpecification {
+    return [
+      'case',
+      ['==', ['get', 'crossSourceNearMiss'], true],
+      0.55,
+      1,
     ] as unknown as maplibregl.ExpressionSpecification;
   }
 
@@ -2213,6 +2246,9 @@ export class MapController {
          * two can never disagree about when the ring is allowed to appear.
          */
         'circle-stroke-width': this.pointStrokeWidthExpr(tier),
+        // See pointStrokeOpacityExpr's own comment — the ring's opacity, not
+        // the dot's; `circle-opacity` just below is unrelated and untouched.
+        'circle-stroke-opacity': this.pointStrokeOpacityExpr(),
         /*
          * Opacity follows the same two-branch shape as radius, just above.
          * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured

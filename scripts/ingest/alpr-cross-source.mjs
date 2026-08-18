@@ -120,12 +120,32 @@ async function main() {
   }
 
   /*
+   * Near miss — a BCA record that ends up with no match of its own, but only
+   * because its one nearby OSM candidate got assigned to a *nearer* sibling
+   * filing from the same agency (the routine double-hit case in pass 2).
+   * That is a materially different kind of "unmatched" than having nothing
+   * within 50 m at all, and collapsing the two into one "no record nearby"
+   * sentence would hide a real near-corroboration a reader would want to
+   * see. This is still not a match — no crossSourceSiteId is minted for it —
+   * just a flagged, weaker cousin of one. Keyed by the *losing* BCA id, with
+   * the shortest losing distance if it lost more than once.
+   */
+  const nearMissByBca = new Map(); // bcaId -> { meters, wonSiteId }
+  for (const d of discardedSameAgency) {
+    const existing = nearMissByBca.get(d.discardedBcaId);
+    if (!existing || d.meters < existing.meters) {
+      nearMissByBca.set(d.discardedBcaId, { meters: d.meters, wonSiteId: `cross-${d.keptBcaId}` });
+    }
+  }
+
+  /*
    * Pass 3 — stamp every feature in both layers. Every feature gets every
    * attribute (matched or not) so the CSV twins keep a stable column set —
    * see writeLayer's attrKeys derivation.
    */
   let bcaMatchedCount = 0;
   const siteEntries = [];
+  const nearMissEntries = [];
 
   const bcaFeatures = bca.features.map((f) => {
     const id = f.properties.id;
@@ -138,6 +158,7 @@ async function main() {
       : null;
 
     const ambiguousAnchor = matched && Boolean(f.properties.attributes.ambiguousJunction);
+    const nearMiss = matched ? null : (nearMissByBca.get(id) ?? null);
 
     if (matched) {
       siteEntries.push({
@@ -148,6 +169,13 @@ async function main() {
         distancesMeters: osmIds.map((oid) => Math.round(groupOsmMeters.get(id).get(oid))),
         contested: contestedBcaIds.has(id),
         anchorAmbiguous: ambiguousAnchor,
+      });
+    } else if (nearMiss) {
+      nearMissEntries.push({
+        bcaRecordId: id,
+        agencyName: f.properties.attributes.agencyName,
+        meters: nearMiss.meters,
+        wonBySiteId: nearMiss.wonSiteId,
       });
     }
 
@@ -163,6 +191,9 @@ async function main() {
           crossSourceThresholdM: THRESHOLD_M,
           crossSourceContested: contestedBcaIds.has(id),
           crossSourceAnchorAmbiguous: ambiguousAnchor,
+          crossSourceNearMiss: Boolean(nearMiss),
+          crossSourceNearMissMeters: nearMiss ? nearMiss.meters : null,
+          crossSourceNearMissSiteId: nearMiss ? nearMiss.wonSiteId : null,
         },
       },
     };
@@ -200,6 +231,14 @@ async function main() {
           // a client-side join back into the other layer's whole file. Null
           // when unmatched.
           crossSourceAgencyName: matched ? anchorFeature.properties.attributes.agencyName : null,
+          // "Near miss" (see pass 3's own comment) only ever happens to a
+          // BCA record losing a same-agency tie — an OSM point is always
+          // assigned somewhere once it has any candidate at all, never
+          // discarded outright, so this is always false/null on this side.
+          // Present anyway, constant, so both layers' CSV columns match.
+          crossSourceNearMiss: false,
+          crossSourceNearMissMeters: null,
+          crossSourceNearMissSiteId: null,
         },
       },
     };
@@ -227,7 +266,7 @@ async function main() {
 
   log(
     'alpr-cross-source',
-    `${bcaMatchedCount}/${bca.features.length} BCA records matched, ${osmMatchedCount}/${osm.features.length} OSM records matched, ${contestedPairs.length} contested pairing(s), ${discardedSameAgency.length} same-agency double-hit(s) discarded`,
+    `${bcaMatchedCount}/${bca.features.length} BCA records matched, ${osmMatchedCount}/${osm.features.length} OSM records matched, ${contestedPairs.length} contested pairing(s), ${discardedSameAgency.length} same-agency double-hit(s) discarded, ${nearMissEntries.length} near miss(es) flagged`,
   );
 
   await writeLayer('alpr', {
@@ -269,6 +308,7 @@ async function main() {
         sites: siteEntries,
         discardedSameAgencyPairings: discardedSameAgency,
         contestedPairings: contestedPairs,
+        nearMisses: nearMissEntries,
       },
       null,
       2,

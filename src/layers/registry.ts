@@ -1065,8 +1065,8 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Una ubicación reportada es donde la agencia dice que hay un lector, no una garantía de que siga allí o de que se haya instalado.',
       },
       {
-        en: 'A brass ring marks a "cross-listed corner": this project found a volunteer-mapped camera within 50 m of this filing. That is a proximity calculation between two already-approximate coordinates — this project\'s own resolution of the filing\'s words against road geometry, and a hand-placed OpenStreetMap pin — not a document linking the two records. Most filings have no such match; that is the normal case, not a doubt about the filing. See the record\'s own detail panel for what a match here does and does not mean.',
-        es: 'Un anillo bronce marca una «esquina de doble registro»: este proyecto encontró una cámara mapeada por voluntarios a menos de 50 m de esta declaración. Es un cálculo de proximidad entre dos coordenadas ya aproximadas —la resolución que hace este proyecto de las palabras de la declaración contra la geometría vial, y un pin de OpenStreetMap colocado a mano— no un documento que vincule ambos registros. La mayoría de las declaraciones no tienen tal coincidencia; ese es el caso normal, no una duda sobre la declaración. Consulte el panel de detalle del registro para ver qué significa y qué no significa una coincidencia aquí.',
+        en: 'A brass ring marks a "cross-listed corner": this project found a volunteer-mapped camera within 50 m of this filing. That is a proximity calculation between two already-approximate coordinates — this project\'s own resolution of the filing\'s words against road geometry, and a hand-placed OpenStreetMap pin — not a document linking the two records. Most filings have no such match; that is the normal case, not a doubt about the filing. A faint, thinner version of the same ring marks a narrower case — a "near miss," where a nearby volunteer-mapped camera exists but was assigned to a closer filing from the same agency instead. See the record\'s own detail panel for what a match, or a near miss, here does and does not mean.',
+        es: 'Un anillo bronce marca una «esquina de doble registro»: este proyecto encontró una cámara mapeada por voluntarios a menos de 50 m de esta declaración. Es un cálculo de proximidad entre dos coordenadas ya aproximadas —la resolución que hace este proyecto de las palabras de la declaración contra la geometría vial, y un pin de OpenStreetMap colocado a mano— no un documento que vincule ambos registros. La mayoría de las declaraciones no tienen tal coincidencia; ese es el caso normal, no una duda sobre la declaración. Una versión tenue y más delgada del mismo anillo marca un caso más estrecho —un «casi acierto»—, donde existe una cámara cercana mapeada por voluntarios pero fue asignada a una declaración más cercana de la misma agencia. Consulte el panel de detalle del registro para ver qué significa y qué no significa una coincidencia, o un casi acierto, aquí.',
       },
     ],
     geometry: 'point',
@@ -1189,6 +1189,15 @@ export const LAYERS: LayerDefinition[] = [
         en: 'No record from the other source falls within 50 m of this one. The two sources cover different things — one is what agencies filed with the state, the other is what volunteers happened to map — so an unmatched record is the normal case, not a doubt about this one.',
         es: 'Ningún registro de la otra fuente se encuentra a menos de 50 m de este. Las dos fuentes cubren cosas distintas —una es lo que las agencias declararon al estado, la otra es lo que los voluntarios llegaron a mapear— así que un registro sin coincidencia es el caso normal, no una duda sobre este registro.',
       },
+      // A fainter cousin of `matched`, not a rewrite of `unmatched` — see
+      // LayerDefinition.crossSource.nearMiss's own comment. This only ever
+      // fires on this (alpr_reported) side: an OSM point is never discarded
+      // outright, only a BCA filing loses a same-agency tie to a nearer
+      // sibling, so the alpr side's crossSource block carries no such key.
+      nearMiss: {
+        en: 'A volunteer-mapped device sat {d} m from this filing — close enough to be worth a mention — but it fell nearer to another filing by this same agency, so it counts as that filing\'s match instead of this one\'s. This filing has no cross-listed device of its own.',
+        es: 'Un dispositivo mapeado por voluntarios se encontraba a {d} m de esta declaración —lo bastante cerca como para mencionarlo— pero quedó más cerca de otra declaración de esta misma agencia, así que cuenta como coincidencia de esa declaración y no de esta. Esta declaración no tiene un dispositivo de doble registro propio.',
+      },
       contested: {
         en: 'More than one agency reported a reader near this corner. Both filings are linked above; this project does not choose between them.',
         es: 'Más de una agencia reportó un lector cerca de esta esquina. Ambas declaraciones están enlazadas arriba; este proyecto no elige entre ellas.',
@@ -1198,12 +1207,19 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Las dos vías de esta declaración se cruzan en más de un lugar, así que la esquina mostrada es una de varias que la declaración podría significar. Interprete esta coincidencia en consecuencia.',
       },
       glossary: {
-        en: 'Cross-listed corner — A place where two independent records land within 50 metres of each other: an agency\'s own filing to the state that it operates a fixed licence plate reader there, and a camera mapped at that spot by an OpenStreetMap volunteer. The match is measured by this project from the two coordinates; no document says the two records describe the same device. It says the corner turns up in two separate paper trails. It does not say a camera is there today.',
-        es: 'Esquina de doble registro: un lugar donde dos registros independientes caen a menos de 50 metros el uno del otro: la propia declaración de una agencia al estado de que opera allí un lector fijo de matrículas, y una cámara mapeada en ese punto por un voluntario de OpenStreetMap. Este proyecto mide la coincidencia a partir de las dos coordenadas; ningún documento afirma que ambos registros describan el mismo dispositivo. Indica que la esquina aparece en dos rastros documentales independientes. No indica que haya una cámara allí hoy.',
+        en: 'Cross-listed corner — A place where two independent records land within 50 metres of each other: an agency\'s own filing to the state that it operates a fixed licence plate reader there, and a camera mapped at that spot by an OpenStreetMap volunteer. The match is measured by this project from the two coordinates; no document says the two records describe the same device. It says the corner turns up in two separate paper trails. It does not say a camera is there today. A faint version of the same ring marks a "near miss" — a filing that had a volunteer-mapped device nearby, but lost it to a closer filing from the same agency.',
+        es: 'Esquina de doble registro: un lugar donde dos registros independientes caen a menos de 50 metros el uno del otro: la propia declaración de una agencia al estado de que opera allí un lector fijo de matrículas, y una cámara mapeada en ese punto por un voluntario de OpenStreetMap. Este proyecto mide la coincidencia a partir de las dos coordenadas; ningún documento afirma que ambos registros describan el mismo dispositivo. Indica que la esquina aparece en dos rastros documentales independientes. No indica que haya una cámara allí hoy. Una versión tenue del mismo anillo marca un «casi acierto»: una declaración que tenía un dispositivo mapeado por voluntarios cerca, pero que quedó asignado a una declaración más cercana de la misma agencia.',
       },
       searchSuffix: {
         en: ' — cross-listed corner',
         es: ' — esquina de doble registro',
+      },
+      // Optional per LayerDefinition.crossSource.searchSuffix's own comment
+      // — appended instead of searchSuffix when only `crossSourceNearMiss`
+      // is set (see MapView.astro's search-result naming).
+      nearMissSearchSuffix: {
+        en: ' — near miss (cross-listed elsewhere)',
+        es: ' — casi acierto (doble registro en otra esquina)',
       },
     },
   },

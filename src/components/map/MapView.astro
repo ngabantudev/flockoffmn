@@ -83,10 +83,14 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
         hoverNote: pick(d.crossSource.hoverNote, locale),
         matched: pick(d.crossSource.matched, locale),
         unmatched: pick(d.crossSource.unmatched, locale),
+        nearMiss: d.crossSource.nearMiss ? pick(d.crossSource.nearMiss, locale) : undefined,
         contested: pick(d.crossSource.contested, locale),
         ambiguousAnchor: pick(d.crossSource.ambiguousAnchor, locale),
         glossary: pick(d.crossSource.glossary, locale),
         searchSuffix: pick(d.crossSource.searchSuffix, locale),
+        nearMissSearchSuffix: d.crossSource.nearMissSearchSuffix
+          ? pick(d.crossSource.nearMissSearchSuffix, locale)
+          : undefined,
       }
     : undefined,
   relatedBuildings: d.relatedBuildings,
@@ -183,6 +187,7 @@ const strings = {
   filtersCleared: t('filtersCleared'),
   resetView: t('resetView'),
   crossListedCorner: t('crossListedCorner'),
+  crossListedNearMissLegend: t('crossListedNearMissLegend'),
 };
 ---
 
@@ -418,6 +423,28 @@ const strings = {
                                 aria-hidden="true"
                               />
                               <p class="text-[11px] leading-snug text-ink-400">{layer.crossSource.legend}</p>
+                            </div>
+                          )}
+
+                          {/*
+                            "Near miss" static legend row — a second,
+                            subordinate swatch, thinner ring at half opacity,
+                            same brass hue as the match ring above rather
+                            than a new colour. Only rendered where the
+                            registry names copy for it (today, alpr_reported
+                            only — see LayerDefinition.crossSource.nearMiss's
+                            own comment on why the OSM side has no use for
+                            this key).
+                          */}
+                          {layer.crossSource?.nearMiss && (
+                            <div class="flex items-start gap-2 border-t border-ink-800 px-2.5 py-2">
+                              <span
+                                class="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border border-cross-source-ring bg-ink-700 opacity-55"
+                                aria-hidden="true"
+                              />
+                              <p class="text-[11px] leading-snug text-ink-400">
+                                {strings.crossListedNearMissLegend}
+                              </p>
                             </div>
                           )}
 
@@ -1185,6 +1212,12 @@ const strings = {
     // LayerDefinition.crossSource.
     if (layer.crossSource) {
       const matched = attrs.crossSourceSiteId != null;
+      // A near miss only ever applies to an otherwise-unmatched record — see
+      // LayerDefinition.crossSource.nearMiss's own comment — and only this
+      // layer's crossSource block names the copy for it (alpr's has no use
+      // for the key, so this falls through to plain `unmatched` there too).
+      const nearMissText =
+        !matched && attrs.crossSourceNearMiss === true ? layer.crossSource.nearMiss : undefined;
       const cross = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
       cross.append(el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.crossListedCorner));
       const body_ = matched
@@ -1193,7 +1226,9 @@ const strings = {
             d: String(attrs.crossSourceMeters ?? ''),
             agency: String(attrs.crossSourceAgencyName ?? ''),
           })
-        : layer.crossSource.unmatched;
+        : nearMissText
+          ? fill(nearMissText, { d: String(attrs.crossSourceNearMissMeters ?? '') })
+          : layer.crossSource.unmatched;
       cross.append(el('p', 'text-xs leading-relaxed text-ink-200', body_));
       if (matched && attrs.crossSourceContested) {
         cross.append(el('p', 'mt-1.5 text-xs leading-relaxed text-warn', layer.crossSource.contested));
@@ -1542,6 +1577,11 @@ const strings = {
       // screen reader actually gets (spec §4). Real text, not aria-hidden.
       if (layer.crossSource && feature.properties.attributes.crossSourceSiteId) {
         text.append(el('span', 'sr-only', layer.crossSource.searchSuffix));
+      } else if (
+        layer.crossSource?.nearMissSearchSuffix &&
+        feature.properties.attributes.crossSourceNearMiss
+      ) {
+        text.append(el('span', 'sr-only', layer.crossSource.nearMissSearchSuffix));
       }
       button.append(dot, text);
       button.addEventListener('click', () => {

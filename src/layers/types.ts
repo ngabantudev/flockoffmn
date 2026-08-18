@@ -964,6 +964,19 @@ export interface LayerDefinition {
     matched: I18nString;
     /** Detail panel, unmatched record — the normal case, not a finding. */
     unmatched: I18nString;
+    /**
+     * Detail panel, unmatched BCA record where `crossSourceNearMiss` is
+     * true: an OSM point sat within 50 m but was assigned to a *nearer*
+     * sibling filing from the same agency instead (see alpr-cross-source.mjs
+     * pass 3). Takes priority over `unmatched` when present — still not a
+     * match, no `crossSourceSiteId` is minted for it, just a flagged
+     * near-corroboration that "no record nearby" would otherwise erase.
+     * `{d}` = crossSourceNearMissMeters. Optional because it only ever
+     * applies to `alpr_reported` — an OSM record is never discarded outright
+     * (see crossSourceNearMiss's own comment on that side), so `alpr`'s
+     * crossSource block has no use for this key.
+     */
+    nearMiss?: I18nString;
     /** Appended when `crossSourceContested`. */
     contested: I18nString;
     /** Appended when `crossSourceAnchorAmbiguous`. */
@@ -972,6 +985,13 @@ export interface LayerDefinition {
     glossary: I18nString;
     /** Appended to a matched record's accessible search-result name. */
     searchSuffix: I18nString;
+    /**
+     * Appended instead of `searchSuffix` to a record's accessible
+     * search-result name when only `crossSourceNearMiss` is set (never both
+     * — a record is either matched or, at most, a near miss). Same
+     * optionality reasoning as `nearMiss` above.
+     */
+    nearMissSearchSuffix?: I18nString;
   };
   /** Path under /public — also the download URL (spec F9). */
   dataPath: string;
