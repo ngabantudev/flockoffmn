@@ -438,8 +438,18 @@ const NEARME_PATHS_LAYER = 'nearme-paths';
 const NEARME_IMPACT_SOURCE = 'src-nearme-impacts';
 const NEARME_IMPACT_LAYER = 'nearme-impacts';
 const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLOW_LAYER, NEARME_ORIGIN_LAYER];
-/** Nearest-first cap so a metro-wide "near me" throw stays legible and the animation stays cheap — see throwPaths's own cost comment. */
-const NEARME_MAX_LINES = 20;
+/**
+ * Nearest-first cap so a metro-wide "near me" throw stays legible and the
+ * animation stays cheap — see throwPaths's own cost comment. Raised from
+ * an original 20: with the radius slider (and the autozoom that now
+ * follows it), a cap that low saturates well inside the slider's own
+ * range in a dense area — downtown Minneapolis already has >20 candidates
+ * within 5mi of its own 25mi max — so widening past that point stopped
+ * visibly connecting the reader to anything further, silently defeating
+ * the slider's own purpose. 50 pushes the saturation point out further
+ * without reintroducing the legibility/cost problem this cap exists for.
+ */
+const NEARME_MAX_LINES = 50;
 
 /**
  * Bounds and default for the "what's near me" search-radius slider
@@ -451,15 +461,18 @@ const NEARME_MAX_LINES = 20;
  * itself a function of how many cameras are currently connected, not a
  * separately-tuned number.
  *
- * Default matches the fixed 5mi both radius-mode `nearMe` layers already
- * promise on /near-me (registry.ts's own `radii: [5]`), so a first-time
- * "near me" result here shows exactly what the near-me page would report,
- * before the reader ever touches the slider. Max is a UI ceiling on the
- * search itself, separate from accuracyZoomCap below, which ceilings how
- * far *in* the resulting fit is allowed to go.
+ * Default and max both match the fixed 5mi both radius-mode `nearMe`
+ * layers already promise on /near-me (registry.ts's own `radii: [5]`), so
+ * a first-time "near me" result here shows exactly what the near-me page
+ * would report, and the slider opens already at that same full search —
+ * its only job is narrowing down from there, not searching wider than the
+ * page's own promise. (An earlier version let this run out to 25mi; that
+ * min/max split is intentionally gone now, not left in as dead range.)
+ * Max is a UI ceiling on the search itself, separate from accuracyZoomCap
+ * below, which ceilings how far *in* the resulting fit is allowed to go.
  */
 const NEARME_RADIUS_MIN_MI = 1;
-const NEARME_RADIUS_MAX_MI = 25;
+const NEARME_RADIUS_MAX_MI = 5;
 const NEARME_RADIUS_DEFAULT_MI = 5;
 
 /**
@@ -4031,25 +4044,35 @@ export class MapController {
   /**
    * NearMeRadiusControl's `input` handler — fires on every integer step a
    * drag crosses, up to ~24 times across the slider's full range in well
-   * under a second. Redrawing on every one of those would cancel and
-   * restart throwNearMeLines' rAF animation (and its underlying
+   * under a second. Redrawing/refitting on every one of those would cancel
+   * and restart throwNearMeLines' rAF animation (and its underlying
    * `setData` — "a worker round trip with a re-parse and re-index, not a
-   * cheap buffer write," per runThrow's own comment) that often, so ticks
-   * are coalesced to at most one redraw per animation frame: a tick just
-   * records the latest requested radius, and only the first tick in a
-   * frame schedules the rAF callback that actually applies it.
+   * cheap buffer write," per runThrow's own comment), and kick off a fresh
+   * easeToCamera, that often — so ticks are coalesced to at most one
+   * redraw+refit per animation frame: a tick just records the latest
+   * requested radius, and only the first tick in a frame schedules the
+   * rAF callback that actually applies it.
    *
-   * Deliberately does not refit the camera — only throwNearMeLines' redraw
-   * happens live. Re-zooming on every tick would fight the reader's own
-   * hand mid-drag; commitNearMeRadius does the actual refit once they let
-   * go, per its own comment.
+   * No aria-live announcement here either way (see applyNearMeRadius's own
+   * comment) — a screen-reader user gets the count once, on commit, not
+   * once per mile the drag happens to cross.
    */
   private dragNearMeRadius(radiusMi: number) {
     this.pendingNearMeRadiusMi = radiusMi;
     if (this.nearMeDragFrame !== null) return;
     this.nearMeDragFrame = requestAnimationFrame(() => {
       this.nearMeDragFrame = null;
-      if (this.pendingNearMeRadiusMi !== null) this.applyNearMeRadius(this.pendingNearMeRadiusMi, false);
+      if (this.pendingNearMeRadiusMi === null) return;
+      const targets = this.applyNearMeRadius(this.pendingNearMeRadiusMi, false);
+      // Newly-connected cameras a wider drag just pulled in are otherwise
+      // drawn off-screen until the reader lets go — the camera has to
+      // follow live, not just redraw the lines, or a farther-out camera is
+      // invisible the whole time it's actually "connected." Each tick's
+      // easeToCamera restarts from wherever the last one left off, which
+      // reads as the view tracking the drag rather than N separate jumps —
+      // same restart-in-place behavior any of this class's other
+      // easeToCamera call sites already rely on for a fast second call.
+      this.refitNearMeCamera(targets);
     });
   }
 
