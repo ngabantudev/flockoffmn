@@ -690,10 +690,44 @@
 }
 .theme-control-segmented {
   display: flex;
+  /*
+   * Wraps as a last resort on the narrowest phones (see
+   * .theme-control-segment's comment above): three content-sized labels
+   * plus icons can still exceed the panel's own min-width at ~320px
+   * viewports. Wrapping to a second row keeps every label fully visible
+   * with no CSS media-query breakpoint needed — the same "shrink before
+   * you clip" instinct as the segment fix itself.
+   */
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 .theme-control-segment {
-  flex: 1;
+  /*
+   * Sized to its own label, not an equal 1/N share: `flex: 1` split three
+   * ways forced every segment (including the shortest, "Dark") into the
+   * same width, so "Halloween" — the longest label — got squeezed below
+   * its own content width and spilled past the panel's right edge instead
+   * of wrapping or shrinking. `flex: 0 1 auto` still lets segments shrink
+   * if the row is ever genuinely too narrow for the container (see
+   * `.theme-control-segmented`'s `flex-wrap: wrap` below), but never below
+   * what asking for equal columns already did — an uneven-width segmented
+   * control reads fine, an overflowing one doesn't. `flex-shrink: 0`
+   * (rather than the `1` a plain `flex: 0 1 auto` implies) is deliberate:
+   * shrink-to-fit still let a nowrap label compress below its own text
+   * width in testing, painting past its box instead of preventing it —
+   * `flex-wrap: wrap` on the row is the actual overflow escape valve.
+   *
+   * `min-width: max-content` on top of `flex: 0 0 auto` because this
+   * button is *itself* a (nested) flex container for its icon + text — in
+   * testing, `flex-shrink: 0` alone still let Chromium compute this
+   * button's own preferred main size as if the text weren't there
+   * (icon + padding only), painting the label past the box instead of
+   * sizing to it. Forcing the min-width to the button's true max-content
+   * size is the standard fix for a nested flex item under-reporting its
+   * own content size to its parent's layout.
+   */
+  flex: 0 0 auto;
+  min-width: max-content;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -703,6 +737,7 @@
   font-size: 0.8125rem;
   color: var(--color-ink-400);
   background: transparent;
+  white-space: nowrap;
 }
 .theme-control-segment:hover {
   background: var(--color-ink-800);
