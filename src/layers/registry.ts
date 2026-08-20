@@ -983,10 +983,16 @@ export const LAYERS: LayerDefinition[] = [
         en: 'No mapped cameras are near this point.',
         es: 'No hay cámaras mapeadas cerca de este punto.',
       },
-      radii: [1, 3],
+      radii: [5],
+      list: {
+        entityKey: 'operator',
+        detail: ['cameraType'],
+        initialCount: 8,
+        showOnMap: true,
+      },
       caveat: {
-        en: 'Crowd-sourced and incomplete — the absence of a camera here is not evidence that none exists.',
-        es: 'De origen comunitario e incompleto: la ausencia de una cámara aquí no prueba que no exista ninguna.',
+        en: 'Crowd-sourced and incomplete — the absence of a camera here is not evidence that none exists. Who runs each one is a mapper’s guess from free text, not a verified contract.',
+        es: 'De origen comunitario e incompleto: la ausencia de una cámara aquí no prueba que no exista ninguna. Quién opera cada una es una suposición de un mapeador a partir de texto libre, no un contrato verificado.',
       },
     },
     // "Cross-listed corner" — see alpr-cross-source.mjs and
@@ -1162,7 +1168,13 @@ export const LAYERS: LayerDefinition[] = [
         en: 'No agency has reported a fixed reader near this point.',
         es: 'Ninguna agencia ha reportado un lector fijo cerca de este punto.',
       },
-      radii: [1, 3],
+      radii: [5],
+      list: {
+        entityKey: 'agencyName',
+        detail: ['reportedLocation'],
+        initialCount: 8,
+        showOnMap: true,
+      },
       caveat: {
         en: 'Only readers agencies reported to the state. An agency that filed nothing does not appear.',
         es: 'Solo lectores que las agencias reportaron al estado. Una agencia que no presentó nada no aparece.',
