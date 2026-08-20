@@ -89,6 +89,14 @@ export const en: Record<string, string> = {
   nearestIs: 'Nearest is {distance} mi away',
   distanceAway: '{distance} mi away',
   foundInCounty: '{count} in this county:',
+  entityUnattributed: 'No operator recorded',
+  showOnMap: 'Show on map',
+  showMore: 'Show {count} more',
+  outsideMinnesotaTitle: 'This location is outside Minnesota',
+  outsideMinnesota:
+    'flockoffmn tracks Minnesota only. This point falls outside the state, so there is nothing mapped to show here.',
+  lowAccuracy:
+    'Your device reported this location to within about {accuracy} mi — results may be off by that much.',
   crossLayerNote:
     'These are not separate maps. Cameras feed searches, searches feed enforcement, enforcement feeds detention, and all of it sits on ground shaped by decades of housing policy.',
   readHowThisConnects: 'Read how this connects',

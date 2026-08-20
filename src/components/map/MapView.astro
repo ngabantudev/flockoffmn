@@ -791,6 +791,32 @@ const strings = {
   // see setOverlay in mapController.ts.
   controller.setOverlay(detailEl);
 
+  /*
+   * Deep link from /near-me's "show on map" — ?lat=&lng=&zoom=. This flies
+   * to the point only; it does not select or open a specific record, because
+   * matching a URL coordinate back to one rendered feature (and simulating
+   * the click) is real machinery this project doesn't have yet, and a
+   * slightly-off match would be worse than none. Centring the map on the
+   * right spot, at a zoom where the record is the obvious dot, is the honest
+   * version of this link today.
+   *
+   * Deferred to the map's own 'load' rather than fired immediately: the
+   * constructor's 'load' handler above fits METRO_BOUNDS the moment the
+   * style finishes loading, which — fired after this ran eagerly — undid
+   * the fly and silently stranded every deep link on the metro default.
+   * `map.once('load', …)` queues behind that handler instead of racing it,
+   * so this runs after the reset, not before it.
+   */
+  const deepLink = new URLSearchParams(window.location.search);
+  const dLat = Number(deepLink.get('lat'));
+  const dLng = Number(deepLink.get('lng'));
+  if (Number.isFinite(dLat) && Number.isFinite(dLng) && dLat && dLng) {
+    const dZoom = Number(deepLink.get('zoom'));
+    const goToDeepLink = () => controller.flyTo([dLng, dLat], Number.isFinite(dZoom) && dZoom ? dZoom : 16);
+    if (controller.map.loaded()) goToDeepLink();
+    else controller.map.once('load', goToDeepLink);
+  }
+
   /* ----------------------------- Detail panel ---------------------------- */
 
   const CONFIDENCE_TEXT: Record<string, string> = {
