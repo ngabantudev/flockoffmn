@@ -58,7 +58,7 @@ export const es: Record<string, string> = {
   mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
   resetView: 'Volver a Minnesota',
   mapNearMe: 'Qué hay cerca de mí',
-  mapNearMeFound: '{count} cerca, {shown} mostrados. Mapa centrado en su ubicación.',
+  mapNearMeFound: '{count} cerca, {shown} mostrados. Mapa encuadrado alrededor de su ubicación.',
   mapNearMeNone: 'No hay nada mapeado cerca de este punto. Mapa centrado aquí.',
   closePanel: 'Cerrar panel',
   noResults: 'Ningún registro coincide con los filtros actuales.',

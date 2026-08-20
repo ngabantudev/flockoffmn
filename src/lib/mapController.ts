@@ -437,12 +437,18 @@ const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLO
 const NEARME_MAX_LINES = 20;
 
 /**
- * The zoom "what's near me" eases to, floor-style — never zoomed out past
- * this, same Math.max(current, N) shape focusFeature uses for a single point.
- * Matches alpr's own `pointsFrom: 14` (see registry.ts): below this zoom the
- * camera dots a near-me throw lands on are still specks, not resolved
- * records, so a correct lookup reads as a broken one. Clamped down by
- * accuracyZoomCap below when the fix itself can't support it.
+ * The zoom "what's near me" eases to when there's nothing to fit around —
+ * zero results, or a fit that failed — floor-style, same Math.max(current,
+ * N) shape focusFeature uses for a single point. Matches alpr's own
+ * `pointsFrom: 14` (see registry.ts): below this zoom the camera dots a
+ * near-me throw lands on are still specks, not resolved records.
+ *
+ * Not a floor on the fit-over-targets path in showNearMe: showing every
+ * connected camera on screen is the point of that path, and a widely spread
+ * set of them can legitimately need a zoom below this to all fit — a
+ * reader in a sparse county sees two real, distant cameras rather than one
+ * cropped to a resolved-looking frame. Clamped down by accuracyZoomCap
+ * below either way, when the fix itself can't support the chosen zoom.
  */
 const NEARME_ZOOM = 14;
 
@@ -3824,10 +3830,12 @@ export class MapController {
    * comment), which would otherwise make "what's near me" under-report
    * exactly the layers nobody happened to have on.
    *
-   * Always eases the camera to `origin`, win or lose — a reader who gets
-   * `mapNearMeNone` still learns *where* nothing was found, rather than the
-   * map sitting wherever it happened to be. See NEARME_ZOOM and
-   * accuracyZoomCap for how the destination zoom is chosen.
+   * Always moves the camera to frame `origin`, win or lose — a reader who
+   * gets `mapNearMeNone` still learns *where* nothing was found, rather than
+   * the map sitting wherever it happened to be. See the camera-move block
+   * below for how the destination is chosen: a fit over every connected
+   * camera when there are any, or a floor zoom on `origin` alone when
+   * there aren't.
    */
   private async showNearMe(origin: [number, number], accuracyM: number) {
     await this.ready();
@@ -3843,26 +3851,6 @@ export class MapController {
     this.nearMeOrigin = origin;
     this.nearMeControl?.setActive(true);
 
-    // Large delta from wherever the reader was browsing to their own
-    // location — easeToCamera, not a bare easeTo, so the landing zoom is
-    // exact (see its own comment on easeTo's convergence error on big jumps,
-    // which would otherwise quietly defeat the accuracy clamp below).
-    //
-    // Floor-style, like focusFeature's own point case: don't zoom out past
-    // NEARME_ZOOM, but don't zoom out a reader who was already in closer
-    // either. accuracyZoomCap can still pull the ceiling down below the
-    // current zoom on a bad fix — honesty about the fix wins over preserving
-    // wherever the reader happened to be browsing. A container mid-layout
-    // (0×0, e.g. a hidden ancestor) makes the cap non-finite; fall back to
-    // the floor rather than let that silently zoom out to the map's own
-    // minZoom.
-    const container = this.map.getContainer();
-    const minDimensionPx = Math.min(container.clientWidth, container.clientHeight);
-    const cap = accuracyZoomCap(accuracyM, origin[1], minDimensionPx);
-    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
-    const zoom = Number.isFinite(cap) ? Math.min(floor, cap) : floor;
-    this.easeToCamera({ center: origin, zoom }, REDUCED_MOTION ? 0 : 600);
-
     const withDistance: Array<{ point: [number, number]; distance: number }> = [];
     eligible.forEach((layer, i) => {
       const radiusM = layer.nearMeRadiusMi! * 1609.344;
@@ -3876,6 +3864,9 @@ export class MapController {
     withDistance.sort((a, b) => a.distance - b.distance);
     const targets = withDistance.slice(0, NEARME_MAX_LINES).map((r) => r.point);
 
+    // The DOM/aria surface first, camera second — see the camera block's
+    // own comment on why a MapLibre call sits downstream of the one thing a
+    // screen-reader user actually gets from this control.
     (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData({
       type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: origin }, properties: {} }],
@@ -3888,6 +3879,67 @@ export class MapController {
     // screen-reader user learns how many and how far, not each one by
     // name — but it's the difference between silence and something.
     this.events.onNearMeResult?.(withDistance.length, targets.length);
+
+    // Large delta from wherever the reader was browsing to their own
+    // location, fitting origin and every camera a line was just thrown at
+    // (throwNearMeLines, above — an empty set is a valid, zero-area box,
+    // origin against itself). "Nearest" only helps a reader if the nearest
+    // ones are actually visible, on a phone as much as a desktop — see
+    // NEARME_ZOOM's own comment on why that can mean zooming out below the
+    // point-legibility floor the earlier version of this feature enforced.
+    //
+    // cameraForBounds only *computes* the camera; easeToCamera does the
+    // actual move, with its moveend/jumpTo landing correction — a bare
+    // fitBounds routes through flyTo with no such correction, which here
+    // would risk quietly defeating the accuracy clamp on a big jump (see
+    // easeToCamera's own comment on the same convergence gap). This call
+    // sits after the DOM output above so a throw in it (cameraForBounds can
+    // hand back center: NaN in pathological cases) can't take the
+    // accessible feedback down with it.
+    //
+    // bearing is passed through explicitly: cameraForBounds otherwise
+    // assumes north-up (bearing 0) regardless of the map's actual bearing,
+    // sizing the box for a viewport the reader isn't looking at. Nothing
+    // here changes bearing itself — easeToCamera only ever sets
+    // center/zoom — so passing the live bearing back in just keeps the fit
+    // honest about the frame it's actually being fit into.
+    //
+    // The zoom ceiling — accuracyZoomCap's honesty clamp (§0.2, §0.7), and
+    // for the no-target case the NEARME_ZOOM floor as well — is computed
+    // once and handed to cameraForBounds as its own `maxZoom`, rather than
+    // left to override the result afterwards: overriding zoom post hoc
+    // without recomputing center leaves the two disagreeing about which
+    // zoom the sheet-padding offset was computed for, silently shrinking
+    // that offset. Passed only when finite: accuracy of exactly 0 (a
+    // mocked fix; real ones are never exactly 0) makes accuracyZoomCap
+    // return +Infinity, and a container with zero real width or height
+    // (a hidden ancestor mid-layout) makes it -Infinity — either one
+    // reaching MapLibre as `maxZoom` produces a NaN camera, so neither is
+    // ever passed; cameraForBounds is left to its own default instead.
+    const container = this.map.getContainer();
+    const minDimensionPx = Math.min(container.clientWidth, container.clientHeight);
+    const cap = accuracyZoomCap(accuracyM, origin[1], minDimensionPx);
+    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
+    const intendedZoom = targets.length > 0 ? cap : Number.isFinite(cap) ? Math.min(floor, cap) : floor;
+    const bounds = bboxOf({ type: 'MultiPoint', coordinates: [origin, ...targets] });
+    const fit = this.map.cameraForBounds(
+      [
+        [bounds[0], bounds[1]],
+        [bounds[2], bounds[3]],
+      ],
+      {
+        padding: this.fitPadding(),
+        bearing: this.map.getBearing(),
+        ...(Number.isFinite(intendedZoom) ? { maxZoom: intendedZoom } : {}),
+      },
+    );
+    const fitCenter = fit?.center != null ? maplibregl.LngLat.convert(fit.center) : null;
+    const fitZoom = fit?.zoom != null && Number.isFinite(fit.zoom) ? fit.zoom : null;
+    const camera =
+      fitCenter && fitZoom != null
+        ? { center: [fitCenter.lng, fitCenter.lat] as [number, number], zoom: fitZoom }
+        : { center: origin, zoom: floor };
+    this.easeToCamera(camera, REDUCED_MOTION ? 0 : 600);
   }
 
   /**

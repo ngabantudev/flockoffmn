@@ -58,7 +58,7 @@ export const en: Record<string, string> = {
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
   mapNearMe: 'What’s near me',
-  mapNearMeFound: '{count} nearby, {shown} shown. Map centered on your location.',
+  mapNearMeFound: '{count} nearby, {shown} shown. Map framed around your location.',
   mapNearMeNone: 'Nothing mapped within range of this location. Map centered here.',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
