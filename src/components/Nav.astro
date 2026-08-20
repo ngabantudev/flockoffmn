@@ -1,5 +1,5 @@
 ---
-import { Map, LocateFixed, Network, Megaphone, Database, BookOpen, Info } from 'lucide-astro';
+import { Map, LocateFixed, Network, Megaphone, Database, BookOpen, Info, Ghost, Radar, Siren, BookLock } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
 import { useTranslations, localePath, stripLocale, LOCALES, LOCALE_NAMES } from '~/lib/i18n';
 
@@ -13,13 +13,23 @@ const t = useTranslations(locale);
 
 const here = stripLocale(Astro.url.pathname);
 
+/*
+ * `spookyIcon` is optional and only set where a swap keeps the icon
+ * recognizable at a glance — not a straight reskin of all seven. Both
+ * icons render statically (see the markup below): which one is visible is
+ * a pure CSS rule keyed on `[data-theme='halloween']` (global.css's
+ * `.nav-icon-*` rules), the same "no client JS needed" approach the rest
+ * of this component already uses for theme-band styling. That also means
+ * it stays correct through the October-night auto-theme (theme.ts) and any
+ * live theme switch, with nothing here needing to know about either.
+ */
 const links = [
-  { href: '/', label: t('navMap'), shortLabel: t('navMapShort'), icon: Map },
-  { href: '/near-me', label: t('navNearMe'), shortLabel: t('navNearMeShort'), icon: LocateFixed },
+  { href: '/', label: t('navMap'), shortLabel: t('navMapShort'), icon: Map, spookyIcon: Ghost },
+  { href: '/near-me', label: t('navNearMe'), shortLabel: t('navNearMeShort'), icon: LocateFixed, spookyIcon: Radar },
   { href: '/explainer', label: t('navExplainer'), shortLabel: t('navExplainerShort'), icon: Network },
-  { href: '/act', label: t('navAct'), shortLabel: t('navActShort'), icon: Megaphone },
+  { href: '/act', label: t('navAct'), shortLabel: t('navActShort'), icon: Megaphone, spookyIcon: Siren },
   { href: '/data', label: t('navData'), shortLabel: t('navDataShort'), icon: Database },
-  { href: '/sources', label: t('navSources'), shortLabel: t('navSourcesShort'), icon: BookOpen },
+  { href: '/sources', label: t('navSources'), shortLabel: t('navSourcesShort'), icon: BookOpen, spookyIcon: BookLock },
   { href: '/about', label: t('navAbout'), shortLabel: t('navAboutShort'), icon: Info },
 ];
 
@@ -150,7 +160,16 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
               isActive(link.href) ? 'text-accent' : 'text-ink-300 hover:text-ink-100',
             ]}
           >
-            <link.icon class="h-5 w-5 shrink-0" aria-hidden="true" stroke-width={2} />
+            <link.icon
+              class:list={['h-5 w-5 shrink-0', link.spookyIcon && 'nav-icon-default']}
+              aria-hidden="true"
+              stroke-width={2}
+            />
+            {
+              link.spookyIcon && (
+                <link.spookyIcon class="nav-icon-halloween h-5 w-5 shrink-0" aria-hidden="true" stroke-width={2} />
+              )
+            }
             <span class="w-full truncate text-center text-[10px] leading-tight font-medium tracking-wide">
               {link.shortLabel}
             </span>
