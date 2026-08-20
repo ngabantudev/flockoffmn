@@ -17,9 +17,31 @@ export const THEME_STORAGE_KEY = 'flockoff:theme';
 export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
 
 /**
+ * Whether the October-night Halloween auto-theme is active right now, for a
+ * visitor who hasn't made an explicit theme choice of their own. Evaluated
+ * against the visitor's own device clock — never a fixed timezone, and
+ * never anything server-derived — matching this repo's client-only "near
+ * me" precedent (§0.7): nothing here gets a visitor's location or timezone
+ * from anywhere else either, so a visitor's own midnight is the only
+ * midnight this can mean.
+ *
+ * `now` is a parameter (not read internally) so this stays a pure function
+ * a caller can test against a fixed instant rather than the wall clock.
+ *
+ * Duplicated, not imported, in theme-init.js: that script runs before first
+ * paint as a plain non-module `<script src>` (see its own header comment on
+ * why nothing there can import a module). Keep the two in sync by hand if
+ * this rule ever changes.
+ */
+export function isHalloweenAutoWindow(now: Date = new Date()): boolean {
+  return now.getMonth() === 9 && now.getHours() === 23; // October, 11pm–midnight
+}
+
+/**
  * Reads the theme actually in effect, not just an explicit override:
  * `dataset.theme` is only set once a visitor has clicked a theme control (see
- * theme-init.js and setTheme() below) — before that, the page is following
+ * theme-init.js and setTheme() below) or the October-night auto-window above
+ * has applied itself — before either of those, the page is following
  * `prefers-color-scheme` live via CSS alone, with no attribute to read. A
  * version of this that just checked `=== 'light'` and defaulted everything
  * else to 'dark' shipped once; it made the theme control itself show "Dark"
@@ -29,6 +51,7 @@ export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
 export function currentTheme(): Theme {
   const explicit = document.documentElement.dataset.theme;
   if (explicit === 'light' || explicit === 'dark' || explicit === 'halloween') return explicit;
+  if (isHalloweenAutoWindow()) return 'halloween';
   return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
