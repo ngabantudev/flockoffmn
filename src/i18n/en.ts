@@ -58,8 +58,13 @@ export const en: Record<string, string> = {
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
   mapNearMe: 'What’s near me',
-  mapNearMeFound: '{count} nearby, {shown} shown. Map framed around your location.',
-  mapNearMeNone: 'Nothing mapped within range of this location. Map centered here.',
+  mapNearMeFound: '{count} nearby, {shown} shown.',
+  mapNearMeNone: 'Nothing mapped within range of this location.',
+  // Label and value format for the search-radius slider that appears once a
+  // "near me" location is found (NearMeRadiusControl) — drag it to widen or
+  // narrow which cameras/readers are drawn.
+  mapNearMeRadiusLabel: 'Search radius',
+  mapNearMeRadiusValue: '{mi} mi',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
   // Label for the pull tab that collapses/expands the detail panel — see
