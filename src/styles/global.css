@@ -220,35 +220,82 @@
  * here, same as every other theme: per §0.1/§0.2, what a device/vendor/
  * agency renders as on the map is data, not decor, and doesn't change
  * because a visitor picked a seasonal palette. Only the chrome — ink scale,
- * accent, warn, cross-source ring — shifts: near-black with a faint purple
- * cast instead of dark's blue-grey, and a pumpkin accent in place of dark's
- * amber. Contrast checked against the same ink-850 well dark's own inline
- * comments check against (§4 accessibility): --color-accent (#ff7518) is
- * 6.70:1 on --color-ink-850 (#1a1420), --color-warn (#c893ff) is 7.79:1 —
- * both clear WCAG AA's 4.5:1 for normal text with room to spare.
+ * accent, warn, cross-source ring — shifts: near-black with a purple cast
+ * instead of dark's blue-grey, and a saturated pumpkin accent in place of
+ * dark's amber.
+ *
+ * Darker and more saturated than the first pass on purpose — feedback on
+ * that version was that it read too close to plain dark mode to tell
+ * apart at a glance. --color-ink-950 dropped further toward true black
+ * (#07040b vs the first pass's #0c0710) and --color-accent moved from
+ * #ff7518 to the more saturated/redder #ff6a00, both widening the gap from
+ * dark mode's blue-grey #0a0c10 / amber #f5a524. Contrast re-checked
+ * against the same ink-850 well dark's own inline comments check against
+ * (§4 accessibility): --color-accent is 5.80:1 on --color-ink-850
+ * (#241933), --color-warn (#b388ff) is 6.25:1, --color-ink-400 (muted
+ * text) is 6.34:1 — all clear WCAG AA's 4.5:1 with room to spare.
  */
 :root[data-theme='halloween'] {
-  --color-ink-950: #0c0710;
-  --color-ink-900: #140b1c;
-  --color-ink-850: #1a1420;
-  --color-ink-800: #211a29;
-  --color-ink-700: #32293e;
-  --color-ink-600: #4a3d5c;
-  --color-ink-400: #9587ab;
-  --color-ink-300: #b6a9c7;
-  --color-ink-200: #d6cce2;
-  --color-ink-100: #f1ecf6;
+  --color-ink-950: #07040b;
+  --color-ink-900: #120a1a;
+  --color-ink-850: #241933;
+  --color-ink-800: #31213f;
+  --color-ink-700: #473360;
+  --color-ink-600: #614a82;
+  --color-ink-400: #ab97c9;
+  --color-ink-300: #c7b6de;
+  --color-ink-200: #ded1ec;
+  --color-ink-100: #f5eefa;
 
-  --color-accent: #ff7518;
-  --color-warn: #c893ff;
+  --color-accent: #ff6a00;
+  --color-warn: #b388ff;
 
-  --color-cross-source-ring: #c893ff;
+  --color-cross-source-ring: #b388ff;
 
   --color-on-accent: #140b1c;
-  --color-well: #0c0710;
-  --color-ctrl-attrib-bg: rgba(12, 7, 16, 0.85);
+  --color-well: #050308;
+  --color-ctrl-attrib-bg: rgba(7, 4, 11, 0.85);
 
   color-scheme: dark;
+}
+
+/*
+ * A soft accent-colored glow, Halloween only — the one deliberate flourish
+ * beyond a palette swap. Static (no animation/pulse: §4 asks every theme to
+ * respect prefers-reduced-motion, and a glow that doesn't move satisfies
+ * that by construction rather than needing a media-query opt-out), so it
+ * reads as "this button/panel is lit from within" rather than as an
+ * attention-getting effect. Layered onto the existing shadow rather than
+ * replacing it, and only on surfaces that already had one.
+ */
+:root[data-theme='halloween'] .theme-control-panel {
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(255, 106, 0, 0.12);
+}
+:root[data-theme='halloween'] .theme-control-button:hover,
+:root[data-theme='halloween'] .theme-control-segment:hover,
+:root[data-theme='halloween'] .theme-control-segment.is-active {
+  box-shadow: 0 0 10px rgba(255, 106, 0, 0.25);
+}
+
+/*
+ * The bottom-nav icon swap (Nav.astro's spookyIcon set) is pure CSS, not
+ * client JS: both icons render in the markup always, and which one paints
+ * is decided by the same `[data-theme='halloween']` selector every other
+ * theme-aware rule in this file uses. That means it stays correct through
+ * a live theme switch and through the October-night auto-theme
+ * (isHalloweenAutoWindow() in theme.ts) with nothing here needing to know
+ * about either — the attribute is the only thing being watched.
+ */
+.nav-icon-halloween {
+  display: none;
+}
+:root[data-theme='halloween'] .nav-icon-default {
+  display: none;
+}
+:root[data-theme='halloween'] .nav-icon-halloween {
+  display: block;
 }
 
 @layer base {
