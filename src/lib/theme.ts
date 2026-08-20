@@ -22,8 +22,17 @@ export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
  * against the visitor's own device clock — never a fixed timezone, and
  * never anything server-derived — matching this repo's client-only "near
  * me" precedent (§0.7): nothing here gets a visitor's location or timezone
- * from anywhere else either, so a visitor's own midnight is the only
- * midnight this can mean.
+ * from anywhere else either, so a visitor's own clock is the only clock
+ * this can mean (there's no location to compute an actual sunset/sunrise
+ * from, even if that were otherwise desirable).
+ *
+ * "Night" is 8pm–6am (20:00–05:59) rather than a narrow late-night hour —
+ * evening through pre-dawn on an ordinary clock, not literally "when it's
+ * dark outside" (this repo has no way to know that per the above) and not
+ * a single hour either (an earlier version only covered 11pm–midnight, on
+ * the theory that a visitor could always switch it on by hand outside
+ * that; asked to broaden it since "night" reads as the whole evening, not
+ * one hour of it).
  *
  * `now` is a parameter (not read internally) so this stays a pure function
  * a caller can test against a fixed instant rather than the wall clock.
@@ -34,7 +43,9 @@ export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
  * this rule ever changes.
  */
 export function isHalloweenAutoWindow(now: Date = new Date()): boolean {
-  return now.getMonth() === 9 && now.getHours() === 23; // October, 11pm–midnight
+  if (now.getMonth() !== 9) return false; // October only
+  const hour = now.getHours();
+  return hour >= 20 || hour < 6; // 8pm–6am
 }
 
 /**

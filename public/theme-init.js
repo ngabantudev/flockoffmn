@@ -7,9 +7,9 @@
  * Reads the user's stored theme choice (if any) and applies it before first
  * paint, so a reader who chose "light" never sees a flash of the dark
  * default. No stored value means no forced override — except during the
- * October-night Halloween auto-window (11pm–midnight, the visitor's own
- * device clock, see isHalloweenAutoWindow() in src/lib/theme.ts, duplicated
- * here by hand since this plain script can't import that module) — outside
+ * October-night Halloween auto-window (8pm–6am, the visitor's own device
+ * clock, see isHalloweenAutoWindow() in src/lib/theme.ts, duplicated here
+ * by hand since this plain script can't import that module) — outside
  * that window with no stored choice, the page just follows
  * prefers-color-scheme live via CSS.
  */
@@ -26,7 +26,8 @@
     return;
   }
   var now = new Date();
-  if (now.getMonth() === 9 && now.getHours() === 23) {
+  var hour = now.getHours();
+  if (now.getMonth() === 9 && (hour >= 20 || hour < 6)) {
     // Not persisted to localStorage on purpose: this is a nightly default,
     // not a choice, so it reverts on its own once the window passes rather
     // than sticking the way an explicit pick does.
