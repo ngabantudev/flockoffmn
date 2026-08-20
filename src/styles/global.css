@@ -20,18 +20,26 @@
  * Design intent: this is a civic record, not a dashboard. Dark, quiet, high
  * contrast, with colour reserved for the data itself so that layer identity is
  * the only thing competing for attention on the map.
+ *
+ * Pushed further toward true black / more saturated accent than the first
+ * pass on this palette — feedback was that panels didn't read clearly
+ * enough against the map. Rather than ship that as a separate opt-in
+ * "High Contrast" theme alongside plain dark mode, it replaced dark mode
+ * outright: two visually close dark options was more choice than value,
+ * where a single sharper dark theme is a straightforward improvement
+ * everyone gets by default.
  */
 @theme {
-  --color-ink-950: #0a0c10;
-  --color-ink-900: #11141b;
-  --color-ink-850: #161a23;
-  --color-ink-800: #1c212c;
-  --color-ink-700: #2a3140;
-  --color-ink-600: #3d4657;
-  --color-ink-400: #7c8798;
-  --color-ink-300: #a3adbd;
-  --color-ink-200: #c9d1dd;
-  --color-ink-100: #e7ecf3;
+  --color-ink-950: #030405;
+  --color-ink-900: #080a0e;
+  --color-ink-850: #131722;
+  --color-ink-800: #1c212d;
+  --color-ink-700: #2c3444;
+  --color-ink-600: #414c60;
+  --color-ink-400: #8b96a8;
+  --color-ink-300: #b0b9c8;
+  --color-ink-200: #d3d9e3;
+  --color-ink-100: #f2f4f8;
 
   /* Layer identity — also used as the map symbol colours. */
   --color-layer-alpr: #38bdf8;
@@ -40,8 +48,8 @@
   --color-layer-datacenter: #34d399;
   --color-layer-redlining: #c084fc;
 
-  --color-accent: #f5a524;
-  --color-warn: #fbbf24;
+  --color-accent: #ffb020;
+  --color-warn: #ffcc33;
 
   /*
    * The "cross-listed corner" ring — see mapController.ts's crossSource
@@ -53,13 +61,13 @@
    * use the darker #6b5414 for contrast against a light background — the
    * same pairing the map's own basemap-dependent ring uses.
    */
-  --color-cross-source-ring: #b98f3f;
+  --color-cross-source-ring: #d9a548;
 
   /* On-accent text and recessed/well surfaces are distinct roles from
      ink-950 even though they share its dark-mode hex value — see the light
      overrides below, where they diverge. */
-  --color-on-accent: #0a0c10;
-  --color-well: #0a0c10;
+  --color-on-accent: #030405;
+  --color-well: #030405;
 
   --font-sans: 'Inter var', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
@@ -177,11 +185,11 @@
   --color-ink-850: #0d4673;
   --color-ink-800: #52c9e852;
   /* Missing here previously: fell through to the base :root's dark-oriented
-     --color-ink-400 (#7c8798, ~3.8:1 on this navy band) instead of this
-     override — see the @media block above, which sets it correctly for the
-     OS-preference case (#ffffffa3, ~13.7:1). An explicit light-theme choice
-     got noticeably harder-to-read muted text in the nav band than an
-     OS-preference light visitor got for free. */
+     --color-ink-400 instead of this override — see the @media block above,
+     which sets it correctly for the OS-preference case (#ffffffa3,
+     ~13.7:1). An explicit light-theme choice got noticeably harder-to-read
+     muted text in the nav band than an OS-preference light visitor got for
+     free. */
   --color-ink-400: #ffffffa3;
   --color-ink-300: #ffffffb8;
   --color-ink-100: #ffffff;
@@ -190,26 +198,35 @@
   --color-on-accent: #002d5d;
 }
 
+/*
+ * Explicit "dark" choice. Same values as the @theme block's defaults above
+ * — this selector exists so an explicit pick still wins under an OS light
+ * preference, not because dark has a second palette to maintain in sync.
+ * Contrast checked against ink-850 (§4 accessibility): --color-accent
+ * (#ffb020) is 9.79:1, --color-warn (#ffcc33) is 11.88:1, --color-ink-400
+ * (muted text) is 5.99:1 — all clear WCAG AA's 4.5:1 with substantial
+ * room, several clearing AAA's 7:1 too.
+ */
 :root[data-theme='dark'] {
-  --color-ink-950: #0a0c10;
-  --color-ink-900: #11141b;
-  --color-ink-850: #161a23;
-  --color-ink-800: #1c212c;
-  --color-ink-700: #2a3140;
-  --color-ink-600: #3d4657;
-  --color-ink-400: #7c8798;
-  --color-ink-300: #a3adbd;
-  --color-ink-200: #c9d1dd;
-  --color-ink-100: #e7ecf3;
+  --color-ink-950: #030405;
+  --color-ink-900: #080a0e;
+  --color-ink-850: #131722;
+  --color-ink-800: #1c212d;
+  --color-ink-700: #2c3444;
+  --color-ink-600: #414c60;
+  --color-ink-400: #8b96a8;
+  --color-ink-300: #b0b9c8;
+  --color-ink-200: #d3d9e3;
+  --color-ink-100: #f2f4f8;
 
-  --color-accent: #f5a524;
-  --color-warn: #fbbf24;
+  --color-accent: #ffb020;
+  --color-warn: #ffcc33;
 
-  --color-cross-source-ring: #b98f3f;
+  --color-cross-source-ring: #d9a548;
 
-  --color-on-accent: #0a0c10;
-  --color-well: #0a0c10;
-  --color-ctrl-attrib-bg: rgba(10, 12, 16, 0.85);
+  --color-on-accent: #030405;
+  --color-well: #030405;
+  --color-ctrl-attrib-bg: rgba(3, 4, 5, 0.85);
 
   color-scheme: dark;
 }
@@ -218,7 +235,7 @@
   html {
     color-scheme: dark;
     -webkit-text-size-adjust: 100%;
-    --color-ctrl-attrib-bg: rgba(10, 12, 16, 0.85);
+    --color-ctrl-attrib-bg: rgba(3, 4, 5, 0.85);
   }
 
   body {
