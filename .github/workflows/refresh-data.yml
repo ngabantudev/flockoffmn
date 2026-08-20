@@ -80,6 +80,11 @@ jobs:
         if: steps.diff.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
+          # Belt-and-suspenders alongside .gitignore's data/raw/ rule: even if
+          # a future ingest script writes scratch output somewhere it
+          # shouldn't, this refresh can only ever stage the published
+          # datasets — never an ingest cache. See #68.
+          add-paths: public/data/**
           branch: data/scheduled-refresh
           title: 'Refresh data layers'
           commit-message: 'Refresh data layers from upstream sources'
