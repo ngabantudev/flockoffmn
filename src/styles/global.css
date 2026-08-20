@@ -572,6 +572,23 @@
 }
 
 /*
+ * NearMeControl (src/lib/nearMeControl.ts) — same centering issue, plus a
+ * pressed state: `.is-active` mirrors ThemeControl's convention below, so
+ * "lines are currently thrown from your location" reads the same way "map
+ * theme X is selected" does, rather than inventing a third visual language
+ * for the same idea.
+ */
+.near-me-control-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-ink-100);
+}
+.near-me-control-button.is-active {
+  color: var(--color-accent);
+}
+
+/*
  * ThemeControl (src/lib/themeControl.ts) — the map-corner "site theme / map
  * theme" popover. Built with hand-written classes rather than
  * .maplibregl-ctrl-icon's convention (a class MapLibre expects on a

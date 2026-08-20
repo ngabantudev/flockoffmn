@@ -57,6 +57,9 @@ export const en: Record<string, string> = {
   loading: 'Loading map data…',
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
+  mapNearMe: 'What’s near me',
+  mapNearMeFound: '{count} nearby, {shown} shown',
+  mapNearMeNone: 'Nothing mapped within range of this location.',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
   // Label for the pull tab that collapses/expands the detail panel — see

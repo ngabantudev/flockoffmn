@@ -95,6 +95,11 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     : undefined,
   relatedBuildings: d.relatedBuildings,
   tintWhenRelated: d.tintWhenRelated,
+  // Only for layers /near-me already enumerates individually (`nearMe.list`)
+  // — the homepage map's own "what's near me" control searches exactly
+  // those layers, at exactly the radius near-me promises. See
+  // ClientLayer.nearMeRadiusMi's own comment in mapController.ts.
+  nearMeRadiusMi: d.nearMe?.mode === 'radius' && d.nearMe.list ? d.nearMe.radii?.[0] : undefined,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
     : undefined,
@@ -188,6 +193,11 @@ const strings = {
   resetView: t('resetView'),
   crossListedCorner: t('crossListedCorner'),
   crossListedNearMissLegend: t('crossListedNearMissLegend'),
+  mapNearMe: t('mapNearMe'),
+  mapNearMeFound: t('mapNearMeFound'),
+  mapNearMeNone: t('mapNearMeNone'),
+  locationDenied: t('locationDenied'),
+  locationUnavailable: t('locationUnavailable'),
 };
 ---
 
@@ -773,6 +783,12 @@ const strings = {
 
   const controller = new MapController(mapEl, layers, {
     resetViewLabel: S.resetView,
+    nearMeLabel: S.mapNearMe,
+    locationDeniedLabel: S.locationDenied,
+    locationUnavailableLabel: S.locationUnavailable,
+    onNearMeError: (message) => status(message, 6000),
+    onNearMeResult: (totalFound, shown) =>
+      status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000),
     onSelect: (feature, layer) => renderDetail(feature, layer),
     onCounts: (counts) => {
       for (const [id, { shown }] of Object.entries(counts)) {
