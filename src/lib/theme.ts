@@ -11,7 +11,7 @@
  * Astro to treat it that way.
  */
 
-export type Theme = 'light' | 'dark';
+export type Theme = 'light' | 'dark' | 'halloween';
 
 export const THEME_STORAGE_KEY = 'flockoff:theme';
 export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
@@ -28,7 +28,7 @@ export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
  */
 export function currentTheme(): Theme {
   const explicit = document.documentElement.dataset.theme;
-  if (explicit === 'light' || explicit === 'dark') return explicit;
+  if (explicit === 'light' || explicit === 'dark' || explicit === 'halloween') return explicit;
   return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
@@ -93,14 +93,22 @@ export const MAP_STYLES: Record<MapStyleId, { label: string; dark: boolean }> = 
 
 /**
  * Which basemap each site theme pairs with — matching wealldobettermn.org's
- * own THEME_BASEMAP exactly. `dark` happens to share a name with the
- * MapStyleId it maps to; that's the same coincidence the reference has
- * (its own 'dark' style id), not a rule this depends on — 'light' maps to
- * 'positron', not to a same-named style, because there isn't one.
+ * own THEME_BASEMAP exactly for 'light'/'dark'. `dark` happens to share a
+ * name with the MapStyleId it maps to; that's the same coincidence the
+ * reference has (its own 'dark' style id), not a rule this depends on —
+ * 'light' maps to 'positron', not to a same-named style, because there
+ * isn't one.
+ *
+ * 'halloween' has no reference to match and gets no basemap style of its
+ * own — §0.7/§0.8 rule out adding a fifth self-hosted style (with its own
+ * mirrored PMTiles/sprite/glyph set) just to darken the map for a seasonal
+ * palette swap that's otherwise pure CSS. It reuses the 'dark' basemap,
+ * same as the 'dark' site theme does.
  */
 export const THEME_BASEMAP: Record<Theme, MapStyleId> = {
   light: 'positron',
   dark: 'dark',
+  halloween: 'dark',
 };
 
 export const MAP_STYLE_STORAGE_KEY = 'flockoff:map-style';
