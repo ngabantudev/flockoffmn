@@ -16,19 +16,24 @@ per the repo's enum (`confirmed` / `corroborated` / `reported` / `lead`).
 Both documents are exhibits to **The Home Depot, Inc.'s 2026 Annual Meeting proxy
 materials** (CIK 0000354950), not a routine 10-K/8-K risk disclosure:
 
-1. `hd-20260406.htm` (accession 0000354950-26-000090) — **The Home Depot 2026 Proxy
-   Statement**. Contains, as Item 8 on the proxy card, a shareholder proposal titled
-   "Report on Customer Data Privacy Risks" submitted by Neil Fisher and Meryl Loonin
-   (represented by Zevin Asset Management), followed by **the Home Depot Board's own
-   response and recommendation to vote against it**. Tier 1/2: this is Home Depot's own
-   SEC filing; the proposal text itself is written by the proponents (the filing
-   explicitly disclaims "the Company is not responsible for the accuracy or content of
-   the proposal"), but the Board's response is Home Depot's own statement.
-2. `i54262px14a6g.htm` (accession 0001214659-26-005483) — a **Notice of Exempt
-   Solicitation** (SEC Form PX14A6G) filed independently by Zevin Asset Management, LLC,
-   urging shareholders to vote FOR Item 8. This is advocacy material by a shareholder
-   activist investor, filed as a real SEC exhibit — Tier 2 as a regulated filing, but
-   its claims are Zevin's argument, not Home Depot's admission, and are labeled as such
+1. [`hd-20260406.htm`](https://www.sec.gov/Archives/edgar/data/354950/000035495026000090/hd-20260406.htm)
+   (accession 0000354950-26-000090) — **The Home Depot 2026 Proxy Statement**. Contains,
+   as Item 8 on the proxy card, a shareholder proposal titled "Report on Customer Data
+   Privacy Risks" submitted by two individual shareholder-proponents (represented by
+   Zevin Asset Management), followed by **the Home Depot Board's own response and
+   recommendation to vote against it**. Per CLAUDE.md §1b, petitioners are recorded in
+   aggregate only, never enumerated, so their names are omitted from this note — the
+   linked filing itself is the citation for anyone who needs to verify the proposal's
+   original signatories. Tier 1/2: this is Home Depot's own SEC filing; the proposal
+   text itself is written by the proponents (the filing explicitly disclaims "the
+   Company is not responsible for the accuracy or content of the proposal"), but the
+   Board's response is Home Depot's own statement.
+2. [`i54262px14a6g.htm`](https://www.sec.gov/Archives/edgar/data/354950/000121465926005483/i54262px14a6g.htm)
+   (accession 0001214659-26-005483) — a **Notice of Exempt Solicitation** (SEC Form
+   PX14A6G) filed independently by Zevin Asset Management, LLC, urging shareholders to
+   vote FOR Item 8. This is advocacy material by a shareholder activist investor, filed
+   as a real SEC exhibit — Tier 2 as a regulated filing, but its claims are Zevin's
+   argument, not Home Depot's admission, and are labeled as such
    below.
 
 ## Confirmed (Home Depot's own words, Board response, Tier 1)
