@@ -92,8 +92,54 @@ materials** (CIK 0000354950), not a routine 10-K/8-K risk disclosure:
   Depot-authorized ALPR camera, which would require an MGDPA data-practices request to
   a specific agency, not a corporate filing.
 
+## Second pass: public-record and crowdsource follow-up (2026-08-19)
+
+Pursued the open questions above with public web searches. Results, tiered per this
+repo's rules:
+
+- **Site identity (Tier 3, property owner's own materials).** Sterling Organization's
+  own property page and leasing brochure for "Quarry Retail" confirm: 281,480 sq ft
+  grocery-anchored center at 1520–1730 New Brighton Blvd., anchors include Cub, Home
+  Depot (listed at 1620 New Brighton Blvd.), Target (shadow-anchor), Office Depot,
+  Michaels, PetSmart, Five Below. Sterling Organization is confirmed as the owning/
+  leasing entity, consistent with the Reddit post. Source: sterlingorganization.com
+  property page and leasing brochure PDF (their own site, not an independent filing —
+  cited as Tier 3, first-party non-governmental).
+- **Parcel identifiers found, owner-of-record NOT resolved.** Commercial listing
+  aggregator (LoopNet, Tier 4) gives Hennepin County APNs 13-029-24-12-0016 (1520) and
+  13-029-24-11-0034 (1730). Hennepin County's actual property-information system
+  (propertyinformation.hennepin.us) requires an interactive parcel-ID search; the old
+  direct-query URL pattern (`www16.co.hennepin.mn.us/pins/pidresult.jsp?pid=...`) now
+  just returns the generic search landing page, not parcel data. Per the "Good-Citizen
+  Fetcher" rule (no scraping workarounds, no automating a form meant for a human), this
+  needs a manual lookup by a person at that site with the two APNs above, not a script.
+  **Not resolved in this pass — logged as a `knownGaps`-style manual task, not
+  fabricated.**
+- **Crowdsourced ALPR trackers (Tier 4, lead-only, corroborating but not sufficient).**
+  `deflocktheusa.com`'s Minneapolis page lists "The Home Depot" as one of four named
+  ALPR *operators* reported in Minneapolis (alongside Minneapolis PD, University of MN
+  PD) — but gives no street address tying that specifically to The Quarry, and the site
+  is community-submitted, not a primary source. `unflocked.org` and `findingflock.com`
+  show aggregate counts for the area but no address-level detail was retrievable via
+  fetch (their interactive map likely has it; not pulled here). These are consistent
+  with the Reddit report but remain Tier 4 leads, not citations, per §0.3/§1c — proximity
+  plus a matching operator name is still not a document naming this site.
+- **Telaid:** no public reporting or filing found connecting Telaid to Home Depot or to
+  this site specifically. Telaid's own site was not checked for a client list (unlikely
+  to name a specific store) and doing so would not change this from a Tier 4 gap.
+- **Naming clarification worth flagging for future ingest work:** "New Brighton Blvd"
+  is a street in Minneapolis (Hennepin County); it is easy to confuse with the separate
+  city of **New Brighton, MN** (Ramsey County), which runs its own independent Flock
+  Safety program and public transparency portal (newbrightonmn.gov/686/Flock-
+  Transparency-Portal). These are unrelated municipalities/programs. Any future ingest
+  work on either must not conflate the two because of the shared road name.
+
 ## Next step
 
 This stays a documented lead (this file) rather than a map/registry entry until a
 Tier 1–2 record ties the specific Quarry cameras to an owner, contract, or access
-record. No `src/layers/registry.ts` or ingest-script changes were made in this PR.
+record. The single most productive next action is a person manually running the two
+Hennepin County APNs above through propertyinformation.hennepin.us to get the
+owner-of-record name, plus filing an MGDPA request to Minneapolis PD asking whether it
+has queried Flock data originating from this address. No `src/layers/registry.ts` or
+ingest-script changes were made in this PR.
