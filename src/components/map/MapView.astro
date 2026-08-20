@@ -784,6 +784,19 @@ const strings = {
     if (holdMs) window.setTimeout(() => (statusEl.style.opacity = '0'), holdMs);
   }
 
+  // Declared here, ahead of `controller`, rather than down with the rest of
+  // the DOM-wiring helpers below: NearMeRadiusControl.onAdd calls
+  // formatNearMeRadiusValue synchronously (to set its initial
+  // aria-valuetext), and onAdd itself runs synchronously inside
+  // MapController's own constructor just below — so by the time `new
+  // MapController` executes, `fill` has to already be initialized, not
+  // just declared later in this same script. A closure that only *reads*
+  // fill when a later event fires would have been fine wherever it sat;
+  // this one doesn't get that grace period.
+  /** Substitute {placeholders} in a dictionary string. */
+  const fill = (template: string, values: Record<string, string | number>) =>
+    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+
   const controller = new MapController(mapEl, layers, {
     resetViewLabel: S.resetView,
     nearMeLabel: S.mapNearMe,
@@ -909,10 +922,6 @@ const strings = {
     }
     return wrap;
   }
-
-  /** Substitute {placeholders} in a dictionary string. */
-  const fill = (template: string, values: Record<string, string | number>) =>
-    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 
   /* ------------------------- Collapsible side panels ----------------------
      #controls (docks >=1024px) and #detail-panel (docks >=1280px, only
