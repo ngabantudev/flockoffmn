@@ -539,9 +539,22 @@ function accuracyZoomCap(accuracyM: number, lat: number, minDimensionPx: number)
  * running animation costs battery on every device showing the page for as long
  * as it is open, and says "urgent" about records whose whole argument is that
  * they are routine (§0.4).
+ *
+ * The total time every line takes to *start* (the stagger span, not
+ * THROW_MS/IMPACT_MS below) is capped at THROW_SPREAD_MS — see runThrow's
+ * own stagger calculation. THROW_STAGGER_MS is a ceiling on the per-line
+ * gap, not the actual gap: a jurisdiction throw or a near-me search rarely
+ * has more than a handful of targets, so most throws still space lines
+ * THROW_STAGGER_MS apart exactly as before. Only once a batch is large
+ * enough that spacing every line that far apart would itself exceed
+ * THROW_SPREAD_MS does the per-line gap shrink, so a near-me throw at a
+ * wide radius in a dense area (up to NEARME_MAX_LINES lines) finishes in
+ * the same total time as one with a handful of results, not several
+ * seconds longer — "found more" should not read as "got slower."
  */
 const THROW_MS = 420;
 const THROW_STAGGER_MS = 70;
+const THROW_SPREAD_MS = 400;
 const IMPACT_MS = 520;
 
 /** Every style-layer suffix a tap can select a record on. */
@@ -3556,12 +3569,21 @@ export class MapController {
       return;
     }
 
+    // THROW_MS's own comment on why this shrinks for a large batch instead
+    // of always using THROW_STAGGER_MS. (targets.length - 1) is the number
+    // of gaps between shots (a 2-target throw has 1 gap, not 2), so this
+    // stays at THROW_STAGGER_MS for any small batch — THROW_SPREAD_MS
+    // divided across few gaps is always the larger of the two — and only
+    // shrinks once there are enough targets that THROW_STAGGER_MS apart
+    // would spread the batch past THROW_SPREAD_MS.
+    const stagger =
+      targets.length > 1 ? Math.min(THROW_STAGGER_MS, THROW_SPREAD_MS / (targets.length - 1)) : 0;
     // Deterministic per-target stagger rather than Math.random(): the order
     // is arbitrary either way, and this keeps a re-selection of the same
     // jurisdiction looking the same as the first time.
     const shots = targets.map((target, i) => ({
       target,
-      delay: i * THROW_STAGGER_MS,
+      delay: i * stagger,
       landedAt: null as number | null,
     }));
     const lastStart = shots.length ? shots[shots.length - 1].delay : 0;
