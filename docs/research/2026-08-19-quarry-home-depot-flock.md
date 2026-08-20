@@ -134,12 +134,57 @@ repo's rules:
   Transparency-Portal). These are unrelated municipalities/programs. Any future ingest
   work on either must not conflate the two because of the shared road name.
 
+## Third pass: owner-of-record resolved via Hennepin County GIS (2026-08-19)
+
+The second pass ruled out `propertyinformation.hennepin.us` because its interactive
+parcel-ID search isn't a fetchable URL and automating a human-facing form is out per
+the Good-Citizen Fetcher rule. That constraint is specific to that interactive site,
+not to Hennepin County data generally — the county separately publishes its parcel
+layer as an open, unauthenticated GIS REST service intended for programmatic queries
+(`gis.hennepin.us/arcgis/rest/services/HennepinData/LAND_PROPERTY/MapServer/1`, part of
+the public [Hennepin GIS Open Data](https://gis-hennepin.hub.arcgis.com/pages/open-data)
+program). Querying it by PID is a normal use of a published API, not a scrape
+workaround, so this pass used it directly instead of leaving the lookup as a manual
+task.
+
+**Confirmed (Tier 1, Hennepin County parcel record, `confirmed`).** Both APNs from the
+second pass resolve to the same owner-of-record:
+
+| PID | Address | OWNER_NM | TAXPAYER_NM_1 | Mkt. value (total) |
+|---|---|---|---|---|
+| 1302924120016 | 1520 New Brighton Blvd, Minneapolis 55413 | SUP II QUARRY RETAIL LLC | C/O STERLING ORGANIZATION | $9,628,000 |
+| 1302924110034 | 1730 New Brighton Blvd, Minneapolis 55413 | SUP II QUARRY RETAIL LLC | C/O STERLING ORGANIZATION | $3,106,000 |
+
+Fetched 2026-08-19 via the service's `/query` endpoint (`f=json`, `outFields` limited to
+owner/address/value fields). This is a government primary record — Hennepin County's own
+tax-parcel system — so it clears the bar for `confirmed`, not `corroborated` or `lead`.
+
+**What this resolves and what it still doesn't:**
+
+- **Resolves:** the property owner of record for both Quarry parcels is **SUP II Quarry
+  Retail LLC**, a special-purpose entity, taxed care-of Sterling Organization. This
+  independently confirms Sterling Organization's role (previously Tier 3, their own
+  marketing materials) with a Tier 1 government record, and gives an exact legal-entity
+  name for any future permit, contract, or lien search — e.g. a Minneapolis camera/
+  equipment permit or a Telaid service contract would more plausibly be filed under
+  "SUP II Quarry Retail LLC" than under "Home Depot" or "Sterling Organization."
+- **Does not resolve:** who purchased, owns, or operates the ALPR camera units
+  themselves. A landlord LLC owning the land under a leased anchor store is standard
+  commercial real estate structure and says nothing about whether Home Depot (the
+  tenant, with its own corporate Flock ALPR policy per the Confirmed section above) or
+  the landlord installed and contracts for this specific equipment. Per §1c, ownership
+  of the parcel is not evidence of who owns the camera — that link is not computed here.
+- Updates the second-pass "Parcel identifiers found, owner-of-record NOT resolved"
+  bullet above: owner-of-record **is** now resolved; the open question narrows to
+  camera/equipment ownership specifically.
+
 ## Next step
 
 This stays a documented lead (this file) rather than a map/registry entry until a
-Tier 1–2 record ties the specific Quarry cameras to an owner, contract, or access
-record. The single most productive next action is a person manually running the two
-Hennepin County APNs above through propertyinformation.hennepin.us to get the
-owner-of-record name, plus filing an MGDPA request to Minneapolis PD asking whether it
-has queried Flock data originating from this address. No `src/layers/registry.ts` or
-ingest-script changes were made in this PR.
+Tier 1–2 record ties the specific Quarry ALPR camera units — not just the parcel — to
+an owner, contract, or access record. With the owner-of-record now known, the most
+productive next actions are: (1) a Minneapolis building-permit or right-of-way search
+for camera/equipment work filed under "SUP II Quarry Retail LLC" or "Sterling
+Organization" at 1520–1730 New Brighton Blvd, and (2) an MGDPA data-practices request
+to Minneapolis PD asking whether it has queried Flock data originating from this
+address. No `src/layers/registry.ts` or ingest-script changes were made in this PR.
