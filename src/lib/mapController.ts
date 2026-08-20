@@ -1009,38 +1009,56 @@ export class MapController {
   }
 
   /**
-   * A point layer's `circle-stroke-color`, with a `case` branch for a
-   * "cross-listed corner" match (crossSourceSiteId != null — see
-   * alpr-cross-source.mjs). Only `alpr`/`alpr_reported` records ever carry
-   * that attribute, so this is a no-op fallback-through for every other
-   * point layer rather than a special case per layer id — the GL expression
-   * itself is what stays generic.
+   * The `circle-stroke-*` `case` branch shared by the three `pointStroke*Expr`
+   * methods below, for a "cross-listed corner" match (crossSourceSiteId !=
+   * null — see alpr-cross-source.mjs) and its weaker "near miss" sibling
+   * (crossSourceNearMiss — see that same file's own comment).
    *
-   * A "near miss" (crossSourceNearMiss — see alpr-cross-source.mjs's own
-   * comment) shares this exact colour rather than getting a hue of its own:
-   * it's the same corroboration idea at lower confidence, not a different
-   * kind of fact, so `pointStrokeWidthExpr` and `pointStrokeOpacityExpr` are
-   * the only two places a near miss reads as visually weaker than a match.
+   * Gated by every caller on `layer.crossSource` being declared in the
+   * registry (see LayerDefinition.crossSource in layers/types.ts), not on
+   * the attribute names alone — see #103. Today only `alpr`/`alpr_reported`
+   * name a `crossSource` block, so this `case` is the only place either
+   * attribute is probed at all; every other point layer's stroke paint never
+   * evaluates it and falls straight through to its plain base value. The
+   * generic per-layer pipeline that builds `circle-stroke-*` stays generic —
+   * this expression, and the decision to use it, live only here.
+   */
+  private crossSourceRingCaseExpr<T>(matched: T, nearMiss: T, base: T): maplibregl.ExpressionSpecification {
+    return [
+      'case',
+      ['!=', ['get', 'crossSourceSiteId'], null],
+      matched,
+      ['==', ['get', 'crossSourceNearMiss'], true],
+      nearMiss,
+      base,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
+   * A point layer's `circle-stroke-color`. Only a layer whose registry entry
+   * names `crossSource` gets the ring `case` branch (see
+   * crossSourceRingCaseExpr's own comment); every other point layer gets its
+   * plain base colour straight back, with no GL expression to evaluate.
+   *
+   * A "near miss" shares this exact colour rather than getting a hue of its
+   * own: it's the same corroboration idea at lower confidence, not a
+   * different kind of fact, so `pointStrokeWidthExpr` and
+   * `pointStrokeOpacityExpr` are the only two places a near miss reads as
+   * visually weaker than a match.
    */
   private pointStrokeColorExpr(layer: ClientLayer): maplibregl.ExpressionSpecification | string {
     const base = layer.pointStrokeColor ?? this.basemapColor;
-    return [
-      'case',
-      [
-        'any',
-        ['!=', ['get', 'crossSourceSiteId'], null],
-        ['==', ['get', 'crossSourceNearMiss'], true],
-      ],
-      this.crossSourceRingColor,
-      base,
-    ] as unknown as maplibregl.ExpressionSpecification;
+    if (!layer.crossSource) return base;
+    return this.crossSourceRingCaseExpr(this.crossSourceRingColor, this.crossSourceRingColor, base);
   }
 
   /**
    * A point layer's `circle-stroke-width`, doubled (roughly) for a matched
    * record and stepped up more modestly for a near miss, on the same
    * emergeFrom→pointsFrom fade every stroke already uses — neither ring may
-   * ever appear before `pointsFrom` any more than the base stroke does.
+   * ever appear before `pointsFrom` any more than the base stroke does. Only
+   * a `crossSource`-declaring layer (see crossSourceRingCaseExpr's own
+   * comment) gets the `case`; every other layer gets the plain base width.
    *
    * The `case` has to sit *inside* the `interpolate` as the value at the
    * `pointsFrom` stop, not the other way around: the style spec allows only
@@ -1051,10 +1069,10 @@ export class MapController {
    * and emits an `error` event instead of adding it; nothing in the console
    * says "layer not added"). One interpolate, data-driven at its stop.
    */
-  private pointStrokeWidthExpr(tier: {
-    emergeFrom: number;
-    pointsFrom: number;
-  }): maplibregl.ExpressionSpecification {
+  private pointStrokeWidthExpr(
+    layer: ClientLayer,
+    tier: { emergeFrom: number; pointsFrom: number },
+  ): maplibregl.ExpressionSpecification {
     return [
       'interpolate',
       ['linear'],
@@ -1062,14 +1080,7 @@ export class MapController {
       tier.emergeFrom,
       0,
       tier.pointsFrom,
-      [
-        'case',
-        ['!=', ['get', 'crossSourceSiteId'], null],
-        2.2,
-        ['==', ['get', 'crossSourceNearMiss'], true],
-        1.6,
-        1.2,
-      ],
+      layer.crossSource ? this.crossSourceRingCaseExpr(2.2, 1.6, 1.2) : 1.2,
     ] as unknown as maplibregl.ExpressionSpecification;
   }
 
@@ -1078,15 +1089,13 @@ export class MapController {
    * fully opaque (MapLibre's own default) — this exists purely to fade a
    * near-miss ring down against a matched one, since colour and width alone
    * (see the two expressions above) still read close enough at a glance to
-   * blur the distinction this attribute exists to keep clear.
+   * blur the distinction this attribute exists to keep clear. Only a
+   * `crossSource`-declaring layer (see crossSourceRingCaseExpr's own
+   * comment) is ever less than fully opaque.
    */
-  private pointStrokeOpacityExpr(): maplibregl.ExpressionSpecification {
-    return [
-      'case',
-      ['==', ['get', 'crossSourceNearMiss'], true],
-      0.55,
-      1,
-    ] as unknown as maplibregl.ExpressionSpecification;
+  private pointStrokeOpacityExpr(layer: ClientLayer): maplibregl.ExpressionSpecification | number {
+    if (!layer.crossSource) return 1;
+    return this.crossSourceRingCaseExpr(1, 0.55, 1);
   }
 
   /**
@@ -2484,8 +2493,8 @@ export class MapController {
          * declared, shared with the theme-independent zoom curve here so the
          * two can never disagree about when the ring is allowed to appear.
          */
-        'circle-stroke-width': this.pointStrokeWidthExpr(tier),
-        'circle-stroke-opacity': this.pointStrokeOpacityExpr(),
+        'circle-stroke-width': this.pointStrokeWidthExpr(layer, tier),
+        'circle-stroke-opacity': this.pointStrokeOpacityExpr(layer),
         /*
          * Opacity follows the same two-branch shape as radius, just above.
          * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
