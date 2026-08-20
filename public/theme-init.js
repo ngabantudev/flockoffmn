@@ -6,17 +6,31 @@
  *
  * Reads the user's stored theme choice (if any) and applies it before first
  * paint, so a reader who chose "light" never sees a flash of the dark
- * default. No stored value means no override: the page just follows
+ * default. No stored value means no forced override — except during the
+ * October-night Halloween auto-window (8pm–6am, the visitor's own device
+ * clock, see isHalloweenAutoWindow() in src/lib/theme.ts, duplicated here
+ * by hand since this plain script can't import that module) — outside
+ * that window with no stored choice, the page just follows
  * prefers-color-scheme live via CSS.
  */
 (function () {
+  var stored = null;
   try {
-    var stored = window.localStorage.getItem('flockoff:theme');
-    if (stored === 'light' || stored === 'dark') {
-      document.documentElement.dataset.theme = stored;
-    }
+    stored = window.localStorage.getItem('flockoff:theme');
   } catch (err) {
-    // Storage can throw (e.g. Safari private browsing) — fall back to the
-    // OS-level prefers-color-scheme media query, no theme override.
+    // Storage can throw (e.g. Safari private browsing) — fall through to
+    // the auto-window check below as if there were no stored choice.
+  }
+  if (stored === 'light' || stored === 'dark' || stored === 'halloween') {
+    document.documentElement.dataset.theme = stored;
+    return;
+  }
+  var now = new Date();
+  var hour = now.getHours();
+  if (now.getMonth() === 9 && (hour >= 20 || hour < 6)) {
+    // Not persisted to localStorage on purpose: this is a nightly default,
+    // not a choice, so it reverts on its own once the window passes rather
+    // than sticking the way an explicit pick does.
+    document.documentElement.dataset.theme = 'halloween';
   }
 })();

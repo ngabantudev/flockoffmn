@@ -1,5 +1,22 @@
 import type { IControl, Map as MLMap } from 'maplibre-gl';
 import { createElement, SunMoon, Sun, Moon, Check, type IconNode } from 'lucide';
+
+/**
+ * Lucide (the set every other icon in this control comes from — SunMoon,
+ * Sun, Moon, Check) has no pumpkin/jack-o'-lantern icon, so this is a
+ * hand-built one in lucide's own IconNode shape (see e.g. lucide's Ghost
+ * icon: an array of `[tag, attrs]` tuples) so it renders through the same
+ * `createElement()` call and inherits `currentColor` stroke/fill exactly
+ * like the built-in icons do — same 24x24 grid, same stroke-2/round-cap
+ * conventions, no separate styling path.
+ */
+const Pumpkin: IconNode = [
+  ['path', { d: 'M10.5 5 12 2l1.5 3' }], // stem
+  ['ellipse', { cx: '12', cy: '14', rx: '8', ry: '7' }], // body
+  ['path', { d: 'M8 10 11 10 9.5 13Z' }], // left eye
+  ['path', { d: 'M13 10 16 10 14.5 13Z' }], // right eye
+  ['path', { d: 'M8 16 10 18.5 12 16 14 18.5 16 16' }], // mouth (3 teeth)
+];
 import {
   MAP_STYLES,
   currentTheme,
@@ -35,6 +52,7 @@ export class ThemeControl implements IControl {
   private mapStyleButtons = new Map<MapStyleId, HTMLButtonElement>();
   private lightBtn: HTMLButtonElement | null = null;
   private darkBtn: HTMLButtonElement | null = null;
+  private halloweenBtn: HTMLButtonElement | null = null;
   private offThemeChange: (() => void) | null = null;
   private offMapStyleChange: (() => void) | null = null;
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
@@ -124,18 +142,32 @@ export class ThemeControl implements IControl {
     darkBtn.appendChild(document.createTextNode('Dark'));
     darkBtn.addEventListener('click', () => setTheme('dark'));
 
+    // Seasonal, not a fourth permanent appearance mode — same site theme
+    // machinery as light/dark (dataset.theme, THEME_STORAGE_KEY,
+    // THEME_BASEMAP), just an extra segment here rather than a separate
+    // control, so a visitor who picks it keeps the same one persisted
+    // choice light/dark already gets.
+    const halloweenBtn = document.createElement('button');
+    halloweenBtn.type = 'button';
+    halloweenBtn.setAttribute('class', 'theme-control-segment');
+    halloweenBtn.appendChild(createElement(Pumpkin, { width: 14, height: 14 }));
+    halloweenBtn.appendChild(document.createTextNode('Halloween'));
+    halloweenBtn.addEventListener('click', () => setTheme('halloween'));
+
     this.lightBtn = lightBtn;
     this.darkBtn = darkBtn;
+    this.halloweenBtn = halloweenBtn;
     row.appendChild(lightBtn);
     row.appendChild(darkBtn);
+    row.appendChild(halloweenBtn);
     section.appendChild(row);
     return section;
   }
 
   private reflectSiteTheme(theme: Theme): void {
-    const isLight = theme === 'light';
-    this.lightBtn?.classList.toggle('is-active', isLight);
-    this.darkBtn?.classList.toggle('is-active', !isLight);
+    this.lightBtn?.classList.toggle('is-active', theme === 'light');
+    this.darkBtn?.classList.toggle('is-active', theme === 'dark');
+    this.halloweenBtn?.classList.toggle('is-active', theme === 'halloween');
   }
 
   private buildMapThemeSection(): HTMLElement {

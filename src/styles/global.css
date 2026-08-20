@@ -231,6 +231,90 @@
   color-scheme: dark;
 }
 
+/*
+ * Halloween — a seasonal appearance choice, not a fourth data treatment.
+ * Layer identity colours (--color-layer-*) are deliberately left untouched
+ * here, same as every other theme: per §0.1/§0.2, what a device/vendor/
+ * agency renders as on the map is data, not decor, and doesn't change
+ * because a visitor picked a seasonal palette. Only the chrome — ink scale,
+ * accent, warn, cross-source ring — shifts: near-black with a purple cast
+ * instead of dark's blue-grey, and a saturated pumpkin accent in place of
+ * dark's amber.
+ *
+ * Darker and more saturated than the first pass on purpose — feedback on
+ * that version was that it read too close to plain dark mode to tell
+ * apart at a glance. --color-ink-950 dropped further toward true black
+ * (#07040b vs the first pass's #0c0710) and --color-accent moved from
+ * #ff7518 to the more saturated/redder #ff6a00, both widening the gap from
+ * dark mode's blue-grey #0a0c10 / amber #f5a524. Contrast re-checked
+ * against the same ink-850 well dark's own inline comments check against
+ * (§4 accessibility): --color-accent is 5.80:1 on --color-ink-850
+ * (#241933), --color-warn (#b388ff) is 6.25:1, --color-ink-400 (muted
+ * text) is 6.34:1 — all clear WCAG AA's 4.5:1 with room to spare.
+ */
+:root[data-theme='halloween'] {
+  --color-ink-950: #07040b;
+  --color-ink-900: #120a1a;
+  --color-ink-850: #241933;
+  --color-ink-800: #31213f;
+  --color-ink-700: #473360;
+  --color-ink-600: #614a82;
+  --color-ink-400: #ab97c9;
+  --color-ink-300: #c7b6de;
+  --color-ink-200: #ded1ec;
+  --color-ink-100: #f5eefa;
+
+  --color-accent: #ff6a00;
+  --color-warn: #b388ff;
+
+  --color-cross-source-ring: #b388ff;
+
+  --color-on-accent: #140b1c;
+  --color-well: #050308;
+  --color-ctrl-attrib-bg: rgba(7, 4, 11, 0.85);
+
+  color-scheme: dark;
+}
+
+/*
+ * A soft accent-colored glow, Halloween only — the one deliberate flourish
+ * beyond a palette swap. Static (no animation/pulse: §4 asks every theme to
+ * respect prefers-reduced-motion, and a glow that doesn't move satisfies
+ * that by construction rather than needing a media-query opt-out), so it
+ * reads as "this button/panel is lit from within" rather than as an
+ * attention-getting effect. Layered onto the existing shadow rather than
+ * replacing it, and only on surfaces that already had one.
+ */
+:root[data-theme='halloween'] .theme-control-panel {
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(255, 106, 0, 0.12);
+}
+:root[data-theme='halloween'] .theme-control-button:hover,
+:root[data-theme='halloween'] .theme-control-segment:hover,
+:root[data-theme='halloween'] .theme-control-segment.is-active {
+  box-shadow: 0 0 10px rgba(255, 106, 0, 0.25);
+}
+
+/*
+ * The bottom-nav icon swap (Nav.astro's spookyIcon set) is pure CSS, not
+ * client JS: both icons render in the markup always, and which one paints
+ * is decided by the same `[data-theme='halloween']` selector every other
+ * theme-aware rule in this file uses. That means it stays correct through
+ * a live theme switch and through the October-night auto-theme
+ * (isHalloweenAutoWindow() in theme.ts) with nothing here needing to know
+ * about either — the attribute is the only thing being watched.
+ */
+.nav-icon-halloween {
+  display: none;
+}
+:root[data-theme='halloween'] .nav-icon-default {
+  display: none;
+}
+:root[data-theme='halloween'] .nav-icon-halloween {
+  display: block;
+}
+
 @layer base {
   html {
     color-scheme: dark;
@@ -788,10 +872,44 @@
 }
 .theme-control-segmented {
   display: flex;
+  /*
+   * Wraps as a last resort on the narrowest phones (see
+   * .theme-control-segment's comment above): three content-sized labels
+   * plus icons can still exceed the panel's own min-width at ~320px
+   * viewports. Wrapping to a second row keeps every label fully visible
+   * with no CSS media-query breakpoint needed — the same "shrink before
+   * you clip" instinct as the segment fix itself.
+   */
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 .theme-control-segment {
-  flex: 1;
+  /*
+   * Sized to its own label, not an equal 1/N share: `flex: 1` split three
+   * ways forced every segment (including the shortest, "Dark") into the
+   * same width, so "Halloween" — the longest label — got squeezed below
+   * its own content width and spilled past the panel's right edge instead
+   * of wrapping or shrinking. `flex: 0 1 auto` still lets segments shrink
+   * if the row is ever genuinely too narrow for the container (see
+   * `.theme-control-segmented`'s `flex-wrap: wrap` below), but never below
+   * what asking for equal columns already did — an uneven-width segmented
+   * control reads fine, an overflowing one doesn't. `flex-shrink: 0`
+   * (rather than the `1` a plain `flex: 0 1 auto` implies) is deliberate:
+   * shrink-to-fit still let a nowrap label compress below its own text
+   * width in testing, painting past its box instead of preventing it —
+   * `flex-wrap: wrap` on the row is the actual overflow escape valve.
+   *
+   * `min-width: max-content` on top of `flex: 0 0 auto` because this
+   * button is *itself* a (nested) flex container for its icon + text — in
+   * testing, `flex-shrink: 0` alone still let Chromium compute this
+   * button's own preferred main size as if the text weren't there
+   * (icon + padding only), painting the label past the box instead of
+   * sizing to it. Forcing the min-width to the button's true max-content
+   * size is the standard fix for a nested flex item under-reporting its
+   * own content size to its parent's layout.
+   */
+  flex: 0 0 auto;
+  min-width: max-content;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -801,6 +919,7 @@
   font-size: 0.8125rem;
   color: var(--color-ink-400);
   background: transparent;
+  white-space: nowrap;
 }
 .theme-control-segment:hover {
   background: var(--color-ink-800);
