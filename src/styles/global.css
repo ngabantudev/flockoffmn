@@ -214,6 +214,44 @@
   color-scheme: dark;
 }
 
+/*
+ * High Contrast — an explicit third option, never a default (nothing sets
+ * this automatically the way dark mode falls back from an OS preference).
+ * Same blue-grey/amber hue family as dark mode, not a new palette
+ * identity: only the values move — background pushed further toward true
+ * black, accent/warn pushed more saturated, and the gap between adjacent
+ * ink levels widened so panels read clearly against the map without
+ * requiring a different color language to learn. Contrast re-checked
+ * against the same ink-850 well every other theme's inline comments check
+ * against (§4 accessibility): --color-accent (#ffb020) is 9.79:1 on
+ * --color-ink-850 (#131722), --color-warn (#ffcc33) is 11.88:1,
+ * --color-ink-400 (muted text) is 5.99:1 — all clear WCAG AA's 4.5:1 with
+ * substantial room, several clearing AAA's 7:1 too.
+ */
+:root[data-theme='high-contrast'] {
+  --color-ink-950: #030405;
+  --color-ink-900: #080a0e;
+  --color-ink-850: #131722;
+  --color-ink-800: #1c212d;
+  --color-ink-700: #2c3444;
+  --color-ink-600: #414c60;
+  --color-ink-400: #8b96a8;
+  --color-ink-300: #b0b9c8;
+  --color-ink-200: #d3d9e3;
+  --color-ink-100: #f2f4f8;
+
+  --color-accent: #ffb020;
+  --color-warn: #ffcc33;
+
+  --color-cross-source-ring: #d9a548;
+
+  --color-on-accent: #0a0c10;
+  --color-well: #030405;
+  --color-ctrl-attrib-bg: rgba(3, 4, 5, 0.85);
+
+  color-scheme: dark;
+}
+
 @layer base {
   html {
     color-scheme: dark;
@@ -670,10 +708,32 @@
 }
 .theme-control-segmented {
   display: flex;
+  /*
+   * Wraps as a last resort on the narrowest phones: three content-sized
+   * labels plus icons can exceed the panel's own min-width at ~320px
+   * viewports. Wrapping to a second row keeps every label fully visible
+   * with no CSS media-query breakpoint needed.
+   */
+  flex-wrap: wrap;
   gap: 0.25rem;
 }
 .theme-control-segment {
-  flex: 1;
+  /*
+   * Sized to its own label, not an equal 1/N share: `flex: 1` split three
+   * ways forces every segment (including the shortest) into the same
+   * width, which squeezes the longest label ("High Contrast") below its
+   * own content width and spills it past the panel's right edge instead
+   * of wrapping or shrinking. `min-width: max-content` is needed on top of
+   * `flex: 0 0 auto` because this button is itself a (nested) flex
+   * container for its icon + text — `flex-shrink: 0` alone still lets the
+   * browser compute this button's own preferred main size as if the text
+   * weren't there, painting the label past the box instead of sizing to
+   * it; forcing min-width to the button's true max-content size is the
+   * standard fix for a nested flex item under-reporting its own content
+   * size to its parent's layout.
+   */
+  flex: 0 0 auto;
+  min-width: max-content;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -683,6 +743,7 @@
   font-size: 0.8125rem;
   color: var(--color-ink-400);
   background: transparent;
+  white-space: nowrap;
 }
 .theme-control-segment:hover {
   background: var(--color-ink-800);

@@ -12,7 +12,7 @@
 (function () {
   try {
     var stored = window.localStorage.getItem('flockoff:theme');
-    if (stored === 'light' || stored === 'dark') {
+    if (stored === 'light' || stored === 'dark' || stored === 'high-contrast') {
       document.documentElement.dataset.theme = stored;
     }
   } catch (err) {
