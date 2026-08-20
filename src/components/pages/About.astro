@@ -104,18 +104,70 @@ const isIt = [
       observed — never as a guide to where you are or are not being recorded.
     </p>
 
-    <h2>How this is built</h2>
+    <h2>On AI</h2>
     <p>
-      This project uses <a href="https://claude.com/claude-code">Claude Code</a> as a development
-      tool for code, ingest scripts, and drafting. Every data field, editorial claim, and published
-      record is human-reviewed. See the
-      <a href="https://github.com/ngabantudev/flockoffmn/blob/main/README.md">README</a> for the
-      full contributor walkthrough, or
-      <a
-        href="https://github.com/ngabantudev/flockoffmn/blob/main/CONTRIBUTING.md#ai-tooling-disclosure"
-        >CONTRIBUTING.md</a
-      > directly for the AI tooling disclosure.
+      As of August 2026, I do not believe AI is, on the whole, doing more good than harm. It's
+      precisely that power asymmetry that drives me to use it for the public good instead: people
+      deserve to know how surveillance infrastructure and enforcement agreements get built and
+      funded around them, and they deserve the ability to decide for themselves what to do about
+      it.
     </p>
+    <p>
+      AI is a tool, and like any tool, it can be used for benefit or harm. The average person,
+      like you or me, does not get to decide how corporate AI is built, managed, or sold. But I
+      can decide how it's used in my own work. I choose to use it to make this apparatus visible,
+      sourced, and accountable to the people it's aimed at.
+    </p>
+    <p>Here's a brief overview of the rulebook this project runs on:</p>
+    <p>
+      <a href="https://github.com/ngabantudev/flockoffmn/blob/main/AGENTS.md">AGENTS.md</a> holds
+      the full rulebook this site is built against. Four parts, all public:
+    </p>
+    <ul>
+      <li>
+        Part 0: Guiding Principles (connection is the product, receipts not rhetoric, the
+        metaphors don't become code, no masks)
+      </li>
+      <li>
+        Part 1 §1: Privacy & Compliance (who gets named, who never does, and how that's enforced
+        in the code itself — the schema has no field built to hold a private person's name or a
+        line officer's badge number, structurally, not by policy alone)
+      </li>
+      <li>Part 1 §2–4: Architecture, Data Provenance & Citation, and Client Constraints</li>
+      <li>Part 2: Commands & Workflow</li>
+      <li>Part 3: exceptions this repo takes from the durability standard it imports, recorded in the open</li>
+    </ul>
+    <p>
+      It's a public ledger, not an internal doc. Anyone can read it. If you find a gap in the
+      rulebook, or an unsourced claim, open an issue on the repository.
+    </p>
+    <p>And here's how it works day to day.</p>
+    <p>
+      AI drafts. A first pass at a layer's detail-panel copy, a glossary entry, an ingest script.
+      AI writes a version of it, and I read every word before it publishes. Nothing goes up
+      because a model produced it. It goes up because I checked it against the source and I'm
+      willing to put my name behind it.
+    </p>
+    <p>
+      AI does not source. Every number, fact, or citation traces back to a public document: a
+      contract, an MOA, a docket, a roll call, a permit. That document is what the citation links
+      to, not AI's summary of it. If the document isn't public, the field ships as
+      <code>null</code> with a note in <code>knownGaps</code>.
+    </p>
+    <p>
+      AI does not decide what the site argues. Who gets named and who never does, permanently
+      (§1b); what counts as a documented connection versus a suspicion (§0.3); which sources get
+      trusted over others (the tiering in §3). Those are judgment calls made by a human: me. AI
+      helps apply the rulebook faster, and its own output is held to that same rulebook, but it
+      doesn't write the rules. I do.
+    </p>
+    <p>
+      Why bother saying any of this? Because people deserve to know about the systems built
+      around them, whether they're aware of it or not — and that includes knowing how the map of
+      those systems was itself built. This site is built to be accountable to public records. If
+      that ever stops being true of a page here, that's a problem, and I want to hear about it.
+    </p>
+    <p class="text-ink-400">— ngabantudev</p>
 
     <h2>Errors and takedowns</h2>
     <p>
