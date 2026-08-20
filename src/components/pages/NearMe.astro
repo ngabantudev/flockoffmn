@@ -45,6 +45,14 @@ const nearMeLayers = LAYERS.filter((l) => l.nearMe).map((l) => {
     linkLabel: n.linkKey ? labelFor(l, n.linkKey) : null,
     caveat: n.caveat ? pick(n.caveat, locale) : null,
     wide: n.wide ?? false,
+    list: n.list
+      ? {
+          entityKey: n.list.entityKey ?? null,
+          detail: (n.list.detail ?? []).map((key) => ({ key, label: labelFor(l, key) })),
+          initialCount: n.list.initialCount ?? 8,
+          showOnMap: n.list.showOnMap ?? false,
+        }
+      : null,
   };
 });
 
@@ -62,6 +70,12 @@ const strings = {
   nearestIs: t('nearestIs'),
   distanceAway: t('distanceAway'),
   foundInCounty: t('foundInCounty'),
+  entityUnattributed: t('entityUnattributed'),
+  showOnMap: t('showOnMap'),
+  showMore: t('showMore'),
+  outsideMinnesotaTitle: t('outsideMinnesotaTitle'),
+  outsideMinnesota: t('outsideMinnesota'),
+  lowAccuracy: t('lowAccuracy'),
 
   whoAnswersTitle: t('whoAnswersTitle'),
   whoAnswersIntro: t('whoAnswersIntro'),
@@ -90,6 +104,7 @@ const strings = {
 };
 
 const actPath = localePath(locale, '/act');
+const homePath = localePath(locale, '/');
 ---
 
 <div class="mx-auto max-w-4xl px-4 py-10">
@@ -152,6 +167,7 @@ const actPath = localePath(locale, '/act');
   <section id="near-results" hidden class="mt-8">
     <h2 id="near-heading" class="text-lg font-semibold text-ink-100"></h2>
     <p id="near-sub" class="mt-0.5 text-sm text-ink-400"></p>
+    <p id="near-accuracy" hidden class="mt-2 text-xs leading-relaxed text-warn"></p>
 
     <!--
       Who answers here comes before the layer cards, deliberately. Everything
@@ -177,6 +193,7 @@ const actPath = localePath(locale, '/act');
 <script is:inline type="application/json" id="near-layers" set:html={JSON.stringify(nearMeLayers)} />
 <script is:inline type="application/json" id="near-strings" set:html={JSON.stringify(strings)} />
 <script is:inline type="application/json" id="near-act-path" set:html={JSON.stringify(actPath)} />
+<script is:inline type="application/json" id="near-home-path" set:html={JSON.stringify(homePath)} />
 
 <script>
   import {
@@ -186,6 +203,7 @@ const actPath = localePath(locale, '/act');
     distanceToGeometryMeters,
   } from '~/lib/geo.mjs';
   import { resolveAuthorities, operatorGap, displayName } from '~/lib/authority.mjs';
+  import { MN_BOUNDS } from '~/lib/mapStyle';
 
   type NearMeLayer = {
     id: string;
@@ -200,6 +218,12 @@ const actPath = localePath(locale, '/act');
     linkLabel: string | null;
     caveat: string | null;
     wide: boolean;
+    list: {
+      entityKey: string | null;
+      detail: { key: string; label: string }[];
+      initialCount: number;
+      showOnMap: boolean;
+    } | null;
   };
 
   const layers = JSON.parse(
@@ -213,10 +237,26 @@ const actPath = localePath(locale, '/act');
   const section = document.getElementById('near-results')!;
   const heading = document.getElementById('near-heading')!;
   const sub = document.getElementById('near-sub')!;
+  const accuracyEl = document.getElementById('near-accuracy')!;
   const cards = document.getElementById('near-cards')!;
   const whoEl = document.getElementById('who-answers')!;
 
   const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /*
+   * Minnesota's own bounding box, already padded a few tenths of a degree
+   * (see MN_BOUNDS's own comment in mapStyle.ts) so a fix that lands just
+   * past the state line doesn't misreport as "outside Minnesota" — the
+   * jurisdiction/county lookups below are the precise answer; this box only
+   * decides whether it's worth asking them at all. Reused from mapStyle.ts
+   * rather than redeclared here, so the two never drift apart.
+   */
+  const inMinnesota = ([lng, lat]: [number, number]) =>
+    lng >= MN_BOUNDS[0][0] && lng <= MN_BOUNDS[1][0] && lat >= MN_BOUNDS[0][1] && lat <= MN_BOUNDS[1][1];
+
+  // Below this, a 5-mile radius stops being a meaningful promise — worth
+  // saying so, not worth alarming a reader whose fix was merely ordinary.
+  const LOW_ACCURACY_MILES = 2;
 
   type Jurisdiction = {
     geoid: string;
@@ -237,6 +277,7 @@ const actPath = localePath(locale, '/act');
   const layerData = new Map<string, Feature[]>();
 
   const ACT_PATH = JSON.parse(document.getElementById('near-act-path')!.textContent!) as string;
+  const HOME_PATH = JSON.parse(document.getElementById('near-home-path')!.textContent!) as string;
 
   /** Everything the page needs, fetched once, in parallel. */
   async function loadAll() {
@@ -400,7 +441,7 @@ const actPath = localePath(locale, '/act');
         statusEl.textContent = '';
         // Coordinates are used in memory and never stored or transmitted.
         // `null` for the place name selects the "your location" heading.
-        void analyse([pos.coords.longitude, pos.coords.latitude], null);
+        void analyse([pos.coords.longitude, pos.coords.latitude], null, null, pos.coords.accuracy);
       },
       (err) => {
         statusEl.textContent =
@@ -454,25 +495,106 @@ const actPath = localePath(locale, '/act');
     return out;
   }
 
-  /** Count of records inside each radius, plus the distance to the closest. */
+  /**
+   * A single row: distance, entity label, detail lines, and an optional
+   * "show on map" link that centres the homepage map on the record.
+   */
+  function listRow(layer: NearMeLayer, row: { feature: Feature; distance: number }) {
+    const list = layer.list!;
+    const li = el('li', 'border-l-2 pl-3');
+    li.setAttribute('style', `border-color:${layer.color}`);
+
+    const entityValue = list.entityKey ? row.feature.properties.attributes?.[list.entityKey] : null;
+    const head = el('div', 'flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5');
+    head.append(
+      el(
+        'span',
+        'text-sm text-ink-100',
+        entityValue === null || entityValue === undefined || entityValue === ''
+          ? S.entityUnattributed
+          : String(entityValue),
+      ),
+      el('span', 'font-mono text-xs text-ink-400 shrink-0', `${fmtMiles(row.distance)} mi`),
+    );
+    li.append(head);
+
+    for (const d of list.detail) {
+      const value = row.feature.properties.attributes?.[d.key];
+      if (value === null || value === undefined || value === '') continue;
+      li.append(el('p', 'mt-0.5 text-xs text-ink-400', `${d.label}: ${value}`));
+    }
+
+    if (list.showOnMap && row.feature.geometry.type === 'Point') {
+      const [lng, lat] = (row.feature.geometry as GeoJSON.Point).coordinates;
+      const a = el('a', 'mt-1 inline-block text-xs text-accent underline underline-offset-2', `${S.showOnMap} →`);
+      a.setAttribute('href', `${HOME_PATH}?lat=${lat}&lng=${lng}&zoom=17`);
+      li.append(a);
+    }
+    return li;
+  }
+
+  /**
+   * Every record within the headline radius, nearest first, capped with a
+   * plain "show more" button rather than pagination — this keeps the DOM
+   * list (and its screen-reader order) intact instead of swapping pages.
+   */
+  function recordList(layer: NearMeLayer, rows: { feature: Feature; distance: number }[]) {
+    const list = layer.list!;
+    const ul = el('ul', 'mt-3 space-y-2.5');
+    const shown = rows.slice(0, list.initialCount);
+    const rest = rows.slice(list.initialCount);
+    for (const row of shown) ul.append(listRow(layer, row));
+
+    const out = [ul];
+    if (rest.length) {
+      const button = el(
+        'button',
+        'mt-3 text-xs font-medium text-accent underline underline-offset-2',
+        fill(S.showMore, { count: rest.length }),
+      );
+      button.setAttribute('type', 'button');
+      button.addEventListener('click', () => {
+        for (const row of rest) ul.append(listRow(layer, row));
+        button.remove();
+      });
+      out.push(button);
+    }
+    return out;
+  }
+
+  /**
+   * Count of records inside each radius, plus the distance to the closest —
+   * or, where the layer declared `list`, every one of those records
+   * enumerated nearest first instead of left as a bare number.
+   */
   function radiusBody(layer: NearMeLayer, features: Feature[], point: [number, number]) {
-    const distances = features
+    const withDistance = features
       .filter((f) => f.geometry.type === 'Point')
-      .map((f) => haversineMeters(point, (f.geometry as GeoJSON.Point).coordinates as [number, number]))
-      .sort((a, b) => a - b);
-    if (!distances.length) return null;
+      .map((f) => ({
+        feature: f,
+        distance: haversineMeters(point, (f.geometry as GeoJSON.Point).coordinates as [number, number]),
+      }))
+      .sort((a, b) => a.distance - b.distance);
+    if (!withDistance.length) return null;
 
     const radii = layer.radii.length ? layer.radii : [1];
-    const countWithin = (mi: number) => distances.filter((d) => miles(d) <= mi).length;
+    const within = (mi: number) => withDistance.filter((r) => miles(r.distance) <= mi);
+    const headline = within(radii[0]);
+
     const out = [
-      el('p', 'text-2xl font-semibold text-ink-100', String(countWithin(radii[0]))),
+      el('p', 'text-2xl font-semibold text-ink-100', String(headline.length)),
       el('p', 'text-xs text-ink-400', fill(S.mappedWithin, { miles: radii[0] })),
     ];
 
+    if (layer.list) {
+      out.push(...recordList(layer, headline));
+      return out;
+    }
+
     const rest = radii
       .slice(1)
-      .map((mi) => fill(S.alsoWithin, { count: countWithin(mi), miles: mi }));
-    rest.push(fill(S.nearestIs, { distance: fmtMiles(distances[0]) }));
+      .map((mi) => fill(S.alsoWithin, { count: within(mi).length, miles: mi }));
+    rest.push(fill(S.nearestIs, { distance: fmtMiles(withDistance[0].distance) }));
     out.push(el('p', 'mt-2 text-sm text-ink-300', `${rest.join('. ')}.`));
     return out;
   }
@@ -621,12 +743,16 @@ const actPath = localePath(locale, '/act');
     }
 
     // Who actually runs the cameras here, against who the reader elects.
+    // Reads the alpr layer's own registry radius rather than a second literal,
+    // so this gap check and the camera card above it cannot drift apart again
+    // the way they had — one said "3 mi", the other already checked 5.
     const cameras = layerData.get('alpr') ?? [];
+    const gapRadius = layers.find((l) => l.id === 'alpr')?.radii[0] ?? 5;
     const nearby = cameras.filter(
       (f) =>
         f.geometry.type === 'Point' &&
         miles(haversineMeters(point, (f.geometry as GeoJSON.Point).coordinates as [number, number])) <=
-          5,
+          gapRadius,
     );
     if (nearby.length) {
       const gap = operatorGap(
@@ -710,11 +836,44 @@ const actPath = localePath(locale, '/act');
     point: [number, number],
     placeName: string | null,
     jurisdiction: Jurisdiction | null = null,
+    accuracyMeters: number | null = null,
   ) {
     const token = ++latest;
     statusEl.textContent = S.loading;
     await ready;
     if (token !== latest) return;
+
+    accuracyEl.hidden = true;
+    if (accuracyMeters != null && miles(accuracyMeters) >= LOW_ACCURACY_MILES) {
+      accuracyEl.textContent = fill(S.lowAccuracy, { accuracy: fmtMiles(accuracyMeters) });
+      accuracyEl.hidden = false;
+    }
+
+    // A location a search box can't produce — only "use my location" can —
+    // and one this box structurally cannot reach out of state, so this is
+    // the one place worth spending a coverage check before anything else.
+    if (!jurisdiction && !inMinnesota(point)) {
+      statusEl.textContent = '';
+      heading.textContent = placeName
+        ? fill(S.aroundPlace, { place: placeName })
+        : S.aroundYourLocation;
+      sub.textContent = S.outsideMinnesotaTitle;
+      whoEl.textContent = '';
+      whoEl.append(
+        el(
+          'p',
+          'rounded-lg border border-ink-800 bg-ink-900 p-4 text-sm leading-relaxed text-ink-300',
+          S.outsideMinnesota,
+        ),
+      );
+      cards.textContent = '';
+      section.hidden = false;
+      section.scrollIntoView({
+        behavior: REDUCED_MOTION ? 'auto' : 'smooth',
+        block: 'nearest',
+      });
+      return;
+    }
 
     // A jurisdiction picked by name is already known. Only raw coordinates
     // need the boundaries, and only then do we pay for them.

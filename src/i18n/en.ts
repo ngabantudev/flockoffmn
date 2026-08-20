@@ -57,6 +57,9 @@ export const en: Record<string, string> = {
   loading: 'Loading map data…',
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
+  mapNearMe: 'What’s near me',
+  mapNearMeFound: '{count} nearby, {shown} shown',
+  mapNearMeNone: 'Nothing mapped within range of this location.',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
   // Label for the pull tab that collapses/expands the detail panel — see
@@ -89,6 +92,14 @@ export const en: Record<string, string> = {
   nearestIs: 'Nearest is {distance} mi away',
   distanceAway: '{distance} mi away',
   foundInCounty: '{count} in this county:',
+  entityUnattributed: 'No operator recorded',
+  showOnMap: 'Show on map',
+  showMore: 'Show {count} more',
+  outsideMinnesotaTitle: 'This location is outside Minnesota',
+  outsideMinnesota:
+    'flockoffmn tracks Minnesota only. This point falls outside the state, so there is nothing mapped to show here.',
+  lowAccuracy:
+    'Your device reported this location to within about {accuracy} mi — results may be off by that much.',
   crossLayerNote:
     'These are not separate maps. Cameras feed searches, searches feed enforcement, enforcement feeds detention, and all of it sits on ground shaped by decades of housing policy.',
   readHowThisConnects: 'Read how this connects',

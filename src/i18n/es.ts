@@ -57,6 +57,9 @@ export const es: Record<string, string> = {
   loading: 'Cargando datos del mapa…',
   mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
   resetView: 'Volver a Minnesota',
+  mapNearMe: 'Qué hay cerca de mí',
+  mapNearMeFound: '{count} cerca, {shown} mostrados',
+  mapNearMeNone: 'No hay nada mapeado cerca de este punto.',
   closePanel: 'Cerrar panel',
   noResults: 'Ningún registro coincide con los filtros actuales.',
   recordPanel: 'Registro',
@@ -81,6 +84,14 @@ export const es: Record<string, string> = {
   nearestIs: 'El más cercano, a {distance} mi',
   distanceAway: 'a {distance} mi',
   foundInCounty: '{count} en este condado:',
+  entityUnattributed: 'Sin operador registrado',
+  showOnMap: 'Ver en el mapa',
+  showMore: 'Mostrar {count} más',
+  outsideMinnesotaTitle: 'Esta ubicación está fuera de Minnesota',
+  outsideMinnesota:
+    'flockoffmn solo cubre Minnesota. Este punto está fuera del estado, así que no hay nada mapeado que mostrar aquí.',
+  lowAccuracy:
+    'Su dispositivo informó esta ubicación con un margen de unas {accuracy} mi — los resultados pueden variar en esa medida.',
   crossLayerNote:
     'No son mapas separados. Las cámaras alimentan búsquedas, las búsquedas alimentan la aplicación de la ley, la aplicación alimenta la detención, y todo ello se asienta sobre un terreno moldeado por décadas de política de vivienda.',
   readHowThisConnects: 'Lea cómo se conecta',

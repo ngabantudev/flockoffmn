@@ -9,7 +9,7 @@ import {
   METRO_BOUNDS,
   METRO_CENTER,
 } from './mapStyle';
-import { bboxOf, representativePoint } from './geo.mjs';
+import { bboxOf, representativePoint, haversineMeters } from './geo.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
@@ -18,6 +18,7 @@ import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
 import { ResetViewControl } from './resetViewControl';
+import { NearMeControl } from './nearMeControl';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -58,6 +59,17 @@ export interface ClientLayer {
   stackRank: number;
   /** Attribute holding a compass bearing, if the layer records one. */
   bearingKey?: string;
+  /**
+   * The radius, in miles, this layer's `nearMe.list` config already searches
+   * on /near-me — reused here rather than restated, so the homepage map's
+   * own "what's near me" control (NearMeControl) searches the same layers at
+   * the same distance the near-me page promises, instead of a second literal
+   * silently drifting from the first the way registry.ts's own gapRadius
+   * comment describes already happened once for this exact pair of numbers.
+   * Present only for layers with a `nearMe.list` block — see MapView.astro's
+   * `clientLayers` mapping.
+   */
+  nearMeRadiusMi?: number;
   /** The zooms across which this layer's records emerge. */
   scale?: { speckleFrom?: number; emergeFrom: number; pointsFrom: number };
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
@@ -188,6 +200,16 @@ export interface ControllerEvents {
   onError?: (layerId: string, message: string) => void;
   /** Localized label for the corner "reset view" control — see ResetViewControl. */
   resetViewLabel?: string;
+  /** Localized label for the corner "what's near me" control — see NearMeControl. */
+  nearMeLabel?: string;
+  /** Localized message shown when the browser has no geolocation API at all. */
+  locationUnavailableLabel?: string;
+  /** Localized message shown when the reader declines the location permission prompt. */
+  locationDeniedLabel?: string;
+  /** A geolocation lookup for the "what's near me" control failed — see the two labels above. */
+  onNearMeError?: (message: string) => void;
+  /** A "what's near me" lookup succeeded — total records found within radius, and how many were drawn (see NEARME_MAX_LINES). The only accessible-DOM feedback this canvas-only overlay has. */
+  onNearMeResult?: (totalFound: number, shown: number) => void;
 }
 
 // Exported so MapView.astro's own panel-collapse toggle (setPanelCollapsed)
@@ -391,6 +413,28 @@ const OVERLAY_STACK = [
 ];
 
 /**
+ * The "what's near me" overlay — NearMeControl's mirror of the jurisdiction
+ * throw above, rooted at the reader instead of a law-enforcement building.
+ * Kept on its own sources/layers rather than reusing RELATED_* : that overlay
+ * is owned by whichever *registry layer* is selected (`relatedOverlayOwner`)
+ * and destroyed/rebuilt when the owner changes (see ensureRelatedLayers's own
+ * comment) — a person's location isn't a layer and has no owner to change,
+ * so it needs a lifecycle the relation overlay's doesn't have: created once,
+ * cleared and redrawn freely, independent of whatever a reader has selected
+ * elsewhere on the map.
+ */
+const NEARME_ORIGIN_SOURCE = 'src-nearme-origin';
+const NEARME_ORIGIN_GLOW_LAYER = 'nearme-origin-glow';
+const NEARME_ORIGIN_LAYER = 'nearme-origin';
+const NEARME_PATHS_SOURCE = 'src-nearme-paths';
+const NEARME_PATHS_LAYER = 'nearme-paths';
+const NEARME_IMPACT_SOURCE = 'src-nearme-impacts';
+const NEARME_IMPACT_LAYER = 'nearme-impacts';
+const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLOW_LAYER, NEARME_ORIGIN_LAYER];
+/** Nearest-first cap so a metro-wide "near me" throw stays legible and the animation stays cheap — see throwPaths's own cost comment. */
+const NEARME_MAX_LINES = 20;
+
+/**
  * The line-throw on selecting a jurisdiction, in milliseconds.
  *
  * Each line is thrown from the agency's own building to one reader that
@@ -499,6 +543,16 @@ export class MapController {
   private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
   /** rAF handle for the path-throw animation, so a new selection can cancel the last. */
   private throwFrame: number | null = null;
+  /** rAF handle for the "near me" throw — separate from throwFrame so a jurisdiction pick and a near-me lookup never cancel each other's animation. */
+  private nearMeThrowFrame: number | null = null;
+  /** Set once the near-me sources/layers exist, so a second lookup only calls setData rather than re-adding them (see ensureRelatedLayers's own reasoning). */
+  private nearMeLayersReady = false;
+  /** The point a "near me" lookup currently has lines thrown from, or null if none is active — also NearMeControl's toggle state. */
+  private nearMeOrigin: [number, number] | null = null;
+  /** True between requesting a location and the browser answering — see toggleNearMe's own comment for the double-click race this closes. */
+  private nearMeLocating = false;
+  /** Bumped on every showNearMe/clearNearMe so an in-flight lookup's async data-load can tell it's been superseded and skip drawing. */
+  private nearMeToken = 0;
   /**
    * Which layer's selection the overlays currently belong to — their colour
    * and glyph are that layer's. Tracked rather than re-derived with
@@ -542,6 +596,7 @@ export class MapController {
    */
   private themeControl: ThemeControl | null = null;
   private resetViewControl: ResetViewControl | null = null;
+  private nearMeControl: NearMeControl | null = null;
   private navControl: maplibregl.NavigationControl | null = null;
   private attribControl: maplibregl.AttributionControl | null = null;
   private attribObserver: MutationObserver | null = null;
@@ -618,11 +673,13 @@ export class MapController {
     const cornerControls = container.parentElement?.querySelector<HTMLElement>('#map-corner-controls');
     this.themeControl = new ThemeControl();
     this.resetViewControl = new ResetViewControl(events.resetViewLabel ?? 'Reset view', () => this.resetView());
+    this.nearMeControl = new NearMeControl(events.nearMeLabel ?? 'What’s near me', () => this.toggleNearMe());
     this.navControl = new maplibregl.NavigationControl({ showCompass: false });
     this.attribControl = new maplibregl.AttributionControl({ compact: true });
     if (cornerControls) {
       cornerControls.appendChild(this.themeControl.onAdd(this.map));
       cornerControls.appendChild(this.resetViewControl.onAdd(this.map));
+      cornerControls.appendChild(this.nearMeControl.onAdd(this.map));
       cornerControls.appendChild(this.navControl.onAdd(this.map));
       const attribEl = this.attribControl.onAdd(this.map);
       cornerControls.appendChild(attribEl);
@@ -802,6 +859,19 @@ export class MapController {
    */
   private get crossSourceRingColor(): string {
     return this.basemapDark ? '#b98f3f' : '#6b5414';
+  }
+
+  /**
+   * The "near me" overlay's colour, for the current basemap. Reuses the
+   * same near-white/near-black pair polygonOutlineColor draws a selection
+   * highlight in, rather than a fixed hex: a flat white line (the first
+   * version of this) is legible on a dark basemap and nearly invisible on
+   * the light one — this marks a person, not a dataset, so unlike
+   * layerColor it has no registry-declared colour to fall back to and has
+   * to earn its own contrast the same way the polygon highlight does.
+   */
+  private get nearMeColor(): string {
+    return this.basemapDark ? POLYGON_HIGHLIGHT_OUTLINE_DARK : POLYGON_HIGHLIGHT_OUTLINE_LIGHT;
   }
 
   /**
@@ -1175,6 +1245,18 @@ export class MapController {
       if (this.map.getLayer(RELATED_IMPACT_LAYER)) {
         this.map.setPaintProperty(RELATED_IMPACT_LAYER, 'circle-stroke-color', color);
       }
+    }
+
+    // The near-me overlay's own colour isn't in the loop above — it has no
+    // owning `layer` to iterate from, ensureNearMeLayers creates it lazily
+    // and independent of any registry layer. Same re-key, done once here.
+    if (this.map.getLayer(NEARME_PATHS_LAYER)) {
+      const nearMeColor = this.nearMeColor;
+      this.map.setPaintProperty(NEARME_PATHS_LAYER, 'line-color', nearMeColor);
+      this.map.setPaintProperty(NEARME_IMPACT_LAYER, 'circle-stroke-color', nearMeColor);
+      this.map.setPaintProperty(NEARME_ORIGIN_GLOW_LAYER, 'circle-color', nearMeColor);
+      this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-color', nearMeColor);
+      this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-stroke-color', this.basemapColor);
     }
 
     void this.refreshMarkerIcons();
@@ -1578,11 +1660,12 @@ export class MapController {
 
   /**
    * Lift the selection overlays above every registry layer, in OVERLAY_STACK
-   * order. The one place that order is applied, as OVERLAY_STACK is the one
-   * place it is stated — restack() and ensureRelatedLayers() both call here.
+   * then NEARME_STACK order — the only place either order is applied, as
+   * both constants are the only place their order is stated. Called from
+   * restack(), ensureRelatedLayers(), and ensureNearMeLayers().
    */
   private pinOverlays() {
-    for (const styleId of OVERLAY_STACK) {
+    for (const styleId of [...OVERLAY_STACK, ...NEARME_STACK]) {
       if (this.map.getLayer(styleId)) this.map.moveLayer(styleId);
     }
   }
@@ -3326,9 +3409,29 @@ export class MapController {
     targets: Array<[number, number]>,
   ) {
     this.cancelThrow();
+    this.runThrow(origin, targets, RELATED_PATHS_SOURCE, RELATED_IMPACT_SOURCE, (id) => {
+      this.throwFrame = id;
+    });
+  }
 
-    const paths = this.map.getSource(RELATED_PATHS_SOURCE) as GeoJSONSource | undefined;
-    const impacts = this.map.getSource(RELATED_IMPACT_SOURCE) as GeoJSONSource | undefined;
+  /**
+   * The animation itself, shared by throwPaths and throwNearMeLines (see the
+   * latter's own comment for why the two still keep independent rAF handles
+   * and sources rather than sharing a call site entirely — a jurisdiction
+   * throw and a near-me throw can be on screen at once). Only the tuned
+   * stagger/ease/impact math and the setData calls belong here; which frame
+   * field to write to is threaded in as `setFrame` so each caller's own
+   * cancel/clear stays in charge of its own handle.
+   */
+  private runThrow(
+    origin: [number, number],
+    targets: Array<[number, number]>,
+    pathsSourceId: string,
+    impactSourceId: string,
+    setFrame: (id: number | null) => void,
+  ) {
+    const paths = this.map.getSource(pathsSourceId) as GeoJSONSource | undefined;
+    const impacts = this.map.getSource(impactSourceId) as GeoJSONSource | undefined;
     if (!paths) return;
 
     const line = (to: [number, number]) => ({
@@ -3399,15 +3502,15 @@ export class MapController {
       }
 
       if (elapsed < totalMs) {
-        this.throwFrame = requestAnimationFrame(step);
+        setFrame(requestAnimationFrame(step));
       } else {
         // Settle on the finished state and stop. Nothing animates at rest.
         paths.setData({ type: 'FeatureCollection', features: targets.map(line) } as never);
         impacts?.setData(EMPTY_FC as never);
-        this.throwFrame = null;
+        setFrame(null);
       }
     };
-    this.throwFrame = requestAnimationFrame(step);
+    setFrame(requestAnimationFrame(step));
   }
 
   /**
@@ -3544,6 +3647,200 @@ export class MapController {
     impacts?.setData(EMPTY_FC as never);
   }
 
+  /** NearMeControl's click handler: locate on the first press, clear on the second. */
+  private toggleNearMe() {
+    if (this.nearMeOrigin) {
+      this.clearNearMe();
+      return;
+    }
+    // Guards the window between a click and the permission prompt being
+    // answered: without it, a second click while the browser's own dialog is
+    // still open re-entered here (nearMeOrigin is only set once the first
+    // lookup succeeds) and fired a second concurrent getCurrentPosition call.
+    if (this.nearMeLocating) return;
+    if (!navigator.geolocation) {
+      this.events.onNearMeError?.(this.events.locationUnavailableLabel ?? 'Your device could not provide a location.');
+      return;
+    }
+    this.nearMeLocating = true;
+    this.nearMeControl?.setActive(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        this.nearMeLocating = false;
+        void this.showNearMe([pos.coords.longitude, pos.coords.latitude]);
+      },
+      () => {
+        this.nearMeLocating = false;
+        this.nearMeControl?.setActive(false);
+        this.events.onNearMeError?.(this.events.locationDeniedLabel ?? 'Location permission was declined.');
+      },
+      { enableHighAccuracy: false, timeout: 10_000 },
+    );
+  }
+
+  /**
+   * Create the "near me" overlay's sources and layers once, empty.
+   *
+   * Deliberately not folded into ensureRelatedLayers: that method's whole
+   * shape is "tear down and rebuild when the *owner* changes" — there is no
+   * owner here, just a reader's own point, so this only ever needs to run
+   * once per page load and then get setData() calls, same reasoning as
+   * ensureRelatedLayers's own comment, one lifecycle simpler because there's
+   * nothing here to hand off.
+   */
+  private ensureNearMeLayers() {
+    if (this.nearMeLayersReady) return;
+
+    this.map.addSource(NEARME_PATHS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_PATHS_LAYER,
+      type: 'line',
+      source: NEARME_PATHS_SOURCE,
+      paint: {
+        'line-color': this.nearMeColor,
+        'line-width': 1.4,
+        'line-opacity': 0.75,
+        'line-dasharray': [2, 1.5],
+      },
+    });
+
+    this.map.addSource(NEARME_IMPACT_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_IMPACT_LAYER,
+      type: 'circle',
+      source: NEARME_IMPACT_SOURCE,
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 22] as never,
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-color': this.nearMeColor,
+        'circle-stroke-width': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 0.5] as never,
+        'circle-stroke-opacity': ['interpolate', ['linear'], ['get', 't'], 0, 0.9, 1, 0] as never,
+      },
+    });
+
+    // The origin itself — a small glow plus a solid dot, the same two-layer
+    // treatment RELATED_BUILDINGS uses for the building a throw comes from,
+    // so "here's where this throw starts" reads the same way in both places.
+    this.map.addSource(NEARME_ORIGIN_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_ORIGIN_GLOW_LAYER,
+      type: 'circle',
+      source: NEARME_ORIGIN_SOURCE,
+      paint: {
+        'circle-color': this.nearMeColor,
+        'circle-blur': 0.85,
+        'circle-radius': 20,
+        'circle-opacity': 0.45,
+      },
+    });
+    this.map.addLayer({
+      id: NEARME_ORIGIN_LAYER,
+      type: 'circle',
+      source: NEARME_ORIGIN_SOURCE,
+      paint: {
+        'circle-color': this.nearMeColor,
+        'circle-radius': 7,
+        'circle-stroke-color': this.basemapColor,
+        'circle-stroke-width': 2,
+      },
+    });
+
+    this.nearMeLayersReady = true;
+    this.pinOverlays();
+  }
+
+  /**
+   * Draw the reader's own location and throw lines to whatever's nearby.
+   *
+   * `origin` lives only in this call's arguments and the `nearMeOrigin`
+   * field below — never in a URL, `localStorage`, or a network request (see
+   * NearMe.astro's own "never transmitted" comment; this is the homepage
+   * map's equivalent of that same promise).
+   *
+   * Awaits two things a synchronous version silently got wrong: `ready()`,
+   * so a fast GPS fix arriving before the map's own 'load' event can't call
+   * addSource/addLayer on a style that isn't done loading (see ready()'s own
+   * comment on `hasLoaded` vs `isStyleLoaded()` for why that race is real);
+   * and `ensureDataLoaded` per eligible layer, so a layer the reader hasn't
+   * switched on in the legend still contributes — `this.data.get(id)` alone
+   * is only populated once a layer is toggled visible (loadLayer's own
+   * comment), which would otherwise make "what's near me" under-report
+   * exactly the layers nobody happened to have on.
+   */
+  private async showNearMe(origin: [number, number]) {
+    await this.ready();
+    // A later click while this one is still awaiting data wins — bail if
+    // the origin has moved on since this call started.
+    const token = (this.nearMeToken += 1);
+
+    const eligible = this.layers.filter((l) => l.nearMeRadiusMi);
+    const perLayer = await Promise.all(eligible.map((l) => this.ensureDataLoaded(l.id)));
+    if (token !== this.nearMeToken) return;
+
+    this.ensureNearMeLayers();
+    this.nearMeOrigin = origin;
+    this.nearMeControl?.setActive(true);
+
+    const withDistance: Array<{ point: [number, number]; distance: number }> = [];
+    eligible.forEach((layer, i) => {
+      const radiusM = layer.nearMeRadiusMi! * 1609.344;
+      for (const feature of perLayer[i]) {
+        if (feature.geometry.type !== 'Point') continue;
+        const point = feature.geometry.coordinates as [number, number];
+        const distance = haversineMeters(origin, point);
+        if (distance <= radiusM) withDistance.push({ point, distance });
+      }
+    });
+    withDistance.sort((a, b) => a.distance - b.distance);
+    const targets = withDistance.slice(0, NEARME_MAX_LINES).map((r) => r.point);
+
+    (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: origin }, properties: {} }],
+    } as never);
+
+    this.throwNearMeLines(origin, targets);
+    // The only accessible-DOM equivalent this control has today: an
+    // aria-live count, since the throw itself is canvas-only. Not full
+    // parity with /near-me's own record list (see NearMeSummary.list) — a
+    // screen-reader user learns how many and how far, not each one by
+    // name — but it's the difference between silence and something.
+    this.events.onNearMeResult?.(withDistance.length, targets.length);
+  }
+
+  /**
+   * throwPaths's near-me twin. Shares runThrow's animation math (see its own
+   * comment) but keeps its own rAF handle (nearMeThrowFrame) and its own
+   * pair of sources, so a jurisdiction throw and a near-me throw can be on
+   * screen — and animating — at the same time without cancelling each other.
+   */
+  private throwNearMeLines(origin: [number, number], targets: Array<[number, number]>) {
+    this.cancelNearMeThrow();
+    this.runThrow(origin, targets, NEARME_PATHS_SOURCE, NEARME_IMPACT_SOURCE, (id) => {
+      this.nearMeThrowFrame = id;
+    });
+  }
+
+  private cancelNearMeThrow() {
+    if (this.nearMeThrowFrame !== null) {
+      cancelAnimationFrame(this.nearMeThrowFrame);
+      this.nearMeThrowFrame = null;
+    }
+  }
+
+  /** Undo showNearMe — clears the marker and lines, and the control's pressed state. */
+  private clearNearMe() {
+    this.cancelNearMeThrow();
+    // Supersedes any showNearMe still awaiting ensureDataLoaded, so a slow
+    // fetch that resolves after a clear can't resurrect the overlay.
+    this.nearMeToken += 1;
+    this.nearMeOrigin = null;
+    this.nearMeControl?.setActive(false);
+    (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+  }
+
   /**
    * Undo showRelatedBuildings. Called wherever a selection itself clears.
    *
@@ -3587,6 +3884,7 @@ export class MapController {
   destroy() {
     this.setOverlay(null);
     this.cancelThrow();
+    this.cancelNearMeThrow();
     this.popup?.remove();
     this.hoverPopup?.remove();
     this.disposeContainerWatch?.();
@@ -3597,6 +3895,7 @@ export class MapController {
     this.attribObserver?.disconnect();
     this.themeControl?.onRemove();
     this.resetViewControl?.onRemove();
+    this.nearMeControl?.onRemove();
     this.navControl?.onRemove();
     this.attribControl?.onRemove();
     this.map.remove();
