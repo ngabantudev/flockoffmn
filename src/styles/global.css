@@ -606,6 +606,107 @@
 }
 
 /*
+ * NearMeRadiusControl (src/lib/nearMeRadiusControl.ts) — the search-radius
+ * slider that replaces the old autozoom (PR #111 -> the radius-slider
+ * follow-up).
+ *
+ * `position: absolute` off #map-corner-controls (which is already
+ * `position: absolute` — its own containing block, no wrapper needed) was a
+ * deliberate second pass: the first version rendered this as an ordinary
+ * flex sibling in that column, which is sized for uniform 29px icon-button
+ * squares. A ~10rem horizontal slider widening one child of that column had
+ * two real problems a review caught — first, nothing capped its width
+ * against the viewport, so on a narrow phone its own left edge could run
+ * past the screen edge; second, #map-corner-controls is `display: flex`, so
+ * the control popping in/out of the flex flow on every showNearMe/clearNearMe
+ * visibly relocated every sibling above it, with no transition to soften it
+ * (contrast the column's own `bottom` transition, just above). Taking it out
+ * of flow with `position: absolute` fixes both: it no longer participates in
+ * the column's layout at all, and `max-width` below caps it against the
+ * viewport directly, same mechanics `.theme-control-panel` already uses for
+ * its own popover a few rules down.
+ *
+ * `right: calc(100% + var(--map-ctrl-gap))` opens it leftward, into the map,
+ * off the same right-docked edge the whole stack hangs from. `[hidden]` on
+ * the container is still how setVisible(false) keeps it gone entirely
+ * between lookups — with the control now out of flow, that toggle no longer
+ * has anything else to disturb.
+ */
+.near-me-radius-control {
+  position: absolute;
+  right: calc(100% + var(--map-ctrl-gap));
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  max-width: calc(100vw - 2 * var(--map-ctrl-edge) - 2.5rem);
+}
+/*
+ * `display: flex` above and the browser's own `[hidden] { display: none }`
+ * are equal specificity (0,1,0) — without this, author CSS wins the
+ * cascade purely by coming later than the UA stylesheet, so the popover
+ * would render (and sit right over the map, per its own `position` above)
+ * regardless of setVisible/[hidden]. `.theme-control-panel` a few rules
+ * down never runs into this because it never sets `display` itself; this
+ * one needs the explicit override since flex is required while visible.
+ */
+.near-me-radius-control[hidden] {
+  display: none;
+}
+.near-me-radius-input {
+  width: 6.5rem;
+  accent-color: var(--color-accent);
+}
+.near-me-radius-value {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink-200);
+  min-width: 2.25rem;
+  text-align: right;
+}
+/*
+ * A native range input's hit area follows its *thumb*'s rendered box, not
+ * the input element's own CSS height — sizing the element itself leaves the
+ * thumb, and the area that actually responds to a touch, exactly as small
+ * as the browser default. These two pseudo-elements are the only thing that
+ * actually controls it; `-moz-range-thumb` covers Firefox, which does not
+ * recognize the `-webkit-` one.
+ */
+.near-me-radius-input::-webkit-slider-thumb {
+  width: 1rem;
+  height: 1rem;
+}
+.near-me-radius-input::-moz-range-thumb {
+  width: 1rem;
+  height: 1rem;
+}
+/*
+ * Below `sm`, the slider is dragged with a fingertip instead of a mouse —
+ * grown to 24px here, short of the 44px WCAG 2.5.5 target-size guideline
+ * but proportional to the 29px icon buttons the rest of this control family
+ * already uses, rather than a popover suddenly out of scale with its own
+ * corner stack.
+ */
+@media (width < 40rem) {
+  .near-me-radius-control {
+    padding: 0.5rem 0.75rem;
+  }
+  .near-me-radius-input {
+    width: 5.5rem;
+  }
+  .near-me-radius-input::-webkit-slider-thumb {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+  .near-me-radius-input::-moz-range-thumb {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+}
+
+/*
  * ThemeControl (src/lib/themeControl.ts) — the map-corner "site theme / map
  * theme" popover. Built with hand-written classes rather than
  * .maplibregl-ctrl-icon's convention (a class MapLibre expects on a

@@ -196,8 +196,11 @@ const strings = {
   mapNearMe: t('mapNearMe'),
   mapNearMeFound: t('mapNearMeFound'),
   mapNearMeNone: t('mapNearMeNone'),
+  mapNearMeRadiusLabel: t('mapNearMeRadiusLabel'),
+  mapNearMeRadiusValue: t('mapNearMeRadiusValue'),
   locationDenied: t('locationDenied'),
   locationUnavailable: t('locationUnavailable'),
+  locationTimedOut: t('locationTimedOut'),
 };
 ---
 
@@ -781,14 +784,35 @@ const strings = {
     if (holdMs) window.setTimeout(() => (statusEl.style.opacity = '0'), holdMs);
   }
 
+  // Declared here, ahead of `controller`, rather than down with the rest of
+  // the DOM-wiring helpers below: NearMeRadiusControl.onAdd calls
+  // formatNearMeRadiusValue synchronously (to set its initial
+  // aria-valuetext), and onAdd itself runs synchronously inside
+  // MapController's own constructor just below — so by the time `new
+  // MapController` executes, `fill` has to already be initialized, not
+  // just declared later in this same script. A closure that only *reads*
+  // fill when a later event fires would have been fine wherever it sat;
+  // this one doesn't get that grace period.
+  /** Substitute {placeholders} in a dictionary string. */
+  const fill = (template: string, values: Record<string, string | number>) =>
+    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+
   const controller = new MapController(mapEl, layers, {
     resetViewLabel: S.resetView,
     nearMeLabel: S.mapNearMe,
+    nearMeRadiusLabel: S.mapNearMeRadiusLabel,
+    formatNearMeRadiusValue: (miles) => fill(S.mapNearMeRadiusValue, { mi: miles }),
     locationDeniedLabel: S.locationDenied,
     locationUnavailableLabel: S.locationUnavailable,
+    locationTimedOutLabel: S.locationTimedOut,
     onNearMeError: (message) => status(message, 6000),
     onNearMeResult: (totalFound, shown) =>
       status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000),
+    // setNearMeLayerMode is declared further down, alongside the rest of the
+    // layer-toggle wiring it shares state with — safe to reference here
+    // despite that: this callback only ever fires later, from a click, long
+    // after the whole script (including that declaration) has already run.
+    onNearMeModeChange: (active) => setNearMeLayerMode(active),
     onSelect: (feature, layer) => renderDetail(feature, layer),
     onCounts: (counts) => {
       for (const [id, { shown }] of Object.entries(counts)) {
@@ -903,10 +927,6 @@ const strings = {
     }
     return wrap;
   }
-
-  /** Substitute {placeholders} in a dictionary string. */
-  const fill = (template: string, values: Record<string, string | number>) =>
-    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 
   /* ------------------------- Collapsible side panels ----------------------
      #controls (docks >=1024px) and #detail-panel (docks >=1280px, only
@@ -1438,6 +1458,49 @@ const strings = {
     if (layer) controller.setLayerVisible(layer, true);
   });
   refreshGroups();
+
+  // The layers "what's near me" itself searches — currently both ALPR
+  // camera layers, but read from ClientLayer's own `nearMeRadiusMi` (see
+  // that field's own comment in mapController.ts) rather than named here,
+  // so a future radius-mode layer is included with no second edit. Only
+  // these stay on while "near me" mode is active; everything else is
+  // forced off for the duration.
+  const nearMeOnlyLayerIds = new Set<string>(layers.filter((l) => l.nearMeRadiusMi).map((l) => l.id));
+  // Snapshot of every toggle's checked state from just before "near me"
+  // forced its own set on — restored verbatim once the mode ends, so
+  // leaving it doesn't cost the reader whatever they'd already switched on.
+  // Null both before the first activation and again once restored, so a
+  // second onNearMeModeChange(true) — MapController only ever fires one per
+  // activation today, but nothing enforces that — can't clobber a real
+  // prior state with the forced one.
+  let nearMePriorLayerState: Map<string, boolean> | null = null;
+
+  function setNearMeLayerMode(active: boolean) {
+    const toggles = [...document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]')];
+    if (active) {
+      if (!nearMePriorLayerState) {
+        nearMePriorLayerState = new Map(toggles.map((t) => [t.dataset.layerToggle!, t.checked]));
+      }
+      for (const input of toggles) {
+        const shouldBeOn = nearMeOnlyLayerIds.has(input.dataset.layerToggle!);
+        if (input.checked === shouldBeOn) continue;
+        input.checked = shouldBeOn;
+        const layer = layerById.get(input.dataset.layerToggle!);
+        if (layer) controller.setLayerVisible(layer, shouldBeOn);
+      }
+    } else if (nearMePriorLayerState) {
+      const prior = nearMePriorLayerState;
+      nearMePriorLayerState = null;
+      for (const input of toggles) {
+        const wasOn = prior.get(input.dataset.layerToggle!) ?? false;
+        if (input.checked === wasOn) continue;
+        input.checked = wasOn;
+        const layer = layerById.get(input.dataset.layerToggle!);
+        if (layer) controller.setLayerVisible(layer, wasOn);
+      }
+    }
+    refreshGroups();
+  }
 
   document.querySelectorAll<HTMLInputElement>('[data-filter-key]').forEach((input) => {
     input.addEventListener('change', () => {

@@ -58,8 +58,13 @@ export const en: Record<string, string> = {
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
   mapNearMe: 'What’s near me',
-  mapNearMeFound: '{count} nearby, {shown} shown',
+  mapNearMeFound: '{count} nearby, {shown} shown.',
   mapNearMeNone: 'Nothing mapped within range of this location.',
+  // Label and value format for the search-radius slider that appears once a
+  // "near me" location is found (NearMeRadiusControl) — drag it to widen or
+  // narrow which cameras/readers are drawn.
+  mapNearMeRadiusLabel: 'Search radius',
+  mapNearMeRadiusValue: '{mi} mi',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
   // Label for the pull tab that collapses/expands the detail panel — see
@@ -78,6 +83,7 @@ export const en: Record<string, string> = {
   locating: 'Locating…',
   locationDenied: 'Location permission was declined. You can search for a place instead.',
   locationUnavailable: 'Your device could not provide a location. You can search for a place instead.',
+  locationTimedOut: 'Your device took too long to respond. You can search for a place instead.',
   chooseAPlace: 'Choose a place',
   // Card headings, empty states and caveats live on each layer in the registry
   // now, so a new layer arrives carrying its own text. What is left here is the
