@@ -217,6 +217,17 @@ export interface ControllerEvents {
   nearMeRadiusLabel?: string;
   /** Localized "N mi" formatter for the slider's live value — both the visible number beside it and its aria-valuetext. */
   formatNearMeRadiusValue?: (miles: number) => string;
+  /**
+   * "What's near me" mode is turning on or off — fired the instant the
+   * reader clicks the control (before the geolocation permission prompt is
+   * even answered) and again on clearNearMe or a failed lookup, so a
+   * denied/timed-out/unavailable fix rolls the same state back rather than
+   * leaving the reader stuck in a mode that never actually started. Lets
+   * MapView.astro force every layer except the radius-mode ones (the ones
+   * "near me" itself searches — see ClientLayer's own `nearMeRadiusMi`) off
+   * for the duration, and restore whatever was on before once it ends.
+   */
+  onNearMeModeChange?: (active: boolean) => void;
 }
 
 // Exported so MapView.astro's own panel-collapse toggle (setPanelCollapsed)
@@ -3796,6 +3807,7 @@ export class MapController {
     }
     this.nearMeLocating = true;
     this.nearMeControl?.setActive(true);
+    this.events.onNearMeModeChange?.(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         this.nearMeLocating = false;
@@ -3804,6 +3816,9 @@ export class MapController {
       (err) => {
         this.nearMeLocating = false;
         this.nearMeControl?.setActive(false);
+        // The mode never actually started — roll the layer-forcing back
+        // rather than leaving the reader in it with no location to show.
+        this.events.onNearMeModeChange?.(false);
         // Three distinct codes, three distinct reasons — collapsing any pair
         // of them tells the reader something false. A timeout isn't a
         // decline (nobody answered a prompt, the browser just gave up
@@ -4147,6 +4162,7 @@ export class MapController {
     this.nearMeCandidates = [];
     this.nearMeControl?.setActive(false);
     this.nearMeRadiusControl?.setVisible(false);
+    this.events.onNearMeModeChange?.(false);
     (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
