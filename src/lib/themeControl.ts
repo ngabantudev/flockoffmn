@@ -1,5 +1,5 @@
 import type { IControl, Map as MLMap } from 'maplibre-gl';
-import { createElement, SunMoon, Sun, Moon, Check, type IconNode } from 'lucide';
+import { createElement, SunMoon, Sun, Moon, Contrast, Check, type IconNode } from 'lucide';
 import {
   MAP_STYLES,
   currentTheme,
@@ -35,6 +35,7 @@ export class ThemeControl implements IControl {
   private mapStyleButtons = new Map<MapStyleId, HTMLButtonElement>();
   private lightBtn: HTMLButtonElement | null = null;
   private darkBtn: HTMLButtonElement | null = null;
+  private highContrastBtn: HTMLButtonElement | null = null;
   private offThemeChange: (() => void) | null = null;
   private offMapStyleChange: (() => void) | null = null;
   private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
@@ -124,18 +125,33 @@ export class ThemeControl implements IControl {
     darkBtn.appendChild(document.createTextNode('Dark'));
     darkBtn.addEventListener('click', () => setTheme('dark'));
 
+    // Same site-theme machinery as light/dark — dataset.theme,
+    // THEME_STORAGE_KEY, THEME_BASEMAP's 'dark' basemap reuse — just an
+    // explicit third pick, never a default: nothing anywhere sets this one
+    // automatically. `Contrast` (a plain half-filled-circle glyph, same
+    // lucide set as Sun/Moon) rather than a custom icon — this option has
+    // no character/mascot on purpose.
+    const highContrastBtn = document.createElement('button');
+    highContrastBtn.type = 'button';
+    highContrastBtn.setAttribute('class', 'theme-control-segment');
+    highContrastBtn.appendChild(createElement(Contrast as IconNode, { width: 14, height: 14 }));
+    highContrastBtn.appendChild(document.createTextNode('High Contrast'));
+    highContrastBtn.addEventListener('click', () => setTheme('high-contrast'));
+
     this.lightBtn = lightBtn;
     this.darkBtn = darkBtn;
+    this.highContrastBtn = highContrastBtn;
     row.appendChild(lightBtn);
     row.appendChild(darkBtn);
+    row.appendChild(highContrastBtn);
     section.appendChild(row);
     return section;
   }
 
   private reflectSiteTheme(theme: Theme): void {
-    const isLight = theme === 'light';
-    this.lightBtn?.classList.toggle('is-active', isLight);
-    this.darkBtn?.classList.toggle('is-active', !isLight);
+    this.lightBtn?.classList.toggle('is-active', theme === 'light');
+    this.darkBtn?.classList.toggle('is-active', theme === 'dark');
+    this.highContrastBtn?.classList.toggle('is-active', theme === 'high-contrast');
   }
 
   private buildMapThemeSection(): HTMLElement {
