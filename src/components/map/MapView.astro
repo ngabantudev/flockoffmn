@@ -198,6 +198,7 @@ const strings = {
   mapNearMeNone: t('mapNearMeNone'),
   locationDenied: t('locationDenied'),
   locationUnavailable: t('locationUnavailable'),
+  locationTimedOut: t('locationTimedOut'),
 };
 ---
 
@@ -786,6 +787,7 @@ const strings = {
     nearMeLabel: S.mapNearMe,
     locationDeniedLabel: S.locationDenied,
     locationUnavailableLabel: S.locationUnavailable,
+    locationTimedOutLabel: S.locationTimedOut,
     onNearMeError: (message) => status(message, 6000),
     onNearMeResult: (totalFound, shown) =>
       status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000),

@@ -206,7 +206,9 @@ export interface ControllerEvents {
   locationUnavailableLabel?: string;
   /** Localized message shown when the reader declines the location permission prompt. */
   locationDeniedLabel?: string;
-  /** A geolocation lookup for the "what's near me" control failed — see the two labels above. */
+  /** Localized message shown when the browser's own lookup didn't answer within its timeout — distinct from a decline, since nothing was denied. */
+  locationTimedOutLabel?: string;
+  /** A geolocation lookup for the "what's near me" control failed — see the labels above. */
   onNearMeError?: (message: string) => void;
   /** A "what's near me" lookup succeeded — total records found within radius, and how many were drawn (see NEARME_MAX_LINES). The only accessible-DOM feedback this canvas-only overlay has. */
   onNearMeResult?: (totalFound: number, shown: number) => void;
@@ -433,6 +435,49 @@ const NEARME_IMPACT_LAYER = 'nearme-impacts';
 const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLOW_LAYER, NEARME_ORIGIN_LAYER];
 /** Nearest-first cap so a metro-wide "near me" throw stays legible and the animation stays cheap — see throwPaths's own cost comment. */
 const NEARME_MAX_LINES = 20;
+
+/**
+ * The zoom "what's near me" eases to, floor-style — never zoomed out past
+ * this, same Math.max(current, N) shape focusFeature uses for a single point.
+ * Matches alpr's own `pointsFrom: 14` (see registry.ts): below this zoom the
+ * camera dots a near-me throw lands on are still specks, not resolved
+ * records, so a correct lookup reads as a broken one. Clamped down by
+ * accuracyZoomCap below when the fix itself can't support it.
+ */
+const NEARME_ZOOM = 14;
+
+/**
+ * The accuracy circle is allowed to span this share of the map's shorter
+ * side at accuracyZoomCap's returned zoom — big enough that the true fix is
+ * still very likely on screen even with the origin dot drawn a little off,
+ * small enough that the frame reads as "your area," not "the whole state."
+ */
+const ACCURACY_CIRCLE_SHARE = 0.6;
+
+/**
+ * How far "locate me" is allowed to zoom in, honestly.
+ *
+ * A desktop wifi fix is routinely accurate to only 1–5km — `enableHighAccuracy`
+ * is deliberately off here (see toggleNearMe) to avoid a GPS prompt for what's
+ * usually a metro-scale lookup. Zooming to street level on a fix that could be
+ * three kilometres off both misrepresents the data (§0.2) and, on a shared or
+ * screenshotted screen, implies a precision about the reader's own location
+ * that isn't real (§0.7). This finds the zoom at which a circle of
+ * `accuracyM` radius still spans ACCURACY_CIRCLE_SHARE of the map's shorter
+ * side, so the true fix is very likely still on screen even if the dot
+ * itself is centred a little wrong.
+ *
+ * MapLibre (like Mapbox GL, unlike classic 256px raster tiles) sizes the
+ * world at 512 * 2^zoom CSS pixels — half the constant the more common
+ * 156543.03392 web-Mercator formula assumes. Using that constant here would
+ * return a zoom one full level too tight, which is exactly the
+ * false-precision failure this clamp exists to prevent.
+ */
+function accuracyZoomCap(accuracyM: number, lat: number, minDimensionPx: number): number {
+  const metersPerPixel = (2 * accuracyM) / (ACCURACY_CIRCLE_SHARE * minDimensionPx);
+  const worldWidthAtZoom0 = 40_075_016.686 / 512;
+  return Math.log2((worldWidthAtZoom0 * Math.cos((lat * Math.PI) / 180)) / metersPerPixel);
+}
 
 /**
  * The line-throw on selecting a jurisdiction, in milliseconds.
@@ -3667,12 +3712,24 @@ export class MapController {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         this.nearMeLocating = false;
-        void this.showNearMe([pos.coords.longitude, pos.coords.latitude]);
+        void this.showNearMe([pos.coords.longitude, pos.coords.latitude], pos.coords.accuracy);
       },
-      () => {
+      (err) => {
         this.nearMeLocating = false;
         this.nearMeControl?.setActive(false);
-        this.events.onNearMeError?.(this.events.locationDeniedLabel ?? 'Location permission was declined.');
+        // Three distinct codes, three distinct reasons — collapsing any pair
+        // of them tells the reader something false. A timeout isn't a
+        // decline (nobody answered a prompt, the browser just gave up
+        // waiting) and POSITION_UNAVAILABLE isn't one either (no fix could
+        // be produced — no signal, radio off, indoors — nothing was asked).
+        // Matches NearMe.astro's own three-way split on this same API.
+        const message =
+          err.code === err.PERMISSION_DENIED
+            ? this.events.locationDeniedLabel ?? 'Location permission was declined.'
+            : err.code === err.TIMEOUT
+              ? this.events.locationTimedOutLabel ?? 'Your device took too long to respond.'
+              : this.events.locationUnavailableLabel ?? 'Your device could not provide a location.';
+        this.events.onNearMeError?.(message);
       },
       { enableHighAccuracy: false, timeout: 10_000 },
     );
@@ -3766,8 +3823,13 @@ export class MapController {
    * is only populated once a layer is toggled visible (loadLayer's own
    * comment), which would otherwise make "what's near me" under-report
    * exactly the layers nobody happened to have on.
+   *
+   * Always eases the camera to `origin`, win or lose — a reader who gets
+   * `mapNearMeNone` still learns *where* nothing was found, rather than the
+   * map sitting wherever it happened to be. See NEARME_ZOOM and
+   * accuracyZoomCap for how the destination zoom is chosen.
    */
-  private async showNearMe(origin: [number, number]) {
+  private async showNearMe(origin: [number, number], accuracyM: number) {
     await this.ready();
     // A later click while this one is still awaiting data wins — bail if
     // the origin has moved on since this call started.
@@ -3780,6 +3842,26 @@ export class MapController {
     this.ensureNearMeLayers();
     this.nearMeOrigin = origin;
     this.nearMeControl?.setActive(true);
+
+    // Large delta from wherever the reader was browsing to their own
+    // location — easeToCamera, not a bare easeTo, so the landing zoom is
+    // exact (see its own comment on easeTo's convergence error on big jumps,
+    // which would otherwise quietly defeat the accuracy clamp below).
+    //
+    // Floor-style, like focusFeature's own point case: don't zoom out past
+    // NEARME_ZOOM, but don't zoom out a reader who was already in closer
+    // either. accuracyZoomCap can still pull the ceiling down below the
+    // current zoom on a bad fix — honesty about the fix wins over preserving
+    // wherever the reader happened to be browsing. A container mid-layout
+    // (0×0, e.g. a hidden ancestor) makes the cap non-finite; fall back to
+    // the floor rather than let that silently zoom out to the map's own
+    // minZoom.
+    const container = this.map.getContainer();
+    const minDimensionPx = Math.min(container.clientWidth, container.clientHeight);
+    const cap = accuracyZoomCap(accuracyM, origin[1], minDimensionPx);
+    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
+    const zoom = Number.isFinite(cap) ? Math.min(floor, cap) : floor;
+    this.easeToCamera({ center: origin, zoom }, REDUCED_MOTION ? 0 : 600);
 
     const withDistance: Array<{ point: [number, number]; distance: number }> = [];
     eligible.forEach((layer, i) => {

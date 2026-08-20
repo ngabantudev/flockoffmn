@@ -58,8 +58,8 @@ export const es: Record<string, string> = {
   mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
   resetView: 'Volver a Minnesota',
   mapNearMe: 'Qué hay cerca de mí',
-  mapNearMeFound: '{count} cerca, {shown} mostrados',
-  mapNearMeNone: 'No hay nada mapeado cerca de este punto.',
+  mapNearMeFound: '{count} cerca, {shown} mostrados. Mapa centrado en su ubicación.',
+  mapNearMeNone: 'No hay nada mapeado cerca de este punto. Mapa centrado aquí.',
   closePanel: 'Cerrar panel',
   noResults: 'Ningún registro coincide con los filtros actuales.',
   recordPanel: 'Registro',
@@ -73,6 +73,7 @@ export const es: Record<string, string> = {
   locating: 'Localizando…',
   locationDenied: 'Se denegó el permiso de ubicación. Puede buscar un lugar en su lugar.',
   locationUnavailable: 'Su dispositivo no pudo proporcionar una ubicación. Puede buscar un lugar en su lugar.',
+  locationTimedOut: 'Su dispositivo tardó demasiado en responder. Puede buscar un lugar en su lugar.',
   chooseAPlace: 'Elija un lugar',
   nearMePrivacy:
     'Esta consulta se ejecuta por completo en su navegador. La lista de lugares de Minnesota se descarga junto con la página, así que nada de lo que escriba se envía a un geocodificador, ni a nosotros, ni a nadie más: aquí no hay servidor que pueda registrarlo.',
