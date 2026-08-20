@@ -11,7 +11,7 @@
  * Astro to treat it that way.
  */
 
-export type Theme = 'light' | 'dark' | 'high-contrast';
+export type Theme = 'light' | 'dark';
 
 export const THEME_STORAGE_KEY = 'flockoff:theme';
 export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
@@ -28,7 +28,7 @@ export const THEME_CHANGE_EVENT = 'flockoff:theme-change';
  */
 export function currentTheme(): Theme {
   const explicit = document.documentElement.dataset.theme;
-  if (explicit === 'light' || explicit === 'dark' || explicit === 'high-contrast') return explicit;
+  if (explicit === 'light' || explicit === 'dark') return explicit;
   return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
@@ -93,22 +93,14 @@ export const MAP_STYLES: Record<MapStyleId, { label: string; dark: boolean }> = 
 
 /**
  * Which basemap each site theme pairs with — matching wealldobettermn.org's
- * own THEME_BASEMAP exactly for 'light'/'dark'. `dark` happens to share a
- * name with the MapStyleId it maps to; that's the same coincidence the
- * reference has (its own 'dark' style id), not a rule this depends on —
- * 'light' maps to 'positron', not to a same-named style, because there
- * isn't one.
- *
- * 'high-contrast' reuses the 'dark' basemap rather than getting a fifth
- * self-hosted style (its own mirrored PMTiles/sprite/glyph set) — the
- * higher-contrast treatment is a chrome-level ink/accent adjustment (see
- * global.css's `[data-theme='high-contrast']` block), not a different map,
- * so there's nothing basemap-specific for a dedicated style to fix.
+ * own THEME_BASEMAP exactly. `dark` happens to share a name with the
+ * MapStyleId it maps to; that's the same coincidence the reference has
+ * (its own 'dark' style id), not a rule this depends on — 'light' maps to
+ * 'positron', not to a same-named style, because there isn't one.
  */
 export const THEME_BASEMAP: Record<Theme, MapStyleId> = {
   light: 'positron',
   dark: 'dark',
-  'high-contrast': 'dark',
 };
 
 export const MAP_STYLE_STORAGE_KEY = 'flockoff:map-style';
