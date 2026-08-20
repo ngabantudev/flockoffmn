@@ -305,6 +305,28 @@ export interface NearMeSummary {
   caveat?: I18nString;
   /** Card spans both columns of the results grid. */
   wide?: boolean;
+  /**
+   * Enumerate individual records under the headline count instead of
+   * stopping at a number. `radius` mode only — rows are the records inside
+   * `radii[0]`, nearest first.
+   *
+   * This is a second rendering of the same records `detail` already names,
+   * not a new data source: the seam kept here (an optional block on the
+   * summary a layer already declares) is deliberate, so a layer that wants a
+   * list does not turn into a special case hard-coded by id in the page
+   * component — see the `nearMe` field's own doc comment for why that
+   * pattern was already regretted once.
+   */
+  list?: {
+    /** Attribute key for each row's primary label — who runs it, typically. */
+    entityKey?: string;
+    /** Attribute keys shown as a second line under the entity label. */
+    detail?: string[];
+    /** Rows shown before a "show more" control reveals the rest. */
+    initialCount?: number;
+    /** Offer a "show on map" link that centres the homepage map on the row. */
+    showOnMap?: boolean;
+  };
 }
 
 /**
