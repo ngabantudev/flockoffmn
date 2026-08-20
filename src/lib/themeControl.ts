@@ -1,5 +1,22 @@
 import type { IControl, Map as MLMap } from 'maplibre-gl';
-import { createElement, SunMoon, Sun, Moon, Ghost, Check, type IconNode } from 'lucide';
+import { createElement, SunMoon, Sun, Moon, Check, type IconNode } from 'lucide';
+
+/**
+ * Lucide (the set every other icon in this control comes from — SunMoon,
+ * Sun, Moon, Check) has no pumpkin/jack-o'-lantern icon, so this is a
+ * hand-built one in lucide's own IconNode shape (see e.g. lucide's Ghost
+ * icon: an array of `[tag, attrs]` tuples) so it renders through the same
+ * `createElement()` call and inherits `currentColor` stroke/fill exactly
+ * like the built-in icons do — same 24x24 grid, same stroke-2/round-cap
+ * conventions, no separate styling path.
+ */
+const Pumpkin: IconNode = [
+  ['path', { d: 'M10.5 5 12 2l1.5 3' }], // stem
+  ['ellipse', { cx: '12', cy: '14', rx: '8', ry: '7' }], // body
+  ['path', { d: 'M8 10 11 10 9.5 13Z' }], // left eye
+  ['path', { d: 'M13 10 16 10 14.5 13Z' }], // right eye
+  ['path', { d: 'M8 16 10 18.5 12 16 14 18.5 16 16' }], // mouth (3 teeth)
+];
 import {
   MAP_STYLES,
   currentTheme,
@@ -133,7 +150,7 @@ export class ThemeControl implements IControl {
     const halloweenBtn = document.createElement('button');
     halloweenBtn.type = 'button';
     halloweenBtn.setAttribute('class', 'theme-control-segment');
-    halloweenBtn.appendChild(createElement(Ghost as IconNode, { width: 14, height: 14 }));
+    halloweenBtn.appendChild(createElement(Pumpkin, { width: 14, height: 14 }));
     halloweenBtn.appendChild(document.createTextNode('Halloween'));
     halloweenBtn.addEventListener('click', () => setTheme('halloween'));
 
