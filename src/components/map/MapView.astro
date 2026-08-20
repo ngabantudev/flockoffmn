@@ -196,6 +196,8 @@ const strings = {
   mapNearMe: t('mapNearMe'),
   mapNearMeFound: t('mapNearMeFound'),
   mapNearMeNone: t('mapNearMeNone'),
+  mapNearMeRadiusLabel: t('mapNearMeRadiusLabel'),
+  mapNearMeRadiusValue: t('mapNearMeRadiusValue'),
   locationDenied: t('locationDenied'),
   locationUnavailable: t('locationUnavailable'),
   locationTimedOut: t('locationTimedOut'),
@@ -785,6 +787,8 @@ const strings = {
   const controller = new MapController(mapEl, layers, {
     resetViewLabel: S.resetView,
     nearMeLabel: S.mapNearMe,
+    nearMeRadiusLabel: S.mapNearMeRadiusLabel,
+    formatNearMeRadiusValue: (miles) => fill(S.mapNearMeRadiusValue, { mi: miles }),
     locationDeniedLabel: S.locationDenied,
     locationUnavailableLabel: S.locationUnavailable,
     locationTimedOutLabel: S.locationTimedOut,

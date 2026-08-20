@@ -19,6 +19,7 @@ import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from '
 import { ThemeControl } from './themeControl';
 import { ResetViewControl } from './resetViewControl';
 import { NearMeControl } from './nearMeControl';
+import { NearMeRadiusControl } from './nearMeRadiusControl';
 import type { FeatureProperties, LayerId } from '~/layers/types';
 
 /** The subset of a LayerDefinition the browser needs, serialised by Astro. */
@@ -212,6 +213,10 @@ export interface ControllerEvents {
   onNearMeError?: (message: string) => void;
   /** A "what's near me" lookup succeeded — total records found within radius, and how many were drawn (see NEARME_MAX_LINES). The only accessible-DOM feedback this canvas-only overlay has. */
   onNearMeResult?: (totalFound: number, shown: number) => void;
+  /** Localized label for the search-radius slider (NearMeRadiusControl) — read by screen readers via aria-label. */
+  nearMeRadiusLabel?: string;
+  /** Localized "N mi" formatter for the slider's live value — both the visible number beside it and its aria-valuetext. */
+  formatNearMeRadiusValue?: (miles: number) => string;
 }
 
 // Exported so MapView.astro's own panel-collapse toggle (setPanelCollapsed)
@@ -437,53 +442,24 @@ const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLO
 const NEARME_MAX_LINES = 20;
 
 /**
- * The zoom "what's near me" eases to when there's nothing to fit around —
- * zero results, or a fit that failed — floor-style, same Math.max(current,
- * N) shape focusFeature uses for a single point. Matches alpr's own
- * `pointsFrom: 14` (see registry.ts): below this zoom the camera dots a
- * near-me throw lands on are still specks, not resolved records.
+ * Bounds and default for the "what's near me" search-radius slider
+ * (NearMeRadiusControl). Replaces the autozoom this feature shipped with
+ * originally (PR #111): rather than the map guessing how tight a frame
+ * still shows every connected camera, the reader drags a radius and the
+ * throw lines redraw to match it — the map itself never moves on its own
+ * once a location is found (see showNearMe/applyNearMeRadius).
  *
- * Not a floor on the fit-over-targets path in showNearMe: showing every
- * connected camera on screen is the point of that path, and a widely spread
- * set of them can legitimately need a zoom below this to all fit — a
- * reader in a sparse county sees two real, distant cameras rather than one
- * cropped to a resolved-looking frame. Clamped down by accuracyZoomCap
- * below either way, when the fix itself can't support the chosen zoom.
+ * Default matches the fixed 5mi both radius-mode `nearMe` layers already
+ * promise on /near-me (registry.ts's own `radii: [5]`), so a first-time
+ * "near me" result here shows exactly what the near-me page would report,
+ * before the reader ever touches the slider. Max is a UI ceiling, not a
+ * data-honesty one — unlike the old accuracy-zoom clamp this replaces, a
+ * wider search radius doesn't claim any precision it doesn't have, so
+ * nothing here needs to answer to §0.2/§0.7 the way that clamp did.
  */
-const NEARME_ZOOM = 14;
-
-/**
- * The accuracy circle is allowed to span this share of the map's shorter
- * side at accuracyZoomCap's returned zoom — big enough that the true fix is
- * still very likely on screen even with the origin dot drawn a little off,
- * small enough that the frame reads as "your area," not "the whole state."
- */
-const ACCURACY_CIRCLE_SHARE = 0.6;
-
-/**
- * How far "locate me" is allowed to zoom in, honestly.
- *
- * A desktop wifi fix is routinely accurate to only 1–5km — `enableHighAccuracy`
- * is deliberately off here (see toggleNearMe) to avoid a GPS prompt for what's
- * usually a metro-scale lookup. Zooming to street level on a fix that could be
- * three kilometres off both misrepresents the data (§0.2) and, on a shared or
- * screenshotted screen, implies a precision about the reader's own location
- * that isn't real (§0.7). This finds the zoom at which a circle of
- * `accuracyM` radius still spans ACCURACY_CIRCLE_SHARE of the map's shorter
- * side, so the true fix is very likely still on screen even if the dot
- * itself is centred a little wrong.
- *
- * MapLibre (like Mapbox GL, unlike classic 256px raster tiles) sizes the
- * world at 512 * 2^zoom CSS pixels — half the constant the more common
- * 156543.03392 web-Mercator formula assumes. Using that constant here would
- * return a zoom one full level too tight, which is exactly the
- * false-precision failure this clamp exists to prevent.
- */
-function accuracyZoomCap(accuracyM: number, lat: number, minDimensionPx: number): number {
-  const metersPerPixel = (2 * accuracyM) / (ACCURACY_CIRCLE_SHARE * minDimensionPx);
-  const worldWidthAtZoom0 = 40_075_016.686 / 512;
-  return Math.log2((worldWidthAtZoom0 * Math.cos((lat * Math.PI) / 180)) / metersPerPixel);
-}
+const NEARME_RADIUS_MIN_MI = 1;
+const NEARME_RADIUS_MAX_MI = 25;
+const NEARME_RADIUS_DEFAULT_MI = 5;
 
 /**
  * The line-throw on selecting a jurisdiction, in milliseconds.
@@ -604,6 +580,12 @@ export class MapController {
   private nearMeLocating = false;
   /** Bumped on every showNearMe/clearNearMe so an in-flight lookup's async data-load can tell it's been superseded and skip drawing. */
   private nearMeToken = 0;
+  /** Every candidate within NEARME_RADIUS_MAX_MI of the current nearMeOrigin, nearest-first — computed once per lookup; applyNearMeRadius re-slices this on every slider move instead of re-scanning the layers. */
+  private nearMeCandidates: Array<{ point: [number, number]; distance: number }> = [];
+  /** rAF handle coalescing NearMeRadiusControl's drag ticks — see dragNearMeRadius's own comment for why a redraw per tick is too many. */
+  private nearMeDragFrame: number | null = null;
+  /** The most recent radius a drag tick asked for, applied by nearMeDragFrame's queued callback — only the latest value in a frame ever gets drawn. */
+  private pendingNearMeRadiusMi: number | null = null;
   /**
    * Which layer's selection the overlays currently belong to — their colour
    * and glyph are that layer's. Tracked rather than re-derived with
@@ -648,6 +630,7 @@ export class MapController {
   private themeControl: ThemeControl | null = null;
   private resetViewControl: ResetViewControl | null = null;
   private nearMeControl: NearMeControl | null = null;
+  private nearMeRadiusControl: NearMeRadiusControl | null = null;
   private navControl: maplibregl.NavigationControl | null = null;
   private attribControl: maplibregl.AttributionControl | null = null;
   private attribObserver: MutationObserver | null = null;
@@ -725,12 +708,23 @@ export class MapController {
     this.themeControl = new ThemeControl();
     this.resetViewControl = new ResetViewControl(events.resetViewLabel ?? 'Reset view', () => this.resetView());
     this.nearMeControl = new NearMeControl(events.nearMeLabel ?? 'What’s near me', () => this.toggleNearMe());
+    const formatRadius = events.formatNearMeRadiusValue ?? ((mi) => `${mi} mi`);
+    this.nearMeRadiusControl = new NearMeRadiusControl(
+      events.nearMeRadiusLabel ?? 'Search radius',
+      NEARME_RADIUS_MIN_MI,
+      NEARME_RADIUS_MAX_MI,
+      NEARME_RADIUS_DEFAULT_MI,
+      formatRadius,
+      (mi) => this.dragNearMeRadius(mi),
+      (mi) => this.commitNearMeRadius(mi),
+    );
     this.navControl = new maplibregl.NavigationControl({ showCompass: false });
     this.attribControl = new maplibregl.AttributionControl({ compact: true });
     if (cornerControls) {
       cornerControls.appendChild(this.themeControl.onAdd(this.map));
       cornerControls.appendChild(this.resetViewControl.onAdd(this.map));
       cornerControls.appendChild(this.nearMeControl.onAdd(this.map));
+      cornerControls.appendChild(this.nearMeRadiusControl.onAdd(this.map));
       cornerControls.appendChild(this.navControl.onAdd(this.map));
       const attribEl = this.attribControl.onAdd(this.map);
       cornerControls.appendChild(attribEl);
@@ -3718,7 +3712,7 @@ export class MapController {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         this.nearMeLocating = false;
-        void this.showNearMe([pos.coords.longitude, pos.coords.latitude], pos.coords.accuracy);
+        void this.showNearMe([pos.coords.longitude, pos.coords.latitude]);
       },
       (err) => {
         this.nearMeLocating = false;
@@ -3830,14 +3824,14 @@ export class MapController {
    * comment), which would otherwise make "what's near me" under-report
    * exactly the layers nobody happened to have on.
    *
-   * Always moves the camera to frame `origin`, win or lose — a reader who
-   * gets `mapNearMeNone` still learns *where* nothing was found, rather than
-   * the map sitting wherever it happened to be. See the camera-move block
-   * below for how the destination is chosen: a fit over every connected
-   * camera when there are any, or a floor zoom on `origin` alone when
-   * there aren't.
+   * Does not move the camera — that was this feature's original shape (PR
+   * #111) and is deliberately gone: NEARME_RADIUS_MIN_MI's own comment has
+   * the reasoning. Candidates are gathered once here, out to
+   * NEARME_RADIUS_MAX_MI, and handed to applyNearMeRadius to draw the
+   * reader's own starting radius; every further radius change re-slices the
+   * same candidate list rather than re-scanning the layers.
    */
-  private async showNearMe(origin: [number, number], accuracyM: number) {
+  private async showNearMe(origin: [number, number]) {
     await this.ready();
     // A later click while this one is still awaiting data wins — bail if
     // the origin has moved on since this call started.
@@ -3851,95 +3845,99 @@ export class MapController {
     this.nearMeOrigin = origin;
     this.nearMeControl?.setActive(true);
 
-    const withDistance: Array<{ point: [number, number]; distance: number }> = [];
-    eligible.forEach((layer, i) => {
-      const radiusM = layer.nearMeRadiusMi! * 1609.344;
+    const maxRadiusM = NEARME_RADIUS_MAX_MI * 1609.344;
+    const candidates: Array<{ point: [number, number]; distance: number }> = [];
+    eligible.forEach((_layer, i) => {
       for (const feature of perLayer[i]) {
         if (feature.geometry.type !== 'Point') continue;
         const point = feature.geometry.coordinates as [number, number];
         const distance = haversineMeters(origin, point);
-        if (distance <= radiusM) withDistance.push({ point, distance });
+        if (distance <= maxRadiusM) candidates.push({ point, distance });
       }
     });
-    withDistance.sort((a, b) => a.distance - b.distance);
-    const targets = withDistance.slice(0, NEARME_MAX_LINES).map((r) => r.point);
+    candidates.sort((a, b) => a.distance - b.distance);
+    this.nearMeCandidates = candidates;
 
-    // The DOM/aria surface first, camera second — see the camera block's
-    // own comment on why a MapLibre call sits downstream of the one thing a
-    // screen-reader user actually gets from this control.
     (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData({
       type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: origin }, properties: {} }],
     } as never);
 
-    this.throwNearMeLines(origin, targets);
-    // The only accessible-DOM equivalent this control has today: an
-    // aria-live count, since the throw itself is canvas-only. Not full
-    // parity with /near-me's own record list (see NearMeSummary.list) — a
-    // screen-reader user learns how many and how far, not each one by
-    // name — but it's the difference between silence and something.
-    this.events.onNearMeResult?.(withDistance.length, targets.length);
+    this.nearMeRadiusControl?.reset();
+    this.nearMeRadiusControl?.setVisible(true);
+    this.applyNearMeRadius(NEARME_RADIUS_DEFAULT_MI);
+  }
 
-    // Large delta from wherever the reader was browsing to their own
-    // location, fitting origin and every camera a line was just thrown at
-    // (throwNearMeLines, above — an empty set is a valid, zero-area box,
-    // origin against itself). "Nearest" only helps a reader if the nearest
-    // ones are actually visible, on a phone as much as a desktop — see
-    // NEARME_ZOOM's own comment on why that can mean zooming out below the
-    // point-legibility floor the earlier version of this feature enforced.
-    //
-    // cameraForBounds only *computes* the camera; easeToCamera does the
-    // actual move, with its moveend/jumpTo landing correction — a bare
-    // fitBounds routes through flyTo with no such correction, which here
-    // would risk quietly defeating the accuracy clamp on a big jump (see
-    // easeToCamera's own comment on the same convergence gap). This call
-    // sits after the DOM output above so a throw in it (cameraForBounds can
-    // hand back center: NaN in pathological cases) can't take the
-    // accessible feedback down with it.
-    //
-    // bearing is passed through explicitly: cameraForBounds otherwise
-    // assumes north-up (bearing 0) regardless of the map's actual bearing,
-    // sizing the box for a viewport the reader isn't looking at. Nothing
-    // here changes bearing itself — easeToCamera only ever sets
-    // center/zoom — so passing the live bearing back in just keeps the fit
-    // honest about the frame it's actually being fit into.
-    //
-    // The zoom ceiling — accuracyZoomCap's honesty clamp (§0.2, §0.7), and
-    // for the no-target case the NEARME_ZOOM floor as well — is computed
-    // once and handed to cameraForBounds as its own `maxZoom`, rather than
-    // left to override the result afterwards: overriding zoom post hoc
-    // without recomputing center leaves the two disagreeing about which
-    // zoom the sheet-padding offset was computed for, silently shrinking
-    // that offset. Passed only when finite: accuracy of exactly 0 (a
-    // mocked fix; real ones are never exactly 0) makes accuracyZoomCap
-    // return +Infinity, and a container with zero real width or height
-    // (a hidden ancestor mid-layout) makes it -Infinity — either one
-    // reaching MapLibre as `maxZoom` produces a NaN camera, so neither is
-    // ever passed; cameraForBounds is left to its own default instead.
-    const container = this.map.getContainer();
-    const minDimensionPx = Math.min(container.clientWidth, container.clientHeight);
-    const cap = accuracyZoomCap(accuracyM, origin[1], minDimensionPx);
-    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
-    const intendedZoom = targets.length > 0 ? cap : Number.isFinite(cap) ? Math.min(floor, cap) : floor;
-    const bounds = bboxOf({ type: 'MultiPoint', coordinates: [origin, ...targets] });
-    const fit = this.map.cameraForBounds(
-      [
-        [bounds[0], bounds[1]],
-        [bounds[2], bounds[3]],
-      ],
-      {
-        padding: this.fitPadding(),
-        bearing: this.map.getBearing(),
-        ...(Number.isFinite(intendedZoom) ? { maxZoom: intendedZoom } : {}),
-      },
-    );
-    const fitCenter = fit?.center != null ? maplibregl.LngLat.convert(fit.center) : null;
-    const fitZoom = fit?.zoom != null && Number.isFinite(fit.zoom) ? fit.zoom : null;
-    const camera =
-      fitCenter && fitZoom != null
-        ? { center: [fitCenter.lng, fitCenter.lat] as [number, number], zoom: fitZoom }
-        : { center: origin, zoom: floor };
-    this.easeToCamera(camera, REDUCED_MOTION ? 0 : 600);
+  /**
+   * Re-slice `nearMeCandidates` to `radiusMi` and redraw the throw lines —
+   * the only thing that changes as the reader drags NearMeRadiusControl, or
+   * on the first draw after a fresh showNearMe. No data reload, no camera
+   * move: `nearMeOrigin` is the single source of truth for where the throw
+   * originates, so origin's own source is untouched here.
+   *
+   * `nearMeCandidates` is sorted nearest-first (showNearMe), so this walks
+   * from the front and stops the moment a candidate is past `radiusMi` or
+   * NEARME_MAX_LINES targets are already collected — O(targets found), not
+   * a full-array filter/slice repeated on every drag tick.
+   *
+   * `announce` skips the aria-live update (onNearMeResult) — set false by
+   * dragNearMeRadius's live callback so a screen reader isn't read every
+   * intermediate mile of a slider drag, and true on both the initial draw
+   * and the slider's commit.
+   */
+  private applyNearMeRadius(radiusMi: number, announce = true) {
+    if (!this.nearMeOrigin) return;
+    const radiusM = radiusMi * 1609.344;
+    const targets: Array<[number, number]> = [];
+    let totalWithin = 0;
+    for (const candidate of this.nearMeCandidates) {
+      if (candidate.distance > radiusM) break;
+      totalWithin += 1;
+      if (targets.length < NEARME_MAX_LINES) targets.push(candidate.point);
+    }
+
+    this.throwNearMeLines(this.nearMeOrigin, targets);
+    if (announce) {
+      // The only accessible-DOM equivalent this control has today: an
+      // aria-live count, since the throw itself is canvas-only. Not full
+      // parity with /near-me's own record list (see NearMeSummary.list) — a
+      // screen-reader user learns how many and how far, not each one by
+      // name — but it's the difference between silence and something.
+      this.events.onNearMeResult?.(totalWithin, targets.length);
+    }
+  }
+
+  /**
+   * NearMeRadiusControl's `input` handler — fires on every integer step a
+   * drag crosses, up to ~24 times across the slider's full range in well
+   * under a second. Redrawing on every one of those would cancel and
+   * restart throwNearMeLines' rAF animation (and its underlying
+   * `setData` — "a worker round trip with a re-parse and re-index, not a
+   * cheap buffer write," per runThrow's own comment) that often, so ticks
+   * are coalesced to at most one redraw per animation frame: a tick just
+   * records the latest requested radius, and only the first tick in a
+   * frame schedules the rAF callback that actually applies it.
+   */
+  private dragNearMeRadius(radiusMi: number) {
+    this.pendingNearMeRadiusMi = radiusMi;
+    if (this.nearMeDragFrame !== null) return;
+    this.nearMeDragFrame = requestAnimationFrame(() => {
+      this.nearMeDragFrame = null;
+      if (this.pendingNearMeRadiusMi !== null) this.applyNearMeRadius(this.pendingNearMeRadiusMi, false);
+    });
+  }
+
+  /** NearMeRadiusControl's `change` handler — fires once on release; commits the value and announces the result. */
+  private commitNearMeRadius(radiusMi: number) {
+    // A commit right after the last coalesced drag frame already queued
+    // itself would otherwise redraw twice for the same value — cancel
+    // whatever's pending so this call is the one that actually lands.
+    if (this.nearMeDragFrame !== null) {
+      cancelAnimationFrame(this.nearMeDragFrame);
+      this.nearMeDragFrame = null;
+    }
+    this.pendingNearMeRadiusMi = null;
+    this.applyNearMeRadius(radiusMi, true);
   }
 
   /**
@@ -3965,11 +3963,18 @@ export class MapController {
   /** Undo showNearMe — clears the marker and lines, and the control's pressed state. */
   private clearNearMe() {
     this.cancelNearMeThrow();
+    if (this.nearMeDragFrame !== null) {
+      cancelAnimationFrame(this.nearMeDragFrame);
+      this.nearMeDragFrame = null;
+    }
+    this.pendingNearMeRadiusMi = null;
     // Supersedes any showNearMe still awaiting ensureDataLoaded, so a slow
     // fetch that resolves after a clear can't resurrect the overlay.
     this.nearMeToken += 1;
     this.nearMeOrigin = null;
+    this.nearMeCandidates = [];
     this.nearMeControl?.setActive(false);
+    this.nearMeRadiusControl?.setVisible(false);
     (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
@@ -4030,6 +4035,7 @@ export class MapController {
     this.themeControl?.onRemove();
     this.resetViewControl?.onRemove();
     this.nearMeControl?.onRemove();
+    this.nearMeRadiusControl?.onRemove();
     this.navControl?.onRemove();
     this.attribControl?.onRemove();
     this.map.remove();
