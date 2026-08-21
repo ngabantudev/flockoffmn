@@ -567,6 +567,18 @@ const THROW_MS = 420;
 const THROW_STAGGER_MS = 70;
 const THROW_SPREAD_MS = 400;
 const IMPACT_MS = 520;
+/**
+ * Frame budget for runThrow's setData work: ~30Hz rather than every rAF
+ * (~60-144Hz depending on the display). setData is a worker round trip —
+ * it posts the collection, then re-parses and re-indexes on completion —
+ * not a cheap buffer write, so most of a per-frame call's allocation and
+ * serialization is thrown away before the next one lands anyway (#77).
+ * The geometry is a straight ease-out interpolation, so the frames this
+ * skips aren't visually distinguishable at THROW_MS/IMPACT_MS durations.
+ * rAF is still requested every tick — only the setData work is gated — so
+ * the loop's own timing stays smooth and self-correcting.
+ */
+const THROW_FRAME_BUDGET_MS = 1000 / 30;
 
 /** Every style-layer suffix a tap can select a record on. */
 const SELECTABLE_SUFFIXES = ['-fill', '-line-hit', '-points'];
@@ -3633,9 +3645,26 @@ export class MapController {
     // lands and again after the last has faded, and writing an empty
     // collection over an already-empty one is pure cost.
     let ringsWereEmpty = true;
+    // Last elapsed time the setData work below actually ran, gating it to
+    // THROW_FRAME_BUDGET_MS (see that constant's comment). -Infinity so the
+    // first frame always does the work.
+    let lastStepElapsed = -Infinity;
 
     const step = () => {
       const elapsed = performance.now() - start;
+      const finished = elapsed >= totalMs;
+
+      // Still request the next rAF every tick regardless of the budget below
+      // — that's what keeps the loop's own timing smooth — but skip the
+      // setData work itself on ticks that land inside the same budget
+      // window as the last one that ran. The final frame always runs so the
+      // animation settles exactly at rest rather than on a stale mid-throw
+      // frame.
+      if (!finished && elapsed - lastStepElapsed < THROW_FRAME_BUDGET_MS) {
+        setFrame(requestAnimationFrame(step));
+        return;
+      }
+      lastStepElapsed = elapsed;
 
       const lineFeatures = [];
       const ringFeatures = [];
@@ -3669,7 +3698,7 @@ export class MapController {
         ringsWereEmpty = ringFeatures.length === 0;
       }
 
-      if (elapsed < totalMs) {
+      if (!finished) {
         setFrame(requestAnimationFrame(step));
       } else {
         // Settle on the finished state and stop. Nothing animates at rest.
