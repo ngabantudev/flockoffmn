@@ -562,8 +562,8 @@ export const LAYERS: LayerDefinition[] = [
       {
         key: 'alprDeviceLocations',
         label: {
-          en: 'Device locations, as the agency reported them',
-          es: 'Ubicaciones de dispositivos, según lo informado por la agencia',
+          en: 'All device locations this agency reported to the BCA, including filings that could not be placed on the map as points',
+          es: 'Todas las ubicaciones de dispositivos que esta agencia informó al BCA, incluidas las presentadas que no se pudieron ubicar en el mapa como puntos',
         },
       },
       {
