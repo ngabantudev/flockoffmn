@@ -895,10 +895,15 @@ export const LAYERS: LayerDefinition[] = [
         // First, because it is the answer four readers in five give — but not
         // muted. A desaturated grey here used to read as "no camera," the
         // opposite of what it means: every one of these is a live, recording
-        // reader, just one whose operator nobody has identified yet. A
-        // saturated red keeps that legible at a glance, the way a device's own
-        // recording light would.
-        { value: 'Not recorded', color: '#dc2626' },
+        // reader, just one whose operator nobody has identified yet. Stays
+        // saturated so that reads at a glance, the way a device's own
+        // recording light would — but off the red hue: #dc2626 is the racial
+        // covenants layer's own identity colour, and near-identical to that
+        // layer's 1950s swatch (#de2d26). Both layers can be fully opaque in
+        // the same panel and legend key at once, so a shared red would carry
+        // two unrelated meanings under one swatch. Magenta keeps the same
+        // saturated-alarm read without borrowing another layer's colour. See #80.
+        { value: 'Not recorded', color: '#db2777' },
         { value: 'Police department', color: '#38bdf8' },
         { value: 'County sheriff', color: '#22d3ee' },
         { value: 'State agency', color: '#a78bfa' },
