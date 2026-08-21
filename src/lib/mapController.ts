@@ -1548,6 +1548,33 @@ export class MapController {
    * The apex sits at the sprite's centre so `icon-rotate` pivots on the
    * camera's own coordinate instead of swinging the cone around it.
    */
+  /**
+   * Shared scaffold behind every generated, theme-baked sprite: cache lookup
+   * by id, canvas sizing at a fixed pixel ratio, and the `addImage` call.
+   * Callers supply the cache id (theme suffix included) and the drawing
+   * itself — see ensureConeSprite and ensureMarkerIcon below for why these
+   * sprites are generated and cached this way in the first place.
+   */
+  private ensureSprite(
+    id: string,
+    px: number,
+    draw: (ctx: CanvasRenderingContext2D, px: number) => void,
+  ): string | null {
+    if (this.map.hasImage(id)) return id;
+
+    const pixelRatio = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = px;
+    canvas.height = px;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    draw(ctx, px);
+
+    this.map.addImage(id, ctx.getImageData(0, 0, px, px), { pixelRatio });
+    return id;
+  }
+
   private ensureConeSprite(layer: ClientLayer, arc: number): string | null {
     const rounded = Math.round(arc);
     // Theme suffix, not just layer+arc: the sprite is a baked bitmap, colour
@@ -1557,39 +1584,28 @@ export class MapController {
     // again with the new basemapDark and produces a freshly-coloured sprite
     // under a new id instead of reusing the stale one.
     const id = `${layer.id}-cone-${rounded}-${this.basemapDark ? 'dark' : 'light'}`;
-    if (this.map.hasImage(id)) return id;
-
-    const pixelRatio = 2;
-    const px = 52 * pixelRatio;
-    const canvas = document.createElement('canvas');
-    canvas.width = px;
-    canvas.height = px;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    const centre = px / 2;
-    const radius = px * 0.46;
-    const up = -Math.PI / 2;
-    ctx.beginPath();
-    if (rounded >= 360) {
-      // Recorded as covering every direction, so there is no cone to point.
-      ctx.arc(centre, centre, radius, 0, Math.PI * 2);
-    } else {
-      const half = ((rounded / 2) * Math.PI) / 180;
-      ctx.moveTo(centre, centre);
-      ctx.arc(centre, centre, radius, up - half, up + half);
-      ctx.closePath();
-    }
-    ctx.globalAlpha = 0.45;
-    ctx.fillStyle = this.layerColor(layer);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = this.layerColor(layer);
-    ctx.lineWidth = px * 0.03;
-    ctx.stroke();
-
-    this.map.addImage(id, ctx.getImageData(0, 0, px, px), { pixelRatio });
-    return id;
+    return this.ensureSprite(id, 52 * 2, (ctx, px) => {
+      const centre = px / 2;
+      const radius = px * 0.46;
+      const up = -Math.PI / 2;
+      ctx.beginPath();
+      if (rounded >= 360) {
+        // Recorded as covering every direction, so there is no cone to point.
+        ctx.arc(centre, centre, radius, 0, Math.PI * 2);
+      } else {
+        const half = ((rounded / 2) * Math.PI) / 180;
+        ctx.moveTo(centre, centre);
+        ctx.arc(centre, centre, radius, up - half, up + half);
+        ctx.closePath();
+      }
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = this.layerColor(layer);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = this.layerColor(layer);
+      ctx.lineWidth = px * 0.03;
+      ctx.stroke();
+    });
   }
 
   private coneSourceId = (layerId: string) => `src-${layerId}-cones`;
@@ -1628,8 +1644,7 @@ export class MapController {
     const id = `${layer.id}-icon-${iconName}${colorSuffix}-${this.basemapDark ? 'dark' : 'light'}`;
     if (this.map.hasImage(id)) return id;
 
-    const pixelRatio = 2;
-    const px = 30 * pixelRatio;
+    const px = 30 * 2;
     const inner = px * 0.62;
 
     // Built by lucide's own createElement, which supplies xmlns, viewBox, fill
@@ -1653,28 +1668,21 @@ export class MapController {
       return null;
     }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = px;
-    canvas.height = px;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    // The disc the glyph sits on: the basemap's own background, ringed in
-    // the layer colour — the same casing logic a point layer's dots already
-    // use (see pointStrokeColor), so a glyph and a dot read as the same
-    // family of mark rather than two unrelated styles.
-    const centre = px / 2;
-    ctx.beginPath();
-    ctx.arc(centre, centre, px * 0.46, 0, Math.PI * 2);
-    ctx.fillStyle = this.basemapColor;
-    ctx.fill();
-    ctx.lineWidth = px * 0.06;
-    ctx.strokeStyle = color;
-    ctx.stroke();
-    ctx.drawImage(img, centre - inner / 2, centre - inner / 2, inner, inner);
-
-    this.map.addImage(id, ctx.getImageData(0, 0, px, px), { pixelRatio });
-    return id;
+    return this.ensureSprite(id, px, (ctx, px) => {
+      // The disc the glyph sits on: the basemap's own background, ringed in
+      // the layer colour — the same casing logic a point layer's dots already
+      // use (see pointStrokeColor), so a glyph and a dot read as the same
+      // family of mark rather than two unrelated styles.
+      const centre = px / 2;
+      ctx.beginPath();
+      ctx.arc(centre, centre, px * 0.46, 0, Math.PI * 2);
+      ctx.fillStyle = this.basemapColor;
+      ctx.fill();
+      ctx.lineWidth = px * 0.06;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      ctx.drawImage(img, centre - inner / 2, centre - inner / 2, inner, inner);
+    });
   }
 
   /** Resolve this layer's glyph expression once, into markerExpressions. */
