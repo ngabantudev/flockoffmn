@@ -535,7 +535,7 @@ maplibregl.addProtocol('pmtiles', new PMTilesProtocol().tile);
  * because clustered sources compute clusters before layer filters run — so a
  * filtered clustered layer would otherwise keep showing counts for features it
  * is no longer drawing. Re-setting data keeps the cluster totals, the visible
- * dots, the accessible record list and the counter in agreement.
+ * dots, search, the detail panel and the counter in agreement.
  */
 export class MapController {
   readonly map: MLMap;
@@ -543,9 +543,8 @@ export class MapController {
   private events: ControllerEvents;
 
   /**
-   * As loaded from disk, so the record list, the counter, search, the detail
-   * panel and the map are all reading the same records the reader is
-   * looking at.
+   * As loaded from disk, so the counter, search, the detail panel and the
+   * map are all reading the same records the reader is looking at.
    */
   private data = new Map<string, LoadedFeature[]>();
   private visible = new Set<string>();
@@ -749,9 +748,11 @@ export class MapController {
       // positioned bottom-right corner container, which this app no
       // longer uses — matching wealldobettermn.org's WardMap.tsx exactly.
       attributionControl: false,
-      // The canvas is not usable by a screen reader; the record list beside it
-      // is the accessible equivalent, so keep the canvas out of the tab order.
-      // Keyboard panning still works once the map is focused deliberately.
+      // The canvas is not usable by a screen reader; the search results
+      // listbox, the detail panel, and the aria-live status region
+      // (#map-status in MapView.astro) are the accessible equivalent, so
+      // keep the canvas out of the tab order. Keyboard panning still works
+      // once the map is focused deliberately.
       dragRotate: false,
       pitchWithRotate: false,
     });
@@ -826,9 +827,9 @@ export class MapController {
     // equivalent's one required difference: a failure to reach the archive
     // — wrong URL, bucket unreachable, CORS misconfigured — degrades to a
     // visible status message rather than a silent blank canvas. Everything
-    // else (pins, the record list, search) works with no basemap at all, by
-    // construction — the record list is the accessible primary interface
-    // and never depended on tiles.
+    // else (pins, search, the detail panel, the aria-live status region)
+    // works with no basemap at all, by construction — none of it is the
+    // canvas, and none of it ever depended on tiles.
     this.map.on('error', (e) => {
       const err = e as unknown as { sourceId?: string; error?: Error };
       if (err.sourceId === 'basemap') {
@@ -1477,8 +1478,8 @@ export class MapController {
    *
    * Kept in their own source rather than alongside the dots because the dot
    * source clusters: a camera whose `direction` names three headings needs
-   * three cones, and exploding it in the clustered source would inflate every
-   * cluster count and the record list with records that do not exist.
+   * three cones, and exploding it in the clustered source would inflate the
+   * cluster count and the layer counter with records that do not exist.
    */
   private coneFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
     if (!layer.bearingKey) return { type: 'FeatureCollection', features: [] };
@@ -2028,8 +2029,8 @@ export class MapController {
     const tier = scaleOf(layer);
 
     // Never clustered. The source holds one feature per record at every zoom,
-    // which is what lets the record list, the counter and the dots agree
-    // without the special-casing a clustered source used to need.
+    // which is what lets search, the detail panel, the counter and the dots
+    // agree without the special-casing a clustered source used to need.
     //
     // promoteId lets MapLibre's feature-state track a record by the same
     // stable id the rest of the app already uses, rather than an internal
@@ -2131,9 +2132,9 @@ export class MapController {
             'fill-color': polygonColor,
             // Never removed by zoom, only faded — same reason the ALPR dots
             // are never cut by a minzoom either (see scaleOf's own comment):
-            // the accessible record list reads every parcel at every zoom, so
-            // the parcel itself has to still be there to fade back in, not
-            // be swapped out for the grid and reinstated later.
+            // search and the detail panel can still reach every parcel at
+            // every zoom, so the parcel itself has to still be there to fade
+            // back in, not be swapped out for the grid and reinstated later.
             'fill-opacity': this.polygonFillOpacity(layer, highlightMode, subtle),
           },
         },
@@ -2417,8 +2418,8 @@ export class MapController {
             15, 0.85,
           ] as unknown as maplibregl.ExpressionSpecification,
           // A building is at an address whether or not a neighbouring label
-          // wants the space, and the accessible record list reads all of
-          // them regardless — so never drop one for collision.
+          // wants the space, and search reaches all of them regardless — so
+          // never drop one for collision.
           'icon-allow-overlap': true,
         },
       });
@@ -2597,8 +2598,9 @@ export class MapController {
     const spec = layer.hoverCard!;
     const attrs = feature.properties.attributes as Record<string, unknown>;
     const root = document.createElement('div');
-    // The record list beside the map is the accessible interface (spec §4);
-    // this is a pointer-only shortcut to it, so it is not announced twice.
+    // Search, the detail panel, and the aria-live status region are the
+    // accessible interface (spec §4); this hover card is a pointer-only
+    // shortcut to the same record, so it is not announced twice.
     root.setAttribute('aria-hidden', 'true');
     root.className = 'hover-card-body';
 
@@ -2814,7 +2816,7 @@ export class MapController {
       // the one thing focusFeature can't infer, since it has no notion of a
       // second visit. Everything else about selecting (the highlight, the
       // panel, the fit, the thrown lines) belongs to focusFeature, which
-      // search and the record list reach too.
+      // search reaches too.
       if (
         layer.polygonClick === 'highlight' &&
         this.selectedPolygon?.layerId === layer.id &&
@@ -3153,8 +3155,8 @@ export class MapController {
     const visible = this.filteredFeatures(layerId);
     source.setData(this.flatten(visible));
     // Cones live in a second source, so a filter that hides a camera has to
-    // hide its cone too or the map keeps drawing coverage for records the
-    // record list no longer shows.
+    // hide its cone too or the map keeps drawing coverage for a record the
+    // filter has already excluded.
     const cones = this.map.getSource(this.coneSourceId(layerId)) as GeoJSONSource | undefined;
     cones?.setData(this.coneFeatures(layer, visible));
     // The grid regroups from the surviving parcels rather than dimming: a
@@ -3200,7 +3202,7 @@ export class MapController {
     }
   }
 
-  /** Centre on a feature and open its detail. Used by the record list and search. */
+  /** Centre on a feature and open its detail. Used by search and a map tap alike. */
   focusFeature(layerId: string, featureId: string) {
     const feature = this.featureById(layerId, featureId);
     const layer = this.layers.find((l) => l.id === layerId);
@@ -3271,10 +3273,10 @@ export class MapController {
 
     // Selection behaviour lives here rather than in the map's own click
     // handler because this is the one funnel every route to a record passes
-    // through — a tap on the map, a search result, a row in the accessible
-    // record list. Putting it on the click alone meant a jurisdiction picked
-    // from search opened its panel but never highlighted its ward or threw
-    // its lines, which is the same selection reached a different way.
+    // through — a tap on the map or a search result alike. Putting it on
+    // the click alone meant a jurisdiction picked from search opened its
+    // panel but never highlighted its ward or threw its lines, which is the
+    // same selection reached a different way.
     if (layer.polygonClick === 'highlight') {
       this.markPolygonSelected(layer, featureId);
     } else {

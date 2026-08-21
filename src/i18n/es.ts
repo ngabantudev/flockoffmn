@@ -60,6 +60,7 @@ export const es: Record<string, string> = {
   mapNearMe: 'Qué hay cerca de mí',
   mapNearMeFound: '{count} cerca, {shown} mostrados.',
   mapNearMeNone: 'No hay nada mapeado cerca de este punto.',
+  recordSelected: '{layer}: {name} seleccionado',
   mapNearMeRadiusLabel: 'Radio de búsqueda',
   mapNearMeRadiusValue: '{mi} mi',
   closePanel: 'Cerrar panel',

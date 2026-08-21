@@ -641,9 +641,10 @@ export interface LayerDefinition {
    * Strictly a shortcut to what the detail panel already says — a reader
    * skimming a street of stations should not have to click each one to learn
    * which of them reported surveillance equipment. It is `aria-hidden` for
-   * that reason: the DOM record list beside the map is the accessible
-   * interface (spec §4), and a hover-only surface that screen readers
-   * announced would be a second, worse copy of it rather than an addition.
+   * that reason: search, the detail panel, and the aria-live status region
+   * are the accessible interface (spec §4), and a hover-only surface that
+   * screen readers announced would be a second, worse copy of it rather
+   * than an addition.
    *
    * `related` is the point of the thing: it counts records of another layer
    * that join to this one, so the card can answer "and what did this agency
