@@ -447,8 +447,8 @@ export const LAYERS: LayerDefinition[] = [
     // § 13.824. Both are joins on a document, not tests of what falls inside
     // the boundary — an earlier version drew a path to every camera merely
     // *contained* by the polygon, which is a claim the data cannot support and
-    // §0.3 forbids. See relatedBuildings' comment in types.ts.
-    relatedBuildings: {
+    // §0.3 forbids. See relation's comment in types.ts.
+    relation: {
       layerId: 'agency_building',
       joinKey: 'jurisdictionId',
       // Throw from the headquarters where the inventory distinguishes one: a

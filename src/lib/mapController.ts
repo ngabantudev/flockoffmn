@@ -117,7 +117,7 @@ export interface ClientLayer {
   /** See LayerDefinition's own comment in layers/types.ts. */
   /** See LayerDefinition's own comment in layers/types.ts. */
   selectedEmphasis?: 'full' | 'subtle';
-  relatedBuildings?: {
+  relation?: {
     layerId: LayerId;
     fromKey?: string;
     joinKey: string;
@@ -403,16 +403,16 @@ const JURISDICTION_LAYER = 'jurisdiction-outline';
 const JURISDICTION_COLOR = '#94a3b8';
 
 /**
- * The building(s) a selected `relatedBuildings` polygon answers from, and
+ * The building(s) a selected `relation` polygon answers from, and
  * the paths to whatever a `pathsTo` relation draws — see that field's own
  * comment in types.ts. One source and one layer of each, reused and
  * `setData()`-ed on every selection change, the same way JURISDICTION_SOURCE
  * above is: there is only ever one polygon selected at a time, so there is
  * only ever one set of buildings and paths to show for it.
  */
-const RELATED_BUILDINGS_SOURCE = 'src-related-buildings';
-const RELATED_BUILDINGS_GLOW_LAYER = 'related-buildings-glow';
-const RELATED_BUILDINGS_LAYER = 'related-buildings';
+const RELATION_SOURCE = 'src-relation';
+const RELATION_GLOW_LAYER = 'relation-glow';
+const RELATION_LAYER = 'relation';
 const RELATED_PATHS_SOURCE = 'src-related-paths';
 const RELATED_PATHS_LAYER = 'related-paths';
 const RELATED_IMPACT_SOURCE = 'src-related-impacts';
@@ -426,15 +426,15 @@ const RELATED_IMPACT_LAYER = 'related-impacts';
 const OVERLAY_STACK = [
   RELATED_PATHS_LAYER,
   RELATED_IMPACT_LAYER,
-  RELATED_BUILDINGS_GLOW_LAYER,
-  RELATED_BUILDINGS_LAYER,
+  RELATION_GLOW_LAYER,
+  RELATION_LAYER,
 ];
 
 /**
  * The "what's near me" overlay — NearMeControl's mirror of the jurisdiction
  * throw above, rooted at the reader instead of a law-enforcement building.
  * Kept on its own sources/layers rather than reusing RELATED_* : that overlay
- * is owned by whichever *registry layer* is selected (`relatedOverlayOwner`)
+ * is owned by whichever *registry layer* is selected (`relationOverlayOwner`)
  * and destroyed/rebuilt when the owner changes (see ensureRelatedLayers's own
  * comment) — a person's location isn't a layer and has no owner to change,
  * so it needs a lifecycle the relation overlay's doesn't have: created once,
@@ -694,9 +694,9 @@ export class MapController {
    * the field" and not "whose overlay is on the map": the same answer only
    * while exactly one layer declares it, and a silently wrong one after that.
    */
-  private relatedOverlayOwner: string | null = null;
+  private relationOverlayOwner: string | null = null;
   /**
-   * Bumped on every selection and every release. showRelatedBuildings awaits
+   * Bumped on every selection and every release. showRelation awaits
    * network fetches, so it compares this against the value it started with
    * before touching the map — a slow request for a ward the reader has since
    * left must not paint over the one they are actually looking at.
@@ -1384,15 +1384,15 @@ export class MapController {
     // The transient selection overlays bake a colour at creation the same way
     // a layer does, and they outlive a basemap toggle because the toggle
     // doesn't clear the reader's selection.
-    const owner = this.layers.find((l) => l.id === this.relatedOverlayOwner);
+    const owner = this.layers.find((l) => l.id === this.relationOverlayOwner);
     if (owner) {
       const color = this.layerColor(owner);
-      if (this.map.getLayer(RELATED_BUILDINGS_GLOW_LAYER)) {
-        this.map.setPaintProperty(RELATED_BUILDINGS_GLOW_LAYER, 'circle-color', color);
+      if (this.map.getLayer(RELATION_GLOW_LAYER)) {
+        this.map.setPaintProperty(RELATION_GLOW_LAYER, 'circle-color', color);
       }
-      if (this.map.getLayer(RELATED_BUILDINGS_LAYER)?.type === 'circle') {
-        this.map.setPaintProperty(RELATED_BUILDINGS_LAYER, 'circle-color', color);
-        this.map.setPaintProperty(RELATED_BUILDINGS_LAYER, 'circle-stroke-color', this.basemapColor);
+      if (this.map.getLayer(RELATION_LAYER)?.type === 'circle') {
+        this.map.setPaintProperty(RELATION_LAYER, 'circle-color', color);
+        this.map.setPaintProperty(RELATION_LAYER, 'circle-stroke-color', this.basemapColor);
       }
       if (this.map.getLayer(RELATED_PATHS_LAYER)) {
         this.map.setPaintProperty(RELATED_PATHS_LAYER, 'line-color', color);
@@ -1429,8 +1429,8 @@ export class MapController {
   private async refreshMarkerIcons(): Promise<void> {
     // Whose glyph the overlay is currently drawing — read off the live owner,
     // not off whichever layer declares the field first.
-    const relatedGlyphOwner = this.layers.find((l) => l.id === this.relatedOverlayOwner)
-      ?.relatedBuildings?.layerId;
+    const relatedGlyphOwner = this.layers.find((l) => l.id === this.relationOverlayOwner)
+      ?.relation?.layerId;
     const iconLayers = this.layers.filter((l) => l.markerIcon);
     // Each glyph is an independent decode-and-raster; nothing here depends on
     // the previous one's result, and this runs on every basemap toggle.
@@ -1448,9 +1448,9 @@ export class MapController {
       }
       if (
         relatedGlyphOwner === layer.id &&
-        this.map.getLayer(RELATED_BUILDINGS_LAYER)?.type === 'symbol'
+        this.map.getLayer(RELATION_LAYER)?.type === 'symbol'
       ) {
-        this.map.setLayoutProperty(RELATED_BUILDINGS_LAYER, 'icon-image', expression as never);
+        this.map.setLayoutProperty(RELATION_LAYER, 'icon-image', expression as never);
       }
     }
   }
@@ -1881,7 +1881,7 @@ export class MapController {
   /**
    * Fetch a layer's records into `this.data` without drawing it as a map
    * layer or touching `this.visible` — for a cross-layer lookup
-   * (relatedBuildings) that needs a record from a layer the reader may never
+   * (relation) that needs a record from a layer the reader may never
    * have switched on. A building the reader can't otherwise see is still the
    * right thing to highlight from a jurisdiction they did select; a whole
    * second point layer silently appearing on the map because of that
@@ -2084,7 +2084,7 @@ export class MapController {
       const under = this.beneathDots();
       const highlightMode = layer.polygonClick === 'highlight';
       // How loudly a selected polygon reads. Declared by the layer rather than
-      // inferred from whether it happens to carry a `relatedBuildings` — that
+      // inferred from whether it happens to carry a `relation` — that
       // test got the right answer for the one layer that has both, but it is
       // an editorial judgement about emphasis reading a data-relation field,
       // and the next layer to declare one would inherit a look it never asked
@@ -2934,7 +2934,7 @@ export class MapController {
       // toggle. Unticking "police & sheriff jurisdictions" left the ward's
       // buildings and lines drawn over a map that no longer contained the
       // ward.
-      if (this.selectedPolygon?.layerId === layer.id || this.relatedOverlayOwner === layer.id) {
+      if (this.selectedPolygon?.layerId === layer.id || this.relationOverlayOwner === layer.id) {
         this.releaseHighlight();
       }
       if (this.hoveredPolygon?.layerId === layer.id) this.releaseHover();
@@ -3361,7 +3361,7 @@ export class MapController {
       // record for the rest of the session.
       this.releaseHighlight();
     }
-    if (layer.relatedBuildings) void this.showRelatedBuildings(feature, layer);
+    if (layer.relation) void this.showRelation(feature, layer);
   }
 
   /**
@@ -3395,7 +3395,7 @@ export class MapController {
       );
       this.selectedPolygon = null;
     }
-    this.clearRelatedBuildings();
+    this.clearRelation();
   }
 
   /** Drop the hover preview, wherever it is. Safe to call when there is none. */
@@ -3488,15 +3488,15 @@ export class MapController {
   }
 
   /**
-   * What a selected `relatedBuildings` polygon actually highlights — see
+   * What a selected `relation` polygon actually highlights — see
    * that field's own comment in types.ts. Building(s) draw regardless of
    * whether the reader has that point layer switched on (a selection is a
    * more specific, deliberate request than a layer toggle); paths draw only
    * to records the reader can already see, so a path never points at a dot
    * that isn't there.
    */
-  private async showRelatedBuildings(jurisdiction: LoadedFeature, layer: ClientLayer) {
-    const rel = layer.relatedBuildings;
+  private async showRelation(jurisdiction: LoadedFeature, layer: ClientLayer) {
+    const rel = layer.relation;
     if (!rel) return;
 
     // Every await below is a fetch that can outlive the selection that
@@ -3528,7 +3528,7 @@ export class MapController {
 
     await this.ensureRelatedLayers(layer, rel);
     if (stale()) return;
-    (this.map.getSource(RELATED_BUILDINGS_SOURCE) as GeoJSONSource | undefined)?.setData(
+    (this.map.getSource(RELATION_SOURCE) as GeoJSONSource | undefined)?.setData(
       this.flatten(matched) as never,
     );
 
@@ -3742,10 +3742,10 @@ export class MapController {
    */
   private async ensureRelatedLayers(
     layer: ClientLayer,
-    rel: NonNullable<ClientLayer['relatedBuildings']>,
+    rel: NonNullable<ClientLayer['relation']>,
   ) {
-    if (this.relatedOverlayOwner === layer.id) return;
-    if (this.relatedOverlayOwner) this.destroyRelatedLayers();
+    if (this.relationOverlayOwner === layer.id) return;
+    if (this.relationOverlayOwner) this.destroyRelatedLayers();
 
     const color = this.layerColor(layer);
 
@@ -3758,11 +3758,11 @@ export class MapController {
     if (pointLayer) await this.cacheMarkerExpression(pointLayer);
     const glyph = pointLayer ? this.markerExpressions.get(pointLayer.id) : undefined;
 
-    this.map.addSource(RELATED_BUILDINGS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addSource(RELATION_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
     this.map.addLayer({
-      id: RELATED_BUILDINGS_GLOW_LAYER,
+      id: RELATION_GLOW_LAYER,
       type: 'circle',
-      source: RELATED_BUILDINGS_SOURCE,
+      source: RELATION_SOURCE,
       paint: {
         'circle-color': color,
         'circle-blur': 0.85,
@@ -3773,9 +3773,9 @@ export class MapController {
     this.map.addLayer(
       glyph
         ? {
-            id: RELATED_BUILDINGS_LAYER,
+            id: RELATION_LAYER,
             type: 'symbol',
-            source: RELATED_BUILDINGS_SOURCE,
+            source: RELATION_SOURCE,
             layout: {
               'icon-image': glyph as never,
               // Deliberately larger than the same glyph in its own layer:
@@ -3785,9 +3785,9 @@ export class MapController {
             },
           }
         : {
-            id: RELATED_BUILDINGS_LAYER,
+            id: RELATION_LAYER,
             type: 'circle',
-            source: RELATED_BUILDINGS_SOURCE,
+            source: RELATION_SOURCE,
             paint: {
               'circle-color': color,
               'circle-radius': 7,
@@ -3829,7 +3829,7 @@ export class MapController {
       },
     });
 
-    this.relatedOverlayOwner = layer.id;
+    this.relationOverlayOwner = layer.id;
     this.pinOverlays();
   }
 
@@ -3838,10 +3838,10 @@ export class MapController {
     for (const id of OVERLAY_STACK) {
       if (this.map.getLayer(id)) this.map.removeLayer(id);
     }
-    for (const id of [RELATED_BUILDINGS_SOURCE, RELATED_PATHS_SOURCE, RELATED_IMPACT_SOURCE]) {
+    for (const id of [RELATION_SOURCE, RELATED_PATHS_SOURCE, RELATED_IMPACT_SOURCE]) {
       if (this.map.getSource(id)) this.map.removeSource(id);
     }
-    this.relatedOverlayOwner = null;
+    this.relationOverlayOwner = null;
   }
 
   private cancelThrow() {
@@ -3948,7 +3948,7 @@ export class MapController {
     });
 
     // The origin itself — a small glow plus a solid dot, the same two-layer
-    // treatment RELATED_BUILDINGS uses for the building a throw comes from,
+    // treatment RELATION uses for the building a throw comes from,
     // so "here's where this throw starts" reads the same way in both places.
     this.map.addSource(NEARME_ORIGIN_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
     this.map.addLayer({
@@ -4239,15 +4239,15 @@ export class MapController {
   }
 
   /**
-   * Undo showRelatedBuildings. Called wherever a selection itself clears.
+   * Undo showRelation. Called wherever a selection itself clears.
    *
    * Empties the overlays rather than destroying them — see ensureRelatedLayers
    * for why there is only one lifecycle now. An empty source draws nothing and
    * costs nothing.
    */
-  private clearRelatedBuildings() {
+  private clearRelation() {
     this.clearThrownPaths();
-    (this.map.getSource(RELATED_BUILDINGS_SOURCE) as GeoJSONSource | undefined)?.setData(
+    (this.map.getSource(RELATION_SOURCE) as GeoJSONSource | undefined)?.setData(
       EMPTY_FC as never,
     );
   }
