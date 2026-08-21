@@ -24,6 +24,28 @@ export function metersToMiles(m) {
 }
 
 /**
+ * Distance display text — `< 0.1`, one decimal under 10 miles, none above.
+ * `/near-me` and the homepage map's near-me list each used to spell this
+ * out independently; a shared formatter means a future rounding-rule tweak
+ * (e.g. showing two decimals under a mile) lands on both surfaces at once
+ * instead of only whichever file someone remembers to edit.
+ */
+export function formatMiles(m) {
+  const mi = metersToMiles(m);
+  return mi < 0.1 ? '< 0.1' : mi.toFixed(mi < 10 ? 1 : 0);
+}
+
+/**
+ * Below this many miles of GPS accuracy, `/near-me` and the homepage map's
+ * near-me mode both stop calling a fix meaningful and show a low-accuracy
+ * warning. Shared so the two surfaces can't warn at different thresholds
+ * for the same underlying fix — distinct from mapController.ts's own
+ * `accuracyZoomCap`, which keys off a different, zoom-clamping number for
+ * the same accuracy input, not a warning threshold.
+ */
+export const LOW_ACCURACY_MILES = 2;
+
+/**
  * Initial great-circle bearing in degrees [0, 360) from one [lng, lat] point
  * toward another — 0 is north, 90 is east, matching destinationPoint below
  * and every compass convention already in this file (see compassLabel).

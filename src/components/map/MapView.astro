@@ -3,6 +3,7 @@ import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
 import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { labelForDetailField } from '~/lib/detailFields';
 import CompareView from '~/components/map/CompareView.astro';
 import type { ClientLayer } from '~/lib/mapController';
 
@@ -17,19 +18,13 @@ const loaded = await loadAllLayers();
 /**
  * A `nearMe.list.detail` key must also be a `detailFields` entry, so its
  * label is written once — the same guard NearMe.astro's own `labelFor`
- * already applies to this identical registry block, reproduced here rather
- * than imported because it closes over this file's own `locale`. Turns a
- * registry typo into a build failure instead of a near-me list row silently
- * rendering "undefined: 3".
+ * applies to this identical registry block, shared via labelForDetailField
+ * (see that function's own comment) rather than reimplemented, so a
+ * registry typo fails the build with identical wording from either surface
+ * instead of a near-me list row silently rendering "undefined: 3".
  */
 function labelForNearMeDetail(d: (typeof loaded)[number]['definition'], key: string): string {
-  const field = d.detailFields.find((f) => f.key === key);
-  if (!field) {
-    throw new Error(
-      `Layer "${d.id}" names "${key}" in nearMe.list.detail but has no detailFields entry for it.`,
-    );
-  }
-  return pick(field.label, locale);
+  return labelForDetailField(d, key, 'nearMe.list.detail', locale);
 }
 
 // Serialise only what the browser needs. Filter values are computed at build
@@ -804,9 +799,9 @@ const strings = {
 
 <script>
   import { MapController, REDUCED_MOTION, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
-  import { formatValue } from '~/lib/detailFields';
+  import { formatValue, isUnattributedValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
-  import { metersToMiles } from '~/lib/geo.mjs';
+  import { metersToMiles, formatMiles, LOW_ACCURACY_MILES } from '~/lib/geo.mjs';
   import { createElement } from 'lucide';
   // The same closed allow-list the map's own marker glyphs resolve through —
   // see its comment for why there is one map and not two.
@@ -1262,23 +1257,12 @@ const strings = {
   // jump), which get the back button when applicable but not the focus move.
   let focusBackOnNextRow = false;
 
-  // Below this, /near-me's own page stops calling a fix meaningful — see
-  // that page's own LOW_ACCURACY_MILES. Duplicated rather than imported: it
-  // is a small page-authored constant with no shared module to import from,
-  // and mapController.ts's own accuracyZoomCap already keys off a distinct
-  // (zoom-clamping, not warning-threshold) number for the same input.
-  const LOW_ACCURACY_MILES = 2;
+  const fmtMiles = formatMiles;
 
-  function fmtMiles(m: number) {
-    const mi = metersToMiles(m);
-    return mi < 0.1 ? '< 0.1' : mi.toFixed(mi < 10 ? 1 : 0);
-  }
-
-  /** True when this row's `entityKey` attribute is blank — shared by nearMeEntityName's fallback and buildNearMeRow's coordinates line, so the two can never disagree about which rows are "unattributed". */
+  /** True when this row's `entityKey` attribute is blank — shared by nearMeEntityName's fallback and buildNearMeRow's coordinates line, so the two can never disagree about which rows are "unattributed" (and, via isUnattributedValue, can never disagree with /near-me's own identical check either). */
   function nearMeIsUnattributed(layer: (typeof layers)[number], feature: LoadedFeature): boolean {
     const key = layer.nearMeList?.entityKey;
-    const value = key ? feature.properties.attributes?.[key] : null;
-    return value === null || value === undefined || value === '';
+    return isUnattributedValue(key ? feature.properties.attributes?.[key] : null);
   }
 
   function nearMeEntityName(layer: (typeof layers)[number], feature: LoadedFeature): string {
@@ -1296,19 +1280,23 @@ const strings = {
     const out: string[] = [];
     for (const d of layer.nearMeList?.detail ?? []) {
       const value = feature.properties.attributes?.[d.key];
-      if (value === null || value === undefined || value === '') continue;
+      if (isUnattributedValue(value)) continue;
       out.push(`${d.label}: ${value}`);
     }
     return out;
   }
 
-  // The same "did this record's other-source match" test the search results
-  // list already applies (see runSearch's own crossSource block) — reused
-  // rather than reimplemented, and deliberately `crossSourceSiteId`
-  // (a confirmed match) only, not a near-miss: the row marker mirrors the
-  // map's own brass ring, which alpr-cross-source.mjs only ever draws solid
-  // for a real match.
-  function nearMeCrossListed(layer: (typeof layers)[number], feature: LoadedFeature): boolean {
+  // "Did this record's other-source match" — one shared predicate for the
+  // near-me list's cross-listed marker, the search results list's sr-only
+  // suffix, and the detail panel's own `matched` check, which independently
+  // retyped this same `crossSourceSiteId != null` test three times before
+  // (one of the three used a bare truthy check instead, which happens to
+  // agree with `!= null` for every real site id but is worth not leaving as
+  // a second, subtly different spelling of the same rule). Deliberately
+  // `crossSourceSiteId` (a confirmed match) only, not a near-miss: every
+  // caller's own marker mirrors the map's brass ring, which
+  // alpr-cross-source.mjs only ever draws solid for a real match.
+  function isCrossListed(layer: ClientLayer, feature: LoadedFeature): boolean {
     return !!(layer.crossSource && feature.properties.attributes?.crossSourceSiteId != null);
   }
 
@@ -1373,7 +1361,7 @@ const strings = {
       ariaParts.push(coordsText);
     }
 
-    const crossListed = nearMeCrossListed(layer, feature);
+    const crossListed = isCrossListed(layer, feature);
     if (crossListed && layer.crossSource) {
       const crossDiv = el('div', 'mt-0.5 flex items-center gap-1 text-xs');
       crossDiv.style.color = 'var(--color-cross-source-ring)';
@@ -1402,6 +1390,14 @@ const strings = {
     button.addEventListener('click', () => {
       focusBackOnNextRow = true;
       controller.focusFeature(layer.id, feature.properties.id);
+      // focusFeature is synchronous and, when the feature still resolves,
+      // calls onSelect (which reads and clears this flag) before returning.
+      // If it's still true here, the feature couldn't be found — data
+      // evicted/replaced between this row being built and the click — and
+      // onSelect never ran. Clear it defensively so the *next*, unrelated
+      // selection doesn't inherit a stale "focus the back button" request
+      // and steal focus the reader never asked for.
+      focusBackOnNextRow = false;
     });
 
     li.append(button);
@@ -1797,7 +1793,7 @@ const strings = {
     // own caveats — see CLAUDE.md §1c and the registry's own comment on
     // LayerDefinition.crossSource.
     if (layer.crossSource) {
-      const matched = attrs.crossSourceSiteId != null;
+      const matched = isCrossListed(layer, feature);
       // A near miss only ever applies to an otherwise-unmatched record — see
       // LayerDefinition.crossSource.nearMiss's own comment — and only this
       // layer's crossSource block names the copy for it (alpr's has no use
@@ -2247,8 +2243,8 @@ const strings = {
       // mapController's crossSource paint case) is otherwise canvas-only —
       // this is the accessible copy of that state, on the one interface a
       // screen reader actually gets (spec §4). Real text, not aria-hidden.
-      if (layer.crossSource && feature.properties.attributes.crossSourceSiteId) {
-        text.append(el('span', 'sr-only', layer.crossSource.searchSuffix));
+      if (isCrossListed(layer, feature)) {
+        text.append(el('span', 'sr-only', layer.crossSource!.searchSuffix));
       } else if (
         layer.crossSource?.nearMissSearchSuffix &&
         feature.properties.attributes.crossSourceNearMiss

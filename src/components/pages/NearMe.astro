@@ -2,6 +2,7 @@
 import type { Locale, LayerDefinition } from '~/layers/types';
 import { LAYERS } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { labelForDetailField } from '~/lib/detailFields';
 
 interface Props {
   locale: Locale;
@@ -12,16 +13,13 @@ const t = useTranslations(locale);
 /**
  * A `nearMe` key in `detail` must also be a `detailFields` entry, so the label
  * is written once. Throwing here turns a registry typo into a build failure
- * rather than a card that silently renders "undefined: 3" to a reader.
+ * rather than a card that silently renders "undefined: 3" to a reader. Shared
+ * with the homepage map's own near-me list (labelForDetailField) so the two
+ * surfaces check the identical rule with the identical error wording — see
+ * that function's own comment.
  */
 function labelFor(layer: LayerDefinition, key: string): string {
-  const field = layer.detailFields.find((f) => f.key === key);
-  if (!field) {
-    throw new Error(
-      `Layer "${layer.id}" names "${key}" in nearMe.detail but has no detailFields entry for it.`,
-    );
-  }
-  return pick(field.label, locale);
+  return labelForDetailField(layer, key, 'nearMe.detail', locale);
 }
 
 /**
@@ -207,7 +205,10 @@ const homePath = localePath(locale, '/');
     metersToMiles,
     findContaining,
     distanceToGeometryMeters,
+    formatMiles,
+    LOW_ACCURACY_MILES,
   } from '~/lib/geo.mjs';
+  import { isUnattributedValue } from '~/lib/detailFields';
   import { resolveAuthorities, operatorGap, displayName } from '~/lib/authority.mjs';
   import { MN_BOUNDS } from '~/lib/mapStyle';
 
@@ -261,10 +262,6 @@ const homePath = localePath(locale, '/');
    */
   const inMinnesota = ([lng, lat]: [number, number]) =>
     lng >= MN_BOUNDS[0][0] && lng <= MN_BOUNDS[1][0] && lat >= MN_BOUNDS[0][1] && lat <= MN_BOUNDS[1][1];
-
-  // Below this, a 5-mile radius stops being a meaningful promise — worth
-  // saying so, not worth alarming a reader whose fix was merely ordinary.
-  const LOW_ACCURACY_MILES = 2;
 
   type Jurisdiction = {
     geoid: string;
@@ -370,10 +367,7 @@ const homePath = localePath(locale, '/');
     template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 
   const miles = (m: number) => metersToMiles(m);
-  const fmtMiles = (m: number) => {
-    const mi = miles(m);
-    return mi < 0.1 ? '< 0.1' : mi.toFixed(mi < 10 ? 1 : 0);
-  };
+  const fmtMiles = formatMiles;
 
   /* --------------------------- Place search --------------------------- */
 
@@ -513,7 +507,7 @@ const homePath = localePath(locale, '/');
     li.setAttribute('style', `border-color:${layer.color}`);
 
     const entityValue = list.entityKey ? row.feature.properties.attributes?.[list.entityKey] : null;
-    const unattributed = entityValue === null || entityValue === undefined || entityValue === '';
+    const unattributed = isUnattributedValue(entityValue);
     const head = el('div', 'flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5');
     head.append(
       el(

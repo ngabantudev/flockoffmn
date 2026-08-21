@@ -1,5 +1,6 @@
-import type { DetailFieldFormat } from '../layers/types';
+import type { DetailFieldFormat, I18nString, Locale } from '../layers/types';
 import { compassLabel } from './geo.mjs';
+import { pick } from './i18n';
 
 /**
  * Render one attribute value the way its `detailFields` entry says to.
@@ -64,4 +65,45 @@ export function formatValue(
       return String(unhandled);
     }
   }
+}
+
+/**
+ * Resolve a `nearMe(.list).detail` key against a layer's own `detailFields`
+ * table and localize its label — the build-time-throw guard `/near-me` and
+ * the homepage map's near-me list each used to reimplement independently
+ * (differing only in which field name their error message quoted, which had
+ * already drifted: one said `nearMe.detail`, the other `nearMe.list.detail`,
+ * for the same underlying check). One shared resolver means a registry typo
+ * fails the build with the same message everywhere it's checked, and a
+ * future change to the guard (loosening it, adding a fallback) only has to
+ * be made once.
+ *
+ * `fieldPath` names where the caller found `key` in the registry, purely for
+ * the thrown error's wording — `nearMe.detail` from `/near-me`,
+ * `nearMe.list.detail` from the homepage map's list — since that's the one
+ * thing that legitimately differs between the two call sites.
+ */
+export function labelForDetailField(
+  layer: { id: string; detailFields: Array<{ key: string; label: I18nString }> },
+  key: string,
+  fieldPath: string,
+  locale: Locale,
+): string {
+  const field = layer.detailFields.find((f) => f.key === key);
+  if (!field) {
+    throw new Error(`Layer "${layer.id}" names "${key}" in ${fieldPath} but has no detailFields entry for it.`);
+  }
+  return pick(field.label, locale);
+}
+
+/**
+ * "Is this record's entity value blank" — the same three-way emptiness check
+ * (`null`/`undefined`/`''`) the homepage map's near-me list and `/near-me`'s
+ * own list each used to spell out independently. Both surfaces' own comments
+ * say the same blank-operator camera can never read differently between
+ * them; a shared predicate is what actually makes that true, rather than
+ * leaving it to two hand-typed copies staying in sync by convention.
+ */
+export function isUnattributedValue(value: unknown): boolean {
+  return value === null || value === undefined || value === '';
 }

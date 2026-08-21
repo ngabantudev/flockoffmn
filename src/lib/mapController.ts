@@ -837,6 +837,24 @@ export class MapController {
   }> = [];
   /** Set once in the constructor from `events.formatNearMeRadiusValue` — see that assignment's own comment. Reused by nearMeMarkerLabelPoints. */
   private formatNearMeRadiusValue: (mi: number) => string = (mi) => `${mi} mi`;
+  /**
+   * Live and "fixed" (frozen at the resolved-zoom endpoint) paint variants
+   * for every near-me-eligible layer's circle-radius/stroke-width/opacity —
+   * populated once, when each such layer's `-points` circle layer is first
+   * built (see addLayer's own comment). setNearMeDotStyleFixed reads this to
+   * swap between the two without needing `layers`/`tier` again at toggle time.
+   */
+  private nearMePointStyle = new Map<
+    string,
+    {
+      liveRadius: maplibregl.ExpressionSpecification | number;
+      fixedRadius: maplibregl.ExpressionSpecification | number;
+      liveStrokeWidth: maplibregl.ExpressionSpecification | number;
+      fixedStrokeWidth: maplibregl.ExpressionSpecification | number;
+      liveOpacity: maplibregl.ExpressionSpecification | number;
+      fixedOpacity: maplibregl.ExpressionSpecification | number;
+    }
+  >();
   /** rAF handle coalescing NearMeRadiusControl's drag ticks — see dragNearMeRadius's own comment for why a redraw per tick is too many. */
   private nearMeDragFrame: number | null = null;
   /** The most recent radius a drag tick asked for, applied by nearMeDragFrame's queued callback — only the latest value in a frame ever gets drawn. */
@@ -1301,6 +1319,64 @@ export class MapController {
       ],
       base,
     ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
+   * Recursively replaces every `['zoom']` leaf inside a style expression
+   * with the literal `atZoom`, "freezing" a zoom-driven curve at whatever
+   * output it would produce at that zoom regardless of the map's actual
+   * current zoom — used to build the near-me-active point styles (see
+   * nearMePointStyle/setNearMeDotStyleFixed) from the exact same expressions
+   * the layer's ordinary paint already uses, rather than a second,
+   * hand-picked set of numbers that could drift out of sync with them.
+   * Works on any expression shape (interpolate, case, nested) since it just
+   * walks the array structure looking for the `['zoom']` leaf itself,
+   * without needing to know what's wrapping it.
+   */
+  private freezeZoom(expr: unknown, atZoom: number): unknown {
+    if (Array.isArray(expr)) {
+      if (expr.length === 1 && expr[0] === 'zoom') return atZoom;
+      return expr.map((e) => this.freezeZoom(e, atZoom));
+    }
+    return expr;
+  }
+
+  /**
+   * Swap every near-me-eligible layer's circle-radius/circle-stroke-width/
+   * circle-opacity between their ordinary zoom-based curves and the
+   * "fixed" variant frozen at each curve's own `pointsFrom` endpoint (see
+   * freezeZoom and nearMePointStyle) — called once on showNearMe and once on
+   * clearNearMe, a plain style swap rather than a per-frame animation.
+   *
+   * Exists because refitNearMeCamera fits the *entire* current search
+   * radius, not just the cameras actually found inside it — in a sparse
+   * area that can land at a noticeably wider zoom than the old
+   * fit-to-matched-targets behaviour ever produced, and at that wider zoom
+   * a camera's ordinary zoom-based fade curve (unchanged, correct on its
+   * own terms) would legitimately render smaller/fainter than it does once
+   * fully resolved. A camera the reader is specifically searching for
+   * shouldn't cost its own clarity to a zoom level that's now a function of
+   * the *search radius* rather than of how close the reader has zoomed in —
+   * so near-me pins every eligible layer to its fully-resolved look for as
+   * long as a lookup is active, same as any other selected/highlighted
+   * state on this map already does.
+   */
+  private setNearMeDotStyleFixed(active: boolean) {
+    for (const [layerId, style] of this.nearMePointStyle) {
+      const id = `${layerId}-points`;
+      if (!this.map.getLayer(id)) continue;
+      this.map.setPaintProperty(
+        id,
+        'circle-radius',
+        this.withSelectedPointScale(active ? style.fixedRadius : style.liveRadius, 1.4, 3),
+      );
+      this.map.setPaintProperty(
+        id,
+        'circle-stroke-width',
+        this.withSelectedPointScale(active ? style.fixedStrokeWidth : style.liveStrokeWidth, 1.75, 1),
+      );
+      this.map.setPaintProperty(id, 'circle-opacity', active ? style.fixedOpacity : style.liveOpacity);
+    }
   }
 
   private pointStrokeWidthExpr(
@@ -2714,38 +2790,80 @@ export class MapController {
       return;
     }
 
+    /*
+     * Below `emergeFrom`, radius follows the same 5/10/15 curve every
+     * point layer has always used. A layer that also names `speckleFrom`
+     * (ALPR, so far — see scaleOf's comment) gets earlier anchors
+     * instead: a true speck — sub-pixel at the map's own minimum zoom —
+     * climbing to a small, clean dot at metro scale rather than the
+     * bigger close-up size. Cut down from the original curve specifically
+     * to match deflock.org's own metro-zoom rendering, which is small
+     * and uncluttered even packed as tight as the Twin Cities get.
+     * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
+     * take the unchanged branch below.
+     */
+    const radiusExpr = (tier.speckleFrom < tier.emergeFrom
+      ? [
+          'interpolate', ['linear'], ['zoom'],
+          tier.speckleFrom, 0.5,
+          7, 1.2,
+          tier.emergeFrom, 2.8,
+          15, 8,
+        ]
+      : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
+    ) as unknown as maplibregl.ExpressionSpecification;
+    const strokeWidthExpr = this.pointStrokeWidthExpr(layer, tier);
+    /*
+     * Opacity follows the same two-branch shape as radius, just above.
+     * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
+     * dot is already visible at the map's own minimum zoom, and it climbs
+     * to solid across `emergeFrom` → `pointsFrom` same as before. Nothing
+     * here is a density estimate — it is the same records, just visible
+     * further out, at a size and opacity that don't claim more precision
+     * than a speck can carry.
+     */
+    const opacityExpr = (tier.speckleFrom < tier.emergeFrom
+      ? [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          tier.speckleFrom, 0.55,
+          tier.emergeFrom, 0.65,
+          tier.pointsFrom, 0.95,
+        ]
+      : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
+    ) as unknown as maplibregl.ExpressionSpecification;
+
+    // Only near-me-eligible layers (alpr/alpr_reported — see
+    // ClientLayer.nearMeRadiusMi) get a "fixed" variant stashed: setNearMeDotStyleFixed
+    // swaps circle-radius/circle-stroke-width/circle-opacity to these while a
+    // lookup is active, so refitNearMeCamera's whole-circle fit (which can
+    // land at a wider zoom than the old fit-to-matched-targets behaviour
+    // ever did) doesn't cost a camera the reader is specifically looking for
+    // any of its normal size/clarity — frozen at each expression's own
+    // `pointsFrom`-and-beyond value via freezeZoom, not a separately
+    // hand-chosen number, so it can never drift out of sync with the live
+    // curve's own "fully resolved" endpoint.
+    if (layer.nearMeRadiusMi) {
+      this.nearMePointStyle.set(layer.id, {
+        liveRadius: radiusExpr,
+        fixedRadius: this.freezeZoom(radiusExpr, tier.pointsFrom) as maplibregl.ExpressionSpecification | number,
+        liveStrokeWidth: strokeWidthExpr,
+        fixedStrokeWidth: this.freezeZoom(strokeWidthExpr, tier.pointsFrom) as
+          | maplibregl.ExpressionSpecification
+          | number,
+        liveOpacity: opacityExpr,
+        fixedOpacity: this.freezeZoom(opacityExpr, tier.pointsFrom) as maplibregl.ExpressionSpecification | number,
+      });
+    }
+
     this.map.addLayer({
       id: `${layer.id}-points`,
       type: 'circle',
       source: src,
       paint: {
         'circle-color': circleColor,
-        /*
-         * Below `emergeFrom`, radius follows the same 5/10/15 curve every
-         * point layer has always used. A layer that also names `speckleFrom`
-         * (ALPR, so far — see scaleOf's comment) gets earlier anchors
-         * instead: a true speck — sub-pixel at the map's own minimum zoom —
-         * climbing to a small, clean dot at metro scale rather than the
-         * bigger close-up size. Cut down from the original curve specifically
-         * to match deflock.org's own metro-zoom rendering, which is small
-         * and uncluttered even packed as tight as the Twin Cities get.
-         * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
-         * take the unchanged branch below.
-         */
-        'circle-radius': this.withSelectedPointScale(
-          (tier.speckleFrom < tier.emergeFrom
-            ? [
-                'interpolate', ['linear'], ['zoom'],
-                tier.speckleFrom, 0.5,
-                7, 1.2,
-                tier.emergeFrom, 2.8,
-                15, 8,
-              ]
-            : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
-          ) as unknown as maplibregl.ExpressionSpecification,
-          1.4,
-          3,
-        ),
+        'circle-radius': this.withSelectedPointScale(radiusExpr, 1.4, 3),
         'circle-stroke-color': this.pointStrokeColorExpr(layer),
         /*
          * Dots fade in rather than switching on at a single zoom.
@@ -2764,32 +2882,9 @@ export class MapController {
          * declared, shared with the theme-independent zoom curve here so the
          * two can never disagree about when the ring is allowed to appear.
          */
-        'circle-stroke-width': this.withSelectedPointScale(this.pointStrokeWidthExpr(layer, tier), 1.75, 1),
+        'circle-stroke-width': this.withSelectedPointScale(strokeWidthExpr, 1.75, 1),
         'circle-stroke-opacity': this.pointStrokeOpacityExpr(layer),
-        /*
-         * Opacity follows the same two-branch shape as radius, just above.
-         * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
-         * dot is already visible at the map's own minimum zoom, and it climbs
-         * to solid across `emergeFrom` → `pointsFrom` same as before. Nothing
-         * here is a density estimate — it is the same records, just visible
-         * further out, at a size and opacity that don't claim more precision
-         * than a speck can carry. Deliberately untouched by near-me: a
-         * camera's own rendering is the same record at the same confidence
-         * whether or not a search happens to be running, so it keeps its
-         * ordinary design — this circle, this border, this colour — with no
-         * radar-specific override, same as any other point layer.
-         */
-        'circle-opacity': (tier.speckleFrom < tier.emergeFrom
-          ? [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              tier.speckleFrom, 0.55,
-              tier.emergeFrom, 0.65,
-              tier.pointsFrom, 0.95,
-            ]
-          : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
-        ) as unknown as maplibregl.ExpressionSpecification,
+        'circle-opacity': opacityExpr,
       },
     });
 
@@ -3575,6 +3670,13 @@ export class MapController {
     // same selection reached a different way.
     if (layer.polygonClick === 'highlight') {
       this.markPolygonSelected(layer, featureId);
+      // Selecting a polygon is still a new selection: a camera that was
+      // pulsing, and the rAF loop driving that pulse, describe a record the
+      // panel no longer shows. Without this a previously-selected point kept
+      // pulsing indefinitely under an unrelated record for the rest of the
+      // session — the exact same bug markPolygonSelected's own release
+      // already prevents in the other direction.
+      this.releasePointSelection();
     } else {
       // Selecting a camera is still a new selection: the ward that was lit,
       // and the lines it threw, describe a record the panel no longer shows.
@@ -4414,7 +4516,16 @@ export class MapController {
         try {
           return await this.fetchFeatures(l);
         } catch (err) {
-          this.events.onNearMeLayerError?.(l.id, err instanceof Error ? err.message : String(err));
+          // Guarded the same way the `token !== this.nearMeToken` check a
+          // few lines down guards everything after it — without this, a
+          // slow fetch that only rejects after the reader has toggled
+          // near-me off and back on (bumping nearMeToken) fires
+          // onNearMeLayerError for a lookup that's no longer current,
+          // landing a stale "could not load" warning on whatever *new*
+          // lookup happens to be active by the time this catch runs.
+          if (token === this.nearMeToken) {
+            this.events.onNearMeLayerError?.(l.id, err instanceof Error ? err.message : String(err));
+          }
           return [];
         }
       }),
@@ -4460,6 +4571,9 @@ export class MapController {
 
     this.nearMeRadiusControl?.reset();
     this.nearMeRadiusControl?.setVisible(true);
+    // Before the fit below, which is what actually needs it — see
+    // setNearMeDotStyleFixed's own comment for why this exists at all.
+    this.setNearMeDotStyleFixed(true);
     this.applyNearMeRadius(NEARME_RADIUS_DEFAULT_MI);
     this.startNearMeSweep();
     this.refitNearMeCamera();
@@ -4486,10 +4600,16 @@ export class MapController {
    * comment). Under REDUCED_MOTION there is no loop to pick the change up,
    * so the static ring is redrawn immediately instead.
    *
-   * `announce` skips the aria-live update (onNearMeResult) — set false by
-   * dragNearMeRadius's live callback so a screen reader isn't read every
+   * `announce` skips only the aria-live update (onNearMeResult) — set false
+   * by dragNearMeRadius's live callback so a screen reader isn't read every
    * intermediate mile of a slider drag, and true on both the initial draw
-   * and the slider's commit.
+   * and the slider's commit. `onNearMeRecords` (the DOM list) fires every
+   * call regardless of `announce`: the map's boundary/sweep already redraw
+   * live on every drag tick, and a list that stayed frozen next to a
+   * visibly-moving map read as broken, not as "waiting for you to let go."
+   * A sighted drag gets a live-updating list; a screen-reader user still
+   * only hears the count once, on commit — the two audiences get what each
+   * one actually needs from a drag, not the same gate applied to both.
    */
   private applyNearMeRadius(radiusMi: number, announce = true): Array<[number, number]> {
     if (!this.nearMeOrigin) return [];
@@ -4517,14 +4637,14 @@ export class MapController {
 
     if (announce) {
       // The only accessible-DOM equivalent this control used to have: an
-      // aria-live count, since the sweep itself is canvas-only. Now paired
-      // with onNearMeRecords, which is what actually gives a screen-reader
-      // user each one by name via the DOM list MapView.astro renders from
-      // it — this count stays too, since it's read the instant the radius
-      // changes, before that list has to be found and stepped through.
+      // aria-live count, since the sweep itself is canvas-only. Read
+      // instantly on commit, before the DOM list even has to be found and
+      // stepped through.
       this.events.onNearMeResult?.(totalWithin, targets.length, this.nearMeAccuracyM);
-      this.events.onNearMeRecords?.(records);
     }
+    // Unconditional — see this method's own comment on why the list isn't
+    // gated by `announce` the same way the aria-live count is.
+    this.events.onNearMeRecords?.(records);
     return targets;
   }
 
@@ -4738,10 +4858,19 @@ export class MapController {
     // Only candidates the current radius actually connects can blip — the
     // same NEARME_MAX_LINES-capped, nearest-first set applyNearMeRadius
     // draws lines/records for, so "does this camera blip" always agrees
-    // with "is this camera in the DOM list."
+    // with "is this camera in the DOM list." Capped by how many candidates
+    // have been considered this frame, not by `nearMeBlips.length` — that
+    // array can legitimately hold up to NEARME_MAX_LINES still-fading (not
+    // yet expired) entries from recent crossings in a dense area, and
+    // capping on its length meant a genuinely new crossing this same frame
+    // got silently dropped whenever older, still-animating blips happened
+    // to already fill it, even though it was well within the candidate set
+    // the DOM list itself shows.
+    let consideredCount = 0;
     for (const candidate of this.nearMeCandidates) {
       if (candidate.distance > this.nearMeSweepRadiusM) break;
-      if (this.nearMeBlips.length >= NEARME_MAX_LINES) break;
+      if (consideredCount >= NEARME_MAX_LINES) break;
+      consideredCount += 1;
       if (crossed(candidate.bearingDeg)) {
         this.nearMeBlips.push({ point: candidate.point, startedAt: now });
       }
@@ -4950,6 +5079,7 @@ export class MapController {
   /** Undo showNearMe — clears the marker and sweep, and the control's pressed state. */
   private clearNearMe() {
     this.stopNearMeSweep();
+    this.setNearMeDotStyleFixed(false);
     if (this.nearMeDragFrame !== null) {
       cancelAnimationFrame(this.nearMeDragFrame);
       this.nearMeDragFrame = null;
