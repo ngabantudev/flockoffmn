@@ -550,7 +550,19 @@ export class MapController {
   private data = new Map<string, LoadedFeature[]>();
   private visible = new Set<string>();
   private filters = new Map<string, FilterState>();
-  private loading = new Set<string>();
+  /**
+   * In-flight `loadLayer` calls, keyed by layer. A second caller — a rapid
+   * toggle-off-then-on-again while the first load is still fetching, drawing,
+   * or waiting on `ready()` — awaits the same promise instead of returning
+   * early, so both callers' `setLayerVisible` chain (`.then(applyVisibility)`)
+   * only runs once the layer has actually finished loading and drawing.
+   * Returning early here used to let the second call's `applyVisibility` fire
+   * before the first had drawn anything. Distinct from `inFlight` below,
+   * which guards only the fetch-and-parse step (`fetchFeatures`) that this
+   * wraps — `loading` also covers `ready()`, marker-icon decoding, and the
+   * actual `addLayer`/`restack` draw.
+   */
+  private loading = new Map<string, Promise<void>>();
   /**
    * In-flight fetches, keyed by layer. The `data` map only answers "is it here
    * yet", which is false for the whole duration of the request — so two ward
@@ -1957,8 +1969,9 @@ export class MapController {
   }
 
   /** Fetch a layer's GeoJSON the first time it is switched on (spec §8, lazy load). */
-  async loadLayer(layer: ClientLayer): Promise<void> {
-    if (this.loading.has(layer.id)) return;
+  loadLayer(layer: ClientLayer): Promise<void> {
+    const pending = this.loading.get(layer.id);
+    if (pending) return pending;
     // Having the records is not the same as having drawn them:
     // ensureDataLoaded() fetches a layer for a cross-layer lookup without
     // adding a source, so a layer can sit in `this.data` having never been
@@ -1966,37 +1979,42 @@ export class MapController {
     // selected a jurisdiction first — which preloads the buildings — then
     // ticked the buildings layer on got nothing at all: no source, no dots,
     // no onLayerReady, and a checkbox that appeared to do nothing.
-    if (this.data.has(layer.id) && this.map.getSource(this.sourceId(layer.id))) return;
-    this.loading.add(layer.id);
-    try {
-      const features = await this.fetchFeatures(layer);
-      await this.ready();
-      // Glyphs before the layer that references them: MapLibre would warn and
-      // draw nothing for an icon-image whose image is still decoding.
-      await this.cacheMarkerExpression(layer);
-      // A hover card that counts another layer's records has to have them, or
-      // it would report "none reported" for a layer that simply hasn't
-      // downloaded — a false absence, on the one subject where an absence is
-      // itself read as a finding. Not awaited: the card guards on this too,
-      // and a hover is many seconds away from a layer switching on.
-      if (layer.hoverCard?.related) void this.ensureDataLoaded(layer.hoverCard.related.layerId);
-      // Whatever the filters already say, not the whole layer. The controls are
-      // on the page before the data is, so a reader can tick a value under a
-      // layer that is still switched off — and if the first paint ignored that
-      // tick, the map would draw every record while the counter beside it said
-      // four, and clearing the filter would appear to do nothing because
-      // nothing had ever been filtered.
-      this.addLayer(layer, this.filteredFeatures(layer.id));
-      // Every geometry returns from its own branch of addLayer, so the sort
-      // goes here — the one place all of them come back to — rather than at
-      // three separate exits where the next new geometry would forget it.
-      this.restack();
-      this.events.onLayerReady?.(layer.id, features);
-    } catch (err) {
-      this.events.onError?.(layer.id, err instanceof Error ? err.message : String(err));
-    } finally {
-      this.loading.delete(layer.id);
-    }
+    if (this.data.has(layer.id) && this.map.getSource(this.sourceId(layer.id))) return Promise.resolve();
+
+    const load = (async () => {
+      try {
+        const features = await this.fetchFeatures(layer);
+        await this.ready();
+        // Glyphs before the layer that references them: MapLibre would warn and
+        // draw nothing for an icon-image whose image is still decoding.
+        await this.cacheMarkerExpression(layer);
+        // A hover card that counts another layer's records has to have them, or
+        // it would report "none reported" for a layer that simply hasn't
+        // downloaded — a false absence, on the one subject where an absence is
+        // itself read as a finding. Not awaited: the card guards on this too,
+        // and a hover is many seconds away from a layer switching on.
+        if (layer.hoverCard?.related) void this.ensureDataLoaded(layer.hoverCard.related.layerId);
+        // Whatever the filters already say, not the whole layer. The controls are
+        // on the page before the data is, so a reader can tick a value under a
+        // layer that is still switched off — and if the first paint ignored that
+        // tick, the map would draw every record while the counter beside it said
+        // four, and clearing the filter would appear to do nothing because
+        // nothing had ever been filtered.
+        this.addLayer(layer, this.filteredFeatures(layer.id));
+        // Every geometry returns from its own branch of addLayer, so the sort
+        // goes here — the one place all of them come back to — rather than at
+        // three separate exits where the next new geometry would forget it.
+        this.restack();
+        this.events.onLayerReady?.(layer.id, features);
+      } catch (err) {
+        this.events.onError?.(layer.id, err instanceof Error ? err.message : String(err));
+      } finally {
+        this.loading.delete(layer.id);
+      }
+    })();
+
+    this.loading.set(layer.id, load);
+    return load;
   }
 
 
