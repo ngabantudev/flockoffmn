@@ -994,6 +994,12 @@ export const LAYERS: LayerDefinition[] = [
         detail: ['cameraType'],
         initialCount: 8,
         showOnMap: true,
+        // ~4 in 5 mapped cameras carry no `operator` value — the generic
+        // "No operator recorded" fallback read as if the camera itself were
+        // in doubt, when what's actually missing is only who runs it. See
+        // NearMeSummary.list.unattributedLabel's own comment.
+        unattributedLabel: { en: 'ALPR Camera', es: 'Cámara ALPR' },
+        showCoordsWhenUnattributed: true,
       },
       caveat: {
         en: 'Crowd-sourced and incomplete — the absence of a camera here is not evidence that none exists. Who runs each one is a mapper’s guess from free text, not a verified contract.',

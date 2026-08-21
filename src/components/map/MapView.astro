@@ -151,6 +151,8 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
             label: labelForNearMeDetail(d, key),
           })),
           caveat: d.nearMe.caveat ? pick(d.nearMe.caveat, locale) : null,
+          unattributedLabel: d.nearMe.list.unattributedLabel ? pick(d.nearMe.list.unattributedLabel, locale) : null,
+          showCoordsWhenUnattributed: d.nearMe.list.showCoordsWhenUnattributed ?? false,
         }
       : undefined,
   weightBy: d.weightBy
@@ -1219,10 +1221,22 @@ const strings = {
     return mi < 0.1 ? '< 0.1' : mi.toFixed(mi < 10 ? 1 : 0);
   }
 
-  function nearMeEntityName(layer: (typeof layers)[number], feature: LoadedFeature): string {
+  /** True when this row's `entityKey` attribute is blank — shared by nearMeEntityName's fallback and buildNearMeRow's coordinates line, so the two can never disagree about which rows are "unattributed". */
+  function nearMeIsUnattributed(layer: (typeof layers)[number], feature: LoadedFeature): boolean {
     const key = layer.nearMeList?.entityKey;
     const value = key ? feature.properties.attributes?.[key] : null;
-    return value === null || value === undefined || value === '' ? S.entityUnattributed : String(value);
+    return value === null || value === undefined || value === '';
+  }
+
+  function nearMeEntityName(layer: (typeof layers)[number], feature: LoadedFeature): string {
+    if (!nearMeIsUnattributed(layer, feature)) {
+      return String(feature.properties.attributes?.[layer.nearMeList!.entityKey!]);
+    }
+    // A layer that names its own unattributedLabel (see registry.ts's alpr
+    // entry) gets that instead of the generic fallback — the same camera
+    // must not read as "No operator recorded" here and "ALPR Camera" on
+    // /near-me (NearMe.astro's own listRow honors the same field).
+    return layer.nearMeList?.unattributedLabel ?? S.entityUnattributed;
   }
 
   function nearMeDetailLines(layer: (typeof layers)[number], feature: LoadedFeature): string[] {
@@ -1287,6 +1301,23 @@ const strings = {
       detailDiv.setAttribute('data-nearme-row-secondary', '');
       button.append(detailDiv);
       ariaParts.push(detailLines.join('. '));
+    }
+
+    // The record's own position — only for a row that has no operator name
+    // to show in its place, and only in addition to the camera-type detail
+    // line above, never instead of it. See
+    // NearMeSummary.list.showCoordsWhenUnattributed's own comment.
+    if (
+      layer.nearMeList?.showCoordsWhenUnattributed &&
+      nearMeIsUnattributed(layer, feature) &&
+      feature.geometry.type === 'Point'
+    ) {
+      const [lng, lat] = feature.geometry.coordinates as [number, number];
+      const coordsText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      const coordsDiv = el('div', 'mt-0.5 font-mono text-xs text-ink-400', coordsText);
+      coordsDiv.setAttribute('data-nearme-row-secondary', '');
+      button.append(coordsDiv);
+      ariaParts.push(coordsText);
     }
 
     const crossListed = nearMeCrossListed(layer, feature);

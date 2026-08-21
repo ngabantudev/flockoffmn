@@ -357,6 +357,23 @@ export interface NearMeSummary {
     initialCount?: number;
     /** Offer a "show on map" link that centres the homepage map on the row. */
     showOnMap?: boolean;
+    /**
+     * Localized label shown in place of the generic "no operator recorded"
+     * fallback (`entityUnattributed`) when this layer's own `entityKey` is
+     * blank on a record. Generic layers keep the shared fallback; a layer
+     * names this only when the shared copy reads wrong for what it's
+     * actually missing — alpr's ~4-in-5 blank `operator` field reading as
+     * "No operator recorded" on one page and "ALPR Camera" on another was
+     * exactly the drift this exists to close (see registry.ts's alpr entry).
+     */
+    unattributedLabel?: I18nString;
+    /**
+     * When true, a row whose entity is in fact unattributed also shows the
+     * record's own coordinates as an extra line — the one thing still worth
+     * telling a reader about a camera nobody could name an operator for.
+     * Never shown for a record that does have an entity name.
+     */
+    showCoordsWhenUnattributed?: boolean;
   };
 }
 

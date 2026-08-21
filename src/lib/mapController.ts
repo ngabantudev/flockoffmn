@@ -96,6 +96,10 @@ export interface ClientLayer {
     entityKey: string | null;
     detail: { key: string; label: string }[];
     caveat: string | null;
+    /** See NearMeSummary.list.unattributedLabel's own comment in layers/types.ts. Already picked to this locale's string, or null if the layer names none. */
+    unattributedLabel: string | null;
+    /** See NearMeSummary.list.showCoordsWhenUnattributed's own comment in layers/types.ts. */
+    showCoordsWhenUnattributed: boolean;
   };
   /** The zooms across which this layer's records emerge. */
   scale?: LayerDefinition['scale'];
