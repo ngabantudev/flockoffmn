@@ -14,6 +14,24 @@ const t = useTranslations(locale);
 
 const loaded = await loadAllLayers();
 
+/**
+ * A `nearMe.list.detail` key must also be a `detailFields` entry, so its
+ * label is written once — the same guard NearMe.astro's own `labelFor`
+ * already applies to this identical registry block, reproduced here rather
+ * than imported because it closes over this file's own `locale`. Turns a
+ * registry typo into a build failure instead of a near-me list row silently
+ * rendering "undefined: 3".
+ */
+function labelForNearMeDetail(d: (typeof loaded)[number]['definition'], key: string): string {
+  const field = d.detailFields.find((f) => f.key === key);
+  if (!field) {
+    throw new Error(
+      `Layer "${d.id}" names "${key}" in nearMe.list.detail but has no detailFields entry for it.`,
+    );
+  }
+  return pick(field.label, locale);
+}
+
 // Serialise only what the browser needs. Filter values are computed at build
 // time from the real data, so the controls can never offer a value that no
 // record has.
@@ -119,6 +137,22 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   // those layers, at exactly the radius near-me promises. See
   // ClientLayer.nearMeRadiusMi's own comment in mapController.ts.
   nearMeRadiusMi: d.nearMe?.mode === 'radius' && d.nearMe.list ? d.nearMe.radii?.[0] : undefined,
+  // The DOM record list a "near me" lookup renders for this layer — see
+  // ClientLayer.nearMeList's own comment in mapController.ts. Present under
+  // the exact same condition as nearMeRadiusMi above (a radius-mode layer
+  // naming a list), so the two can never disagree about which layers the
+  // homepage map's own near-me sheet covers.
+  nearMeList:
+    d.nearMe?.mode === 'radius' && d.nearMe.list
+      ? {
+          entityKey: d.nearMe.list.entityKey ?? null,
+          detail: (d.nearMe.list.detail ?? []).map((key) => ({
+            key,
+            label: labelForNearMeDetail(d, key),
+          })),
+          caveat: d.nearMe.caveat ? pick(d.nearMe.caveat, locale) : null,
+        }
+      : undefined,
   weightBy: d.weightBy
     ? { key: d.weightBy.key, label: pick(d.weightBy.label, locale), stops: d.weightBy.stops }
     : undefined,
@@ -222,6 +256,14 @@ const strings = {
   locationDenied: t('locationDenied'),
   locationUnavailable: t('locationUnavailable'),
   locationTimedOut: t('locationTimedOut'),
+  mapNearMeListSummary: t('mapNearMeListSummary'),
+  mapNearMeBack: t('mapNearMeBack'),
+  mapNearMeCrossListed: t('mapNearMeCrossListed'),
+  mapNearMeLoading: t('mapNearMeLoading'),
+  mapNearMeLayerError: t('mapNearMeLayerError'),
+  mapNearMeListTabSuffix: t('mapNearMeListTabSuffix'),
+  entityUnattributed: t('entityUnattributed'),
+  lowAccuracy: t('lowAccuracy'),
 };
 ---
 
@@ -762,6 +804,7 @@ const strings = {
   import { MapController, REDUCED_MOTION, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { formatValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
+  import { metersToMiles } from '~/lib/geo.mjs';
   import { createElement } from 'lucide';
   // The same closed allow-list the map's own marker glyphs resolve through —
   // see its comment for why there is one map and not two.
@@ -827,14 +870,65 @@ const strings = {
     locationUnavailableLabel: S.locationUnavailable,
     locationTimedOutLabel: S.locationTimedOut,
     onNearMeError: (message) => status(message, 6000),
-    onNearMeResult: (totalFound, shown) =>
-      status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000),
+    onNearMeResult: (totalFound, shown, accuracyM) => {
+      nearMeFound = totalFound;
+      nearMeShown = shown;
+      nearMeAccuracyM = accuracyM;
+      nearMeLoading = false;
+      status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000);
+    },
+    // The DOM equivalent of the throw lines above — see NearMeRecord's own
+    // comment in mapController.ts. Re-renders the list only while it's
+    // actually the visible sheet state; while a record is open it just
+    // checks whether that record fell out of the newly-drawn set (see
+    // handleSelect's own comment on how the back affordance is decided).
+    onNearMeRecords: (records) => {
+      nearMeRecords = records;
+      if (sheetMode === 'list') renderNearMeList();
+      else if (sheetMode === 'record' && openRecord) {
+        const stillIn = records.some(
+          (r) => r.layerId === openRecord!.layerId && r.featureId === openRecord!.featureId,
+        );
+        if (!stillIn) detailEl.querySelector('[data-nearme-back]')?.remove();
+      }
+    },
+    onNearMeLayerError: (layerId, message) => {
+      nearMeLayerErrors.set(layerId, message);
+      if (sheetMode === 'list') renderNearMeList();
+    },
     // setNearMeLayerMode is declared further down, alongside the rest of the
     // layer-toggle wiring it shares state with — safe to reference here
     // despite that: this callback only ever fires later, from a click, long
     // after the whole script (including that declaration) has already run.
-    onNearMeModeChange: (active) => setNearMeLayerMode(active),
-    onSelect: (feature, layer) => renderDetail(feature, layer),
+    // showNearMeList/closeSheet are declared later too, in the near-me DOM
+    // list section, for the same reason.
+    onNearMeModeChange: (active) => {
+      nearMeActive = active;
+      setNearMeLayerMode(active);
+      if (active) {
+        // A fresh lookup — clear whatever the previous one left behind
+        // before its own onNearMeRecords/onNearMeResult have a chance to
+        // arrive, so the sheet shows a clean loading state rather than a
+        // flash of the last lookup's counts.
+        nearMeLoading = true;
+        nearMeRecords = [];
+        nearMeFound = 0;
+        nearMeShown = 0;
+        nearMeAccuracyM = 0;
+        nearMeLayerErrors.clear();
+        openRecord = null;
+        showNearMeList();
+      } else {
+        nearMeLoading = false;
+        nearMeRecords = [];
+        // A record reached from the list loses its back affordance (there
+        // is no longer a list behind it) but stays open — only the list
+        // itself, with nothing left to show, closes outright.
+        if (sheetMode === 'list') closeSheet();
+        else detailEl.querySelector('[data-nearme-back]')?.remove();
+      }
+    },
+    onSelect: (feature, layer) => handleSelect(feature, layer),
     onCounts: (counts) => {
       for (const [id, { shown }] of Object.entries(counts)) {
         const el = document.querySelector(`[data-count="${id}"]`);
@@ -1080,12 +1174,312 @@ const strings = {
     detailEl.setAttribute('data-ready', '');
   }
 
-  function renderDetail(feature: LoadedFeature | null, layer?: ClientLayer) {
+  /* --------------------------- Near-me DOM list --------------------------
+     A real DOM record list for "what's near me", reusing #detail-panel's
+     existing bottom-sheet/sidebar shell (see setOverlay above) rather than a
+     second sheet — the sheet now has three states: 'closed' (today's
+     default/empty), 'list' (near-me's own record list) and 'record' (a
+     single selected feature — the panel's pre-existing content, unchanged,
+     optionally reached from the list with a back affordance). See #135.
+  */
+
+  type SheetMode = 'closed' | 'list' | 'record';
+  let sheetMode: SheetMode = 'closed';
+
+  let nearMeActive = false;
+  let nearMeLoading = false;
+  let nearMeRecords: { layerId: string; featureId: string; distanceM: number }[] = [];
+  let nearMeFound = 0;
+  let nearMeShown = 0;
+  let nearMeAccuracyM = 0;
+  const nearMeLayerErrors = new Map<string, string>();
+
+  // The record currently open, if any — kept independent of `sheetMode` so
+  // returning from 'record' to 'list' (the back affordance) can still
+  // highlight and scroll to the row it came from, and so a radius commit
+  // that drops a still-open record out of range can tell (see
+  // onNearMeRecords below) without losing track of which record that was.
+  let openRecord: { layerId: string; featureId: string } | null = null;
+  // Set just before an explicit list-row tap calls focusFeature, consumed
+  // once by handleSelect — the one signal that distinguishes "reached this
+  // record from the list" (move focus to the resulting back button) from
+  // any other route to the same record (a map tap, search, a cross-source
+  // jump), which get the back button when applicable but not the focus move.
+  let focusBackOnNextRow = false;
+
+  // Below this, /near-me's own page stops calling a fix meaningful — see
+  // that page's own LOW_ACCURACY_MILES. Duplicated rather than imported: it
+  // is a small page-authored constant with no shared module to import from,
+  // and mapController.ts's own accuracyZoomCap already keys off a distinct
+  // (zoom-clamping, not warning-threshold) number for the same input.
+  const LOW_ACCURACY_MILES = 2;
+
+  function fmtMiles(m: number) {
+    const mi = metersToMiles(m);
+    return mi < 0.1 ? '< 0.1' : mi.toFixed(mi < 10 ? 1 : 0);
+  }
+
+  function nearMeEntityName(layer: (typeof layers)[number], feature: LoadedFeature): string {
+    const key = layer.nearMeList?.entityKey;
+    const value = key ? feature.properties.attributes?.[key] : null;
+    return value === null || value === undefined || value === '' ? S.entityUnattributed : String(value);
+  }
+
+  function nearMeDetailLines(layer: (typeof layers)[number], feature: LoadedFeature): string[] {
+    const out: string[] = [];
+    for (const d of layer.nearMeList?.detail ?? []) {
+      const value = feature.properties.attributes?.[d.key];
+      if (value === null || value === undefined || value === '') continue;
+      out.push(`${d.label}: ${value}`);
+    }
+    return out;
+  }
+
+  // The same "did this record's other-source match" test the search results
+  // list already applies (see runSearch's own crossSource block) — reused
+  // rather than reimplemented, and deliberately `crossSourceSiteId`
+  // (a confirmed match) only, not a near-miss: the row marker mirrors the
+  // map's own brass ring, which alpr-cross-source.mjs only ever draws solid
+  // for a real match.
+  function nearMeCrossListed(layer: (typeof layers)[number], feature: LoadedFeature): boolean {
+    return !!(layer.crossSource && feature.properties.attributes?.crossSourceSiteId != null);
+  }
+
+  /** A near-me record resolved back to its own feature/layer, for rendering. */
+  function resolveNearMeRow(record: { layerId: string; featureId: string; distanceM: number }) {
+    const layer = layerById.get(record.layerId);
+    if (!layer) return null;
+    const feature = controller.getFeatures(layer.id).find((f) => f.properties.id === record.featureId);
+    if (!feature) return null;
+    return { record, layer, feature };
+  }
+
+  /** One row — see the mobile-list spec's exact markup this mirrors. */
+  function buildNearMeRow(resolved: NonNullable<ReturnType<typeof resolveNearMeRow>>) {
+    const { record, layer, feature } = resolved;
+    const isOpen = openRecord?.layerId === layer.id && openRecord?.featureId === feature.properties.id;
+
+    const li = el('li', 'border-l-2');
+    li.style.borderColor = `var(--layer-color-${layer.id})`;
+
+    const button = el(
+      'button',
+      `flex w-full min-h-11 flex-col text-left px-3 py-2 hover:bg-ink-800 active:bg-ink-800${isOpen ? ' bg-ink-850' : ''}`,
+    );
+    button.setAttribute('type', 'button');
+    if (isOpen) button.setAttribute('aria-current', 'true');
+    button.setAttribute('data-nearme-row', `${layer.id}::${feature.properties.id}`);
+
+    const entityName = nearMeEntityName(layer, feature);
+    const distanceText = `${fmtMiles(record.distanceM)} mi`;
+    const topRow = el('div', 'flex items-baseline justify-between gap-x-3 gap-y-0.5');
+    topRow.append(
+      el('span', `min-w-0 flex-1 truncate text-sm ${isOpen ? 'text-accent' : 'text-ink-100'}`, entityName),
+      el('span', 'shrink-0 font-mono text-xs text-ink-400', distanceText),
+    );
+    button.append(topRow);
+
+    const ariaParts = [`${entityName}, ${distanceText}`];
+
+    const detailLines = nearMeDetailLines(layer, feature);
+    if (detailLines.length) {
+      const detailDiv = el('div', 'mt-0.5 text-xs text-ink-400', detailLines.join(' · '));
+      detailDiv.setAttribute('data-nearme-row-secondary', '');
+      button.append(detailDiv);
+      ariaParts.push(detailLines.join('. '));
+    }
+
+    const crossListed = nearMeCrossListed(layer, feature);
+    if (crossListed && layer.crossSource) {
+      const crossDiv = el('div', 'mt-0.5 flex items-center gap-1 text-xs');
+      crossDiv.style.color = 'var(--color-cross-source-ring)';
+      crossDiv.setAttribute('data-nearme-row-secondary', '');
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '10');
+      svg.setAttribute('height', '10');
+      svg.setAttribute('viewBox', '0 0 10 10');
+      svg.setAttribute('aria-hidden', 'true');
+      for (const cx of [4, 6.5]) {
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', String(cx));
+        circle.setAttribute('cy', '5');
+        circle.setAttribute('r', '3');
+        circle.setAttribute('fill', 'none');
+        circle.setAttribute('stroke', 'currentColor');
+        circle.setAttribute('stroke-width', '1');
+        svg.append(circle);
+      }
+      crossDiv.append(svg, document.createTextNode(S.mapNearMeCrossListed));
+      button.append(crossDiv);
+      ariaParts.push(layer.crossSource.searchSuffix);
+    }
+
+    button.setAttribute('aria-label', ariaParts.join('. '));
+    button.addEventListener('click', () => {
+      focusBackOnNextRow = true;
+      controller.focusFeature(layer.id, feature.properties.id);
+    });
+
+    li.append(button);
+    return li;
+  }
+
+  /** Renders the 'list' sheet state — near-me's own record list. */
+  function renderNearMeList() {
     detailEl.textContent = '';
+    detailTabNameEl.textContent = fill(S.mapNearMeListTabSuffix, { count: nearMeShown });
+
+    const header = el('div', 'flex items-start justify-between gap-2 border-b border-ink-800 p-3');
+    const titleWrap = el('div', 'min-w-0');
+    titleWrap.append(el('h2', 'text-base font-semibold leading-snug text-ink-100', S.mapNearMe));
+    const radiusInput = document.querySelector<HTMLInputElement>('.near-me-radius-input');
+    if (radiusInput) {
+      titleWrap.append(
+        el(
+          'p',
+          'mt-0.5 text-[11px] uppercase tracking-wider text-ink-400',
+          fill(S.mapNearMeListSummary, { found: nearMeFound, shown: nearMeShown, radius: radiusInput.value }),
+        ),
+      );
+    }
+    const close = el(
+      'button',
+      'flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-400 hover:text-ink-100',
+      '✕',
+    );
+    close.setAttribute('type', 'button');
+    close.setAttribute('aria-label', S.closePanel);
+    close.addEventListener('click', () => closeSheet());
+    header.append(titleWrap, close);
+    detailEl.append(header);
+
+    const body = el('div', 'p-3');
+
+    if (nearMeAccuracyM > 0 && metersToMiles(nearMeAccuracyM) >= LOW_ACCURACY_MILES) {
+      body.append(
+        el(
+          'p',
+          'mb-3 rounded-md border border-warn/30 bg-warn/5 p-3 text-xs leading-relaxed text-warn',
+          fill(S.lowAccuracy, { accuracy: fmtMiles(nearMeAccuracyM) }),
+        ),
+      );
+    }
+
+    for (const [layerId, message] of nearMeLayerErrors) {
+      body.append(
+        el(
+          'p',
+          'mb-3 rounded-md border border-warn/30 bg-warn/5 p-3 text-xs leading-relaxed text-warn',
+          fill(S.mapNearMeLayerError, { layer: layerById.get(layerId)?.label ?? layerId }) + ` (${message})`,
+        ),
+      );
+    }
+
+    if (nearMeLoading) {
+      body.append(el('p', 'text-sm leading-relaxed text-ink-300', S.mapNearMeLoading));
+    } else if (!nearMeRecords.length) {
+      // Empty state — same populated-card-shape convention NearMe.astro's
+      // own empty states use: the "nothing found" line plus every eligible
+      // layer's own honest limit, not a shrunken placeholder.
+      body.append(el('p', 'text-sm leading-relaxed text-ink-300', S.mapNearMeNone));
+      for (const layer of layers) {
+        if (layer.nearMeList?.caveat) {
+          body.append(el('p', 'mt-2 text-xs leading-relaxed text-warn', layer.nearMeList.caveat));
+        }
+      }
+    } else {
+      const ul = el('ul', 'divide-y divide-ink-800');
+      for (const record of nearMeRecords) {
+        const resolved = resolveNearMeRow(record);
+        if (resolved) ul.append(buildNearMeRow(resolved));
+      }
+      body.append(ul);
+
+      const shownLayerIds = new Set(nearMeRecords.map((r) => r.layerId));
+      for (const layer of layers) {
+        if (shownLayerIds.has(layer.id) && layer.nearMeList?.caveat) {
+          body.append(el('p', 'mt-3 text-xs leading-relaxed text-warn', layer.nearMeList.caveat));
+        }
+      }
+    }
+
+    detailEl.append(body);
+    setDetailOpen(true);
+  }
+
+  /** Switches the sheet to 'list' — near-me's own entry point. */
+  function showNearMeList() {
+    sheetMode = 'list';
+    renderNearMeList();
+  }
+
+  /**
+   * The back affordance's own handler — returns to 'list' without losing
+   * track of which record was open, then scrolls/focuses that row so the
+   * reader lands back where they left off rather than at the top of a long
+   * list.
+   */
+  function backToList() {
+    sheetMode = 'list';
+    renderNearMeList();
+    if (!openRecord) return;
+    const rowBtn = detailEl.querySelector<HTMLButtonElement>(
+      `[data-nearme-row="${CSS.escape(`${openRecord.layerId}::${openRecord.featureId}`)}"]`,
+    );
+    if (!rowBtn) return;
+    rowBtn.scrollIntoView({ behavior: REDUCED_MOTION ? 'auto' : 'smooth', block: 'nearest' });
+    rowBtn.focus();
+  }
+
+  /** Closes the sheet fully — from 'list' or 'record' alike, one stage. */
+  function closeSheet() {
+    sheetMode = 'closed';
+    openRecord = null;
+    detailEl.textContent = '';
+    setDetailOpen(false);
+  }
+
+  /**
+   * MapController's onSelect funnel (map tap, search, /near-me deep link, a
+   * cross-source jump) and every list-row tap alike. A record gets the
+   * back-to-list affordance exactly when it is currently one of near-me's
+   * own drawn candidates — not "was this reached from the list", which
+   * would also have to cover a map tap landing on the same record the list
+   * already names. Deselection (feature/layer both null — a map tap on
+   * empty space) closes the sheet outright, matching this panel's
+   * pre-existing behaviour; it does not fall back to 'list' even while
+   * near-me is active, since a tap on empty map is the reader stepping back
+   * out, not asking for the list.
+   */
+  function handleSelect(feature: LoadedFeature | null, layer?: ClientLayer) {
     if (!feature || !layer) {
-      setDetailOpen(false);
+      closeSheet();
       return;
     }
+    const featureId = feature.properties.id;
+    const inNearMeList =
+      nearMeActive && nearMeRecords.some((r) => r.layerId === layer.id && r.featureId === featureId);
+    openRecord = { layerId: layer.id, featureId };
+    sheetMode = 'record';
+    const wantsFocus = focusBackOnNextRow;
+    focusBackOnNextRow = false;
+    const backBtn = renderDetail(feature, layer, inNearMeList ? backToList : undefined);
+    if (wantsFocus) backBtn?.focus();
+  }
+
+  /**
+   * Builds one record's content into #detail-panel. Called only with a real
+   * feature/layer pair — deselection (a map tap on empty space, or the
+   * sheet's own close controls) goes through closeSheet() instead, without
+   * calling this at all; see handleSelect below. `back`, when given, is a
+   * "what's near me" list this record belongs to — see handleSelect's own
+   * comment on how that's decided — and gets prepended as the sheet's first
+   * interactive element, ahead of the header's own close button, per the
+   * mobile-list spec. Returns that back button (or null) so a caller that
+   * just came from an explicit row tap can move focus onto it.
+   */
+  function renderDetail(feature: LoadedFeature, layer: ClientLayer, back?: () => void): HTMLButtonElement | null {
+    detailEl.textContent = '';
     // An explicit selection is a request to see the record — force the
     // panel open even if the reader had pulled it closed for a previous
     // one. Hover cards are separate popup elements that never touch
@@ -1152,7 +1546,7 @@ const strings = {
     close.setAttribute('type', 'button');
     close.setAttribute('aria-label', S.closePanel);
     close.addEventListener('click', () => {
-      setDetailOpen(false);
+      closeSheet();
       (document.getElementById('map-search') as HTMLElement)?.focus();
     });
     header.append(titleWrap, close);
@@ -1405,9 +1799,22 @@ const strings = {
     if (p.sourceDate) prov.append(el('p', 'mt-1', `${S.source}: ${p.sourceDate}`));
     body.append(prov);
 
+    let backBtn: HTMLButtonElement | null = null;
+    if (back) {
+      backBtn = el(
+        'button',
+        'flex w-full min-h-9 items-center gap-1.5 border-b border-ink-800 px-3 py-2 text-left text-xs font-medium text-accent hover:bg-ink-800',
+        `← ${S.mapNearMeBack}`,
+      ) as HTMLButtonElement;
+      backBtn.setAttribute('type', 'button');
+      backBtn.setAttribute('data-nearme-back', '');
+      backBtn.addEventListener('click', back);
+      detailEl.append(backBtn);
+    }
     detailEl.append(header, body);
     setDetailOpen(true);
     detailEl.scrollTop = 0;
+    return backBtn;
   }
 
   /* ------------------------------ Controls ------------------------------ */
@@ -1812,7 +2219,9 @@ const strings = {
       layersToggle.focus();
       return;
     }
-    if (!detailEl.hidden) setDetailOpen(false);
+    // One stage regardless of sheet state — 'list' or 'record' alike closes
+    // outright, not back-to-list-then-closed. See closeSheet's own comment.
+    if (!detailEl.hidden) closeSheet();
   });
 
   /* ------------------------------ Start-up ------------------------------ */
