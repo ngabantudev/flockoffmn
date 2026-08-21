@@ -455,16 +455,29 @@ const NEARME_IMPACT_LAYER = 'nearme-impacts';
  * and its blips, these are drawn at all times near-me is active, under both
  * motion preferences (see ensureNearMeLayers's own comment on why they're
  * not folded into the REDUCED_MOTION branch the sweep is). The mask is a
- * single donut-shaped fill (see nearMeMaskPolygon) that darkens everywhere
+ * ring of wedge polygons (see nearMeMaskPolygon) that darkens everywhere
  * outside the current search radius; the boundary is a stroke-only ring at
- * exactly that radius, reusing the same ring geometry (nearMeRadiusRing) as
- * both the mask's hole and, under REDUCED_MOTION, the sweep's own static
- * ring.
+ * exactly that radius, reusing the same ring geometry (nearMeRadiusRing) as,
+ * under REDUCED_MOTION, the sweep's own static ring.
  */
 const NEARME_BOUNDARY_SOURCE = 'src-nearme-boundary';
 const NEARME_BOUNDARY_LAYER = 'nearme-boundary';
 const NEARME_MASK_SOURCE = 'src-nearme-mask';
 const NEARME_MASK_LAYER = 'nearme-mask';
+/**
+ * How far out, in metres, the darkening mask's wedges extend past the
+ * current search radius (see nearMeMaskPolygon) — far enough that no
+ * realistic zoom on this Minnesota-focused map ever shows unmasked map
+ * past this edge, small enough that `destinationPoint`'s spherical math
+ * stays well clear of the antipodal point (~20,000 km away) where its own
+ * geometry stops behaving like a flat viewport. 2,000 km is roughly the
+ * width of the continental US — several times wider than any view
+ * refitNearMeCamera actually produces, which never zooms past the search
+ * radius itself.
+ */
+const NEARME_MASK_OUTER_M = 2_000_000;
+/** How many wedges nearMeMaskPolygon divides the mask's ring into — same density as nearMeRadiusRing's own default `steps`, for a comparably smooth curve on the inner (search-radius) edge. */
+const NEARME_MASK_WEDGES = 72;
 /**
  * Faint intermediate rings inside the main boundary — one per whole mile
  * short of the current radius (nearMeMileMarkerRadiiM), so a wide search
@@ -4908,37 +4921,50 @@ export class MapController {
   }
 
   /**
-   * The darkening mask's own geometry: a single Polygon whose exterior ring
-   * is a near-world-covering box (far larger than any viewport this map can
-   * ever show) and whose interior ring — the hole left unmasked — is the
-   * exact circle nearMeRadiusRing draws.
+   * The darkening mask's own geometry — everywhere *outside* the current
+   * search radius, out to NEARME_MASK_OUTER_M.
    *
-   * GeoJSON (RFC 7946 §3.1.6) requires an exterior ring wound
-   * counter-clockwise and holes wound the opposite way, clockwise, when
-   * viewed the standard way (longitude as x, latitude as y, north up).
-   * nearMeRadiusRing already winds clockwise (see its own comment), so it is
-   * used here unreversed as the hole; the exterior box below is listed
-   * bottom-left → bottom-right → top-right → top-left → close, which is
-   * counter-clockwise in that same view. Get either winding backwards and
-   * this silently renders as either "nothing is dark" (both rings the same
-   * way) or "everything including the search radius is dark" (the hole not
-   * recognised as a hole) — there's no visual reference in this codebase to
-   * catch that at a glance, so the winding is spelled out here rather than
-   * left implicit.
+   * Built as a ring of simple, hole-free quadrilateral wedges (one per
+   * NEARME_MASK_WEDGES step around the circle), not as a single polygon
+   * whose exterior ring has the search circle cut out of it as an interior
+   * "hole" ring. That single-polygon-with-a-hole shape is the textbook way
+   * to draw this kind of mask and is exactly what this function used to do
+   * — each ring's own winding direction (RFC 7946 §3.1.6: exterior
+   * counter-clockwise, holes clockwise) determined whether the renderer
+   * read the interior ring as a hole at all. That reasoning was correct on
+   * paper and still silently rendered as "the whole mask is opaque, no hole
+   * visible" once actually deployed — this map's own GeoJSON source is
+   * re-tiled through geojson-vt before it ever reaches the renderer, and
+   * that step evidently doesn't preserve the hole the way a direct,
+   * untiled render of the same GeoJSON would. Concretely: cameras the
+   * near-me list confirmed were under a mile away were nearly invisible on
+   * the map itself (see PR #135 discussion) — the search radius was being
+   * darkened along with everything outside it.
+   *
+   * Wedges sidestep the whole question. Each one is a plain four-point
+   * polygon (`[innerA, innerB, outerB, outerA, innerA]`) with no interior
+   * ring and nothing for any tiling/rendering step to reinterpret — there
+   * is no "hole" for anything downstream to get backwards. Assembled into
+   * one MultiPolygon feature covering the full 360° ring between the
+   * current radius and NEARME_MASK_OUTER_M.
    */
-  private nearMeMaskPolygon(): GeoJSON.Feature<GeoJSON.Polygon> | null {
-    const hole = this.nearMeRadiusRing();
-    if (!hole.length) return null;
-    const exterior: [number, number][] = [
-      [-179, -85],
-      [179, -85],
-      [179, 85],
-      [-179, 85],
-      [-179, -85],
-    ];
+  private nearMeMaskPolygon(): GeoJSON.Feature<GeoJSON.MultiPolygon> | null {
+    if (!this.nearMeOrigin) return null;
+    const innerM = this.nearMeSweepRadiusM;
+    const outerM = NEARME_MASK_OUTER_M;
+    const polygons: [number, number][][][] = [];
+    for (let i = 0; i < NEARME_MASK_WEDGES; i++) {
+      const b0 = (360 * i) / NEARME_MASK_WEDGES;
+      const b1 = (360 * (i + 1)) / NEARME_MASK_WEDGES;
+      const innerA = destinationPoint(this.nearMeOrigin, b0, innerM) as [number, number];
+      const innerB = destinationPoint(this.nearMeOrigin, b1, innerM) as [number, number];
+      const outerB = destinationPoint(this.nearMeOrigin, b1, outerM) as [number, number];
+      const outerA = destinationPoint(this.nearMeOrigin, b0, outerM) as [number, number];
+      polygons.push([[innerA, innerB, outerB, outerA, innerA]]);
+    }
     return {
       type: 'Feature',
-      geometry: { type: 'Polygon', coordinates: [exterior, hole] },
+      geometry: { type: 'MultiPolygon', coordinates: polygons },
       properties: {},
     };
   }
