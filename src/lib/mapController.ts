@@ -79,6 +79,24 @@ export interface ClientLayer {
    * `clientLayers` mapping.
    */
   nearMeRadiusMi?: number;
+  /**
+   * The DOM record list a "what's near me" lookup renders for this layer,
+   * present only where the registry names one (`nearMe.list`) — the
+   * homepage map's own accessible record list beside the canvas throw (see
+   * MapControllerEvents.onNearMeRecords). `detail` labels are resolved at
+   * build time in MapView.astro against this same layer's own
+   * `detailFields`, the identical labelFor build-time-throw guard
+   * NearMe.astro already uses for the same registry block, so a typo in
+   * `nearMe.list.detail` fails the build rather than the render. `caveat`
+   * is repeated from the registry's own `nearMe.caveat` rather than a
+   * second field name, since it is the exact same warning /near-me already
+   * shows for this layer.
+   */
+  nearMeList?: {
+    entityKey: string | null;
+    detail: { key: string; label: string }[];
+    caveat: string | null;
+  };
   /** The zooms across which this layer's records emerge. */
   scale?: LayerDefinition['scale'];
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
@@ -164,8 +182,15 @@ export interface ControllerEvents {
   locationTimedOutLabel?: string;
   /** A geolocation lookup for the "what's near me" control failed — see the labels above. */
   onNearMeError?: (message: string) => void;
-  /** A "what's near me" lookup succeeded — total records found within radius, and how many were drawn (see NEARME_MAX_LINES). The only accessible-DOM feedback this canvas-only overlay has. */
-  onNearMeResult?: (totalFound: number, shown: number) => void;
+  /**
+   * A "what's near me" lookup succeeded — total records found within
+   * radius, how many were drawn (see NEARME_MAX_LINES), and the fix's own
+   * accuracy in meters (the same value refitNearMeCamera's accuracyZoomCap
+   * already reads privately) — carried here too so MapView.astro's DOM list
+   * can show the same low-accuracy warning /near-me's own page already
+   * gives a reader, without a second geolocation read of its own.
+   */
+  onNearMeResult?: (totalFound: number, shown: number, accuracyM: number) => void;
   /**
    * The drawn "what's near me" candidates themselves, in the same
    * nearest-first order the throw lines use — fired alongside
@@ -175,6 +200,17 @@ export interface ControllerEvents {
    * lockstep with the canvas throw rather than drifting out of sync with it.
    */
   onNearMeRecords?: (records: NearMeRecord[]) => void;
+  /**
+   * A near-me-eligible layer's own data failed to fetch during a "what's
+   * near me" lookup. `ensureDataLoaded`'s ordinary contract is to swallow a
+   * failed fetch and return an empty array — the right default for a
+   * cross-layer join, where a reader never asked for that layer at all —
+   * but a layer that failed here is one the reader is actively being told
+   * "nothing found" about, so the DOM list names it rather than repeating
+   * that silence. Fired once per failed layer per lookup, before
+   * onNearMeRecords for the same lookup.
+   */
+  onNearMeLayerError?: (layerId: string, message: string) => void;
   /** Localized label for the search-radius slider (NearMeRadiusControl) — read by screen readers via aria-label. */
   nearMeRadiusLabel?: string;
   /** Localized "N mi" formatter for the slider's live value — both the visible number beside it and its aria-valuetext. */
@@ -3964,7 +4000,21 @@ export class MapController {
     const token = (this.nearMeToken += 1);
 
     const eligible = this.layers.filter((l) => l.nearMeRadiusMi);
-    const perLayer = await Promise.all(eligible.map((l) => this.ensureDataLoaded(l.id)));
+    // Not routed through ensureDataLoaded: that helper's contract is to
+    // swallow a failed fetch silently (the right default for an incidental
+    // cross-layer join), but a layer failing here is one this exact lookup
+    // is about to report zero results for — worth telling the reader why,
+    // via onNearMeLayerError, rather than repeating that silence.
+    const perLayer = await Promise.all(
+      eligible.map(async (l) => {
+        try {
+          return await this.fetchFeatures(l);
+        } catch (err) {
+          this.events.onNearMeLayerError?.(l.id, err instanceof Error ? err.message : String(err));
+          return [];
+        }
+      }),
+    );
     if (token !== this.nearMeToken) return;
 
     this.ensureNearMeLayers();
@@ -4051,7 +4101,7 @@ export class MapController {
       // user each one by name via the DOM list MapView.astro renders from
       // it — this count stays too, since it's read the instant the radius
       // changes, before that list has to be found and stepped through.
-      this.events.onNearMeResult?.(totalWithin, targets.length);
+      this.events.onNearMeResult?.(totalWithin, targets.length, this.nearMeAccuracyM);
       this.events.onNearMeRecords?.(records);
     }
     return targets;
