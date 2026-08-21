@@ -653,13 +653,13 @@ export class MapController {
   private selectionEpoch = 0;
   /** Separate from `popup`, which is the "near me" marker and must survive a hover. */
   private hoverPopup: maplibregl.Popup | null = null;
-  /** Which record `hoverPopup` is currently describing. See bindHoverCard. */
+  /** Which record `hoverPopup` is currently describing. See updateHoverCard. */
   private hoverCardId: string | null = null;
   /**
    * The one hover-previewed polygon, if any — singular, matching
    * selectedPolygon, because a pointer is in one place.
    *
-   * Tracked here rather than as a closure inside bindHighlightSelect so
+   * Tracked here rather than as a closure inside the pointer handlers so
    * clearSelection can release it too — a fitBounds/easeTo the reader
    * triggered by clicking moves the ground out from under a still pointer,
    * and nothing fires another 'mousemove' to notice until the reader's own
@@ -667,6 +667,17 @@ export class MapController {
    * polygon visibly hovered under a pointer that never left it.
    */
   private hoveredPolygon: { layerId: string; featureId: string } | null = null;
+  /**
+   * Style-layer id → the `ClientLayer` it belongs to, for every layer
+   * `bindInteractions` has registered. The single map-level pointer
+   * handlers (see `ownerAt` and `bindPointerHandlers`) read this to turn
+   * "which style layer did the query hit" into "which registry layer does
+   * that mean" — replacing the one-`map.on(...)`-per-layer approach that
+   * used to run a `queryRenderedFeatures` per bound layer on every
+   * mousemove, and the `hoverCardOwner`/`coveredByPoint` pair that
+   * arbitrated ownership two different (and disagreeing) ways. See #69.
+   */
+  private interactiveLayers = new Map<string, ClientLayer>();
   /** Page chrome that can float over the map. See setOverlay. */
   private overlay: HTMLElement | null = null;
   private overlaySize: ResizeObserver | null = null;
@@ -841,18 +852,11 @@ export class MapController {
       this.map.fitBounds(METRO_BOUNDS, { padding: 24, animate: false });
     });
 
-    // A tap that lands on nothing of ours is the reader stepping back out of
-    // a record, the way closing it would be — so it gets the same undo: the
-    // camera returns to where a pin's tap first moved it from, and the detail
-    // panel closes. Queried directly rather than inferred from whether a
-    // per-layer click handler also fired, so this owes nothing to listener
-    // registration order against handlers bound as layers arrive.
-    this.map.on('click', (e) => {
-      const ids = this.styleLayerIds(SELECTABLE_SUFFIXES);
-      if (!ids.length) return;
-      if (this.map.queryRenderedFeatures(e.point, { layers: ids }).length) return;
-      this.clearSelection();
-    });
+    // The single map-level mousemove/mouseout/click handlers for every
+    // interactive layer — cursor shape, hover cards, ward hover-preview,
+    // and click-to-select all derive from one `ownerAt` query each. See its
+    // own comment and #69.
+    this.bindPointerHandlers();
 
     // See resizeSettleTimer's comment above — debounced, not rAF-coalesced,
     // so a burst of notifications during an animated collapse settles into
@@ -1405,13 +1409,13 @@ export class MapController {
   }
 
   /**
-   * The style layers a set of registry layers currently has on the map, for
-   * the given id suffixes. `-points` alone is the dot/glyph layers, which sit
-   * above every polygon (see bindHighlightSelect); the full set is everything
-   * a tap can select a record on (see bindInteractions).
+   * The style layers every registry layer currently has on the map, for the
+   * given id suffixes. `-points` alone is the dot/glyph layers, which sit
+   * above every polygon (see restack()); the full `SELECTABLE_SUFFIXES` set
+   * is everything a tap or hover can select a record on (see ownerAt).
    */
-  private styleLayerIds(suffixes: string[], from: ClientLayer[] = this.layers): string[] {
-    return from
+  private styleLayerIds(suffixes: string[]): string[] {
+    return this.layers
       .flatMap((l) => suffixes.map((s) => `${l.id}${s}`))
       .filter((id) => this.map.getLayer(id));
   }
@@ -2496,17 +2500,49 @@ export class MapController {
     this.bindInteractions(layer, `${layer.id}-points`);
   }
 
-  private cursorOn(layerId: string) {
-    this.map.on('mouseenter', layerId, () => {
-      this.map.getCanvas().style.cursor = 'pointer';
-    });
-    this.map.on('mouseleave', layerId, () => {
-      this.map.getCanvas().style.cursor = '';
-    });
+  /**
+   * The single arbiter for "whose record is under the pointer" — replaces
+   * the old `hoverCardOwner`/`coveredByPoint` pair, which queried
+   * independently and disagreed: `hoverCardOwner` only compared card-bearing
+   * layers against each other, so a card-bearing layer drawn *under* a
+   * non-card layer still claimed the pointer; `coveredByPoint` only ever
+   * asked "is a dot here", never compared draw order against the polygon
+   * itself, and didn't know about `-line-hit` at all. See #69.
+   *
+   * `queryRenderedFeatures` returns features in top-to-bottom draw order, so
+   * one query against every interactive style layer at once *is* ownership
+   * — nothing else needs asking. Every mousemove and click now costs exactly
+   * one query regardless of how many layers are switched on, in place of the
+   * old per-layer `map.on(type, layerId, ...)` bindings, each running its
+   * own query (MapLibre implements `mouseenter`/`mouseleave` as mousemove
+   * polls) — with the default-on layer set that was ~12 queries per
+   * mousemove, ~30 with every layer ticked.
+   */
+  private ownerAt(point: maplibregl.Point): { layer: ClientLayer; id: string } | null {
+    const ids = this.styleLayerIds(SELECTABLE_SUFFIXES);
+    if (!ids.length) return null;
+    const top = this.map.queryRenderedFeatures(point, { layers: ids })[0];
+    if (!top) return null;
+    const layer = this.interactiveLayers.get(top.layer.id);
+    if (!layer) return null;
+    const id = (top.properties as Record<string, unknown> | undefined)?.id as string | undefined;
+    if (!id) return null;
+    return { layer, id };
+  }
+
+  /** Drop the hover card, wherever it is. Safe to call when there is none. */
+  private hideHoverCard() {
+    if (!this.hoverCardId) return;
+    this.hoverCardId = null;
+    this.hoverPopup?.remove();
+    this.hoverPopup = null;
   }
 
   /**
-   * Show a layer's `hoverCard` while the pointer is over one of its records.
+   * Show `layer`'s `hoverCard` for `id`, or drop it if `layer` doesn't
+   * declare one — called once per pointer move, always with whichever
+   * record `ownerAt` resolved to be topmost, so there is nothing left here
+   * to arbitrate between layers.
    *
    * Rebuilt only when the record under the pointer actually changes, not on
    * every mousemove — a pointer crossing a dense street of stations fires
@@ -2514,108 +2550,49 @@ export class MapController {
    * the pixel. Content is assembled as DOM nodes with `textContent` rather
    * than an HTML string, so a value out of a data file can never be markup.
    */
-  private bindHoverCard(layer: ClientLayer, mapLayerId: string) {
-    if (!layer.hoverCard) return;
+  private updateHoverCard(layer: ClientLayer, id: string, lngLat: maplibregl.LngLat) {
+    if (!layer.hoverCard) return this.hideHoverCard();
+    // A selected record already has the full panel open beside the map;
+    // a card repeating it would just cover the ground the reader is
+    // looking at.
+    if (this.selectedPolygon?.layerId === layer.id && this.selectedPolygon.featureId === id) {
+      return this.hideHoverCard();
+    }
+    // Keyed by layer as well as record: two layers can hold records with
+    // the same id, and a bare id match would suppress a real card change.
+    const key = `${layer.id}:${id}`;
+    // Already showing this exact record — nothing to rebuild, just follow
+    // the pointer. The common case while it rests on a dot several pixels
+    // wide.
+    if (key === this.hoverCardId && this.hoverPopup) {
+      this.hoverPopup.setLngLat(lngLat);
+      return;
+    }
+    const feature = this.featureById(layer.id, id);
+    if (!feature) return this.hideHoverCard();
 
-    // `hoverCardId` is controller state, not a per-binding closure, because
-    // the popup it describes is: two card-bearing layers whose records
-    // overlap (a crowd-sourced camera sitting on an agency-reported one) each
-    // bind their own handlers, and one layer's mouseleave tearing down the
-    // shared popup while the other still believed it was showing left the
-    // card stuck hidden until the pointer left that record entirely.
-    //
-    // Which is why hiding is conditional on still owning it: the pointer
-    // sliding off a crowd-sourced camera onto the agency-reported reader
-    // underneath fires this layer's `mouseleave` while the card on screen is
-    // already the other layer's, and an unconditional teardown there took the
-    // wrong card down and left the reader hovering a record with nothing shown
-    // until they moved again.
-    const hide = () => {
-      if (this.hoverCardId && !this.hoverCardId.startsWith(`${layer.id}:`)) return;
-      this.hoverCardId = null;
-      this.hoverPopup?.remove();
-      this.hoverPopup = null;
-    };
-
-    this.map.on('mousemove', mapLayerId, (e) => {
-      const hit = e.features?.[0];
-      const id = (hit?.properties as Record<string, unknown> | undefined)?.id as
-        | string
-        | undefined;
-      if (!id) return hide();
-      // A selected record already has the full panel open beside the map;
-      // a card repeating it would just cover the ground the reader is
-      // looking at.
-      if (this.selectedPolygon?.layerId === layer.id && this.selectedPolygon.featureId === id) {
-        return hide();
-      }
-      // Keyed by layer as well as record: two layers can hold records with
-      // the same id, and a bare id match would suppress a real card change.
-      const key = `${layer.id}:${id}`;
-      // Already showing this exact record, so this layer demonstrably owns the
-      // card — nothing to arbitrate, and this is the common case while the
-      // pointer rests on a dot several pixels wide. Checked before
-      // hoverCardOwner deliberately: that test costs a render query, and
-      // running it above this guard spent one on every pointer move rather
-      // than one per record change.
-      if (key === this.hoverCardId && this.hoverPopup) {
-        this.hoverPopup.setLngLat(e.lngLat);
-        return;
-      }
-      // Where two card-bearing layers overlap — and half the agency-reported
-      // readers have a crowd-sourced camera within 50 m — MapLibre dispatches
-      // both layers' handlers for the same pointer move. Whichever draws on
-      // top owns the card; without this the two handlers alternate, each
-      // seeing the other's record in the shared state, so neither ever settles.
-      if (!this.hoverCardOwner(layer, e.point)) return;
-      const feature = this.featureById(layer.id, id);
-      if (!feature) return hide();
-
-      this.hoverCardId = key;
-      const card = this.buildHoverCard(layer, feature);
-      if (!this.hoverPopup) {
-        // No `className`: the card's own elements carry the `hover-card-*`
-        // classes global.css defines, and a wrapper class nothing selects on
-        // is a hook that reads as styling but isn't.
-        this.hoverPopup = new maplibregl.Popup({
-          closeButton: false,
-          closeOnClick: false,
-          offset: 14,
-          maxWidth: '20rem',
-        });
-      }
-      this.hoverPopup.setLngLat(e.lngLat).setDOMContent(card);
-      // addTo() begins by removing an already-added popup — tearing the node
-      // out of the DOM, dropping its map listeners and re-registering them —
-      // so re-adding on a content change costs far more than the content
-      // change itself.
-      if (!this.hoverPopup.isOpen()) this.hoverPopup.addTo(this.map);
-    });
-
-    this.map.on('mouseleave', mapLayerId, hide);
+    this.hoverCardId = key;
+    const card = this.buildHoverCard(layer, feature);
+    if (!this.hoverPopup) {
+      // No `className`: the card's own elements carry the `hover-card-*`
+      // classes global.css defines, and a wrapper class nothing selects on
+      // is a hook that reads as styling but isn't.
+      this.hoverPopup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 14,
+        maxWidth: '20rem',
+      });
+    }
+    this.hoverPopup.setLngLat(lngLat).setDOMContent(card);
+    // addTo() begins by removing an already-added popup — tearing the node
+    // out of the DOM, dropping its map listeners and re-registering them —
+    // so re-adding on a content change costs far more than the content
+    // change itself.
+    if (!this.hoverPopup.isOpen()) this.hoverPopup.addTo(this.map);
   }
 
-  /**
-   * Whether `layer` is the card-bearing layer drawn topmost at this point —
-   * i.e. the one whose record the reader is actually pointing at.
-   *
-   * Cheap in the ordinary case: with fewer than two card-bearing layers
-   * visible there is nothing to arbitrate and no render query is made. The
-   * query only runs where cards genuinely overlap.
-   */
-  private hoverCardOwner(layer: ClientLayer, point: maplibregl.Point): boolean {
-    const contenders = this.layers.filter((l) => l.hoverCard && this.visible.has(l.id));
-    if (contenders.length < 2) return true;
-    const top = this.map.queryRenderedFeatures(point, {
-      layers: this.styleLayerIds(SELECTABLE_SUFFIXES, contenders),
-    })[0];
-    // `${id}-` with the hyphen, the same prefix test restack() and
-    // applyVisibility() use — layer ids are snake_case, so no id is a
-    // hyphen-prefixed extension of another (`alpr` vs `alpr_reported`).
-    return !top || top.layer.id.startsWith(`${layer.id}-`);
-  }
-
-  /** Assemble one hover card. See bindHoverCard for why this is DOM, not HTML. */
+  /** Assemble one hover card. See updateHoverCard for why this is DOM, not HTML. */
   private buildHoverCard(layer: ClientLayer, feature: LoadedFeature): HTMLElement {
     const spec = layer.hoverCard!;
     const attrs = feature.properties.attributes as Record<string, unknown>;
@@ -2762,105 +2739,96 @@ export class MapController {
   }
 
   /**
-   * Whether a dot or glyph is drawn over this point, for a polygon layer whose
-   * tap would otherwise answer for it.
-   *
-   * MapLibre runs every layer's click listener independently, and restack()
-   * puts points above polygons for every layer — so a jurisdiction fill
-   * covering the whole metro also answers for taps on the cameras standing on
-   * it, and which one ends up in the panel comes down to whichever finished
-   * loading last. That is true of every polygon layer, not only the one with
-   * `polygonClick: 'highlight'`, which is why the test lives here rather than
-   * inside bindHighlightSelect.
+   * Register a style layer as interactive — the single map-level pointer
+   * handlers (`bindPointerHandlers`) do the rest. Called once per style
+   * layer `addLayer` creates, at each layer's one canonical selectable id
+   * (`-fill`, `-line-hit`, or `-points`).
    */
-  private coveredByPoint(layer: ClientLayer, point: maplibregl.Point): boolean {
-    if (layer.geometry !== 'polygon') return false;
-    const above = this.styleLayerIds(['-points']);
-    return above.length > 0 && this.map.queryRenderedFeatures(point, { layers: above }).length > 0;
+  private bindInteractions(layer: ClientLayer, mapLayerId: string) {
+    this.interactiveLayers.set(mapLayerId, layer);
   }
 
-  private bindInteractions(layer: ClientLayer, mapLayerId: string) {
-    this.cursorOn(mapLayerId);
-    this.bindHoverCard(layer, mapLayerId);
-    if (layer.polygonClick === 'highlight') {
-      this.bindHighlightSelect(layer, mapLayerId);
-      return;
-    }
-    this.map.on('click', mapLayerId, (e) => {
-      const hit = e.features?.[0];
-      if (!hit) return;
-      if (this.coveredByPoint(layer, e.point)) return;
-      const id = (hit.properties as Record<string, unknown>)?.id as string;
-      // Same move the search results already give a record: centre and zoom
-      // in on it, not just open its detail. A tapped dot is a reader saying
-      // "this one" — the camera should go to it, the way it already does
-      // when the same record is picked from search. Saved once, the first
-      // tap of a run, so tapping a second pin without ever tapping away
-      // still returns to where the reader actually started.
-      if (!this.preSelectCamera) {
-        this.preSelectCamera = this.currentCamera();
-      }
-      this.focusFeature(layer.id, id);
-    });
+  /** Move the hover preview to one polygon, releasing whatever held it. Safe to call repeatedly with the same feature. */
+  private setHoverPreview(layerId: string, featureId: string) {
+    if (this.hoveredPolygon?.layerId === layerId && this.hoveredPolygon.featureId === featureId) return;
+    this.releaseHover();
+    this.map.setFeatureState({ source: this.sourceId(layerId), id: featureId }, { hover: true });
+    this.hoveredPolygon = { layerId, featureId };
   }
 
   /**
-   * Ward-map tap for a `polygonClick: 'highlight'` layer: flips one
-   * polygon's feature-state, opens its detail panel, and fits the camera to
-   * it — the same move every other layer's tap already makes (focusFeature),
-   * layered under an exclusive per-polygon highlight so the selected ward
-   * itself reads at a glance too, not only the detail panel beside it. A
-   * second tap on the already-selected polygon clears it and returns the
-   * camera the way the panel's own close button does (clearSelection).
+   * The map-level `mousemove`/`mouseout`/`click` handlers every interactive
+   * layer now shares — installed once, in the constructor, rather than once
+   * per bound layer. `ownerAt` answers "whose record is under the pointer"
+   * with a single query; cursor shape, the hover card, the ward
+   * hover-preview, and click-to-select all just read that one answer.
    */
-  private bindHighlightSelect(layer: ClientLayer, mapLayerId: string) {
-    const src = this.sourceId(layer.id);
+  private bindPointerHandlers() {
+    this.map.on('mousemove', (e) => {
+      const owner = this.ownerAt(e.point);
+      this.map.getCanvas().style.cursor = owner ? 'pointer' : '';
 
-    // Preview, not selection: moving the pointer off the polygon (or off the
-    // map entirely, via mouseleave) clears it with no lasting effect. Only a
-    // click writes state that survives the pointer moving away. Tracked on
-    // `this.hoveredPolygon` rather than a local variable so clearSelection
-    // can release a stale hover left behind by a camera move the pointer
-    // itself never caused — see that field's own comment.
-    this.map.on('mousemove', mapLayerId, (e) => {
-      const hit = e.features?.[0];
-      const id = (hit?.properties as Record<string, unknown> | undefined)?.id as
-        | string
-        | undefined;
-      if (this.hoveredPolygon?.layerId === layer.id && this.hoveredPolygon.featureId === id) {
+      if (!owner) {
+        this.hideHoverCard();
+        this.releaseHover();
         return;
       }
-      this.releaseHover();
-      if (id) {
-        this.map.setFeatureState({ source: src, id }, { hover: true });
-        this.hoveredPolygon = { layerId: layer.id, featureId: id };
+      const { layer, id } = owner;
+
+      // Ward-map hover preview: feature-state only on the topmost record.
+      // A dot sitting on a highlightable polygon now correctly wins
+      // ownership instead of both reacting to the same pointer move — see
+      // ownerAt's own comment.
+      if (layer.polygonClick === 'highlight') {
+        this.setHoverPreview(layer.id, id);
+      } else if (this.hoveredPolygon) {
+        this.releaseHover();
       }
-    });
-    this.map.on('mouseleave', mapLayerId, () => {
-      if (this.hoveredPolygon?.layerId === layer.id) this.releaseHover();
+
+      this.updateHoverCard(layer, id, e.lngLat);
     });
 
-    this.map.on('click', mapLayerId, (e) => {
-      const hit = e.features?.[0];
-      if (!hit) return;
-      const id = (hit.properties as Record<string, unknown>)?.id as string;
-      if (!id) return;
+    // Fires when the pointer leaves the map canvas entirely — the case the
+    // old per-layer `mouseleave` bindings covered implicitly (MapLibre polls
+    // every bound layer on mousemove, so leaving the canvas stopped every
+    // one of them from matching). One handler now has to say so explicitly.
+    this.map.on('mouseout', () => {
+      this.map.getCanvas().style.cursor = '';
+      this.hideHoverCard();
+      this.releaseHover();
+    });
 
-      if (this.coveredByPoint(layer, e.point)) return;
+    // A tap that lands on nothing of ours is the reader stepping back out of
+    // a record, the way closing it would be — so it gets the same undo: the
+    // camera returns to where a pin's tap first moved it from, and the
+    // detail panel closes.
+    this.map.on('click', (e) => {
+      const owner = this.ownerAt(e.point);
+      if (!owner) {
+        this.clearSelection();
+        return;
+      }
+      const { layer, id } = owner;
 
       // A tap on the ward already showing is the reader putting it back —
       // the one thing focusFeature can't infer, since it has no notion of a
       // second visit. Everything else about selecting (the highlight, the
       // panel, the fit, the thrown lines) belongs to focusFeature, which
       // search and the record list reach too.
-      if (this.selectedPolygon?.layerId === layer.id && this.selectedPolygon.featureId === id) {
+      if (
+        layer.polygonClick === 'highlight' &&
+        this.selectedPolygon?.layerId === layer.id &&
+        this.selectedPolygon.featureId === id
+      ) {
         this.clearSelection();
         return;
       }
-      // Same "remember where I was" move a tapped dot already gets — see
-      // bindInteractions' own comment — so the panel's close button can
-      // still return here even though a ward tap fits bounds, not eases to
-      // a fixed zoom.
+      // Same move the search results already give a record: centre and zoom
+      // in on it, not just open its detail. A tapped record is a reader
+      // saying "this one" — the camera should go to it, the way it already
+      // does when the same record is picked from search. Saved once, the
+      // first tap of a run, so tapping a second pin without ever tapping
+      // away still returns to where the reader actually started.
       if (!this.preSelectCamera) {
         this.preSelectCamera = this.currentCamera();
       }
