@@ -129,6 +129,22 @@ export interface LoadedFeature {
   properties: FeatureProperties;
 }
 
+/**
+ * One "near me" candidate as handed to `onNearMeRecords` — enough for
+ * MapView.astro to render a DOM row (layer + feature id resolve the entity
+ * name and detail lines via the layer registry, the same way search results
+ * and `focusFeature` already do) without this file duplicating any of that
+ * rendering knowledge. `featureId` matches `feature.properties.id` exactly —
+ * the same key `featureById`/`focusFeature` already resolve against — so a
+ * row's tap can call `focusFeature(layerId, featureId)` directly.
+ */
+export interface NearMeRecord {
+  layerId: string;
+  featureId: string;
+  distanceM: number;
+  point: [number, number];
+}
+
 type FilterState = Map<string, Set<string>>;
 
 export interface ControllerEvents {
@@ -150,6 +166,15 @@ export interface ControllerEvents {
   onNearMeError?: (message: string) => void;
   /** A "what's near me" lookup succeeded — total records found within radius, and how many were drawn (see NEARME_MAX_LINES). The only accessible-DOM feedback this canvas-only overlay has. */
   onNearMeResult?: (totalFound: number, shown: number) => void;
+  /**
+   * The drawn "what's near me" candidates themselves, in the same
+   * nearest-first order the throw lines use — fired alongside
+   * `onNearMeResult` under the same `announce` gate (see applyNearMeRadius's
+   * own comment: once per commit, not once per drag tick) and with an empty
+   * array on `clearNearMe`, so a DOM record list built from this stays in
+   * lockstep with the canvas throw rather than drifting out of sync with it.
+   */
+  onNearMeRecords?: (records: NearMeRecord[]) => void;
   /** Localized label for the search-radius slider (NearMeRadiusControl) — read by screen readers via aria-label. */
   nearMeRadiusLabel?: string;
   /** Localized "N mi" formatter for the slider's live value — both the visible number beside it and its aria-valuetext. */
@@ -628,7 +653,12 @@ export class MapController {
   /** Bumped on every showNearMe/clearNearMe so an in-flight lookup's async data-load can tell it's been superseded and skip drawing. */
   private nearMeToken = 0;
   /** Every candidate within NEARME_RADIUS_MAX_MI of the current nearMeOrigin, nearest-first — computed once per lookup; applyNearMeRadius re-slices this on every slider move instead of re-scanning the layers. */
-  private nearMeCandidates: Array<{ point: [number, number]; distance: number }> = [];
+  private nearMeCandidates: Array<{
+    point: [number, number];
+    distance: number;
+    layerId: string;
+    featureId: string;
+  }> = [];
   /** rAF handle coalescing NearMeRadiusControl's drag ticks — see dragNearMeRadius's own comment for why a redraw per tick is too many. */
   private nearMeDragFrame: number | null = null;
   /** The most recent radius a drag tick asked for, applied by nearMeDragFrame's queued callback — only the latest value in a frame ever gets drawn. */
@@ -3943,13 +3973,20 @@ export class MapController {
     this.nearMeControl?.setActive(true);
 
     const maxRadiusM = NEARME_RADIUS_MAX_MI * 1609.344;
-    const candidates: Array<{ point: [number, number]; distance: number }> = [];
-    eligible.forEach((_layer, i) => {
+    const candidates: Array<{
+      point: [number, number];
+      distance: number;
+      layerId: string;
+      featureId: string;
+    }> = [];
+    eligible.forEach((layer, i) => {
       for (const feature of perLayer[i]) {
         if (feature.geometry.type !== 'Point') continue;
         const point = feature.geometry.coordinates as [number, number];
         const distance = haversineMeters(origin, point);
-        if (distance <= maxRadiusM) candidates.push({ point, distance });
+        if (distance <= maxRadiusM) {
+          candidates.push({ point, distance, layerId: layer.id, featureId: feature.properties.id });
+        }
       }
     });
     candidates.sort((a, b) => a.distance - b.distance);
@@ -3990,21 +4027,32 @@ export class MapController {
     if (!this.nearMeOrigin) return [];
     const radiusM = radiusMi * 1609.344;
     const targets: Array<[number, number]> = [];
+    const records: NearMeRecord[] = [];
     let totalWithin = 0;
     for (const candidate of this.nearMeCandidates) {
       if (candidate.distance > radiusM) break;
       totalWithin += 1;
-      if (targets.length < NEARME_MAX_LINES) targets.push(candidate.point);
+      if (targets.length < NEARME_MAX_LINES) {
+        targets.push(candidate.point);
+        records.push({
+          layerId: candidate.layerId,
+          featureId: candidate.featureId,
+          distanceM: candidate.distance,
+          point: candidate.point,
+        });
+      }
     }
 
     this.throwNearMeLines(this.nearMeOrigin, targets);
     if (announce) {
-      // The only accessible-DOM equivalent this control has today: an
-      // aria-live count, since the throw itself is canvas-only. Not full
-      // parity with /near-me's own record list (see NearMeSummary.list) — a
-      // screen-reader user learns how many and how far, not each one by
-      // name — but it's the difference between silence and something.
+      // The only accessible-DOM equivalent this control used to have: an
+      // aria-live count, since the throw itself is canvas-only. Now paired
+      // with onNearMeRecords, which is what actually gives a screen-reader
+      // user each one by name via the DOM list MapView.astro renders from
+      // it — this count stays too, since it's read the instant the radius
+      // changes, before that list has to be found and stepped through.
       this.events.onNearMeResult?.(totalWithin, targets.length);
+      this.events.onNearMeRecords?.(records);
     }
     return targets;
   }
@@ -4158,6 +4206,9 @@ export class MapController {
     this.nearMeControl?.setActive(false);
     this.nearMeRadiusControl?.setVisible(false);
     this.events.onNearMeModeChange?.(false);
+    // Tears the DOM list down with the lines — see onNearMeRecords's own
+    // comment.
+    this.events.onNearMeRecords?.([]);
     (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
