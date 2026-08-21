@@ -451,33 +451,26 @@ const NEARME_PATHS_LAYER = 'nearme-paths';
 const NEARME_IMPACT_SOURCE = 'src-nearme-impacts';
 const NEARME_IMPACT_LAYER = 'nearme-impacts';
 /**
- * The persistent radius boundary and its darkening mask — unlike the sweep
- * and its blips, these are drawn at all times near-me is active, under both
- * motion preferences (see ensureNearMeLayers's own comment on why they're
- * not folded into the REDUCED_MOTION branch the sweep is). The mask is a
- * ring of wedge polygons (see nearMeMaskPolygon) that darkens everywhere
- * outside the current search radius; the boundary is a stroke-only ring at
- * exactly that radius, reusing the same ring geometry (nearMeRadiusRing) as,
+ * The persistent radius boundary — unlike the sweep and its blips, drawn at
+ * all times near-me is active, under both motion preferences (see
+ * ensureNearMeLayers's own comment on why it's not folded into the
+ * REDUCED_MOTION branch the sweep is). A stroke-only ring at the current
+ * search radius, reusing the same ring geometry (nearMeRadiusRing) as,
  * under REDUCED_MOTION, the sweep's own static ring.
+ *
+ * A darkening mask outside this radius was tried and removed (see git
+ * history around #135) — first as a single polygon with the radius cut out
+ * as an interior "hole" ring, then as a hole-free ring of wedge polygons
+ * once the hole approach turned out to render as fully opaque with no
+ * visible hole at all once actually deployed (this map's GeoJSON source is
+ * re-tiled through geojson-vt before rendering, which evidently doesn't
+ * preserve either shape the way an untiled render would). The wedge version
+ * still left cameras near the origin looking wrong, so the mask concept
+ * itself is on hold rather than re-attempted a third way blind — the
+ * boundary ring alone is the "where's the edge" cue for now.
  */
 const NEARME_BOUNDARY_SOURCE = 'src-nearme-boundary';
 const NEARME_BOUNDARY_LAYER = 'nearme-boundary';
-const NEARME_MASK_SOURCE = 'src-nearme-mask';
-const NEARME_MASK_LAYER = 'nearme-mask';
-/**
- * How far out, in metres, the darkening mask's wedges extend past the
- * current search radius (see nearMeMaskPolygon) — far enough that no
- * realistic zoom on this Minnesota-focused map ever shows unmasked map
- * past this edge, small enough that `destinationPoint`'s spherical math
- * stays well clear of the antipodal point (~20,000 km away) where its own
- * geometry stops behaving like a flat viewport. 2,000 km is roughly the
- * width of the continental US — several times wider than any view
- * refitNearMeCamera actually produces, which never zooms past the search
- * radius itself.
- */
-const NEARME_MASK_OUTER_M = 2_000_000;
-/** How many wedges nearMeMaskPolygon divides the mask's ring into — same density as nearMeRadiusRing's own default `steps`, for a comparably smooth curve on the inner (search-radius) edge. */
-const NEARME_MASK_WEDGES = 72;
 /**
  * Faint intermediate rings inside the main boundary — one per whole mile
  * short of the current radius (nearMeMileMarkerRadiiM), so a wide search
@@ -517,15 +510,11 @@ const NEARME_MARKER_LABEL_GAP_DEG = 28;
 const NEARME_CARDINALS_SOURCE = 'src-nearme-cardinals';
 const NEARME_CARDINALS_LAYER = 'nearme-cardinals';
 /**
- * Bottom to top: the mask sits under everything else near-me draws (so it
- * dims ordinary registry dots and the basemap but never the sweep/blips/
- * origin themselves), the cardinal spokes and mile markers/labels sit just
- * above the mask (inside the mask's own hole, so they're only ever drawn
- * over the *unmasked* interior), the main boundary above those, then the
- * sweep's own stack in its existing relative order.
+ * Bottom to top: the cardinal spokes and mile markers/labels sit lowest, the
+ * main boundary above those, then the sweep's own stack in its existing
+ * relative order.
  */
 const NEARME_STACK = [
-  NEARME_MASK_LAYER,
   NEARME_CARDINALS_LAYER,
   NEARME_MARKERS_LAYER,
   NEARME_MARKER_LABELS_LAYER,
@@ -1225,28 +1214,6 @@ export class MapController {
   }
 
   /**
-   * The darkening mask outside the current search radius, for the current
-   * basemap — dark, translucent, following the same basemapDark split every
-   * other themed paint property in this file already uses (see
-   * basemapColor's own comment). Roughly `--color-ink-950` on the dark
-   * basemap (see global.css); a lighter, lower-opacity dark overlay on the
-   * light basemap, since a light basemap needs less pushed toward black to
-   * read as "dimmed" and a full ink-950-strength overlay there would read
-   * as a hole in the map rather than a dimmed area.
-   *
-   * Opacity raised from an original 0.55/0.35: the mask never touches
-   * anything *inside* the radius at all — nearMeMaskPolygon's hole is exact,
-   * so a camera dot in range is always drawn at its own full, untouched
-   * opacity, never this color composited over it — but the original values
-   * left "outside" reading as merely tinted rather than clearly dimmed,
-   * undercutting the inside/outside contrast that's the whole point of this
-   * layer. Stronger here, not a change to anything inside the hole.
-   */
-  private get nearMeMaskColor(): string {
-    return this.basemapDark ? 'rgba(3, 4, 5, 0.72)' : 'rgba(15, 17, 20, 0.5)';
-  }
-
-  /**
    * The `circle-stroke-*` `case` branch shared by the three `pointStroke*Expr`
    * methods below, for a "cross-listed corner" match (crossSourceSiteId !=
    * null — see alpr-cross-source.mjs) and its weaker "near miss" sibling
@@ -1685,9 +1652,6 @@ export class MapController {
     if (this.map.getLayer(NEARME_MARKER_LABELS_LAYER)) {
       this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-color', this.nearMeBoundaryColor);
       this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-halo-color', this.basemapColor);
-    }
-    if (this.map.getLayer(NEARME_MASK_LAYER)) {
-      this.map.setPaintProperty(NEARME_MASK_LAYER, 'fill-color', this.nearMeMaskColor);
     }
 
     void this.refreshMarkerIcons();
@@ -4261,22 +4225,6 @@ export class MapController {
   private ensureNearMeLayers() {
     if (this.nearMeLayersReady) return;
 
-    // The darkening mask, bottom of NEARME_STACK — a single donut polygon
-    // (nearMeMaskPolygon) covering everywhere outside the current search
-    // radius. Independent of REDUCED_MOTION: this isn't the rotating sweep,
-    // it's a static reading aid for "what's in range," so it's drawn (and
-    // redrawn on every radius change) exactly the same way under either
-    // motion preference — see applyNearMeRadius.
-    this.map.addSource(NEARME_MASK_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
-    this.map.addLayer({
-      id: NEARME_MASK_LAYER,
-      type: 'fill',
-      source: NEARME_MASK_SOURCE,
-      paint: {
-        'fill-color': this.nearMeMaskColor,
-      },
-    });
-
     // The east/south/west cardinal spokes — three radial lines from
     // nearMeOrigin out to the current boundary (nearMeCardinalPoints), faint
     // orientation cues rather than a second measurement. No north spoke: see
@@ -4293,11 +4241,11 @@ export class MapController {
       },
     });
 
-    // The persistent radius boundary — a stroke-only ring at the same
-    // radius the mask's hole cuts out, always visible, redrawn alongside
-    // the mask by applyNearMeRadius. Also independent of REDUCED_MOTION:
-    // unlike the sweep's own REDUCED_MOTION substitute (renderNearMeSweepStatic,
-    // drawn on NEARME_PATHS_LAYER), this ring is not a substitute for
+    // The persistent radius boundary — a stroke-only ring at the current
+    // search radius, always visible, redrawn on every radius change by
+    // applyNearMeRadius. Also independent of REDUCED_MOTION: unlike the
+    // sweep's own REDUCED_MOTION substitute (renderNearMeSweepStatic, drawn
+    // on NEARME_PATHS_LAYER), this ring is not a substitute for
     // anything — it's the one persistent "here's the edge" cue this overlay
     // has, present under every motion preference.
     // The intermediate mile-marker rings — one whole-mile ring per mile
@@ -4586,13 +4534,13 @@ export class MapController {
    * actual targets used to mean a narrow radius with one nearby camera
    * zoomed in tight around just that dot, and a radius with zero results
    * zoomed to NEARME_ZOOM's floor with no frame around the search area at
-   * all — both disagreed with what the boundary ring and darkening mask
-   * (renderNearMeBoundary) now draw on screen: the reader is looking at a
-   * circle, so the camera should always show that whole circle, every time
-   * the radius changes, regardless of how many (or how few) cameras happen
-   * to be inside it this time. `nearMeRadiusRing()` is the exact same
-   * geometry the boundary/mask already draw, so "what the map fits to" and
-   * "what the map draws as the search area" can never disagree.
+   * all — both disagreed with what the boundary ring (renderNearMeBoundary)
+   * now draws on screen: the reader is looking at a circle, so the camera
+   * should always show that whole circle, every time the radius changes,
+   * regardless of how many (or how few) cameras happen to be inside it this
+   * time. `nearMeRadiusRing()` is the exact same geometry the boundary
+   * already draws, so "what the map fits to" and "what the map draws as the
+   * search area" can never disagree.
    *
    * cameraForBounds only *computes* the camera; easeToCamera does the
    * actual move, with its moveend/jumpTo landing correction — a bare
@@ -4816,16 +4764,14 @@ export class MapController {
    * around `nearMeOrigin` (a real circle isn't an expressible GeoJSON
    * geometry) — shared by renderNearMeSweepStatic (REDUCED_MOTION's stand-in
    * for the rotating sweep) and renderNearMeBoundary (the persistent
-   * boundary/mask, drawn under every motion preference) so both read exactly
-   * the same radius from exactly the same math.
+   * boundary, drawn under every motion preference) so both read exactly the
+   * same radius from exactly the same math.
    *
    * Built by walking `destinationPoint` clockwise from north (bearing 0 → 360
    * — see that function's own comment: 0 is north, 90 is east, matching
    * standard map/clock orientation) — closed, first point repeated last, so
-   * it is valid as both a LineString ring and a Polygon ring. That clockwise
-   * winding is exactly what a GeoJSON polygon *hole* ring must have (opposite
-   * the counter-clockwise exterior ring — see nearMeMaskPolygon), so
-   * nearMeMaskPolygon uses this ring's output unreversed.
+   * it is valid as both a LineString ring and (were one ever built again) a
+   * Polygon ring.
    */
   private nearMeRadiusRing(radiusM = this.nearMeSweepRadiusM, steps = 72): [number, number][] {
     if (!this.nearMeOrigin) return [];
@@ -4921,60 +4867,11 @@ export class MapController {
   }
 
   /**
-   * The darkening mask's own geometry — everywhere *outside* the current
-   * search radius, out to NEARME_MASK_OUTER_M.
-   *
-   * Built as a ring of simple, hole-free quadrilateral wedges (one per
-   * NEARME_MASK_WEDGES step around the circle), not as a single polygon
-   * whose exterior ring has the search circle cut out of it as an interior
-   * "hole" ring. That single-polygon-with-a-hole shape is the textbook way
-   * to draw this kind of mask and is exactly what this function used to do
-   * — each ring's own winding direction (RFC 7946 §3.1.6: exterior
-   * counter-clockwise, holes clockwise) determined whether the renderer
-   * read the interior ring as a hole at all. That reasoning was correct on
-   * paper and still silently rendered as "the whole mask is opaque, no hole
-   * visible" once actually deployed — this map's own GeoJSON source is
-   * re-tiled through geojson-vt before it ever reaches the renderer, and
-   * that step evidently doesn't preserve the hole the way a direct,
-   * untiled render of the same GeoJSON would. Concretely: cameras the
-   * near-me list confirmed were under a mile away were nearly invisible on
-   * the map itself (see PR #135 discussion) — the search radius was being
-   * darkened along with everything outside it.
-   *
-   * Wedges sidestep the whole question. Each one is a plain four-point
-   * polygon (`[innerA, innerB, outerB, outerA, innerA]`) with no interior
-   * ring and nothing for any tiling/rendering step to reinterpret — there
-   * is no "hole" for anything downstream to get backwards. Assembled into
-   * one MultiPolygon feature covering the full 360° ring between the
-   * current radius and NEARME_MASK_OUTER_M.
-   */
-  private nearMeMaskPolygon(): GeoJSON.Feature<GeoJSON.MultiPolygon> | null {
-    if (!this.nearMeOrigin) return null;
-    const innerM = this.nearMeSweepRadiusM;
-    const outerM = NEARME_MASK_OUTER_M;
-    const polygons: [number, number][][][] = [];
-    for (let i = 0; i < NEARME_MASK_WEDGES; i++) {
-      const b0 = (360 * i) / NEARME_MASK_WEDGES;
-      const b1 = (360 * (i + 1)) / NEARME_MASK_WEDGES;
-      const innerA = destinationPoint(this.nearMeOrigin, b0, innerM) as [number, number];
-      const innerB = destinationPoint(this.nearMeOrigin, b1, innerM) as [number, number];
-      const outerB = destinationPoint(this.nearMeOrigin, b1, outerM) as [number, number];
-      const outerA = destinationPoint(this.nearMeOrigin, b0, outerM) as [number, number];
-      polygons.push([[innerA, innerB, outerB, outerA, innerA]]);
-    }
-    return {
-      type: 'Feature',
-      geometry: { type: 'MultiPolygon', coordinates: polygons },
-      properties: {},
-    };
-  }
-
-  /**
-   * Redraw the persistent radius boundary, its intermediate mile markers,
-   * and the darkening mask from the current `nearMeSweepRadiusM` — called
-   * from applyNearMeRadius on every radius change (drag and commit alike)
-   * and on the very first draw, unlike the sweep/its REDUCED_MOTION
-   * substitute, both of which this is independent of.
+   * Redraw the persistent radius boundary and its intermediate mile markers
+   * from the current `nearMeSweepRadiusM` — called from applyNearMeRadius on
+   * every radius change (drag and commit alike) and on the very first draw,
+   * unlike the sweep/its REDUCED_MOTION substitute, both of which this is
+   * independent of.
    */
   private renderNearMeBoundary() {
     const ring = this.nearMeRadiusRing();
@@ -5013,9 +4910,6 @@ export class MapController {
       type: 'FeatureCollection',
       features: this.nearMeMarkerLabelPoints(),
     } as never);
-    const mask = this.map.getSource(NEARME_MASK_SOURCE) as GeoJSONSource | undefined;
-    const polygon = this.nearMeMaskPolygon();
-    mask?.setData((polygon ? { type: 'FeatureCollection', features: [polygon] } : EMPTY_FC) as never);
   }
 
   /**
@@ -5028,8 +4922,8 @@ export class MapController {
    * (onNearMeRecords) — this ring is a supplementary map cue, not the only
    * way to learn what's in range, so skipping blips here costs nothing a
    * screen reader or a motion-sensitive reader actually needs. Distinct from
-   * the always-on boundary/mask (renderNearMeBoundary) drawn on their own
-   * layers regardless of motion preference — this one exists only because
+   * the always-on boundary ring (renderNearMeBoundary) drawn on its own
+   * layer regardless of motion preference — this one exists only because
    * the sweep itself has nothing to show under REDUCED_MOTION.
    */
   private renderNearMeSweepStatic() {
@@ -5079,7 +4973,6 @@ export class MapController {
     (this.map.getSource(NEARME_CARDINALS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_MARKER_LABELS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
-    (this.map.getSource(NEARME_MASK_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
   }
 
   /**
