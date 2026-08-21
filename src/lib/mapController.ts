@@ -13,18 +13,35 @@ import { bboxOf, representativePoint, haversineMeters } from './geo.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
-import type { DetailFieldFormat } from '../layers/types';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
 import { ResetViewControl } from './resetViewControl';
 import { NearMeControl } from './nearMeControl';
 import { NearMeRadiusControl } from './nearMeRadiusControl';
-import type { FeatureProperties, LayerId } from '~/layers/types';
+import type { FeatureProperties, LayerId, LayerCategoryId, LayerDefinition, Localised } from '~/layers/types';
 
-/** The subset of a LayerDefinition the browser needs, serialised by Astro. */
+/**
+ * The subset of a `LayerDefinition` the browser needs, serialised by Astro.
+ *
+ * Every nested block that carries `I18nString` copy in the registry is typed
+ * here as `Localised<...>` applied to that same slice of `LayerDefinition`
+ * (see `Localised`'s own comment in layers/types.ts), rather than restated by
+ * hand — so a new locale field added to the registry, or a member added to
+ * the closed `DetailFieldFormat` union, shows up here automatically, and an
+ * unflattened `I18nString` reaching the object literal that builds this
+ * shape (MapView.astro's `clientLayers`) is a compile error instead of a
+ * `[object Object]` rendering bug.
+ *
+ * `ClientLayer` is not simply `Localised<LayerDefinition>`, though: MapView's
+ * `clientLayers` mapping picks, renames and computes several fields that
+ * don't exist on `LayerDefinition` at all (`stackRank`, `nearMeRadiusMi`,
+ * `source`/`sourceUrl`/`license` off collection metadata or provenance,
+ * `filters[].values`/`defaultExcluded`), so those stay hand-declared below.
+ */
 export interface ClientLayer {
   id: LayerId;
+  category: LayerCategoryId;
   /** See LayerDefinition's own comment in layers/types.ts. */
   defaultOn?: boolean;
   label: string;
@@ -34,16 +51,7 @@ export interface ClientLayer {
   geometryNote?: string;
   limitations: string[];
   /** Concrete, cited stakes shown inside "What this means", if the layer names any. */
-  impactSpheres?: {
-    icon: string;
-    title: string;
-    color: string;
-    body: string;
-    citation: string;
-    citationUrl: string;
-    citation2?: string;
-    citation2Url?: string;
-  }[];
+  impactSpheres?: Localised<NonNullable<LayerDefinition['impactSpheres']>>;
   color: string;
   /** See LayerDefinition's own comment in layers/types.ts. */
   colorLight?: string;
@@ -59,7 +67,7 @@ export interface ClientLayer {
    */
   stackRank: number;
   /** Attribute holding a compass bearing, if the layer records one. */
-  bearingKey?: string;
+  bearingKey?: LayerDefinition['bearingKey'];
   /**
    * The radius, in miles, this layer's `nearMe.list` config already searches
    * on /near-me — reused here rather than restated, so the homepage map's
@@ -72,115 +80,44 @@ export interface ClientLayer {
    */
   nearMeRadiusMi?: number;
   /** The zooms across which this layer's records emerge. */
-  scale?: { speckleFrom?: number; emergeFrom: number; pointsFrom: number };
+  scale?: LayerDefinition['scale'];
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
-  blockAggregate?: { cellMeters: number; blocksUntil: number; detailFrom: number };
+  blockAggregate?: LayerDefinition['blockAggregate'];
   /** Colour records by a category once they are drawn individually. */
-  categoryColors?: {
-    key: string;
-    label: string;
-    colors: Array<{ value: string; color: string }>;
-    fallback: string;
-    /** See LayerDefinition's own comment in layers/types.ts. */
-    showOnMapKey?: boolean;
-  };
+  categoryColors?: Localised<NonNullable<LayerDefinition['categoryColors']>>;
   /** Write an attribute's value on each polygon, the way the source document did. */
-  labelBy?: { key: string; minzoom?: number };
+  labelBy?: LayerDefinition['labelBy'];
   /** See LayerDefinition's own comment in layers/types.ts. */
-  polygonClick?: 'highlight';
+  polygonClick?: LayerDefinition['polygonClick'];
   /** See LayerDefinition's own comment in layers/types.ts. */
-  markerIcon?: {
-    icon: string;
-    byValue?: {
-      key: string;
-      icons: Record<string, string>;
-      colors?: Record<string, { color: string; colorLight: string }>;
-    };
-  };
+  markerIcon?: LayerDefinition['markerIcon'];
   /** See LayerDefinition's own comment in layers/types.ts. Strings already localised. */
-  hoverCard?: {
-    fields: string[];
-    related?: {
-      layerId: LayerId;
-      fromKey: string;
-      joinKey: string;
-      labelKey: string;
-      linkKey?: string;
-      linkLabel: string;
-      moreLabel: string;
-      title: string;
-      empty: string;
-      max?: number;
-    };
-    note?: string;
-  };
+  hoverCard?: Localised<NonNullable<LayerDefinition['hoverCard']>>;
   /** See LayerDefinition's own comment in layers/types.ts. */
+  selectedEmphasis?: LayerDefinition['selectedEmphasis'];
+  relation?: LayerDefinition['relation'];
   /** See LayerDefinition's own comment in layers/types.ts. */
-  selectedEmphasis?: 'full' | 'subtle';
-  relation?: {
-    layerId: LayerId;
-    fromKey?: string;
-    joinKey: string;
-    hubWhere?: { key: string; value?: string };
-    pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
-  };
-  /** See LayerDefinition's own comment in layers/types.ts. */
-  tintWhenRelated?: {
-    layerId: LayerId;
-    fromKey?: string;
-    joinKey: string;
-    excludeWhen?: { key: string; values: string[] };
-    color: string;
-    colorLight: string;
-    secondaryWhen?: { key: string; values: string[]; color: string; colorLight: string };
-    cancelledWhen?: { key: string; values: string[]; color: string; colorLight: string };
-  };
+  tintWhenRelated?: LayerDefinition['tintWhenRelated'];
   /** Scale this line layer's width by a magnitude in its own data. */
-  weightBy?: { key: string; label: string; stops: Array<[number, number]> };
+  weightBy?: Localised<NonNullable<LayerDefinition['weightBy']>>;
   /** How strongly to paint this line layer, 0–1. Omit for the standard weight. */
   opacity?: number;
   /** The request a reader can file about one of these records, if any. */
-  action?: {
-    requestType: string;
-    label: string;
-    bodyKey?: string;
-    fallbackBody?: 'countySheriff' | 'county' | 'name';
-  };
+  action?: Localised<NonNullable<LayerDefinition['action']>>;
   /** See LayerDefinition's own comment in layers/types.ts. Strings already localised. */
-  crossSource?: {
-    legend: string;
-    hoverNote: string;
-    matched: string;
-    unmatched: string;
-    /** See LayerDefinition.crossSource.nearMiss's own comment. */
-    nearMiss?: string;
-    contested: string;
-    ambiguousAnchor: string;
-    glossary: string;
-    searchSuffix: string;
-    /** See LayerDefinition.crossSource.nearMissSearchSuffix's own comment. */
-    nearMissSearchSuffix?: string;
-  };
+  crossSource?: Localised<NonNullable<LayerDefinition['crossSource']>>;
   dataPath: string;
-  filters: {
-    key: string;
-    label: string;
-    kind: 'enum' | 'dateRange';
+  filters: (Localised<Pick<LayerDefinition['filters'][number], 'key' | 'label' | 'kind' | 'valueDescriptions'>> & {
     values: string[];
     /** Observed values this layer opens with unticked. See FilterDefinition. */
     defaultExcluded?: string[];
-  }[];
+  })[];
   /**
-   * `format` is the registry's closed union, not `string`: this interface is
-   * hand-mirrored from LayerDefinition, and widening it here is what let the
-   * shared formatter silently drop a member.
+   * `format` is the registry's closed union, not `string` — `Localised`
+   * leaves it untouched (see its own comment) rather than widening it, which
+   * is what previously let the shared formatter silently drop a member.
    */
-  detailFields: {
-    key: string;
-    label: string;
-    format?: DetailFieldFormat;
-    pillLabels?: Record<string, string>;
-  }[];
+  detailFields: Localised<LayerDefinition['detailFields'][number]>[];
   source: string;
   sourceUrl: string;
   license: string;
