@@ -1011,6 +1011,43 @@
   }
 }
 
+/*
+ * A landscape phone caps #detail-panel's sheet to a couple hundred pixels
+ * at most — the near-me record list still fits, but a full three-line row
+ * (entity, distance, detail line, cross-listed marker) does not without
+ * scrolling defeating the point of a compact list. Condensing each row to
+ * one line (entity + distance only) is a CSS-only concern, not a JS
+ * layout mode — the row markup never changes shape, only what's painted.
+ *
+ * Visually hidden, not removed: `[data-nearme-row-secondary]` marks the
+ * detail line and the cross-listed marker (see MapView.astro's
+ * buildNearMeRow), and this reproduces Tailwind's own `.sr-only` technique
+ * rather than a `display: none` — the row's accessible name already
+ * carries both in full (see the same function), so hiding them visually
+ * here keeps the DOM order, and what a screen reader announces, identical
+ * at every orientation. No horizontal-scroll/carousel treatment: this site
+ * has no such pattern anywhere, and one here would break the
+ * DOM-order-matches-map-order parity #4 requires.
+ *
+ * 420px is a deliberately generous cutoff — comfortably above a phone's
+ * landscape height (iPhone SE: 375px; most modern phones: 400-430px) and
+ * comfortably below a small tablet's, so this only ever fires on a phone
+ * actually rotated, not a short desktop window.
+ */
+@media (max-height: 420px) and (orientation: landscape) {
+  [data-nearme-row-secondary] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
 /* Thin scrollbars inside the side panels. */
 .scroll-slim {
   scrollbar-width: thin;
