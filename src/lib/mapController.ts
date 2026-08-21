@@ -456,12 +456,13 @@ const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLO
  * One full rotation of the near-me sonar sweep (renderNearMeSweepFrame) —
  * a deliberate presentational departure from this map's otherwise
  * restrained "boring is credible" register (§0.11), chosen explicitly over
- * the plainer dashed throw-lines it replaces. Tuned to read as continuously
- * "scanning" the search radius rather than as an alarm: fast enough that a
- * reader isn't waiting on it, slow enough that it never reads as urgent
- * about equipment whose whole story is that it's routine (§0.4).
+ * the plainer dashed throw-lines it replaces. Tuned to read as a slow,
+ * deliberate scan of the search radius rather than as an alarm: unhurried
+ * enough that it never reads as urgent about equipment whose whole story is
+ * that it's routine (§0.4) — a fast spin read as an alert, which is exactly
+ * the register this map is trying not to strike.
  */
-const NEARME_SWEEP_PERIOD_MS = 4500;
+const NEARME_SWEEP_PERIOD_MS = 18000;
 
 /**
  * Nearest-first cap so a metro-wide "near me" sweep stays legible and
