@@ -40,7 +40,7 @@ import {
   slugId,
   normaliseAgency,
   loadPublicJson,
-  PUBLIC_DATA,
+  writeReferenceJson,
   ROOT,
 } from '../lib/util.mjs';
 import { bboxOf, haversineMeters } from '../../../src/lib/geo.mjs';
@@ -431,22 +431,17 @@ async function main() {
     features,
   });
 
-  const dir = path.join(PUBLIC_DATA, 'reference');
-  await mkdir(dir, { recursive: true });
-  await writeFile(
-    path.join(dir, 'alpr-reported-unresolved.json'),
-    JSON.stringify(
-      {
-        metadata: {
-          note: 'Reported device locations that could not be placed. Published so the gap is inspectable rather than invisible.',
-          source: bca.metadata.sourceUrl,
-          count: unresolved.length,
-        },
-        unresolved,
+  await writeReferenceJson(
+    'alpr-reported-unresolved.json',
+    {
+      metadata: {
+        note: 'Reported device locations that could not be placed. Published so the gap is inspectable rather than invisible.',
+        source: bca.metadata.sourceUrl,
+        count: unresolved.length,
       },
-      null,
-      2,
-    ),
+      unresolved,
+    },
+    { indent: 2 },
   );
   log('alpr-reported', `wrote ${unresolved.length} unresolved -> public/data/reference/alpr-reported-unresolved.json`);
 }

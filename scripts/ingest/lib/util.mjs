@@ -511,6 +511,29 @@ export async function writeReference(relPath, { metadata, ...payload }) {
   return doc;
 }
 
+/**
+ * Write a JSON reference file under public/data/reference/ — the
+ * `mkdir(path.join(PUBLIC_DATA, 'reference'))` + `writeFile(JSON.stringify(...))`
+ * pattern that used to be duplicated at every reference-file call site.
+ *
+ * Deliberately simpler than `writeReference` above: no unchanged-since-last-run
+ * comparison, so callers that want that behaviour keep building it themselves.
+ * `indent` is passed straight through to `JSON.stringify` for the one caller
+ * that pretty-prints its output.
+ *
+ * @param {string} name    file name within public/data/reference/, e.g. 'mn-counties.geojson'
+ * @param {unknown} doc    value to serialise
+ * @param {object} [opts]
+ * @param {number} [opts.indent]
+ */
+export async function writeReferenceJson(name, doc, { indent } = {}) {
+  const dir = path.join(PUBLIC_DATA, 'reference');
+  await mkdir(dir, { recursive: true });
+  const target = path.join(dir, name);
+  await writeFile(target, JSON.stringify(doc, null, indent));
+  return target;
+}
+
 /** Load the county reference index built by counties.mjs. */
 export async function loadCounties() {
   return loadPublicJson('reference/mn-counties.geojson', { runFirst: 'npm run data:counties' });
