@@ -111,6 +111,7 @@ export const es: Record<string, string> = {
   crossListedCorner: 'Esquina de doble registro',
   crossListedNearMissLegend:
     'Casi acierto: una declaración tenía cerca un dispositivo mapeado por voluntarios, pero se contó como coincidencia de una declaración más cercana de la misma agencia.',
+  crossSourceJumpToMatch: 'Ir a la declaración que se llevó la coincidencia',
 
   // Quién responde aquí
   whoAnswersTitle: 'Quién le debe respuesta aquí',

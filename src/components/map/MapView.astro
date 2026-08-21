@@ -193,6 +193,7 @@ const strings = {
   resetView: t('resetView'),
   crossListedCorner: t('crossListedCorner'),
   crossListedNearMissLegend: t('crossListedNearMissLegend'),
+  crossSourceJumpToMatch: t('crossSourceJumpToMatch'),
   mapNearMe: t('mapNearMe'),
   mapNearMeFound: t('mapNearMeFound'),
   mapNearMeNone: t('mapNearMeNone'),
@@ -1296,6 +1297,13 @@ const strings = {
         !matched && attrs.crossSourceNearMiss === true ? layer.crossSource.nearMiss : undefined;
       const cross = el('div', 'rounded-md border border-ink-800 bg-ink-850 p-2.5');
       cross.append(el('h3', 'mb-1 text-[11px] uppercase tracking-wider text-ink-400', S.crossListedCorner));
+      // The term's own definition (§0.9: every jargon term renders with an
+      // inline gloss), separate from the record-specific paragraph below —
+      // a reader who lands straight on this panel from search or "near me"
+      // may never have seen the layer panel's `legend` row. Distinct field
+      // from `legend` per LayerDefinition.crossSource's own comment: this
+      // one is scoped to the bare term, not the static swatch row.
+      cross.append(el('p', 'text-xs leading-relaxed text-ink-300', layer.crossSource.glossary));
       const body_ = matched
         ? fill(layer.crossSource.matched, {
             n: String(attrs.crossSourceCount ?? ''),
@@ -1305,7 +1313,23 @@ const strings = {
         : nearMissText
           ? fill(nearMissText, { d: String(attrs.crossSourceNearMissMeters ?? '') })
           : layer.crossSource.unmatched;
-      cross.append(el('p', 'text-xs leading-relaxed text-ink-200', body_));
+      cross.append(el('p', 'mt-1.5 text-xs leading-relaxed text-ink-200', body_));
+      // A near miss names a *different* record — the filing that won the
+      // tie — so give the reader a way to actually get there, per §0.6
+      // ("what can be done"). crossSourceNearMissSiteId only ever appears
+      // alongside nearMissText (see alpr-cross-source.mjs pass 3), so this
+      // is gated the same way.
+      if (nearMissText && attrs.crossSourceNearMissSiteId != null) {
+        const siteId = String(attrs.crossSourceNearMissSiteId);
+        const jump = el(
+          'button',
+          'mt-1.5 block text-xs text-accent underline underline-offset-2',
+          S.crossSourceJumpToMatch,
+        );
+        jump.setAttribute('type', 'button');
+        jump.addEventListener('click', () => controller.focusCrossSourceSite(layer.id, siteId));
+        cross.append(jump);
+      }
       // Not gated on `matched`: the losing filing in a contested pairing
       // between two different agencies never gets its own crossSourceSiteId
       // (see alpr-cross-source.mjs pass 2 — assignment always goes to the

@@ -3345,6 +3345,22 @@ export class MapController {
   }
 
   /**
+   * Jump to the record a "near miss" lost its tie to. `siteId` is the
+   * *other* record's own `crossSourceSiteId`, not a feature id, so this
+   * resolves it through the same attribute index the hover card's
+   * `related` block already builds (joinIndex) rather than adding a second
+   * lookup structure just for this one case. Always the same layer as the
+   * near-miss record itself — see LayerDefinition.crossSource.nearMiss's
+   * own comment on why an OSM point is never the target. Does nothing if
+   * the site can't be found (data not loaded yet, or a stale id), same as
+   * focusFeature.
+   */
+  focusCrossSourceSite(layerId: string, siteId: string) {
+    const feature = this.joinIndex(layerId, 'crossSourceSiteId').get(siteId)?.[0];
+    if (feature) this.focusFeature(layerId, feature.properties.id);
+  }
+
+  /**
    * Drop every `polygonClick: 'highlight'` selection and the overlays hung
    * off it, without touching the camera or the detail panel. The half of
    * clearSelection that a *different* record being selected also needs.
