@@ -75,6 +75,37 @@ export type Locale = 'en' | 'es';
 export type I18nString = Record<Locale, string>;
 
 /**
+ * Mechanically flattens every `I18nString` in `T` to a plain `string`,
+ * recursively through nested objects and arrays.
+ *
+ * The registry (`LayerDefinition`) carries copy in every locale; the browser
+ * only ever gets the one the reader asked for (see `pick()` in
+ * `src/lib/i18n.ts`). `ClientLayer` in `src/lib/mapController.ts` used to
+ * restate that flattening by hand, field by field, with nothing tying its
+ * shape back to `LayerDefinition` — so a new `I18nString` added to the
+ * registry could pass through unflattened and render as `[object Object]`
+ * with `npm run check` still green. Building `ClientLayer`'s nested blocks
+ * out of `Localised<...>` applied to the matching slice of `LayerDefinition`
+ * means the same mistake is a type error instead: the object literal that
+ * builds the client payload (MapView.astro's `clientLayers`) must supply a
+ * `string` everywhere this type says so, and a raw `{ en, es }` value won't
+ * typecheck against it.
+ *
+ * A closed union like `DetailFieldFormat` is untouched — it is a plain
+ * string, not shaped like `I18nString` (`Record<Locale, string>`), so it
+ * falls through to the final branch unchanged rather than being widened to
+ * `string`. Widening that union was the exact bug this type exists to
+ * prevent from happening again, one level up, for locale strings.
+ */
+export type Localised<T> = T extends I18nString
+  ? string
+  : T extends readonly (infer U)[]
+    ? Localised<U>[]
+    : T extends object
+      ? { [K in keyof T]: Localised<T[K]> }
+      : T;
+
+/**
  * How much to trust a given record's position and existence.
  *
  * `probabilistic` exists chiefly for the ALPR layer, which is crowd-sourced:

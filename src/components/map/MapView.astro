@@ -4,6 +4,7 @@ import { loadAllLayers, distinctValues } from '~/layers/data';
 import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import CompareView from '~/components/map/CompareView.astro';
+import type { ClientLayer } from '~/lib/mapController';
 
 interface Props {
   locale: Locale;
@@ -16,6 +17,14 @@ const loaded = await loadAllLayers();
 // Serialise only what the browser needs. Filter values are computed at build
 // time from the real data, so the controls can never offer a value that no
 // record has.
+//
+// Checked against ClientLayer (plus the featureCount this template and the
+// browser both read straight off these objects, but which isn't part of
+// ClientLayer itself — see the read-site cast below) via `satisfies` rather
+// than a `: ClientLayer[]` annotation, so a field mismatch here — including
+// an I18nString slipping through unflattened — is a type error, without
+// losing the extra properties (`featureCount`, and anything a future layer
+// adds) that a direct annotation's excess-property check would reject.
 const clientLayers = loaded.map(({ definition: d, collection }) => ({
   id: d.id,
   category: d.category,
@@ -65,13 +74,23 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   hoverCard: d.hoverCard
     ? {
         fields: d.hoverCard.fields,
+        // Every field listed explicitly, not spread-then-overridden: a new
+        // I18nString added to LayerDefinition.hoverCard.related now has to be
+        // named here to compile at all, rather than passing through a spread
+        // as an unflattened `{ en, es }` object. Same style as crossSource
+        // below, which never had the spread in the first place.
         related: d.hoverCard.related
           ? {
-              ...d.hoverCard.related,
-              title: pick(d.hoverCard.related.title, locale),
-              empty: pick(d.hoverCard.related.empty, locale),
+              layerId: d.hoverCard.related.layerId,
+              fromKey: d.hoverCard.related.fromKey,
+              joinKey: d.hoverCard.related.joinKey,
+              labelKey: d.hoverCard.related.labelKey,
+              linkKey: d.hoverCard.related.linkKey,
               linkLabel: pick(d.hoverCard.related.linkLabel, locale),
               moreLabel: pick(d.hoverCard.related.moreLabel, locale),
+              title: pick(d.hoverCard.related.title, locale),
+              empty: pick(d.hoverCard.related.empty, locale),
+              max: d.hoverCard.related.max,
             }
           : undefined,
         note: d.hoverCard.note ? pick(d.hoverCard.note, locale) : undefined,
@@ -145,7 +164,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   sourceUrl: collection?.metadata.sourceUrl ?? d.provenance.sourceUrl,
   license: collection?.metadata.license ?? d.provenance.license,
   featureCount: collection?.metadata.featureCount ?? 0,
-}));
+})) satisfies (ClientLayer & { featureCount: number })[];
 
 /*
   The panel, one shelf per kind of subject.
