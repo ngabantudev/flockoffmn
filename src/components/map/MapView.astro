@@ -801,7 +801,7 @@ const strings = {
   import { MapController, REDUCED_MOTION, type ClientLayer, type LoadedFeature } from '~/lib/mapController';
   import { formatValue, isUnattributedValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
-  import { metersToMiles, formatMiles, LOW_ACCURACY_MILES } from '~/lib/geo.mjs';
+  import { metersToMiles, formatMiles, formatCoords, LOW_ACCURACY_MILES } from '~/lib/geo.mjs';
   import { createElement } from 'lucide';
   // The same closed allow-list the map's own marker glyphs resolve through —
   // see its comment for why there is one map and not two.
@@ -869,7 +869,6 @@ const strings = {
     onNearMeError: (message) => status(message, 6000),
     onNearMeResult: (totalFound, shown, accuracyM) => {
       nearMeFound = totalFound;
-      nearMeShown = shown;
       nearMeAccuracyM = accuracyM;
       nearMeLoading = false;
       status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000);
@@ -910,7 +909,6 @@ const strings = {
         nearMeLoading = true;
         nearMeRecords = [];
         nearMeFound = 0;
-        nearMeShown = 0;
         nearMeAccuracyM = 0;
         nearMeLayerErrors.clear();
         openRecord = null;
@@ -1185,9 +1183,14 @@ const strings = {
 
   let nearMeActive = false;
   let nearMeLoading = false;
+  // nearMeShown deliberately doesn't exist as its own field: it's always
+  // exactly nearMeRecords.length (both onNearMeResult's `shown` and
+  // onNearMeRecords's `records` are built from the same targets/records
+  // arrays in mapController.ts's applyNearMeRadius, under the identical
+  // NEARME_MAX_LINES condition) — a second field here would just be a
+  // second place for the two to silently disagree.
   let nearMeRecords: { layerId: string; featureId: string; distanceM: number }[] = [];
   let nearMeFound = 0;
-  let nearMeShown = 0;
   let nearMeAccuracyM = 0;
   const nearMeLayerErrors = new Map<string, string>();
 
@@ -1304,7 +1307,7 @@ const strings = {
   function resolveNearMeRow(record: { layerId: string; featureId: string; distanceM: number }) {
     const layer = layerById.get(record.layerId);
     if (!layer) return null;
-    const feature = controller.getFeatures(layer.id).find((f) => f.properties.id === record.featureId);
+    const feature = controller.getFeatureById(layer.id, record.featureId);
     if (!feature) return null;
     return { record, layer, feature };
   }
@@ -1336,11 +1339,19 @@ const strings = {
 
     const ariaParts = [`${entityName}, ${distanceText}`];
 
+    // One "secondary" line under the entity/distance row — detail text,
+    // coordinates, and the cross-listed marker each used to build this same
+    // div/attribute/append shape independently.
+    function appendSecondaryLine(className: string, text = '') {
+      const div = el('div', `mt-0.5 ${className}`, text);
+      div.setAttribute('data-nearme-row-secondary', '');
+      button.append(div);
+      return div;
+    }
+
     const detailLines = nearMeDetailLines(layer, feature);
     if (detailLines.length) {
-      const detailDiv = el('div', 'mt-0.5 text-xs text-ink-400', detailLines.join(' · '));
-      detailDiv.setAttribute('data-nearme-row-secondary', '');
-      button.append(detailDiv);
+      appendSecondaryLine('text-xs text-ink-400', detailLines.join(' · '));
       ariaParts.push(detailLines.join('. '));
     }
 
@@ -1353,19 +1364,15 @@ const strings = {
       nearMeIsUnattributed(layer, feature) &&
       feature.geometry.type === 'Point'
     ) {
-      const [lng, lat] = feature.geometry.coordinates as [number, number];
-      const coordsText = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-      const coordsDiv = el('div', 'mt-0.5 font-mono text-xs text-ink-400', coordsText);
-      coordsDiv.setAttribute('data-nearme-row-secondary', '');
-      button.append(coordsDiv);
+      const coordsText = formatCoords(feature.geometry.coordinates as [number, number]);
+      appendSecondaryLine('font-mono text-xs text-ink-400', coordsText);
       ariaParts.push(coordsText);
     }
 
     const crossListed = isCrossListed(layer, feature);
     if (crossListed && layer.crossSource) {
-      const crossDiv = el('div', 'mt-0.5 flex items-center gap-1 text-xs');
+      const crossDiv = appendSecondaryLine('flex items-center gap-1 text-xs');
       crossDiv.style.color = 'var(--color-cross-source-ring)';
-      crossDiv.setAttribute('data-nearme-row-secondary', '');
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('width', '10');
       svg.setAttribute('height', '10');
@@ -1382,7 +1389,6 @@ const strings = {
         svg.append(circle);
       }
       crossDiv.append(svg, document.createTextNode(S.mapNearMeCrossListed));
-      button.append(crossDiv);
       ariaParts.push(layer.crossSource.searchSuffix);
     }
 
@@ -1407,7 +1413,7 @@ const strings = {
   /** Renders the 'list' sheet state — near-me's own record list. */
   function renderNearMeList() {
     detailEl.textContent = '';
-    detailTabNameEl.textContent = fill(S.mapNearMeListTabSuffix, { count: nearMeShown });
+    detailTabNameEl.textContent = fill(S.mapNearMeListTabSuffix, { count: nearMeRecords.length });
 
     const header = el('div', 'flex items-start justify-between gap-2 border-b border-ink-800 p-3');
     const titleWrap = el('div', 'min-w-0');
@@ -1418,7 +1424,7 @@ const strings = {
         el(
           'p',
           'mt-0.5 text-[11px] uppercase tracking-wider text-ink-400',
-          fill(S.mapNearMeListSummary, { found: nearMeFound, shown: nearMeShown, radius: radiusInput.value }),
+          fill(S.mapNearMeListSummary, { found: nearMeFound, shown: nearMeRecords.length, radius: radiusInput.value }),
         ),
       );
     }
@@ -1603,17 +1609,14 @@ const strings = {
     if (layer.geometryNote) {
       titleWrap.append(el('p', 'mt-1 text-xs italic leading-snug text-ink-400', layer.geometryNote));
     }
-    // The position itself, for a record that has one exactly. Six decimals is
-    // about 11 cm — far finer than a crowd-sourced pin deserves, but it is what
-    // the source holds, and rounding it here would quietly disagree with the
-    // OpenStreetMap record linked below.
+    // The position itself, for a record that has one exactly — see
+    // formatCoords's own comment on why six decimals.
     if (feature.geometry.type === 'Point') {
-      const [lng, lat] = feature.geometry.coordinates as [number, number];
       titleWrap.append(
         el(
           'p',
           'mt-0.5 font-mono text-[11px] text-ink-400',
-          `${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+          formatCoords(feature.geometry.coordinates as [number, number]),
         ),
       );
     }

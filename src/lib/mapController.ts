@@ -481,8 +481,8 @@ const NEARME_MARKERS_SOURCE = 'src-nearme-markers';
 const NEARME_MARKERS_LAYER = 'nearme-markers';
 /**
  * The "1 mi"/"2 mi" labels sitting in the gap each marker ring leaves at its
- * own top (due north from `nearMeOrigin`) — see nearMeRadiusRingWithGap for
- * the gap itself and nearMeMarkerLabelPoints for the label points. A
+ * own top (due north from `nearMeOrigin`) — see nearMeRadiusRing's `gapDeg`
+ * for the gap itself and nearMeMarkerLabelPoints for the label points. A
  * separate symbol source/layer from the marker rings themselves (line vs.
  * text), positioned to land exactly in the gap the ring geometry leaves open.
  */
@@ -503,7 +503,7 @@ const NEARME_MARKER_LABEL_GAP_DEG = 28;
  * already sit (nearMeMarkerLabelPoints), and a fourth spoke running straight
  * through that gap would either cut through the text or need its own,
  * different gap logic for one direction only. Fainter than the main
- * boundary (same nearMeBoundaryColor, lower line-opacity — see
+ * boundary (same nearMeSweepColor, lower line-opacity — see
  * ensureNearMeLayers) so they read as orientation cues, not a second thing
  * being measured.
  */
@@ -668,6 +668,17 @@ const IMPACT_MS = 520;
  * NEARME_SWEEP_PERIOD_MS's own comment argues for the sweep.
  */
 const SELECTED_POINT_PULSE_MS = 1400;
+/**
+ * withSelectedPointScale's multiplier/pulse-amount pair for each paint
+ * property it wraps — named once and shared by both call sites (the
+ * `-points` circle layer's own paint block, and setNearMeDotStyleFixed's
+ * near-me-active swap) rather than the same four numbers hand-duplicated at
+ * each, which risked the two pairs silently drifting apart.
+ */
+const SELECTED_POINT_RADIUS_SCALE = 1.4;
+const SELECTED_POINT_RADIUS_PULSE = 3;
+const SELECTED_POINT_STROKE_SCALE = 1.75;
+const SELECTED_POINT_STROKE_PULSE = 1;
 
 /**
  * Frame budget for runThrow's setData work: ~30Hz rather than every rAF
@@ -1212,24 +1223,16 @@ export class MapController {
    * origin dot/glow, unchanged), while this marks the sweep and its
    * bearing-crossing blips, a deliberate radar-display presentational
    * choice (see NEARME_SWEEP_PERIOD_MS's own comment) that reads as green
-   * on purpose, not as a selection highlight. Mirrors
-   * `--color-nearme-sweep` in global.css; kept in sync with it by comment
-   * since a MapLibre paint property can't read a CSS custom property
-   * directly.
+   * on purpose, not as a selection highlight. The single source of truth
+   * for this colour — a matching `--color-nearme-sweep` CSS token was tried
+   * and removed (no DOM chrome ever ended up reading it, since MapLibre
+   * paint properties can't read a CSS custom property directly, so it was
+   * just a second hex to keep hand-synced with this one).
    */
   private get nearMeSweepColor(): string {
     return this.basemapDark ? '#39ff6a' : '#0a8f3c';
   }
 
-  /**
-   * The persistent search-radius boundary's own colour — nearMeSweepColor
-   * itself, at a fixed `line-opacity` (see ensureNearMeLayers) rather than a
-   * separate hex: it should read as "the same green the sweep is," just a
-   * quieter, always-on outline, not a competing colour.
-   */
-  private get nearMeBoundaryColor(): string {
-    return this.nearMeSweepColor;
-  }
 
   /**
    * The `circle-stroke-*` `case` branch shared by the three `pointStroke*Expr`
@@ -1368,12 +1371,12 @@ export class MapController {
       this.map.setPaintProperty(
         id,
         'circle-radius',
-        this.withSelectedPointScale(active ? style.fixedRadius : style.liveRadius, 1.4, 3),
+        this.withSelectedPointScale(active ? style.fixedRadius : style.liveRadius, SELECTED_POINT_RADIUS_SCALE, SELECTED_POINT_RADIUS_PULSE),
       );
       this.map.setPaintProperty(
         id,
         'circle-stroke-width',
-        this.withSelectedPointScale(active ? style.fixedStrokeWidth : style.liveStrokeWidth, 1.75, 1),
+        this.withSelectedPointScale(active ? style.fixedStrokeWidth : style.liveStrokeWidth, SELECTED_POINT_STROKE_SCALE, SELECTED_POINT_STROKE_PULSE),
       );
       this.map.setPaintProperty(id, 'circle-opacity', active ? style.fixedOpacity : style.liveOpacity);
     }
@@ -1717,16 +1720,16 @@ export class MapController {
       this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-stroke-color', this.basemapColor);
     }
     if (this.map.getLayer(NEARME_BOUNDARY_LAYER)) {
-      this.map.setPaintProperty(NEARME_BOUNDARY_LAYER, 'line-color', this.nearMeBoundaryColor);
+      this.map.setPaintProperty(NEARME_BOUNDARY_LAYER, 'line-color', this.nearMeSweepColor);
     }
     if (this.map.getLayer(NEARME_CARDINALS_LAYER)) {
-      this.map.setPaintProperty(NEARME_CARDINALS_LAYER, 'line-color', this.nearMeBoundaryColor);
+      this.map.setPaintProperty(NEARME_CARDINALS_LAYER, 'line-color', this.nearMeSweepColor);
     }
     if (this.map.getLayer(NEARME_MARKERS_LAYER)) {
-      this.map.setPaintProperty(NEARME_MARKERS_LAYER, 'line-color', this.nearMeBoundaryColor);
+      this.map.setPaintProperty(NEARME_MARKERS_LAYER, 'line-color', this.nearMeSweepColor);
     }
     if (this.map.getLayer(NEARME_MARKER_LABELS_LAYER)) {
-      this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-color', this.nearMeBoundaryColor);
+      this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-color', this.nearMeSweepColor);
       this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-halo-color', this.basemapColor);
     }
 
@@ -2863,7 +2866,7 @@ export class MapController {
       source: src,
       paint: {
         'circle-color': circleColor,
-        'circle-radius': this.withSelectedPointScale(radiusExpr, 1.4, 3),
+        'circle-radius': this.withSelectedPointScale(radiusExpr, SELECTED_POINT_RADIUS_SCALE, SELECTED_POINT_RADIUS_PULSE),
         'circle-stroke-color': this.pointStrokeColorExpr(layer),
         /*
          * Dots fade in rather than switching on at a single zoom.
@@ -2882,7 +2885,7 @@ export class MapController {
          * declared, shared with the theme-independent zoom curve here so the
          * two can never disagree about when the ring is allowed to appear.
          */
-        'circle-stroke-width': this.withSelectedPointScale(strokeWidthExpr, 1.75, 1),
+        'circle-stroke-width': this.withSelectedPointScale(strokeWidthExpr, SELECTED_POINT_STROKE_SCALE, SELECTED_POINT_STROKE_PULSE),
         'circle-stroke-opacity': this.pointStrokeOpacityExpr(layer),
         'circle-opacity': opacityExpr,
       },
@@ -3810,6 +3813,11 @@ export class MapController {
     if (REDUCED_MOTION) return;
     if (this.selectedPointPulseFrame !== null) return;
     this.selectedPointPulseStart = performance.now();
+    // Same THROW_FRAME_BUDGET_MS gate startNearMeSweep's own step() uses,
+    // for the same reason: a 1.4s breath doesn't read any smoother written
+    // at 60-144Hz than at ~30Hz, and setFeatureState still costs a repaint
+    // each call, not a free write.
+    let lastPulseStepElapsed = -Infinity;
     const step = () => {
       const held = this.selectedPoint;
       if (!held) {
@@ -3817,8 +3825,14 @@ export class MapController {
         return;
       }
       const elapsed = performance.now() - this.selectedPointPulseStart;
-      const pulse = (Math.sin((elapsed / SELECTED_POINT_PULSE_MS) * 2 * Math.PI) + 1) / 2;
-      this.map.setFeatureState({ source: this.sourceId(held.layerId), id: held.featureId }, { selectedPulse: pulse });
+      if (elapsed - lastPulseStepElapsed >= THROW_FRAME_BUDGET_MS) {
+        lastPulseStepElapsed = elapsed;
+        const pulse = (Math.sin((elapsed / SELECTED_POINT_PULSE_MS) * 2 * Math.PI) + 1) / 2;
+        this.map.setFeatureState(
+          { source: this.sourceId(held.layerId), id: held.featureId },
+          { selectedPulse: pulse },
+        );
+      }
       this.selectedPointPulseFrame = requestAnimationFrame(step);
     };
     this.selectedPointPulseFrame = requestAnimationFrame(step);
@@ -4337,7 +4351,7 @@ export class MapController {
       type: 'line',
       source: NEARME_CARDINALS_SOURCE,
       paint: {
-        'line-color': this.nearMeBoundaryColor,
+        'line-color': this.nearMeSweepColor,
         'line-width': 1,
         'line-opacity': 0.28,
       },
@@ -4362,7 +4376,7 @@ export class MapController {
       type: 'line',
       source: NEARME_MARKERS_SOURCE,
       paint: {
-        'line-color': this.nearMeBoundaryColor,
+        'line-color': this.nearMeSweepColor,
         'line-width': 1,
         'line-opacity': 0.22,
       },
@@ -4386,7 +4400,7 @@ export class MapController {
         'text-allow-overlap': true,
       },
       paint: {
-        'text-color': this.nearMeBoundaryColor,
+        'text-color': this.nearMeSweepColor,
         'text-halo-color': this.basemapColor,
         'text-halo-width': 1.2,
       },
@@ -4398,7 +4412,7 @@ export class MapController {
       type: 'line',
       source: NEARME_BOUNDARY_SOURCE,
       paint: {
-        'line-color': this.nearMeBoundaryColor,
+        'line-color': this.nearMeSweepColor,
         'line-width': 1.8,
         'line-opacity': 0.6,
       },
@@ -4797,6 +4811,15 @@ export class MapController {
     this.nearMeSweepStart = performance.now();
     this.nearMeSweepPrevAngle = 0;
     this.nearMeBlips = [];
+    // Same THROW_FRAME_BUDGET_MS gate runThrow's own step() uses, and the
+    // same reason: renderNearMeSweepFrame's two setData calls are a worker
+    // round trip each, not a cheap buffer write, and this loop runs for as
+    // long as near-me stays open (up to NEARME_SWEEP_PERIOD_MS per
+    // rotation) rather than for one brief throw-and-land animation — paying
+    // that cost at every rAF tick (~60-144Hz) rather than ~30Hz bought
+    // nothing perceptible for a rotation this slow. -Infinity so the first
+    // frame always runs.
+    let lastSweepStepElapsed = -Infinity;
     const step = () => {
       // showNearMe/clearNearMe bump nearMeToken and null nearMeOrigin
       // together — if the origin's gone, near-me mode ended and this loop
@@ -4807,7 +4830,11 @@ export class MapController {
         this.nearMeSweepFrame = null;
         return;
       }
-      this.renderNearMeSweepFrame();
+      const elapsed = performance.now() - this.nearMeSweepStart;
+      if (elapsed - lastSweepStepElapsed >= THROW_FRAME_BUDGET_MS) {
+        lastSweepStepElapsed = elapsed;
+        this.renderNearMeSweepFrame();
+      }
       this.nearMeSweepFrame = requestAnimationFrame(step);
     };
     this.nearMeSweepFrame = requestAnimationFrame(step);
@@ -4818,7 +4845,9 @@ export class MapController {
    * time since `nearMeSweepStart` (so continuity survives a radius change —
    * see applyNearMeRadius's own comment), draw the sweep line to that
    * bearing at `nearMeSweepRadiusM`, and blip every candidate within that
-   * same radius whose bearing the sweep just crossed.
+   * same radius whose bearing the sweep just crossed. Called at
+   * THROW_FRAME_BUDGET_MS resolution (~30Hz), not every rAF tick — see
+   * startNearMeSweep's own comment.
    */
   private renderNearMeSweepFrame() {
     if (!this.nearMeOrigin) return;
@@ -4889,24 +4918,32 @@ export class MapController {
   }
 
   /**
-   * A many-sided polygon approximation of the circle at `nearMeSweepRadiusM`
-   * around `nearMeOrigin` (a real circle isn't an expressible GeoJSON
-   * geometry) — shared by renderNearMeSweepStatic (REDUCED_MOTION's stand-in
-   * for the rotating sweep) and renderNearMeBoundary (the persistent
-   * boundary, drawn under every motion preference) so both read exactly the
-   * same radius from exactly the same math.
+   * A many-sided polygon approximation of the circle at `radiusM` around
+   * `nearMeOrigin` (a real circle isn't an expressible GeoJSON geometry) —
+   * shared by renderNearMeSweepStatic (REDUCED_MOTION's stand-in for the
+   * rotating sweep), renderNearMeBoundary (the persistent boundary, drawn
+   * under every motion preference), and the mile-marker rings (also
+   * renderNearMeBoundary) so all three read exactly the same radius from
+   * exactly the same math.
    *
-   * Built by walking `destinationPoint` clockwise from north (bearing 0 → 360
-   * — see that function's own comment: 0 is north, 90 is east, matching
-   * standard map/clock orientation) — closed, first point repeated last, so
-   * it is valid as both a LineString ring and (were one ever built again) a
-   * Polygon ring.
+   * Built by walking `destinationPoint` clockwise from `gapDeg / 2` around to
+   * `360 - gapDeg / 2` (0 is north, 90 is east — see that function's own
+   * comment — so this starts and ends at due north, matching standard
+   * map/clock orientation). With the default `gapDeg = 0` that's the full
+   * circle, closed (first point repeated last, valid as both a LineString
+   * ring and a Polygon ring); a non-zero gap instead leaves an open arc at
+   * the top — where nearMeMarkerLabelPoints' "1 mi"/"2 mi" text sits for a
+   * mile-marker ring, so the ring itself doesn't run directly under the
+   * label.
    */
-  private nearMeRadiusRing(radiusM = this.nearMeSweepRadiusM, steps = 72): [number, number][] {
+  private nearMeRadiusRing(radiusM = this.nearMeSweepRadiusM, gapDeg = 0, steps = 72): [number, number][] {
     if (!this.nearMeOrigin) return [];
+    const start = gapDeg / 2;
+    const end = 360 - gapDeg / 2;
     const ring: [number, number][] = [];
     for (let i = 0; i <= steps; i++) {
-      ring.push(destinationPoint(this.nearMeOrigin, (360 * i) / steps, radiusM) as [number, number]);
+      const bearing = start + ((end - start) * i) / steps;
+      ring.push(destinationPoint(this.nearMeOrigin, bearing, radiusM) as [number, number]);
     }
     return ring;
   }
@@ -4936,29 +4973,9 @@ export class MapController {
   }
 
   /**
-   * `nearMeRadiusRing`, minus a `gapDeg`-wide arc centered on bearing 0
-   * (due north — the top of the circle in the standard, unrotated view this
-   * map always renders near-me in) — an open LineString from `gapDeg / 2`
-   * clockwise around to `360 - gapDeg / 2`, not a closed ring. The gap is
-   * where nearMeMarkerLabelPoints' "1 mi"/"2 mi" text sits, so the ring
-   * itself doesn't run directly under the label.
-   */
-  private nearMeRadiusRingWithGap(radiusM: number, gapDeg: number, steps = 68): [number, number][] {
-    if (!this.nearMeOrigin) return [];
-    const start = gapDeg / 2;
-    const end = 360 - gapDeg / 2;
-    const ring: [number, number][] = [];
-    for (let i = 0; i <= steps; i++) {
-      const bearing = start + ((end - start) * i) / steps;
-      ring.push(destinationPoint(this.nearMeOrigin, bearing, radiusM) as [number, number]);
-    }
-    return ring;
-  }
-
-  /**
    * One label point per mile marker, sitting exactly in the gap
-   * nearMeRadiusRingWithGap leaves at that same radius's own top (bearing 0
-   * from nearMeOrigin) — text reuses formatNearMeRadiusValue so a marker's
+   * nearMeRadiusRing's `gapDeg` leaves at that same radius's own top (bearing
+   * 0 from nearMeOrigin) — text reuses formatNearMeRadiusValue so a marker's
    * wording always matches the radius slider's own live value ("1 mi", not
    * a second, differently-worded convention).
    */
@@ -5024,12 +5041,13 @@ export class MapController {
       type: 'FeatureCollection',
       features: markerRadii.map(({ radiusM }) => ({
         type: 'Feature' as const,
-        // Gapped, not the plain closed ring nearMeRadiusRing returns: the
-        // gap at bearing 0 is where nearMeMarkerLabelPoints' label for this
-        // exact radius sits, so the line doesn't run directly under the text.
+        // Gapped, not the plain closed ring a bare nearMeRadiusRing() call
+        // returns: the gap at bearing 0 is where nearMeMarkerLabelPoints'
+        // label for this exact radius sits, so the line doesn't run
+        // directly under the text.
         geometry: {
           type: 'LineString' as const,
-          coordinates: this.nearMeRadiusRingWithGap(radiusM, NEARME_MARKER_LABEL_GAP_DEG),
+          coordinates: this.nearMeRadiusRing(radiusM, NEARME_MARKER_LABEL_GAP_DEG),
         },
         properties: {},
       })),
@@ -5145,11 +5163,31 @@ export class MapController {
     return this.data.get(layerId) ?? [];
   }
 
+  /**
+   * One record by id, O(1) against the same index featureById (used
+   * internally by focusFeature) already reads — exposed so a caller outside
+   * this class (MapView.astro's near-me row resolver, which needs the same
+   * lookup) doesn't have to fall back to a linear `getFeatures(layerId)
+   * .find(...)` scan over the whole layer.
+   */
+  getFeatureById(layerId: string, id: string): LoadedFeature | undefined {
+    return this.featureById(layerId, id);
+  }
+
   destroy() {
     this.setOverlay(null);
     this.cancelThrow();
     this.stopNearMeSweep();
     this.releasePointSelection();
+    // The fourth of four independent rAF handles this class runs
+    // (throwFrame/nearMeSweepFrame/selectedPointPulseFrame are the other
+    // three, cancelled above) — missed here, a radius-slider drag mid-flight
+    // at teardown would still fire its queued callback after map.remove(),
+    // touching a destroyed map/source.
+    if (this.nearMeDragFrame !== null) {
+      cancelAnimationFrame(this.nearMeDragFrame);
+      this.nearMeDragFrame = null;
+    }
     this.popup?.remove();
     this.hoverPopup?.remove();
     this.disposeContainerWatch?.();

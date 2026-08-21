@@ -63,19 +63,6 @@
    */
   --color-cross-source-ring: #d9a548;
 
-  /*
-   * The near-me sonar sweep and its bearing-crossing blips
-   * (mapController.ts's nearMeSweepColor getter) — a fixed phosphor green
-   * in both themes, deliberately distinct from every layer's own identity
-   * colour and from the near-me origin dot's basemap-adaptive
-   * near-white/near-black pair. MapLibre paint properties can't read a CSS
-   * custom property directly, so the actual value used on the map lives in
-   * that getter; this token exists so any future DOM chrome for the same
-   * feature has one source, and so the two can't drift silently — a change
-   * to one without the other is a bug.
-   */
-  --color-nearme-sweep: #39ff6a;
-
   /* On-accent text and recessed/well surfaces are distinct roles from
      ink-950 even though they share its dark-mode hex value — see the light
      overrides below, where they diverge. */
@@ -128,13 +115,6 @@
 
     --color-cross-source-ring: #6b5414;
 
-    /* See the @theme block's own comment on --color-nearme-sweep. Darker
-       than the dark-mode value for the same reason --color-cross-source-ring
-       is: a light-mode phosphor green readable against this block's own
-       light basemap needs more saturation and less luminance than the
-       near-black-background value does. */
-    --color-nearme-sweep: #0a8f3c;
-
     --color-on-accent: #ffffff;
     --color-well: #ffffff;
     --color-ctrl-attrib-bg: rgba(255, 255, 255, 0.85);
@@ -160,7 +140,6 @@
   --color-warn: #92400e;
 
   --color-cross-source-ring: #6b5414;
-  --color-nearme-sweep: #0a8f3c;
 
   --color-on-accent: #ffffff;
   --color-well: #ffffff;
@@ -244,7 +223,6 @@
   --color-warn: #ffcc33;
 
   --color-cross-source-ring: #d9a548;
-  --color-nearme-sweep: #39ff6a;
 
   --color-on-accent: #030405;
   --color-well: #030405;
@@ -290,11 +268,6 @@
   --color-warn: #b388ff;
 
   --color-cross-source-ring: #b388ff;
-  /* Left as the plain dark-mode phosphor green rather than an invented
-     Halloween tint — same reasoning as the layer-identity colours just
-     above this block's own comment: what the sweep marks is data-adjacent
-     UI, not seasonal decor. */
-  --color-nearme-sweep: #39ff6a;
 
   --color-on-accent: #140b1c;
   --color-well: #050308;

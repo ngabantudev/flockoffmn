@@ -206,6 +206,7 @@ const homePath = localePath(locale, '/');
     findContaining,
     distanceToGeometryMeters,
     formatMiles,
+    formatCoords,
     LOW_ACCURACY_MILES,
   } from '~/lib/geo.mjs';
   import { isUnattributedValue } from '~/lib/detailFields';
@@ -525,15 +526,20 @@ const homePath = localePath(locale, '/');
 
     for (const d of list.detail) {
       const value = row.feature.properties.attributes?.[d.key];
-      if (value === null || value === undefined || value === '') continue;
+      if (isUnattributedValue(value)) continue;
       li.append(el('p', 'mt-0.5 text-xs text-ink-400', `${d.label}: ${value}`));
     }
 
     // The record's own position — only when there's no operator name to show
     // in its place, and only in addition to the detail lines above.
     if (list.showCoordsWhenUnattributed && unattributed && row.feature.geometry.type === 'Point') {
-      const [lng, lat] = (row.feature.geometry as GeoJSON.Point).coordinates;
-      li.append(el('p', 'mt-0.5 font-mono text-xs text-ink-400', `${lat.toFixed(6)}, ${lng.toFixed(6)}`));
+      li.append(
+        el(
+          'p',
+          'mt-0.5 font-mono text-xs text-ink-400',
+          formatCoords((row.feature.geometry as GeoJSON.Point).coordinates as [number, number]),
+        ),
+      );
     }
 
     if (list.showOnMap && row.feature.geometry.type === 'Point') {

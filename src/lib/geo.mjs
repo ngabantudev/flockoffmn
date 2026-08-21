@@ -36,6 +36,18 @@ export function formatMiles(m) {
 }
 
 /**
+ * A point's coordinates for display — `"lat, lng"` at six decimal places
+ * (about 11 cm, far finer than a crowd-sourced pin deserves, but it's what
+ * the source holds, and rounding here would quietly disagree with the
+ * upstream record). Three call sites (the detail panel, and both near-me
+ * lists' fallback-to-coordinates row) used to spell this template out
+ * independently.
+ */
+export function formatCoords([lng, lat]) {
+  return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+}
+
+/**
  * Below this many miles of GPS accuracy, `/near-me` and the homepage map's
  * near-me mode both stop calling a fix meaningful and show a low-accuracy
  * warning. Shared so the two surfaces can't warn at different thresholds
