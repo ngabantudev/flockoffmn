@@ -492,15 +492,28 @@ const NEARME_MARKER_LABELS_LAYER = 'nearme-marker-labels';
  */
 const NEARME_MARKER_LABEL_GAP_DEG = 28;
 /**
+ * Radial spokes from `nearMeOrigin` out to the current boundary, at east,
+ * south, and west — not north: due north is where the mile-marker labels
+ * already sit (nearMeMarkerLabelPoints), and a fourth spoke running straight
+ * through that gap would either cut through the text or need its own,
+ * different gap logic for one direction only. Fainter than the main
+ * boundary (same nearMeBoundaryColor, lower line-opacity — see
+ * ensureNearMeLayers) so they read as orientation cues, not a second thing
+ * being measured.
+ */
+const NEARME_CARDINALS_SOURCE = 'src-nearme-cardinals';
+const NEARME_CARDINALS_LAYER = 'nearme-cardinals';
+/**
  * Bottom to top: the mask sits under everything else near-me draws (so it
  * dims ordinary registry dots and the basemap but never the sweep/blips/
- * origin themselves), the mile markers and their labels sit just above the
- * mask (inside the mask's own hole, so they're only ever drawn over the
- * *unmasked* interior), the main boundary above those, then the sweep's own
- * stack in its existing relative order.
+ * origin themselves), the cardinal spokes and mile markers/labels sit just
+ * above the mask (inside the mask's own hole, so they're only ever drawn
+ * over the *unmasked* interior), the main boundary above those, then the
+ * sweep's own stack in its existing relative order.
  */
 const NEARME_STACK = [
   NEARME_MASK_LAYER,
+  NEARME_CARDINALS_LAYER,
   NEARME_MARKERS_LAYER,
   NEARME_MARKER_LABELS_LAYER,
   NEARME_BOUNDARY_LAYER,
@@ -820,15 +833,6 @@ export class MapController {
     layerId: string;
     featureId: string;
   }> = [];
-  /**
-   * Which features currently carry the `inNearMeRange` feature-state — set
-   * from applyNearMeRadius's own `records` on every radius change (drag and
-   * commit alike) and cleared in clearNearMe. Keyed by `layerId:featureId`
-   * so a feature that falls back out of range on a narrower drag can be
-   * found again and un-marked, not just left permanently opaque from a
-   * wider radius earlier in the same session — see applyNearMeInRangeState.
-   */
-  private nearMeInRange: Map<string, { layerId: string; featureId: string }> = new Map();
   /** Set once in the constructor from `events.formatNearMeRadiusValue` — see that assignment's own comment. Reused by nearMeMarkerLabelPoints. */
   private formatNearMeRadiusValue: (mi: number) => string = (mi) => `${mi} mi`;
   /** rAF handle coalescing NearMeRadiusControl's drag ticks — see dragNearMeRadius's own comment for why a redraw per tick is too many. */
@@ -1319,30 +1323,6 @@ export class MapController {
     ] as unknown as maplibregl.ExpressionSpecification;
   }
 
-  /**
-   * Wraps a point layer's `circle-opacity` expression so a feature currently
-   * inside the near-me search radius (the `inNearMeRange` feature-state —
-   * see applyNearMeInRangeState) always renders fully opaque, regardless of
-   * where its normal zoom-based fade-in curve would otherwise put it. The
-   * darkening mask outside the radius (nearMeMaskColor) already dims
-   * everything out there; without this, a camera *inside* the radius at a
-   * zoom below `pointsFrom` could still read as faded even though it's the
-   * thing the whole overlay exists to point at. Same `case`-over-boolean-
-   * feature-state shape as withSelectedPointScale, deliberately not folded
-   * into that helper — this is a flat override (always exactly 1), not a
-   * multiplier on the base expression the way selection's scale-up is.
-   */
-  private withInNearMeRangeOpacity(
-    base: maplibregl.ExpressionSpecification | number,
-  ): maplibregl.ExpressionSpecification {
-    return [
-      'case',
-      ['boolean', ['feature-state', 'inNearMeRange'], false],
-      1,
-      base,
-    ] as unknown as maplibregl.ExpressionSpecification;
-  }
-
   private pointStrokeWidthExpr(
     layer: ClientLayer,
     tier: { emergeFrom: number; pointsFrom: number },
@@ -1682,6 +1662,9 @@ export class MapController {
     }
     if (this.map.getLayer(NEARME_BOUNDARY_LAYER)) {
       this.map.setPaintProperty(NEARME_BOUNDARY_LAYER, 'line-color', this.nearMeBoundaryColor);
+    }
+    if (this.map.getLayer(NEARME_CARDINALS_LAYER)) {
+      this.map.setPaintProperty(NEARME_CARDINALS_LAYER, 'line-color', this.nearMeBoundaryColor);
     }
     if (this.map.getLayer(NEARME_MARKERS_LAYER)) {
       this.map.setPaintProperty(NEARME_MARKERS_LAYER, 'line-color', this.nearMeBoundaryColor);
@@ -2813,28 +2796,23 @@ export class MapController {
          * to solid across `emergeFrom` → `pointsFrom` same as before. Nothing
          * here is a density estimate — it is the same records, just visible
          * further out, at a size and opacity that don't claim more precision
-         * than a speck can carry.
-         *
-         * Wrapped in withInNearMeRangeOpacity: a feature inside the current
-         * near-me search radius always renders at full opacity regardless of
-         * where this zoom curve would otherwise put it — the darkening mask
-         * outside the radius already tells the reader where to look, and a
-         * camera inside it fading toward transparent at a lower zoom would
-         * undercut that same point.
+         * than a speck can carry. Deliberately untouched by near-me: a
+         * camera's own rendering is the same record at the same confidence
+         * whether or not a search happens to be running, so it keeps its
+         * ordinary design — this circle, this border, this colour — with no
+         * radar-specific override, same as any other point layer.
          */
-        'circle-opacity': this.withInNearMeRangeOpacity(
-          (tier.speckleFrom < tier.emergeFrom
-            ? [
-                'interpolate',
-                ['linear'],
-                ['zoom'],
-                tier.speckleFrom, 0.55,
-                tier.emergeFrom, 0.65,
-                tier.pointsFrom, 0.95,
-              ]
-            : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
-          ) as unknown as maplibregl.ExpressionSpecification,
-        ),
+        'circle-opacity': (tier.speckleFrom < tier.emergeFrom
+          ? [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              tier.speckleFrom, 0.55,
+              tier.emergeFrom, 0.65,
+              tier.pointsFrom, 0.95,
+            ]
+          : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
+        ) as unknown as maplibregl.ExpressionSpecification,
       },
     });
 
@@ -4286,6 +4264,22 @@ export class MapController {
       },
     });
 
+    // The east/south/west cardinal spokes — three radial lines from
+    // nearMeOrigin out to the current boundary (nearMeCardinalPoints), faint
+    // orientation cues rather than a second measurement. No north spoke: see
+    // NEARME_CARDINALS_SOURCE's own comment for why.
+    this.map.addSource(NEARME_CARDINALS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_CARDINALS_LAYER,
+      type: 'line',
+      source: NEARME_CARDINALS_SOURCE,
+      paint: {
+        'line-color': this.nearMeBoundaryColor,
+        'line-width': 1,
+        'line-opacity': 0.28,
+      },
+    });
+
     // The persistent radius boundary — a stroke-only ring at the same
     // radius the mask's hole cuts out, always visible, redrawn alongside
     // the mask by applyNearMeRadius. Also independent of REDUCED_MOTION:
@@ -4536,32 +4530,6 @@ export class MapController {
    * intermediate mile of a slider drag, and true on both the initial draw
    * and the slider's commit.
    */
-  /**
-   * Diff `records` (the current radius's matched candidates) against
-   * `nearMeInRange` and set/clear the `inNearMeRange` feature-state so it
-   * exactly tracks the current radius — a camera that just fell out of a
-   * narrowing drag is un-marked (fading back to its ordinary zoom-based
-   * opacity via withInNearMeRangeOpacity's own `case`), and a camera a
-   * widening drag just pulled in is marked, every call. Called with `[]`
-   * from clearNearMe so nothing is left permanently opaque once near-me mode
-   * itself ends.
-   */
-  private applyNearMeInRangeState(records: NearMeRecord[]) {
-    const next = new Map<string, { layerId: string; featureId: string }>();
-    for (const r of records) next.set(`${r.layerId}:${r.featureId}`, { layerId: r.layerId, featureId: r.featureId });
-    for (const [key, ref] of this.nearMeInRange) {
-      if (!next.has(key)) {
-        this.map.setFeatureState({ source: this.sourceId(ref.layerId), id: ref.featureId }, { inNearMeRange: false });
-      }
-    }
-    for (const [key, ref] of next) {
-      if (!this.nearMeInRange.has(key)) {
-        this.map.setFeatureState({ source: this.sourceId(ref.layerId), id: ref.featureId }, { inNearMeRange: true });
-      }
-    }
-    this.nearMeInRange = next;
-  }
-
   private applyNearMeRadius(radiusMi: number, announce = true): Array<[number, number]> {
     if (!this.nearMeOrigin) return [];
     const radiusM = radiusMi * 1609.344;
@@ -4585,12 +4553,6 @@ export class MapController {
     this.nearMeSweepRadiusM = radiusM;
     this.renderNearMeBoundary();
     if (REDUCED_MOTION) this.renderNearMeSweepStatic();
-    // Independent of `announce`: a camera that just dropped out of a
-    // narrowing drag should fade back to its ordinary opacity immediately,
-    // not wait for the drag to commit — same live-follows-the-drag
-    // reasoning dragNearMeRadius's own comment gives for refitting the
-    // camera on every tick, just for opacity instead of framing.
-    this.applyNearMeInRangeState(records);
 
     if (announce) {
       // The only accessible-DOM equivalent this control used to have: an
@@ -4925,6 +4887,27 @@ export class MapController {
   }
 
   /**
+   * The three cardinal spokes — east (90°), south (180°), west (270°) — as
+   * LineStrings from `nearMeOrigin` out to the current `nearMeSweepRadiusM`.
+   * No 90-degree loop here: three bearings, not a general-purpose sweep, so
+   * they're just named. See NEARME_CARDINALS_SOURCE's own comment for why
+   * north is deliberately absent.
+   */
+  private nearMeCardinalLines(): GeoJSON.Feature<GeoJSON.LineString>[] {
+    if (!this.nearMeOrigin) return [];
+    const origin = this.nearMeOrigin;
+    const radiusM = this.nearMeSweepRadiusM;
+    return [90, 180, 270].map((bearing) => ({
+      type: 'Feature' as const,
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: [origin, destinationPoint(origin, bearing, radiusM) as [number, number]],
+      },
+      properties: {},
+    }));
+  }
+
+  /**
    * The darkening mask's own geometry: a single Polygon whose exterior ring
    * is a near-world-covering box (far larger than any viewport this map can
    * ever show) and whose interior ring — the hole left unmasked — is the
@@ -4978,6 +4961,11 @@ export class MapController {
           } as never)
         : (EMPTY_FC as never),
     );
+    const cardinals = this.map.getSource(NEARME_CARDINALS_SOURCE) as GeoJSONSource | undefined;
+    cardinals?.setData({
+      type: 'FeatureCollection',
+      features: this.nearMeCardinalLines(),
+    } as never);
     const markerRadii = this.nearMeMileMarkerRadiiM();
     const markers = this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined;
     markers?.setData({
@@ -5052,12 +5040,6 @@ export class MapController {
     this.nearMeToken += 1;
     this.nearMeOrigin = null;
     this.nearMeCandidates = [];
-    // Every dot this lookup opaqued in should go back to its ordinary
-    // zoom-based opacity, not stay pinned at 1 forever because near-me
-    // itself ended rather than the radius merely narrowing past it — the
-    // same per-feature clear applyNearMeInRangeState does on a radius
-    // change, just against an empty next set.
-    this.applyNearMeInRangeState([]);
     this.nearMeControl?.setActive(false);
     this.nearMeRadiusControl?.setVisible(false);
     this.events.onNearMeModeChange?.(false);
@@ -5068,6 +5050,7 @@ export class MapController {
     (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_BOUNDARY_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_CARDINALS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_MARKER_LABELS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_MASK_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
