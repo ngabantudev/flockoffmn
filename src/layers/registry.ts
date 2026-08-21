@@ -1017,8 +1017,8 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Ningún registro de la otra fuente se encuentra a menos de 50 m de este. Las dos fuentes cubren cosas distintas —una es lo que las agencias declararon al estado, la otra es lo que los voluntarios llegaron a mapear— así que un registro sin coincidencia es el caso normal, no una duda sobre este registro.',
       },
       contested: {
-        en: 'More than one agency reported a reader near this corner. Both filings are linked above; this project does not choose between them.',
-        es: 'Más de una agencia reportó un lector cerca de esta esquina. Ambas declaraciones están enlazadas arriba; este proyecto no elige entre ellas.',
+        en: 'More than one agency reported a reader near this corner. This project does not choose between them — each agency\'s own filing is a separate record in this layer, not linked from here.',
+        es: 'Más de una agencia reportó un lector cerca de esta esquina. Este proyecto no elige entre ellas: la declaración de cada agencia es un registro aparte en esta capa, no enlazado desde aquí.',
       },
       ambiguousAnchor: {
         en: 'The two roads in this filing meet in more than one place, so the corner shown is one of several the filing could mean. Read this match accordingly.',
@@ -1211,8 +1211,8 @@ export const LAYERS: LayerDefinition[] = [
         es: 'Un dispositivo mapeado por voluntarios se encontraba a {d} m de esta declaración —lo bastante cerca como para mencionarlo— pero quedó más cerca de otra declaración de esta misma agencia, así que cuenta como coincidencia de esa declaración y no de esta. Esta declaración no tiene un dispositivo de doble registro propio.',
       },
       contested: {
-        en: 'More than one agency reported a reader near this corner. Both filings are linked above; this project does not choose between them.',
-        es: 'Más de una agencia reportó un lector cerca de esta esquina. Ambas declaraciones están enlazadas arriba; este proyecto no elige entre ellas.',
+        en: 'More than one agency reported a reader near this corner. This project does not choose between them — each agency\'s own filing is a separate record in this layer, not linked from here.',
+        es: 'Más de una agencia reportó un lector cerca de esta esquina. Este proyecto no elige entre ellas: la declaración de cada agencia es un registro aparte en esta capa, no enlazado desde aquí.',
       },
       ambiguousAnchor: {
         en: 'The two roads in this filing meet in more than one place, so the corner shown is one of several the filing could mean. Read this match accordingly.',
