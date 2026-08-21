@@ -2,6 +2,7 @@
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, mergedProvenance } from '~/layers/data';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { formatValue } from '~/lib/detailFields';
 
 interface Props {
   locale: Locale;
@@ -13,13 +14,7 @@ const t = useTranslations(locale);
 // are whatever the last ingest actually produced.
 const loaded = await loadAllLayers();
 
-const fmtDate = (iso: string | null | undefined) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric' });
-};
+const fmtDate = (iso: string | null | undefined) => formatValue(iso, 'date', locale) ?? '—';
 
 const CADENCE: Record<string, string> = {
   frequent: 'Frequent — the upstream data changes constantly.',
