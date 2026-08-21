@@ -9,7 +9,7 @@ import {
   METRO_BOUNDS,
   METRO_CENTER,
 } from './mapStyle';
-import { bboxOf, representativePoint, haversineMeters } from './geo.mjs';
+import { bboxOf, representativePoint, haversineMeters, bearingDeg, destinationPoint } from './geo.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
@@ -451,9 +451,23 @@ const NEARME_PATHS_LAYER = 'nearme-paths';
 const NEARME_IMPACT_SOURCE = 'src-nearme-impacts';
 const NEARME_IMPACT_LAYER = 'nearme-impacts';
 const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLOW_LAYER, NEARME_ORIGIN_LAYER];
+
 /**
- * Nearest-first cap so a metro-wide "near me" throw stays legible and the
- * animation stays cheap — see throwPaths's own cost comment. Raised from
+ * One full rotation of the near-me sonar sweep (renderNearMeSweepFrame) —
+ * a deliberate presentational departure from this map's otherwise
+ * restrained "boring is credible" register (§0.11), chosen explicitly over
+ * the plainer dashed throw-lines it replaces. Tuned to read as continuously
+ * "scanning" the search radius rather than as an alarm: fast enough that a
+ * reader isn't waiting on it, slow enough that it never reads as urgent
+ * about equipment whose whole story is that it's routine (§0.4).
+ */
+const NEARME_SWEEP_PERIOD_MS = 4500;
+
+/**
+ * Nearest-first cap so a metro-wide "near me" sweep stays legible and
+ * cheap to redraw — see throwPaths's own cost comment for the shared
+ * reasoning (runThrow's setData budgeting applies here too, even though
+ * near-me no longer routes through runThrow itself). Raised from
  * an original 20: with the radius slider (and the autozoom that now
  * follows it), a cap that low saturates well inside the slider's own
  * range in a dense area — downtown Minneapolis already has >20 candidates
@@ -556,14 +570,18 @@ function accuracyZoomCap(accuracyM: number, lat: number, minDimensionPx: number)
  * The total time every line takes to *start* (the stagger span, not
  * THROW_MS/IMPACT_MS below) is capped at THROW_SPREAD_MS — see runThrow's
  * own stagger calculation. THROW_STAGGER_MS is a ceiling on the per-line
- * gap, not the actual gap: a jurisdiction throw or a near-me search rarely
- * has more than a handful of targets, so most throws still space lines
- * THROW_STAGGER_MS apart exactly as before. Only once a batch is large
- * enough that spacing every line that far apart would itself exceed
- * THROW_SPREAD_MS does the per-line gap shrink, so a near-me throw at a
- * wide radius in a dense area (up to NEARME_MAX_LINES lines) finishes in
- * the same total time as one with a handful of results, not several
- * seconds longer — "found more" should not read as "got slower."
+ * gap, not the actual gap: a jurisdiction throw rarely has more than a
+ * handful of targets, so most throws still space lines THROW_STAGGER_MS
+ * apart exactly as before. Only once a batch is large enough that spacing
+ * every line that far apart would itself exceed THROW_SPREAD_MS does the
+ * per-line gap shrink.
+ *
+ * IMPACT_MS is shared with the near-me sonar sweep's own bearing-crossing
+ * blips (renderNearMeSweepFrame) — the same ring-grows-then-fades visual
+ * language, just triggered by a bearing crossing instead of a landed line,
+ * so it keeps the one constant rather than tuning a near-duplicate. Near-me
+ * itself no longer routes through runThrow/THROW_MS/THROW_STAGGER_MS/
+ * THROW_SPREAD_MS at all — see startNearMeSweep.
  */
 const THROW_MS = 420;
 const THROW_STAGGER_MS = 70;
@@ -682,8 +700,24 @@ export class MapController {
   private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
   /** rAF handle for the path-throw animation, so a new selection can cancel the last. */
   private throwFrame: number | null = null;
-  /** rAF handle for the "near me" throw — separate from throwFrame so a jurisdiction pick and a near-me lookup never cancel each other's animation. */
-  private nearMeThrowFrame: number | null = null;
+  /**
+   * rAF handle for the continuous near-me sonar sweep — separate from
+   * throwFrame so a jurisdiction pick and a near-me lookup never cancel
+   * each other's animation, same reasoning the old nearMeThrowFrame this
+   * replaces had. Distinct name because the purpose changed: the old field
+   * drove a one-shot throw-and-land animation that stopped itself; this one
+   * drives a loop that keeps running for as long as near-me mode is active
+   * (see startNearMeSweep/stopNearMeSweep).
+   */
+  private nearMeSweepFrame: number | null = null;
+  /** `performance.now()` when the current sweep rotation began — sweepAngleDeg is derived from elapsed time since this, so a radius change mid-rotation (dragNearMeRadius/commitNearMeRadius) never resets it; only nearMeSweepRadiusM below changes. */
+  private nearMeSweepStart = 0;
+  /** The radius, in metres, the sweep loop reads on its next frame — kept current by applyNearMeRadius on every redraw, independently of nearMeSweepStart. */
+  private nearMeSweepRadiusM = 0;
+  /** The sweep's own angle, in degrees, as of the previous rendered frame — bearing-crossing detection needs both the previous and current angle to tell whether a candidate's bearing fell between them, including across the 360°→0° wrap. */
+  private nearMeSweepPrevAngle = 0;
+  /** Candidates the sweep has recently crossed and whose impact ring is still fading — see renderNearMeSweepFrame. Cleared on stopNearMeSweep. */
+  private nearMeBlips: Array<{ point: [number, number]; startedAt: number }> = [];
   /** Set once the near-me sources/layers exist, so a second lookup only calls setData rather than re-adding them (see ensureRelatedLayers's own reasoning). */
   private nearMeLayersReady = false;
   /** The point a "near me" lookup currently has lines thrown from, or null if none is active — also NearMeControl's toggle state. */
@@ -692,10 +726,11 @@ export class MapController {
   private nearMeLocating = false;
   /** Bumped on every showNearMe/clearNearMe so an in-flight lookup's async data-load can tell it's been superseded and skip drawing. */
   private nearMeToken = 0;
-  /** Every candidate within NEARME_RADIUS_MAX_MI of the current nearMeOrigin, nearest-first — computed once per lookup; applyNearMeRadius re-slices this on every slider move instead of re-scanning the layers. */
+  /** Every candidate within NEARME_RADIUS_MAX_MI of the current nearMeOrigin, nearest-first — computed once per lookup; applyNearMeRadius re-slices this on every slider move instead of re-scanning the layers. `bearingDeg` is computed in the same scan, for the sonar sweep's bearing-crossing blips (see renderNearMeSweepFrame). */
   private nearMeCandidates: Array<{
     point: [number, number];
     distance: number;
+    bearingDeg: number;
     layerId: string;
     featureId: string;
   }> = [];
@@ -1042,6 +1077,22 @@ export class MapController {
    */
   private get nearMeColor(): string {
     return this.basemapDark ? POLYGON_HIGHLIGHT_OUTLINE_DARK : POLYGON_HIGHLIGHT_OUTLINE_LIGHT;
+  }
+
+  /**
+   * The sonar sweep's own colour, for the current basemap — a fixed
+   * phosphor green rather than nearMeColor's basemap-adaptive near-white/
+   * near-black pair: nearMeColor marks *the reader's own location* (the
+   * origin dot/glow, unchanged), while this marks the sweep and its
+   * bearing-crossing blips, a deliberate radar-display presentational
+   * choice (see NEARME_SWEEP_PERIOD_MS's own comment) that reads as green
+   * on purpose, not as a selection highlight. Mirrors
+   * `--color-nearme-sweep` in global.css; kept in sync with it by comment
+   * since a MapLibre paint property can't read a CSS custom property
+   * directly.
+   */
+  private get nearMeSweepColor(): string {
+    return this.basemapDark ? '#39ff6a' : '#0a8f3c';
   }
 
   /**
@@ -1430,9 +1481,14 @@ export class MapController {
     // owning `layer` to iterate from, ensureNearMeLayers creates it lazily
     // and independent of any registry layer. Same re-key, done once here.
     if (this.map.getLayer(NEARME_PATHS_LAYER)) {
+      // The sweep/blips are always phosphor green (nearMeSweepColor) — not
+      // basemap-adaptive the way the origin dot/glow (nearMeColor) is; see
+      // that getter's own comment for why the two are deliberately
+      // different colours answering to different things.
+      const sweepColor = this.nearMeSweepColor;
       const nearMeColor = this.nearMeColor;
-      this.map.setPaintProperty(NEARME_PATHS_LAYER, 'line-color', nearMeColor);
-      this.map.setPaintProperty(NEARME_IMPACT_LAYER, 'circle-stroke-color', nearMeColor);
+      this.map.setPaintProperty(NEARME_PATHS_LAYER, 'line-color', sweepColor);
+      this.map.setPaintProperty(NEARME_IMPACT_LAYER, 'circle-stroke-color', sweepColor);
       this.map.setPaintProperty(NEARME_ORIGIN_GLOW_LAYER, 'circle-color', nearMeColor);
       this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-color', nearMeColor);
       this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-stroke-color', this.basemapColor);
@@ -3597,13 +3653,14 @@ export class MapController {
   }
 
   /**
-   * The animation itself, shared by throwPaths and throwNearMeLines (see the
-   * latter's own comment for why the two still keep independent rAF handles
-   * and sources rather than sharing a call site entirely — a jurisdiction
-   * throw and a near-me throw can be on screen at once). Only the tuned
-   * stagger/ease/impact math and the setData calls belong here; which frame
-   * field to write to is threaded in as `setFrame` so each caller's own
-   * cancel/clear stays in charge of its own handle.
+   * The animation itself — today only throwPaths' jurisdiction throw calls
+   * this. Near-me used to share it (a "twin" throw to a second pair of
+   * sources, so a jurisdiction throw and a near-me throw could be on screen
+   * at once) but now runs its own continuous sonar sweep instead — see
+   * startNearMeSweep/renderNearMeSweepFrame — so this is no longer a shared
+   * call site, just a single caller kept general via the `setFrame`
+   * indirection in case a future caller needs the same stagger/ease/impact
+   * math again.
    */
   private runThrow(
     origin: [number, number],
@@ -3915,19 +3972,29 @@ export class MapController {
   private ensureNearMeLayers() {
     if (this.nearMeLayersReady) return;
 
+    // A single-feature LineString, redrawn every frame by
+    // renderNearMeSweepFrame (or, under REDUCED_MOTION, once by
+    // renderNearMeSweepStatic as a many-sided ring) — the sonar sweep that
+    // replaced this layer's original dashed throw-lines. Solid, not dashed:
+    // a dashed stroke read as "a connection being drawn"; a solid one reads
+    // as "the line currently sweeping," which is what it now is.
     this.map.addSource(NEARME_PATHS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
     this.map.addLayer({
       id: NEARME_PATHS_LAYER,
       type: 'line',
       source: NEARME_PATHS_SOURCE,
       paint: {
-        'line-color': this.nearMeColor,
-        'line-width': 1.4,
-        'line-opacity': 0.75,
-        'line-dasharray': [2, 1.5],
+        'line-color': this.nearMeSweepColor,
+        'line-width': 1.6,
+        'line-opacity': 0.8,
       },
     });
 
+    // One ring per active "blip" — a candidate whose bearing the sweep has
+    // just crossed (renderNearMeSweepFrame) — using the exact same
+    // grow-then-fade `t`-driven expressions the old throw-landing rings
+    // used, just re-triggered by a bearing crossing instead of a line
+    // landing.
     this.map.addSource(NEARME_IMPACT_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
     this.map.addLayer({
       id: NEARME_IMPACT_LAYER,
@@ -3936,7 +4003,7 @@ export class MapController {
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 22] as never,
         'circle-color': 'rgba(0,0,0,0)',
-        'circle-stroke-color': this.nearMeColor,
+        'circle-stroke-color': this.nearMeSweepColor,
         'circle-stroke-width': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 0.5] as never,
         'circle-stroke-opacity': ['interpolate', ['linear'], ['get', 't'], 0, 0.9, 1, 0] as never,
       },
@@ -3974,7 +4041,8 @@ export class MapController {
   }
 
   /**
-   * Draw the reader's own location and throw lines to whatever's nearby.
+   * Draw the reader's own location and start the sonar sweep scanning
+   * whatever's nearby.
    *
    * `origin` lives only in this call's arguments and the `nearMeOrigin`
    * field below — never in a URL, `localStorage`, or a network request (see
@@ -3991,11 +4059,13 @@ export class MapController {
    * comment), which would otherwise make "what's near me" under-report
    * exactly the layers nobody happened to have on.
    *
-   * Candidates are gathered once here, out to NEARME_RADIUS_MAX_MI, and
+   * Candidates (including each one's bearing from `origin`, for the sweep's
+   * blip detection) are gathered once here, out to NEARME_RADIUS_MAX_MI, and
    * handed to applyNearMeRadius to draw the reader's own starting radius;
    * every further radius change re-slices the same candidate list rather
-   * than re-scanning the layers. The camera then autozooms to fit whatever
-   * that starting set turns out to be — see refitNearMeCamera.
+   * than re-scanning the layers. startNearMeSweep then begins the
+   * continuous rotation, and the camera autozooms to fit whatever the
+   * starting set turns out to be — see refitNearMeCamera.
    */
   private async showNearMe(origin: [number, number], accuracyM: number) {
     await this.ready();
@@ -4030,6 +4100,7 @@ export class MapController {
     const candidates: Array<{
       point: [number, number];
       distance: number;
+      bearingDeg: number;
       layerId: string;
       featureId: string;
     }> = [];
@@ -4039,7 +4110,13 @@ export class MapController {
         const point = feature.geometry.coordinates as [number, number];
         const distance = haversineMeters(origin, point);
         if (distance <= maxRadiusM) {
-          candidates.push({ point, distance, layerId: layer.id, featureId: feature.properties.id });
+          candidates.push({
+            point,
+            distance,
+            bearingDeg: bearingDeg(origin, point),
+            layerId: layer.id,
+            featureId: feature.properties.id,
+          });
         }
       }
     });
@@ -4054,23 +4131,30 @@ export class MapController {
     this.nearMeRadiusControl?.reset();
     this.nearMeRadiusControl?.setVisible(true);
     const targets = this.applyNearMeRadius(NEARME_RADIUS_DEFAULT_MI);
+    this.startNearMeSweep();
     this.refitNearMeCamera(targets);
   }
 
   /**
-   * Re-slice `nearMeCandidates` to `radiusMi` and redraw the throw lines —
-   * the only thing that changes as the reader drags NearMeRadiusControl, or
-   * on the first draw after a fresh showNearMe. `nearMeOrigin` is the
-   * single source of truth for where the throw originates, so origin's own
-   * source is untouched here. Returns the drawn targets so callers that
-   * also want a camera refit (showNearMe, commitNearMeRadius — not
-   * dragNearMeRadius, see its own comment) can hand them to
-   * refitNearMeCamera without re-deriving them.
+   * Re-slice `nearMeCandidates` to `radiusMi` and update what the sonar
+   * sweep is currently scanning — the only thing that changes as the reader
+   * drags NearMeRadiusControl, or on the first draw after a fresh
+   * showNearMe. `nearMeOrigin` is the single source of truth for where the
+   * sweep is rooted, so origin's own source is untouched here. Returns the
+   * matched targets so callers that also want a camera refit (showNearMe,
+   * commitNearMeRadius — not dragNearMeRadius, see its own comment) can
+   * hand them to refitNearMeCamera without re-deriving them.
    *
    * `nearMeCandidates` is sorted nearest-first (showNearMe), so this walks
    * from the front and stops the moment a candidate is past `radiusMi` or
    * NEARME_MAX_LINES targets are already collected — O(targets found), not
    * a full-array filter/slice repeated on every drag tick.
+   *
+   * Only `nearMeSweepRadiusM` is written here — the continuous rAF loop
+   * (renderNearMeSweepFrame) reads it on its own next frame, so a radius
+   * change never restarts the sweep's rotation (see nearMeSweepStart's own
+   * comment). Under REDUCED_MOTION there is no loop to pick the change up,
+   * so the static ring is redrawn immediately instead.
    *
    * `announce` skips the aria-live update (onNearMeResult) — set false by
    * dragNearMeRadius's live callback so a screen reader isn't read every
@@ -4097,10 +4181,12 @@ export class MapController {
       }
     }
 
-    this.throwNearMeLines(this.nearMeOrigin, targets);
+    this.nearMeSweepRadiusM = radiusM;
+    if (REDUCED_MOTION) this.renderNearMeSweepStatic();
+
     if (announce) {
       // The only accessible-DOM equivalent this control used to have: an
-      // aria-live count, since the throw itself is canvas-only. Now paired
+      // aria-live count, since the sweep itself is canvas-only. Now paired
       // with onNearMeRecords, which is what actually gives a screen-reader
       // user each one by name via the DOM list MapView.astro renders from
       // it — this count stays too, since it's read the instant the radius
@@ -4112,8 +4198,8 @@ export class MapController {
   }
 
   /**
-   * Move the camera to frame `nearMeOrigin` and every camera a line was
-   * just thrown at — "Nearest" only helps a reader if the nearest ones are
+   * Move the camera to frame `nearMeOrigin` and every camera the current
+   * radius just connected — "Nearest" only helps a reader if the nearest ones are
    * actually visible, on a phone as much as a desktop, so the map's zoom
    * is itself a function of how many cameras the current radius connects:
    * a wide radius with many results zooms out to fit them all; a narrow
@@ -4178,14 +4264,16 @@ export class MapController {
   /**
    * NearMeRadiusControl's `input` handler — fires on every integer step a
    * drag crosses, up to ~24 times across the slider's full range in well
-   * under a second. Redrawing/refitting on every one of those would cancel
-   * and restart throwNearMeLines' rAF animation (and its underlying
-   * `setData` — "a worker round trip with a re-parse and re-index, not a
-   * cheap buffer write," per runThrow's own comment), and kick off a fresh
-   * easeToCamera, that often — so ticks are coalesced to at most one
-   * redraw+refit per animation frame: a tick just records the latest
-   * requested radius, and only the first tick in a frame schedules the
-   * rAF callback that actually applies it.
+   * under a second. The sweep itself no longer needs coalescing to redraw
+   * cheaply (updating `nearMeSweepRadiusM` is a plain field write the
+   * running rAF loop picks up on its own next frame — see
+   * applyNearMeRadius's own comment), but `applyNearMeRadius` also rebuilds
+   * the `targets`/`records` arrays and `refitNearMeCamera` kicks off a fresh
+   * `easeToCamera` — both real work worth not repeating ~24 times a second —
+   * so ticks are still coalesced to at most one redraw+refit per animation
+   * frame: a tick just records the latest requested radius, and only the
+   * first tick in a frame schedules the rAF callback that actually applies
+   * it.
    *
    * No aria-live announcement here either way (see applyNearMeRadius's own
    * comment) — a screen-reader user gets the count once, on commit, not
@@ -4225,28 +4313,150 @@ export class MapController {
   }
 
   /**
-   * throwPaths's near-me twin. Shares runThrow's animation math (see its own
-   * comment) but keeps its own rAF handle (nearMeThrowFrame) and its own
-   * pair of sources, so a jurisdiction throw and a near-me throw can be on
-   * screen — and animating — at the same time without cancelling each other.
+   * Begin the continuous sonar-sweep rotation — called once, from
+   * showNearMe, after the first radius has already been applied (so
+   * `nearMeSweepRadiusM` has a real value the moment the first frame
+   * renders). A no-op if a sweep is already running: nothing else in this
+   * class calls this a second time while `nearMeOrigin` is still set, but
+   * the guard keeps that an invariant rather than a hope.
+   *
+   * Under REDUCED_MOTION there is no rAF loop at all — a real, continuously
+   * rotating sweep is a vestibular/motion concern (§4), not just a style
+   * preference, so this instead renders the static ring once via
+   * renderNearMeSweepStatic and stops there; every later radius change
+   * re-renders that same static ring from applyNearMeRadius directly, since
+   * there is no running loop to pick the change up on its own.
    */
-  private throwNearMeLines(origin: [number, number], targets: Array<[number, number]>) {
-    this.cancelNearMeThrow();
-    this.runThrow(origin, targets, NEARME_PATHS_SOURCE, NEARME_IMPACT_SOURCE, (id) => {
-      this.nearMeThrowFrame = id;
-    });
-  }
-
-  private cancelNearMeThrow() {
-    if (this.nearMeThrowFrame !== null) {
-      cancelAnimationFrame(this.nearMeThrowFrame);
-      this.nearMeThrowFrame = null;
+  private startNearMeSweep() {
+    if (REDUCED_MOTION) {
+      this.renderNearMeSweepStatic();
+      return;
     }
+    if (this.nearMeSweepFrame !== null) return;
+    this.nearMeSweepStart = performance.now();
+    this.nearMeSweepPrevAngle = 0;
+    this.nearMeBlips = [];
+    const step = () => {
+      // showNearMe/clearNearMe bump nearMeToken and null nearMeOrigin
+      // together — if the origin's gone, near-me mode ended and this loop
+      // has no business still ticking (clearNearMe also calls
+      // stopNearMeSweep directly, but this is the belt to that braces in
+      // case a stray frame lands between the two).
+      if (!this.nearMeOrigin) {
+        this.nearMeSweepFrame = null;
+        return;
+      }
+      this.renderNearMeSweepFrame();
+      this.nearMeSweepFrame = requestAnimationFrame(step);
+    };
+    this.nearMeSweepFrame = requestAnimationFrame(step);
   }
 
-  /** Undo showNearMe — clears the marker and lines, and the control's pressed state. */
+  /**
+   * One frame of the sonar sweep: derive the current angle from elapsed
+   * time since `nearMeSweepStart` (so continuity survives a radius change —
+   * see applyNearMeRadius's own comment), draw the sweep line to that
+   * bearing at `nearMeSweepRadiusM`, and blip every candidate within that
+   * same radius whose bearing the sweep just crossed.
+   */
+  private renderNearMeSweepFrame() {
+    if (!this.nearMeOrigin) return;
+    const now = performance.now();
+    const elapsed = now - this.nearMeSweepStart;
+    const angle = ((elapsed % NEARME_SWEEP_PERIOD_MS) / NEARME_SWEEP_PERIOD_MS) * 360;
+    const prevAngle = this.nearMeSweepPrevAngle;
+
+    const endpoint = destinationPoint(this.nearMeOrigin, angle, this.nearMeSweepRadiusM);
+    const paths = this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined;
+    paths?.setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [this.nearMeOrigin, endpoint] },
+          properties: {},
+        },
+      ],
+    } as never);
+
+    // "Did the sweep just pass this bearing" — a plain `prevAngle < b <=
+    // angle` breaks once per rotation at the 360°→0° wrap, where `angle`
+    // is numerically *less* than `prevAngle` despite the sweep having moved
+    // forward through zero. The `angle < prevAngle` branch below is exactly
+    // that wrapped frame: the swept arc is actually two pieces, prevAngle
+    // through 360 and 0 through angle, so a bearing counts if it falls in
+    // either.
+    const crossed = (bearing: number) =>
+      angle >= prevAngle ? bearing > prevAngle && bearing <= angle : bearing > prevAngle || bearing <= angle;
+
+    // Drop expired blips before adding new ones, not after — otherwise a
+    // still-fading blip from an earlier crossing could occupy a
+    // NEARME_MAX_LINES slot this frame's genuinely new crossings should get.
+    this.nearMeBlips = this.nearMeBlips.filter((b) => now - b.startedAt < IMPACT_MS);
+
+    // Only candidates the current radius actually connects can blip — the
+    // same NEARME_MAX_LINES-capped, nearest-first set applyNearMeRadius
+    // draws lines/records for, so "does this camera blip" always agrees
+    // with "is this camera in the DOM list."
+    for (const candidate of this.nearMeCandidates) {
+      if (candidate.distance > this.nearMeSweepRadiusM) break;
+      if (this.nearMeBlips.length >= NEARME_MAX_LINES) break;
+      if (crossed(candidate.bearingDeg)) {
+        this.nearMeBlips.push({ point: candidate.point, startedAt: now });
+      }
+    }
+    this.nearMeSweepPrevAngle = angle;
+
+    const impacts = this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined;
+    impacts?.setData({
+      type: 'FeatureCollection',
+      features: this.nearMeBlips.map((b) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: b.point },
+        properties: { t: (now - b.startedAt) / IMPACT_MS },
+      })),
+    } as never);
+  }
+
+  /**
+   * The REDUCED_MOTION substitute for the rotating sweep: a single static
+   * ring at `nearMeSweepRadiusM`, approximated as a many-sided polygon
+   * outline (a real circle isn't an expressible GeoJSON geometry) — "this is
+   * the area currently being searched," with no rotation and no blips. A
+   * reader under reduced motion still gets every connected camera by name,
+   * same as anyone else, from the DOM list MapView.astro renders
+   * (onNearMeRecords) — this ring is a supplementary map cue, not the only
+   * way to learn what's in range, so skipping blips here costs nothing a
+   * screen reader or a motion-sensitive reader actually needs.
+   */
+  private renderNearMeSweepStatic() {
+    if (!this.nearMeOrigin) return;
+    const steps = 72;
+    const ring: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      ring.push(destinationPoint(this.nearMeOrigin, (360 * i) / steps, this.nearMeSweepRadiusM) as [number, number]);
+    }
+    const paths = this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined;
+    paths?.setData({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: ring }, properties: {} }],
+    } as never);
+    const impacts = this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined;
+    impacts?.setData(EMPTY_FC as never);
+  }
+
+  /** Stop the sweep loop (if running) and drop any still-fading blips — clearNearMe and destroy() both call this. */
+  private stopNearMeSweep() {
+    if (this.nearMeSweepFrame !== null) {
+      cancelAnimationFrame(this.nearMeSweepFrame);
+      this.nearMeSweepFrame = null;
+    }
+    this.nearMeBlips = [];
+  }
+
+  /** Undo showNearMe — clears the marker and sweep, and the control's pressed state. */
   private clearNearMe() {
-    this.cancelNearMeThrow();
+    this.stopNearMeSweep();
     if (this.nearMeDragFrame !== null) {
       cancelAnimationFrame(this.nearMeDragFrame);
       this.nearMeDragFrame = null;
@@ -4311,7 +4521,7 @@ export class MapController {
   destroy() {
     this.setOverlay(null);
     this.cancelThrow();
-    this.cancelNearMeThrow();
+    this.stopNearMeSweep();
     this.popup?.remove();
     this.hoverPopup?.remove();
     this.disposeContainerWatch?.();

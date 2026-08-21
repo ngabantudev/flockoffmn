@@ -24,6 +24,47 @@ export function metersToMiles(m) {
 }
 
 /**
+ * Initial great-circle bearing in degrees [0, 360) from one [lng, lat] point
+ * toward another — 0 is north, 90 is east, matching destinationPoint below
+ * and every compass convention already in this file (see compassLabel).
+ * Undefined at the poles and when the two points coincide, same as any
+ * bearing formula; nothing in this codebase calls it with either.
+ */
+export function bearingDeg([lng1, lat1], [lng2, lat2]) {
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const dLng = toRad(lng2 - lng1);
+  const y = Math.sin(dLng) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLng);
+  const theta = Math.atan2(y, x);
+  return ((theta * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * The point `distanceM` metres from `origin` along `bearingDeg`, on the same
+ * spherical-earth model haversineMeters already uses (EARTH_RADIUS_M) — a
+ * near-me sweep or radius circle computed here has to agree with the
+ * distances that decided which records it should pass through, not a
+ * second, slightly different sphere.
+ */
+export function destinationPoint([lng, lat], bearing, distanceM) {
+  const delta = distanceM / EARTH_RADIUS_M;
+  const theta = toRad(bearing);
+  const phi1 = toRad(lat);
+  const lambda1 = toRad(lng);
+  const phi2 = Math.asin(
+    Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta),
+  );
+  const lambda2 =
+    lambda1 +
+    Math.atan2(
+      Math.sin(theta) * Math.sin(delta) * Math.cos(phi1),
+      Math.cos(delta) - Math.sin(phi1) * Math.sin(phi2),
+    );
+  return [(((lambda2 * 180) / Math.PI + 540) % 360) - 180, (phi2 * 180) / Math.PI];
+}
+
+/**
  * Ray-casting point-in-polygon over a single linear ring.
  * @param {[number, number]} point [lng, lat]
  * @param {number[][]} ring
