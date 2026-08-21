@@ -1196,6 +1196,59 @@ const strings = {
   let nearMeAccuracyM = 0;
   const nearMeLayerErrors = new Map<string, string>();
 
+  /*
+   * NearMeRadiusControl (mapController.ts) mounts as a MapLibre corner
+   * popover by default. Below `xl` that floating popover is easy to miss —
+   * the reader is already looking at this sheet's own header, so the
+   * slider's primary, reachable home there is inline in it instead.
+   *
+   * There is only ever one live `<input>` — this reparents the control's
+   * *own* DOM node (its onAdd() container is a plain detached-appendable
+   * element with no MapLibre-internal dependency on staying inside the
+   * corner-controls container) rather than building a second slider that
+   * would have to stay synced with it.
+   *
+   * `nearMeRadiusMobileSlot` is the fixed point that makes this survive
+   * renderNearMeList's own frequent full rebuilds of the sheet header: the
+   * *decision* of which container (the corner stack vs. this slot) the
+   * radius control's node belongs in is only re-evaluated on load and on
+   * a breakpoint change (see syncNearMeRadiusPlacement), never on every
+   * sheet render — but the slot itself still has to be re-inserted into
+   * whatever fresh header DOM renderNearMeList just built, or its
+   * still-attached child (the radius control) would vanish along with the
+   * old header when detailEl.textContent is cleared. Moving this empty
+   * wrapper along with a header rebuild isn't the reparent decision this
+   * comment is describing — it's just the slot going where the header goes.
+   */
+  const nearMeRadiusMobileSlot = document.createElement('div');
+  nearMeRadiusMobileSlot.className = 'nearme-radius-slot';
+
+  /**
+   * Moves the radius control's real DOM node between the corner-controls
+   * stack (`>=xl`, matching #detail-panel's own dock breakpoint —
+   * `detailDockMql`, declared above alongside #detail-panel's own dock
+   * sync) and `nearMeRadiusMobileSlot`. Called once on load and again only
+   * when that breakpoint is crossed — not on every sheet-mode change, per
+   * this feature's own spec. `--inline` is the JS-toggled modifier class
+   * global.css's `.near-me-radius-control` rules key off of to swap from
+   * floating-popover positioning to laying out inline within whatever flex
+   * row it's currently parented in.
+   */
+  function syncNearMeRadiusPlacement() {
+    const radiusEl = document.querySelector<HTMLElement>('.near-me-radius-control');
+    const cornerControlsEl = document.getElementById('map-corner-controls');
+    if (!radiusEl) return;
+    if (detailDockMql.matches) {
+      if (radiusEl.parentElement !== cornerControlsEl) cornerControlsEl?.appendChild(radiusEl);
+      radiusEl.classList.remove('near-me-radius-control--inline');
+    } else {
+      if (radiusEl.parentElement !== nearMeRadiusMobileSlot) nearMeRadiusMobileSlot.appendChild(radiusEl);
+      radiusEl.classList.add('near-me-radius-control--inline');
+    }
+  }
+  detailDockMql.addEventListener('change', syncNearMeRadiusPlacement);
+  syncNearMeRadiusPlacement();
+
   // The record currently open, if any — kept independent of `sheetMode` so
   // returning from 'record' to 'list' (the back affordance) can still
   // highlight and scroll to the row it came from, and so a radius commit
@@ -1373,6 +1426,10 @@ const strings = {
         ),
       );
     }
+    // Re-attach the (possibly empty, at >=xl) mobile radius slot to this
+    // freshly-built header — see nearMeRadiusMobileSlot's own comment for
+    // why this is not itself the corner-vs-sheet placement decision.
+    titleWrap.append(nearMeRadiusMobileSlot);
     const close = el(
       'button',
       'flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-400 hover:text-ink-100',

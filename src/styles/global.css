@@ -766,6 +766,41 @@
 .near-me-radius-control[hidden] {
   display: none;
 }
+/*
+ * Below `xl`, MapView.astro's own syncNearMeRadiusPlacement reparents this
+ * same control (there is only ever the one live `<input>` — see its own
+ * comment) out of #map-corner-controls and into the near-me sheet's
+ * list-mode header, toggling this modifier class in the same move. The
+ * popover positioning above only makes sense while the element is actually
+ * a child of the corner-controls stack; parented into an ordinary header
+ * flex row instead, it needs to lay out as an ordinary flex child of that
+ * row, not float over the map with its old `right`/`top` offsets. Higher
+ * specificity than the bare class above wins regardless of source order,
+ * including inside the `width < 40rem` touch-sizing block further down —
+ * only the properties that actually differ between the two placements are
+ * restated here.
+ */
+.near-me-radius-control.near-me-radius-control--inline {
+  position: static;
+  transform: none;
+  max-width: none;
+  padding: 0;
+}
+/*
+ * The near-me sheet header's own mount point for the reparented control —
+ * see MapView.astro's `nearMeRadiusMobileSlot` comment. Collapses to
+ * nothing at `>=xl`, where syncNearMeRadiusPlacement leaves it empty (the
+ * control lives back in the corner popover there); once the control is
+ * actually moved in below `xl`, its own flex/gap (`.near-me-radius-control`
+ * plus the `--inline` override above) does the row layout, so this wrapper
+ * only ever needs to reserve the vertical gap above it.
+ */
+.nearme-radius-slot:empty {
+  display: none;
+}
+.nearme-radius-slot:not(:empty) {
+  margin-top: 0.5rem;
+}
 .near-me-radius-input {
   width: 6.5rem;
   accent-color: var(--color-accent);
