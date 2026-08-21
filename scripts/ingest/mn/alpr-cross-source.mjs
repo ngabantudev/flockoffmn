@@ -71,14 +71,12 @@ async function main() {
    * between two agencies' filings, so both groups are flagged and both
    * pairings are kept in the reference file instead of one being erased).
    */
-  const groupOsmIds = new Map(); // bcaId -> Set(osmId)
   const groupOsmMeters = new Map(); // bcaId -> Map(osmId -> meters)
   const contestedBcaIds = new Set();
   const contestedOsmIds = new Set();
   const discardedSameAgency = []; // { osmId, keptBcaId, discardedBcaId, meters }
   const contestedPairs = []; // { osmId, bcaIds: [assigned, other], agencies: [a, b] }
-  const osmAssignedAnchor = new Map(); // osmId -> bcaId (nearest)
-  const osmAssignedMeters = new Map(); // osmId -> meters
+  const osmAssigned = new Map(); // osmId -> { anchorId, meters } (nearest)
 
   for (const [osmId, hits] of candidatesByOsm) {
     const sorted = [...hits].sort((a, b) => a.meters - b.meters);
@@ -86,10 +84,7 @@ async function main() {
     const nearestId = nearest.bcaF.properties.id;
     const nearestAgency = nearest.bcaF.properties.attributes.agencyName;
 
-    osmAssignedAnchor.set(osmId, nearestId);
-    osmAssignedMeters.set(osmId, nearest.meters);
-    if (!groupOsmIds.has(nearestId)) groupOsmIds.set(nearestId, new Set());
-    groupOsmIds.get(nearestId).add(osmId);
+    osmAssigned.set(osmId, { anchorId: nearestId, meters: nearest.meters });
     if (!groupOsmMeters.has(nearestId)) groupOsmMeters.set(nearestId, new Map());
     groupOsmMeters.get(nearestId).set(osmId, nearest.meters);
 
@@ -147,7 +142,7 @@ async function main() {
 
   const bcaFeatures = bca.features.map((f) => {
     const id = f.properties.id;
-    const osmIds = [...(groupOsmIds.get(id) ?? [])];
+    const osmIds = [...(groupOsmMeters.get(id)?.keys() ?? [])];
     const matched = osmIds.length > 0;
     if (matched) bcaMatchedCount++;
 
@@ -197,14 +192,20 @@ async function main() {
     };
   });
 
+  // O(1) anchor lookup instead of scanning bca.features per matched OSM point
+  // — Pass 1/2 already held the matching bcaF reference, this just keeps it
+  // addressable by id (same pattern as osmById below, built once up front).
+  const bcaById = new Map(bca.features.map((f) => [f.properties.id, f]));
+
   let osmMatchedCount = 0;
   const osmFeatures = osm.features.map((f) => {
     const id = f.properties.id;
-    const anchorId = osmAssignedAnchor.get(id) ?? null;
+    const assignment = osmAssigned.get(id) ?? null;
+    const anchorId = assignment ? assignment.anchorId : null;
     const matched = anchorId != null;
     if (matched) osmMatchedCount++;
 
-    const anchorFeature = matched ? bca.features.find((b) => b.properties.id === anchorId) : null;
+    const anchorFeature = matched ? bcaById.get(anchorId) : null;
     const anchorAmbiguous = matched && Boolean(anchorFeature.properties.attributes.ambiguousJunction);
 
     return {
@@ -220,7 +221,7 @@ async function main() {
           // count rather than a boolean for symmetry with the BCA side's
           // field, where multi-match is the normal case.
           crossSourceCount: matched ? 1 : 0,
-          crossSourceMeters: matched ? Math.round(osmAssignedMeters.get(id)) : null,
+          crossSourceMeters: matched ? Math.round(assignment.meters) : null,
           crossSourceThresholdM: THRESHOLD_M,
           crossSourceContested: contestedOsmIds.has(id),
           crossSourceAnchorAmbiguous: anchorAmbiguous,
