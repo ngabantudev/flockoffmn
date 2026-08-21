@@ -455,7 +455,7 @@ export const LAYERS: LayerDefinition[] = [
       // § 13.824 filing is the department's, not any one precinct's, so the
       // lines leave the address that answers for the department rather than
       // whichever substation the ingest happened to emit first.
-      hubKey: 'subStation',
+      hubWhere: { key: 'subStation' },
       // Only to readers this agency itself reported to the state — never to
       // whatever happens to sit inside the boundary. See pathsTo's own
       // comment in types.ts for why that distinction is the whole point.
