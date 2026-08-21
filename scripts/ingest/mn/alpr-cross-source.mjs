@@ -287,16 +287,44 @@ async function main() {
   // see that helper's own comment on why a restamped clock makes the weekly
   // refresh's `git diff --quiet` check permanently noisy. No `runAt` field:
   // writeReference already owns that clock.
+  //
+  // CLAUDE.md §3 asks every ingest script for a Provenance Record: primary
+  // URL, document type, document identifier, issue date, license type,
+  // attribution text, fetch timestamp, content hash. This script doesn't
+  // fetch a primary document of its own — it computes a proximity match
+  // between two already-cited layers (see the file header and §1c) — so
+  // "document type/identifier", "fetch timestamp", and "content hash" have
+  // no value of this script's own to record, and per §3's "Missing
+  // Sources" rule that means null, not a fabricated stand-in. What this
+  // script *can* and must give a reader, per this issue and §0.8, is a
+  // pointer back to the full provenance of the two layers it computed
+  // from, rather than leaving them to already know to go look at
+  // alpr.geojson's and alpr-reported.geojson's own metadata.
   await writeReference('reference/alpr-cross-source.json', {
     metadata: {
       note: 'Proximity match this project computed between two independent ALPR records — not a document connecting them. See CLAUDE.md §1c.',
       thresholdMeters: THRESHOLD_M,
-      osmLastUpdated: osm.metadata.lastUpdated,
-      bcaLastUpdated: bca.metadata.lastUpdated,
       bcaMatchedCount,
       osmMatchedCount,
       bcaTotal: bca.features.length,
       osmTotal: osm.features.length,
+      // Each entry mirrors that layer's own `Provenance` object (see
+      // src/layers/types.ts) rather than a new shape — this file has no
+      // primary source of its own, so its provenance *is* the provenance
+      // of the two layers it was computed from.
+      sources: [
+        { key: 'osm', layer: 'alpr', provenance: osm.metadata },
+        { key: 'bca', layer: 'alpr_reported', provenance: bca.metadata },
+      ],
+      // Not part of the Provenance shape above (documentType, documentId,
+      // fetchTimestamp, contentHash): this script has none of its own to
+      // record, since it fetches nothing — see the comment above this
+      // block. Left explicit and null rather than omitted, per §3's
+      // "Missing Sources" rule.
+      documentType: null,
+      documentIdentifier: null,
+      fetchTimestamp: null,
+      contentHash: null,
     },
     sites: siteEntries,
     discardedSameAgencyPairings: discardedSameAgency,
