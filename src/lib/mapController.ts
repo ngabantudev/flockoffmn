@@ -121,7 +121,7 @@ export interface ClientLayer {
     layerId: LayerId;
     fromKey?: string;
     joinKey: string;
-    hubKey?: string;
+    hubWhere?: { key: string; value?: string };
     pathsTo?: { layerId: LayerId; fromKey?: string; joinKey: string };
   };
   /** See LayerDefinition's own comment in layers/types.ts. */
@@ -3528,11 +3528,19 @@ export class MapController {
     // One hub, not one spoke per building: every matched building lights up
     // above, but the lines throw from a single representative address, because
     // the filing is the department's, not any one station's. Which record is
-    // the hub is the registry's call (`hubKey`), not this class's — the next
-    // relation to declare one will join a different vocabulary entirely.
-    const hubKey = rel.hubKey;
+    // the hub, and which polarity picks it, are the registry's call
+    // (`hubWhere`), not this class's — the next relation to declare one will
+    // join a different vocabulary, and may match a value rather than an
+    // absence.
+    const hubWhere = rel.hubWhere;
     const hub =
-      (hubKey ? matched.find((f) => !f.properties.attributes[hubKey]) : undefined) ?? matched[0];
+      (hubWhere
+        ? matched.find((f) =>
+            hubWhere.value === undefined
+              ? !f.properties.attributes[hubWhere.key]
+              : f.properties.attributes[hubWhere.key] === hubWhere.value,
+          )
+        : undefined) ?? matched[0];
     // A department with nothing to throw has to *erase* the last one's lines,
     // not simply decline to draw its own — most jurisdictions reported no
     // reader, so returning early here left the previously selected agency's

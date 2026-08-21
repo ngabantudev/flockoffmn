@@ -690,17 +690,21 @@ export interface LayerDefinition {
     joinKey: string;
     /**
      * Attribute on that point layer marking a record as *subordinate*, used to
-     * pick which of the matched records the paths throw from: the first record
-     * that does NOT carry it wins, falling back to the first match.
+     * pick which of the matched records the paths throw from. Omit `value`
+     * and the first record that does NOT carry the key wins (falsy wins) —
+     * `subStation` distinguishes a precinct from its headquarters this way.
+     * Give a `value` and the first record whose attribute equals it wins
+     * instead. Either way, falls back to the first match.
      *
      * Every matched record lights up either way; only the line origin is at
      * stake. Declared here rather than decided in mapController because it is
-     * this relation's vocabulary — `subStation` distinguishes a precinct from
-     * its headquarters, and the next relation to want a hub (a county board and
-     * its facilities, a district and its contract sites) will name something
-     * else entirely. Omit it and the paths throw from the first match.
+     * this relation's vocabulary — the next relation to want a hub (a county
+     * board and its facilities, a district and its contract sites) will name
+     * something else entirely, and may need a positive match (`isHeadquarters:
+     * true`, `role: 'headquarters'`) rather than an absent field. Omit
+     * `hubWhere` entirely and the paths throw from the first match.
      */
-    hubKey?: string;
+    hubWhere?: { key: string; value?: string };
     pathsTo?: {
       /** The point layer whose matching records get a path drawn to them. */
       layerId: LayerId;
