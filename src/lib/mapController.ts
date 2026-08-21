@@ -466,13 +466,24 @@ const NEARME_BOUNDARY_LAYER = 'nearme-boundary';
 const NEARME_MASK_SOURCE = 'src-nearme-mask';
 const NEARME_MASK_LAYER = 'nearme-mask';
 /**
+ * Faint intermediate rings inside the main boundary — one per whole mile
+ * short of the current radius (nearMeMileMarkerRadiiM), so a wide search
+ * still reads as measured distance, not just "near" vs "far." See that
+ * function's own comment for exactly which radii it returns.
+ */
+const NEARME_MARKERS_SOURCE = 'src-nearme-markers';
+const NEARME_MARKERS_LAYER = 'nearme-markers';
+/**
  * Bottom to top: the mask sits under everything else near-me draws (so it
  * dims ordinary registry dots and the basemap but never the sweep/blips/
- * origin themselves), the boundary sits just above it, then the sweep's own
- * stack in its existing relative order.
+ * origin themselves), the mile markers sit just above the mask (inside the
+ * mask's own hole, so they're only ever drawn over the *unmasked* interior),
+ * the main boundary above those, then the sweep's own stack in its existing
+ * relative order.
  */
 const NEARME_STACK = [
   NEARME_MASK_LAYER,
+  NEARME_MARKERS_LAYER,
   NEARME_BOUNDARY_LAYER,
   NEARME_PATHS_LAYER,
   NEARME_IMPACT_LAYER,
@@ -1612,6 +1623,9 @@ export class MapController {
     }
     if (this.map.getLayer(NEARME_BOUNDARY_LAYER)) {
       this.map.setPaintProperty(NEARME_BOUNDARY_LAYER, 'line-color', this.nearMeBoundaryColor);
+    }
+    if (this.map.getLayer(NEARME_MARKERS_LAYER)) {
+      this.map.setPaintProperty(NEARME_MARKERS_LAYER, 'line-color', this.nearMeBoundaryColor);
     }
     if (this.map.getLayer(NEARME_MASK_LAYER)) {
       this.map.setPaintProperty(NEARME_MASK_LAYER, 'fill-color', this.nearMeMaskColor);
@@ -4207,6 +4221,24 @@ export class MapController {
     // drawn on NEARME_PATHS_LAYER), this ring is not a substitute for
     // anything — it's the one persistent "here's the edge" cue this overlay
     // has, present under every motion preference.
+    // The intermediate mile-marker rings — one whole-mile ring per mile
+    // short of the current radius, plus a halfway ring when the radius
+    // itself is under a mile (see nearMeMileMarkerRadiiM). Fainter than the
+    // main boundary (lower opacity, thinner) so the outer edge still reads
+    // as *the* boundary at a glance and these read as measure, not a second
+    // edge competing with it.
+    this.map.addSource(NEARME_MARKERS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_MARKERS_LAYER,
+      type: 'line',
+      source: NEARME_MARKERS_SOURCE,
+      paint: {
+        'line-color': this.nearMeBoundaryColor,
+        'line-width': 1,
+        'line-opacity': 0.22,
+      },
+    });
+
     this.map.addSource(NEARME_BOUNDARY_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
     this.map.addLayer({
       id: NEARME_BOUNDARY_LAYER,
@@ -4377,9 +4409,9 @@ export class MapController {
 
     this.nearMeRadiusControl?.reset();
     this.nearMeRadiusControl?.setVisible(true);
-    const targets = this.applyNearMeRadius(NEARME_RADIUS_DEFAULT_MI);
+    this.applyNearMeRadius(NEARME_RADIUS_DEFAULT_MI);
     this.startNearMeSweep();
-    this.refitNearMeCamera(targets);
+    this.refitNearMeCamera();
   }
 
   /**
@@ -4446,14 +4478,18 @@ export class MapController {
   }
 
   /**
-   * Move the camera to frame `nearMeOrigin` and every camera the current
-   * radius just connected — "Nearest" only helps a reader if the nearest ones are
-   * actually visible, on a phone as much as a desktop, so the map's zoom
-   * is itself a function of how many cameras the current radius connects:
-   * a wide radius with many results zooms out to fit them all; a narrow
-   * radius with few (or none) zooms in, down to NEARME_ZOOM's floor. See
-   * NEARME_ZOOM's own comment for why that floor doesn't apply when there
-   * are targets to fit.
+   * Move the camera to frame `nearMeOrigin` and the *entire* current search
+   * radius — not just whatever cameras happen to be in it. Fitting to the
+   * actual targets used to mean a narrow radius with one nearby camera
+   * zoomed in tight around just that dot, and a radius with zero results
+   * zoomed to NEARME_ZOOM's floor with no frame around the search area at
+   * all — both disagreed with what the boundary ring and darkening mask
+   * (renderNearMeBoundary) now draw on screen: the reader is looking at a
+   * circle, so the camera should always show that whole circle, every time
+   * the radius changes, regardless of how many (or how few) cameras happen
+   * to be inside it this time. `nearMeRadiusRing()` is the exact same
+   * geometry the boundary/mask already draw, so "what the map fits to" and
+   * "what the map draws as the search area" can never disagree.
    *
    * cameraForBounds only *computes* the camera; easeToCamera does the
    * actual move, with its moveend/jumpTo landing correction — a bare
@@ -4468,27 +4504,32 @@ export class MapController {
    * center/zoom — so passing the live bearing back in just keeps the fit
    * honest about the frame it's actually being fit into.
    *
-   * The zoom ceiling — accuracyZoomCap's honesty clamp (§0.2, §0.7), and
-   * for the no-target case the NEARME_ZOOM floor as well — is computed
-   * once and handed to cameraForBounds as its own `maxZoom`, rather than
-   * left to override the result afterwards: overriding zoom post hoc
-   * without recomputing center leaves the two disagreeing about which
-   * zoom the sheet-padding offset was computed for, silently shrinking
-   * that offset. Passed only when finite: accuracy of exactly 0 (no fix
-   * recorded yet, or a mocked one — real fixes are never exactly 0) makes
-   * accuracyZoomCap return +Infinity, and a container with zero real width
-   * or height (a hidden ancestor mid-layout) makes it -Infinity — either
-   * one reaching MapLibre as `maxZoom` produces a NaN camera, so neither
-   * is ever passed; cameraForBounds is left to its own default instead.
+   * The zoom ceiling — accuracyZoomCap's honesty clamp (§0.2, §0.7) — is
+   * computed once and handed to cameraForBounds as its own `maxZoom`,
+   * rather than left to override the result afterwards: overriding zoom
+   * post hoc without recomputing center leaves the two disagreeing about
+   * which zoom the sheet-padding offset was computed for, silently
+   * shrinking that offset. Passed only when finite: accuracy of exactly 0
+   * (no fix recorded yet, or a mocked one — real fixes are never exactly 0)
+   * makes accuracyZoomCap return +Infinity, and a container with zero real
+   * width or height (a hidden ancestor mid-layout) makes it -Infinity —
+   * either one reaching MapLibre as `maxZoom` produces a NaN camera, so
+   * neither is ever passed; cameraForBounds is left to its own default
+   * instead. NEARME_ZOOM's floor now only ever applies to the fallback
+   * branch below, when cameraForBounds itself fails to produce a fit (a
+   * zero-sized container mid-layout) — not to a low target count, since
+   * there is always a circle to fit regardless of target count.
    */
-  private refitNearMeCamera(targets: Array<[number, number]>) {
+  private refitNearMeCamera() {
     if (!this.nearMeOrigin) return;
     const container = this.map.getContainer();
     const minDimensionPx = Math.min(container.clientWidth, container.clientHeight);
     const cap = accuracyZoomCap(this.nearMeAccuracyM, this.nearMeOrigin[1], minDimensionPx);
-    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
-    const intendedZoom = targets.length > 0 ? cap : Number.isFinite(cap) ? Math.min(floor, cap) : floor;
-    const bounds = bboxOf({ type: 'MultiPoint', coordinates: [this.nearMeOrigin, ...targets] });
+    const ring = this.nearMeRadiusRing();
+    const bounds = bboxOf({
+      type: 'MultiPoint',
+      coordinates: ring.length ? ring : [this.nearMeOrigin],
+    });
     const fit = this.map.cameraForBounds(
       [
         [bounds[0], bounds[1]],
@@ -4497,11 +4538,12 @@ export class MapController {
       {
         padding: this.fitPadding(),
         bearing: this.map.getBearing(),
-        ...(Number.isFinite(intendedZoom) ? { maxZoom: intendedZoom } : {}),
+        ...(Number.isFinite(cap) ? { maxZoom: cap } : {}),
       },
     );
     const fitCenter = fit?.center != null ? maplibregl.LngLat.convert(fit.center) : null;
     const fitZoom = fit?.zoom != null && Number.isFinite(fit.zoom) ? fit.zoom : null;
+    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
     const camera =
       fitCenter && fitZoom != null
         ? { center: [fitCenter.lng, fitCenter.lat] as [number, number], zoom: fitZoom }
@@ -4533,20 +4575,20 @@ export class MapController {
     this.nearMeDragFrame = requestAnimationFrame(() => {
       this.nearMeDragFrame = null;
       if (this.pendingNearMeRadiusMi === null) return;
-      const targets = this.applyNearMeRadius(this.pendingNearMeRadiusMi, false);
-      // Newly-connected cameras a wider drag just pulled in are otherwise
-      // drawn off-screen until the reader lets go — the camera has to
-      // follow live, not just redraw the lines, or a farther-out camera is
-      // invisible the whole time it's actually "connected." Each tick's
-      // easeToCamera restarts from wherever the last one left off, which
-      // reads as the view tracking the drag rather than N separate jumps —
-      // same restart-in-place behavior any of this class's other
+      this.applyNearMeRadius(this.pendingNearMeRadiusMi, false);
+      // The circle itself grows or shrinks with every tick, not just
+      // whatever cameras happen to be inside it — the camera has to follow
+      // live, not just redraw the boundary, or the ring is drawn partly
+      // off-screen the whole time the reader is dragging toward it. Each
+      // tick's easeToCamera restarts from wherever the last one left off,
+      // which reads as the view tracking the drag rather than N separate
+      // jumps — same restart-in-place behavior any of this class's other
       // easeToCamera call sites already rely on for a fast second call.
-      this.refitNearMeCamera(targets);
+      this.refitNearMeCamera();
     });
   }
 
-  /** NearMeRadiusControl's `change` handler — fires once on release; commits the value, announces the result, and refits the camera to the newly-connected set. */
+  /** NearMeRadiusControl's `change` handler — fires once on release; commits the value, announces the result, and refits the camera to the whole newly-committed radius. */
   private commitNearMeRadius(radiusMi: number) {
     // A commit right after the last coalesced drag frame already queued
     // itself would otherwise redraw twice for the same value — cancel
@@ -4556,8 +4598,8 @@ export class MapController {
       this.nearMeDragFrame = null;
     }
     this.pendingNearMeRadiusMi = null;
-    const targets = this.applyNearMeRadius(radiusMi, true);
-    this.refitNearMeCamera(targets);
+    this.applyNearMeRadius(radiusMi, true);
+    this.refitNearMeCamera();
   }
 
   /**
@@ -4682,13 +4724,37 @@ export class MapController {
    * the counter-clockwise exterior ring — see nearMeMaskPolygon), so
    * nearMeMaskPolygon uses this ring's output unreversed.
    */
-  private nearMeRadiusRing(steps = 72): [number, number][] {
+  private nearMeRadiusRing(radiusM = this.nearMeSweepRadiusM, steps = 72): [number, number][] {
     if (!this.nearMeOrigin) return [];
     const ring: [number, number][] = [];
     for (let i = 0; i <= steps; i++) {
-      ring.push(destinationPoint(this.nearMeOrigin, (360 * i) / steps, this.nearMeSweepRadiusM) as [number, number]);
+      ring.push(destinationPoint(this.nearMeOrigin, (360 * i) / steps, radiusM) as [number, number]);
     }
     return ring;
+  }
+
+  /**
+   * The intermediate mile-marker radii, in metres, for the *current*
+   * `nearMeSweepRadiusM` — whole-mile rings strictly inside the main
+   * boundary, plus a halfway ring when the radius itself is under a mile
+   * (today's slider floor is 1mi — NEARME_RADIUS_MIN_MI — so that branch
+   * isn't reachable from the slider as shipped, but this stays correct if
+   * that floor is ever lowered, rather than silently drawing nothing below
+   * it). Deliberately excludes the radius itself: that ring is already the
+   * main boundary (renderNearMeBoundary), and drawing a second, fainter ring
+   * exactly on top of it would either be invisible or read as a rendering
+   * glitch, not a second measurement.
+   */
+  private nearMeMileMarkerRadiiM(): number[] {
+    const radiusMi = this.nearMeSweepRadiusM / 1609.344;
+    if (radiusMi < 1) {
+      const half = radiusMi / 2;
+      return half > 0 ? [half * 1609.344] : [];
+    }
+    const wholeMiles = Math.floor(radiusMi - 1e-9);
+    const radii: number[] = [];
+    for (let mi = 1; mi <= wholeMiles; mi++) radii.push(mi * 1609.344);
+    return radii;
   }
 
   /**
@@ -4728,11 +4794,11 @@ export class MapController {
   }
 
   /**
-   * Redraw the persistent radius boundary and its darkening mask from the
-   * current `nearMeSweepRadiusM` — called from applyNearMeRadius on every
-   * radius change (drag and commit alike) and on the very first draw, unlike
-   * the sweep/its REDUCED_MOTION substitute, both of which this is
-   * independent of.
+   * Redraw the persistent radius boundary, its intermediate mile markers,
+   * and the darkening mask from the current `nearMeSweepRadiusM` — called
+   * from applyNearMeRadius on every radius change (drag and commit alike)
+   * and on the very first draw, unlike the sweep/its REDUCED_MOTION
+   * substitute, both of which this is independent of.
    */
   private renderNearMeBoundary() {
     const ring = this.nearMeRadiusRing();
@@ -4745,6 +4811,15 @@ export class MapController {
           } as never)
         : (EMPTY_FC as never),
     );
+    const markers = this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined;
+    markers?.setData({
+      type: 'FeatureCollection',
+      features: this.nearMeMileMarkerRadiiM().map((radiusM) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'LineString' as const, coordinates: this.nearMeRadiusRing(radiusM) },
+        properties: {},
+      })),
+    } as never);
     const mask = this.map.getSource(NEARME_MASK_SOURCE) as GeoJSONSource | undefined;
     const polygon = this.nearMeMaskPolygon();
     mask?.setData((polygon ? { type: 'FeatureCollection', features: [polygon] } : EMPTY_FC) as never);
@@ -4808,6 +4883,7 @@ export class MapController {
     (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_BOUNDARY_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_MASK_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
   }
 
