@@ -60,6 +60,11 @@ export const en: Record<string, string> = {
   mapNearMe: 'What’s near me',
   mapNearMeFound: '{count} nearby, {shown} shown.',
   mapNearMeNone: 'Nothing mapped within range of this location.',
+  // Announced via #map-status (aria-live) whenever a record is selected —
+  // from a map tap, a search result, or /near-me alike — independent of
+  // whatever layer-visibility side effect a selection happens to trigger.
+  // See #131.
+  recordSelected: '{layer}: {name} selected',
   // Label and value format for the search-radius slider that appears once a
   // "near me" location is found (NearMeRadiusControl) — drag it to widen or
   // narrow which cameras/readers are drawn.

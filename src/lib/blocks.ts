@@ -10,9 +10,9 @@
  * told apart.
  *
  * This is a rendering aggregate and nothing more. Blocks are not records: not
- * clickable, not searchable, and not in the accessible record list, because
- * the thing a reader can act on is a parcel and this is a shape drawn over
- * several of them.
+ * clickable, not searchable, and never reachable through the detail panel,
+ * because the thing a reader can act on is a parcel and this is a shape
+ * drawn over several of them.
  */
 
 /** One parcel centroid, with the categorical value it should count toward. */

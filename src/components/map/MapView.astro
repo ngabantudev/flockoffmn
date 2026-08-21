@@ -210,6 +210,7 @@ const strings = {
   actionPickBody: t('actionPickBody'),
   filtersCleared: t('filtersCleared'),
   resetView: t('resetView'),
+  recordSelected: t('recordSelected'),
   crossListedCorner: t('crossListedCorner'),
   crossListedNearMissLegend: t('crossListedNearMissLegend'),
   crossSourceJumpToMatch: t('crossSourceJumpToMatch'),
@@ -1100,6 +1101,13 @@ const strings = {
     const p = feature.properties;
     const attrs = p.attributes as Record<string, unknown>;
     detailTabNameEl.textContent = `, ${p.name}`;
+    // A selection's only other observable effect is opening #detail-panel —
+    // real for a sighted reader, invisible to one relying on #map-status.
+    // Announced here, not in the onSelect callback itself, because this is
+    // the one path every selection route (map tap, search, /near-me) funnels
+    // through, same reason focusFeature's own selection logic lives in one
+    // place rather than at each call site. See #131.
+    status(fill(S.recordSelected, { layer: layer.label, name: p.name }));
 
     const header = el('div', 'flex items-start justify-between gap-2 border-b border-ink-800 p-3');
     const titleWrap = el('div', 'min-w-0');
