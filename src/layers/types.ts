@@ -617,7 +617,7 @@ export interface LayerDefinition {
    * `related` is the point of the thing: it counts records of another layer
    * that join to this one, so the card can answer "and what did this agency
    * report?" from the same document the other layer is built from. It never
-   * infers the link — see relatedBuildings.pathsTo's comment for why that
+   * infers the link — see relation.pathsTo's comment for why that
    * distinction matters here specifically.
    */
   hoverCard?: {
@@ -672,7 +672,7 @@ export interface LayerDefinition {
    * a cited document connects the two ends, never because one happens to
    * fall inside the other.
    */
-  relatedBuildings?: {
+  relation?: {
     /** The point layer to search and highlight. */
     layerId: LayerId;
     /**

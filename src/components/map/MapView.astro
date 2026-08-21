@@ -93,7 +93,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
           : undefined,
       }
     : undefined,
-  relatedBuildings: d.relatedBuildings,
+  relation: d.relation,
   tintWhenRelated: d.tintWhenRelated,
   // Only for layers /near-me already enumerates individually (`nearMe.list`)
   // — the homepage map's own "what's near me" control searches exactly
