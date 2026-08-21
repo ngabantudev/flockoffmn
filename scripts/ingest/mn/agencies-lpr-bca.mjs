@@ -23,9 +23,7 @@
  * document (MESB's own boundary), rather than a claim of its own.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fetchWithRetry, log, decodeXml, PUBLIC_DATA } from '../lib/util.mjs';
+import { fetchWithRetry, log, decodeXml, writeReferenceJson } from '../lib/util.mjs';
 
 const LANDING = 'https://dps.mn.gov/divisions/bca/data-and-reports/agencies-use-lprs-lpr';
 
@@ -86,24 +84,19 @@ async function main() {
 
   log('agencies-lpr-bca', `parsed ${agencies.length} agencies from the BCA LPR-use page`);
 
-  const dir = path.join(PUBLIC_DATA, 'reference');
-  await mkdir(dir, { recursive: true });
-  await writeFile(
-    path.join(dir, 'bca-alpr-agencies.json'),
-    JSON.stringify({
-      metadata: {
-        source: 'Minnesota Bureau of Criminal Apprehension — agencies reporting LPR use',
-        sourceUrl: LANDING,
-        statute: 'Minn. Stat. § 13.824, subd. 8',
-        license: 'Public government data (Minn. Stat. ch. 13)',
-        attribution: 'Minnesota Bureau of Criminal Apprehension',
-        note:
-          'A listed agency self-reported LPR use to the BCA; the device-location text, where present, is the agency\'s own report and is not independently verified by this project.',
-        lastUpdated: new Date().toISOString(),
-      },
-      agencies,
-    }),
-  );
+  await writeReferenceJson('bca-alpr-agencies.json', {
+    metadata: {
+      source: 'Minnesota Bureau of Criminal Apprehension — agencies reporting LPR use',
+      sourceUrl: LANDING,
+      statute: 'Minn. Stat. § 13.824, subd. 8',
+      license: 'Public government data (Minn. Stat. ch. 13)',
+      attribution: 'Minnesota Bureau of Criminal Apprehension',
+      note:
+        'A listed agency self-reported LPR use to the BCA; the device-location text, where present, is the agency\'s own report and is not independently verified by this project.',
+      lastUpdated: new Date().toISOString(),
+    },
+    agencies,
+  });
   log('agencies-lpr-bca', `wrote ${agencies.length} agencies -> public/data/reference/bca-alpr-agencies.json`);
 }
 

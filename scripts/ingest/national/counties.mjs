@@ -21,9 +21,7 @@
  * Sources are both US federal public-domain works, no API key required.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fetchWithRetry, unzip, log, PUBLIC_DATA } from '../lib/util.mjs';
+import { fetchWithRetry, unzip, log, writeReferenceJson } from '../lib/util.mjs';
 
 const STATE_FIPS = process.env.STATE_FIPS ?? '27'; // Minnesota
 const STATE_USPS = process.env.STATE_USPS ?? 'MN';
@@ -149,38 +147,30 @@ async function main() {
     throw new Error(`${missing.length} counties have no centroid; refusing to write a partial index`);
   }
 
-  const dir = path.join(PUBLIC_DATA, 'reference');
-  await mkdir(dir, { recursive: true });
-  await writeFile(
-    path.join(dir, 'mn-counties.geojson'),
-    JSON.stringify({
-      type: 'FeatureCollection',
-      metadata: {
-        source: 'US Census Bureau — TIGERweb (boundaries) and 2023 Gazetteer (interior points)',
-        sourceUrl: 'https://www.census.gov/geographies/reference-files.html',
-        license: 'Public domain (US federal government work)',
-        attribution: 'U.S. Census Bureau',
-        simplifiedDegrees: SIMPLIFY,
-        lastUpdated: new Date().toISOString(),
-      },
-      features,
-    }),
-  );
+  await writeReferenceJson('mn-counties.geojson', {
+    type: 'FeatureCollection',
+    metadata: {
+      source: 'US Census Bureau — TIGERweb (boundaries) and 2023 Gazetteer (interior points)',
+      sourceUrl: 'https://www.census.gov/geographies/reference-files.html',
+      license: 'Public domain (US federal government work)',
+      attribution: 'U.S. Census Bureau',
+      simplifiedDegrees: SIMPLIFY,
+      lastUpdated: new Date().toISOString(),
+    },
+    features,
+  });
   log('counties', `wrote ${features.length} counties -> public/data/reference/mn-counties.geojson`);
 
-  await writeFile(
-    path.join(dir, 'mn-places.json'),
-    JSON.stringify({
-      metadata: {
-        source: 'US Census Bureau — 2023 Gazetteer (places)',
-        license: 'Public domain (US federal government work)',
-        attribution: 'U.S. Census Bureau',
-        note: 'Shipped so location lookup can run entirely in the browser, with no geocoding request to any third party.',
-        lastUpdated: new Date().toISOString(),
-      },
-      places,
-    }),
-  );
+  await writeReferenceJson('mn-places.json', {
+    metadata: {
+      source: 'US Census Bureau — 2023 Gazetteer (places)',
+      license: 'Public domain (US federal government work)',
+      attribution: 'U.S. Census Bureau',
+      note: 'Shipped so location lookup can run entirely in the browser, with no geocoding request to any third party.',
+      lastUpdated: new Date().toISOString(),
+    },
+    places,
+  });
   log('counties', `wrote ${places.length} places -> public/data/reference/mn-places.json`);
 }
 

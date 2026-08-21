@@ -29,7 +29,15 @@
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fetchWithRetry, writeLayer, loadCounties, log, slugId, ROOT } from '../lib/util.mjs';
+import {
+  fetchWithRetry,
+  writeLayer,
+  loadCounties,
+  loadPublicJson,
+  log,
+  slugId,
+  ROOT,
+} from '../lib/util.mjs';
 import { findContaining } from '../../../src/lib/geo.mjs';
 
 const SERVICE =
@@ -90,8 +98,9 @@ async function loadCampaigns() {
  * point and the county from the federal record.
  */
 async function loadPlaces() {
-  const p = path.join(ROOT, 'public/data/reference/mn-jurisdictions.json');
-  const doc = JSON.parse(await readFile(p, 'utf8'));
+  const doc = await loadPublicJson('reference/mn-jurisdictions.json', {
+    runFirst: 'npm run data:jurisdictions',
+  });
   const cities = new Map();
   const counties = new Map();
   for (const j of doc.jurisdictions ?? []) {
@@ -159,8 +168,10 @@ function reconcileText(claims) {
 async function loadCuratedProjects() {
   const p = path.join(ROOT, 'data/community/data-center-projects.json');
   const doc = JSON.parse(await readFile(p, 'utf8'));
-  const jurisdictionsDoc = JSON.parse(
-    await readFile(path.join(ROOT, 'public/data/reference/mn-jurisdictions.json'), 'utf8'),
+  const jurisdictionsDoc = (
+    await loadPublicJson('reference/mn-jurisdictions.json', {
+      runFirst: 'npm run data:jurisdictions',
+    })
   ).jurisdictions;
   const { cities } = await loadPlaces();
 

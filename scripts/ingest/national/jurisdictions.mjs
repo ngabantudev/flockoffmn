@@ -31,9 +31,7 @@
  * — the same service `counties.mjs` uses, at the county-subdivision level.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fetchWithRetry, log, loadCounties, PUBLIC_DATA } from '../lib/util.mjs';
+import { fetchWithRetry, log, loadCounties, writeReferenceJson } from '../lib/util.mjs';
 
 const STATE_FIPS = process.env.STATE_FIPS ?? '27'; // Minnesota
 const STATE_USPS = process.env.STATE_USPS ?? 'MN';
@@ -226,17 +224,11 @@ async function main() {
       'agency, or a private operator may all run equipment inside these lines.',
   ];
 
-  const dir = path.join(PUBLIC_DATA, 'reference');
-  await mkdir(dir, { recursive: true });
-
-  await writeFile(
-    path.join(dir, 'mn-jurisdictions.geojson'),
-    JSON.stringify({
-      type: 'FeatureCollection',
-      metadata: { ...provenance, notes },
-      features,
-    }),
-  );
+  await writeReferenceJson('mn-jurisdictions.geojson', {
+    type: 'FeatureCollection',
+    metadata: { ...provenance, notes },
+    features,
+  });
   log(
     'jurisdictions',
     `wrote ${features.length} boundaries -> public/data/reference/mn-jurisdictions.geojson`,
@@ -267,19 +259,16 @@ async function main() {
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  await writeFile(
-    path.join(dir, 'mn-jurisdictions.json'),
-    JSON.stringify({
-      metadata: {
-        ...provenance,
-        note:
-          'Shipped so the lookup runs entirely in the browser, with no geocoding ' +
-          'request to any third party.',
-        notes,
-      },
-      jurisdictions: index,
-    }),
-  );
+  await writeReferenceJson('mn-jurisdictions.json', {
+    metadata: {
+      ...provenance,
+      note:
+        'Shipped so the lookup runs entirely in the browser, with no geocoding ' +
+        'request to any third party.',
+      notes,
+    },
+    jurisdictions: index,
+  });
   log('jurisdictions', `wrote ${index.length} entries -> public/data/reference/mn-jurisdictions.json`);
   log(
     'jurisdictions',
