@@ -1170,9 +1170,17 @@ export class MapController {
    * light basemap, since a light basemap needs less pushed toward black to
    * read as "dimmed" and a full ink-950-strength overlay there would read
    * as a hole in the map rather than a dimmed area.
+   *
+   * Opacity raised from an original 0.55/0.35: the mask never touches
+   * anything *inside* the radius at all — nearMeMaskPolygon's hole is exact,
+   * so a camera dot in range is always drawn at its own full, untouched
+   * opacity, never this color composited over it — but the original values
+   * left "outside" reading as merely tinted rather than clearly dimmed,
+   * undercutting the inside/outside contrast that's the whole point of this
+   * layer. Stronger here, not a change to anything inside the hole.
    */
   private get nearMeMaskColor(): string {
-    return this.basemapDark ? 'rgba(3, 4, 5, 0.55)' : 'rgba(18, 20, 24, 0.35)';
+    return this.basemapDark ? 'rgba(3, 4, 5, 0.72)' : 'rgba(15, 17, 20, 0.5)';
   }
 
   /**
