@@ -787,9 +787,18 @@ const strings = {
       starts refusing to reserve the whole sheet and the record creeps back
       under its top edge.
     */}
+    {/*
+      recordPanel ("Record"), not whatThisMeans — this panel now also
+      renders the near-me record list and its own header (renderNearMeList),
+      never just the "What this means" explainer that name described; that
+      section was removed from the record view entirely (see renderDetail).
+      recordPanel is already this same panel's own name everywhere else —
+      #detail-tab (the pull tab that controls it, just below) uses the
+      identical string, so the tab and the region it controls now agree.
+    */}
     <aside
       id="detail-panel"
-      aria-label={t('whatThisMeans')}
+      aria-label={t('recordPanel')}
       hidden
       class="scroll-slim absolute inset-x-0 bottom-0 z-20 max-h-[45%] shrink-0 overflow-x-hidden overflow-y-auto rounded-t-xl border-t border-ink-800 bg-ink-900 shadow-[0_-8px_24px_rgb(0_0_0/0.35)] xl:static xl:max-h-none xl:rounded-none xl:border-t-0 xl:border-l xl:shadow-none"
     >
@@ -867,11 +876,21 @@ const strings = {
     locationUnavailableLabel: S.locationUnavailable,
     locationTimedOutLabel: S.locationTimedOut,
     onNearMeError: (message) => status(message, 6000),
-    onNearMeResult: (totalFound, shown, accuracyM) => {
+    onNearMeResult: (totalFound, shown, accuracyM, announce) => {
+      // Always updates state — a sighted reader dragging the radius slider
+      // watches this same number in the sheet's summary line (renderNearMeList),
+      // fed live by onNearMeRecords below on every tick; leaving nearMeFound
+      // stale until `announce` (commit-only) produced a self-contradictory
+      // "2 found, 9 shown" mid-drag, shown exceeding found. Only the actual
+      // screen-reader narration stays gated on `announce` — see
+      // mapController.ts's onNearMeResult comment for why that's still a
+      // "don't narrate every mile" gate and not a "don't update yet" one.
       nearMeFound = totalFound;
       nearMeAccuracyM = accuracyM;
       nearMeLoading = false;
-      status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000);
+      if (announce) {
+        status(totalFound ? fill(S.mapNearMeFound, { count: totalFound, shown }) : S.mapNearMeNone, 6000);
+      }
     },
     // The DOM equivalent of the throw lines above — see NearMeRecord's own
     // comment in mapController.ts. Re-renders the list only while it's
@@ -1411,8 +1430,14 @@ const strings = {
     headingRow.append(el('h2', 'min-w-0 truncate text-base font-semibold leading-snug text-ink-100', S.mapNearMe));
     headingRow.append(nearMeRadiusMobileSlot);
     titleWrap.append(headingRow);
+    // Not shown while loading: `.near-me-radius-input`'s DOM value is
+    // whatever the *previous* near-me session left it at — reset() only
+    // runs inside showNearMe, after geolocation resolves — so reopening
+    // near-me could otherwise flash "0 found, 0 shown within {stale radius}
+    // mi" for the loading window before the real default radius lands.
+    // mapNearMeLoading (below, in `body`) already carries this state.
     const radiusInput = document.querySelector<HTMLInputElement>('.near-me-radius-input');
-    if (radiusInput) {
+    if (radiusInput && !nearMeLoading) {
       titleWrap.append(
         el(
           'p',

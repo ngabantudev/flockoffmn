@@ -193,15 +193,26 @@ export interface ControllerEvents {
    * already reads privately) — carried here too so MapView.astro's DOM list
    * can show the same low-accuracy warning /near-me's own page already
    * gives a reader, without a second geolocation read of its own.
+   *
+   * Fired on every radius change, drag ticks included — unconditionally,
+   * the same as `onNearMeRecords` below, so the two numbers this callback
+   * and that one feed a shared summary line ("N found, M shown") can never
+   * disagree mid-drag. `announce` is *not* a fire/skip gate on this call
+   * (it used to be, which is exactly what let `totalFound` go stale while
+   * `onNearMeRecords`'s `shown` kept live-updating) — it only tells the
+   * caller whether this update should also reach a screen reader: true on
+   * the initial draw and on a slider's commit, false on every intermediate
+   * drag tick, matching dragNearMeRadius's own "don't narrate every mile"
+   * reasoning.
    */
-  onNearMeResult?: (totalFound: number, shown: number, accuracyM: number) => void;
+  onNearMeResult?: (totalFound: number, shown: number, accuracyM: number, announce: boolean) => void;
   /**
    * The drawn "what's near me" candidates themselves, in the same
-   * nearest-first order the throw lines use — fired alongside
-   * `onNearMeResult` under the same `announce` gate (see applyNearMeRadius's
-   * own comment: once per commit, not once per drag tick) and with an empty
-   * array on `clearNearMe`, so a DOM record list built from this stays in
-   * lockstep with the canvas throw rather than drifting out of sync with it.
+   * nearest-first order the throw lines use — fired unconditionally
+   * alongside `onNearMeResult` on every radius change, drag ticks included
+   * (see applyNearMeRadius's own comment), and with an empty array on
+   * `clearNearMe`, so a DOM record list built from this stays in lockstep
+   * with the canvas throw rather than drifting out of sync with it.
    */
   onNearMeRecords?: (records: NearMeRecord[]) => void;
   /**
@@ -3042,28 +3053,8 @@ export class MapController {
         // withBlipBrighten's own comment. Every other layer's dots keep
         // their plain colour, unwrapped.
         'circle-color': layer.nearMeRadiusMi ? this.withBlipBrighten(circleColor) : circleColor,
-        /*
-         * Below `emergeFrom`, radius follows the same 5/10/15 curve every
-         * point layer has always used. A layer that also names `speckleFrom`
-         * (ALPR, so far — see scaleOf's comment) gets earlier anchors
-         * instead: a true speck — sub-pixel at the map's own minimum zoom —
-         * climbing to a small, clean dot at metro scale rather than the
-         * bigger close-up size. Cut down from the original curve specifically
-         * to match deflock.org's own metro-zoom rendering, which is small
-         * and uncluttered even packed as tight as the Twin Cities get.
-         * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
-         * take the unchanged branch below.
-         */
-        'circle-radius': (tier.speckleFrom < tier.emergeFrom
-          ? [
-              'interpolate', ['linear'], ['zoom'],
-              tier.speckleFrom, 0.5,
-              7, 1.2,
-              tier.emergeFrom, 2.8,
-              15, 8,
-            ]
-          : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
-        ) as unknown as maplibregl.ExpressionSpecification,
+        // See radiusExpr's own comment, just above, for the curve itself.
+        'circle-radius': radiusExpr,
         'circle-stroke-color': this.pointStrokeColorExpr(layer),
         /*
          * Dots fade in rather than switching on at a single zoom.
@@ -3082,7 +3073,7 @@ export class MapController {
          * declared, shared with the theme-independent zoom curve here so the
          * two can never disagree about when the ring is allowed to appear.
          */
-        'circle-stroke-width': this.pointStrokeWidthExpr(layer, tier),
+        'circle-stroke-width': strokeWidthExpr,
         'circle-stroke-opacity': this.pointStrokeOpacityExpr(layer),
         'circle-opacity': opacityExpr,
       },
@@ -4699,26 +4690,50 @@ export class MapController {
    * latitude that east/west and north/south read as the same pixel distance
    * to the eye, and the shape being masked is a circle either way.
    */
-  private updateNearMeMask() {
-    if (!this.nearMeOrigin) return;
-    this.ensureNearMeMaskEl();
-    const el = this.nearMeMaskEl;
-    if (!el) return;
+  /**
+   * The search-radius circle's own screen-space centre and radius, in CSS
+   * pixels — the one place this projection is computed, shared by
+   * updateNearMeMask and updateNearMeSweepGlow so "where does the current
+   * radius actually land on screen" can never quietly disagree between the
+   * two (they used to each carry an independent copy of this exact math).
+   * Projected due east of the origin: at this map's latitudes the two
+   * points sit close enough in latitude that east/west and north/south read
+   * as the same pixel distance to the eye, and the shape being measured is
+   * a circle either way. Null when there is no origin to project from.
+   */
+  private nearMeOriginPx(): { centerPx: maplibregl.Point; radiusPx: number } | null {
+    if (!this.nearMeOrigin) return null;
     const centerPx = this.map.project(this.nearMeOrigin);
     const edge = destinationPoint(this.nearMeOrigin, 90, this.nearMeSweepRadiusM) as [number, number];
     const edgePx = this.map.project(edge);
     const radiusPx = Math.hypot(edgePx.x - centerPx.x, edgePx.y - centerPx.y);
+    return { centerPx, radiusPx };
+  }
+
+  /** Both `mask-image` and its Safari-prefixed twin need the same value; every caller wants both set together, never one alone. */
+  private setMaskImage(el: HTMLElement, mask: string) {
+    el.style.maskImage = mask;
+    (el.style as unknown as { webkitMaskImage: string }).webkitMaskImage = mask;
+  }
+
+  private updateNearMeMask() {
+    this.ensureNearMeMaskEl();
+    const el = this.nearMeMaskEl;
+    const origin = this.nearMeOriginPx();
+    if (!el || !origin) return;
+    const { centerPx, radiusPx } = origin;
     // An 8px feather between "fully visible" and "fully hidden" — a hard
     // stop here reads as a jagged, aliased edge; the boundary ring
     // (renderNearMeBoundary) is still what draws the crisp line the reader
     // actually reads as "the edge."
-    const mask = `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, transparent ${radiusPx}px, white ${radiusPx + 8}px)`;
     el.style.display = 'block';
     el.style.background = this.nearMeMaskColor;
     el.style.backdropFilter = NEARME_MASK_BLUR;
     (el.style as unknown as { webkitBackdropFilter: string }).webkitBackdropFilter = NEARME_MASK_BLUR;
-    el.style.maskImage = mask;
-    (el.style as unknown as { webkitMaskImage: string }).webkitMaskImage = mask;
+    this.setMaskImage(
+      el,
+      `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, transparent ${radiusPx}px, white ${radiusPx + 8}px)`,
+    );
   }
 
   /** Hide the darkening mask without discarding the element — clearNearMe's counterpart to updateNearMeMask, same "empty the source, keep the layer" shape the rest of near-me teardown uses. */
@@ -4764,21 +4779,19 @@ export class MapController {
    * comment).
    */
   private updateNearMeSweepGlow(angleDeg: number) {
-    if (!this.nearMeOrigin) return;
     this.ensureNearMeSweepGlowEl();
     const el = this.nearMeSweepGlowEl;
-    if (!el) return;
-    const centerPx = this.map.project(this.nearMeOrigin);
-    const edge = destinationPoint(this.nearMeOrigin, 90, this.nearMeSweepRadiusM) as [number, number];
-    const edgePx = this.map.project(edge);
-    const radiusPx = Math.hypot(edgePx.x - centerPx.x, edgePx.y - centerPx.y);
+    const origin = this.nearMeOriginPx();
+    if (!el || !origin) return;
+    const { centerPx, radiusPx } = origin;
     const from = angleDeg - NEARME_SWEEP_TRAIL_DEG;
     el.style.display = 'block';
     el.style.opacity = String(NEARME_SWEEP_GLOW_OPACITY);
     el.style.background = `conic-gradient(from ${from}deg at ${centerPx.x}px ${centerPx.y}px, transparent 0deg, ${this.nearMeSweepColor} ${NEARME_SWEEP_TRAIL_DEG}deg, transparent ${NEARME_SWEEP_TRAIL_DEG + 0.5}deg 360deg)`;
-    const mask = `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, white ${radiusPx}px, transparent ${radiusPx + 2}px)`;
-    el.style.maskImage = mask;
-    (el.style as unknown as { webkitMaskImage: string }).webkitMaskImage = mask;
+    this.setMaskImage(
+      el,
+      `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, white ${radiusPx}px, transparent ${radiusPx + 2}px)`,
+    );
   }
 
   /** Hide the sweep afterglow without discarding the element — stopNearMeSweep's counterpart to updateNearMeSweepGlow. */
@@ -4950,13 +4963,12 @@ export class MapController {
     this.updateNearMeMask();
     if (REDUCED_MOTION) this.renderNearMeSweepStatic();
 
-    if (announce) {
-      // The only accessible-DOM equivalent this control used to have: an
-      // aria-live count, since the sweep itself is canvas-only. Read
-      // instantly on commit, before the DOM list even has to be found and
-      // stepped through.
-      this.events.onNearMeResult?.(totalWithin, targets.length, this.nearMeAccuracyM);
-    }
+    // Unconditional — see onNearMeResult's own comment for why `announce`
+    // is passed through rather than used to gate this call itself. The only
+    // accessible-DOM equivalent this control used to have is the aria-live
+    // count `announce` still gates, inside the callback — read instantly on
+    // commit, before the DOM list even has to be found and stepped through.
+    this.events.onNearMeResult?.(totalWithin, targets.length, this.nearMeAccuracyM, announce);
     // Unconditional — see this method's own comment on why the list isn't
     // gated by `announce` the same way the aria-live count is.
     this.events.onNearMeRecords?.(records);
