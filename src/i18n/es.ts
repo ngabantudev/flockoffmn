@@ -57,7 +57,7 @@ export const es: Record<string, string> = {
   loading: 'Cargando datos del mapa…',
   mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
   resetView: 'Volver a Minnesota',
-  mapNearMe: 'Qué hay cerca de mí',
+  mapNearMe: 'ALPR cerca de mí',
   mapNearMeFound: '{count} cerca, {shown} mostrados.',
   mapNearMeNone: 'No hay nada mapeado cerca de este punto.',
   recordSelected: '{layer}: {name} seleccionado',

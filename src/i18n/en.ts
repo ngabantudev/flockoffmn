@@ -57,7 +57,7 @@ export const en: Record<string, string> = {
   loading: 'Loading map data…',
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
-  mapNearMe: 'What’s near me',
+  mapNearMe: 'ALPRs Near Me',
   mapNearMeFound: '{count} nearby, {shown} shown.',
   mapNearMeNone: 'Nothing mapped within range of this location.',
   // Announced via #map-status (aria-live) whenever a record is selected —
