@@ -661,25 +661,6 @@ const THROW_MS = 420;
 const THROW_STAGGER_MS = 70;
 const THROW_SPREAD_MS = 400;
 const IMPACT_MS = 520;
-
-/**
- * One full in-out breath of the selected-point pulse (startSelectedPointPulse)
- * — slow enough to read as "alive," not frantic, the same register
- * NEARME_SWEEP_PERIOD_MS's own comment argues for the sweep.
- */
-const SELECTED_POINT_PULSE_MS = 1400;
-/**
- * withSelectedPointScale's multiplier/pulse-amount pair for each paint
- * property it wraps — named once and shared by both call sites (the
- * `-points` circle layer's own paint block, and setNearMeDotStyleFixed's
- * near-me-active swap) rather than the same four numbers hand-duplicated at
- * each, which risked the two pairs silently drifting apart.
- */
-const SELECTED_POINT_RADIUS_SCALE = 1.4;
-const SELECTED_POINT_RADIUS_PULSE = 3;
-const SELECTED_POINT_STROKE_SCALE = 1.75;
-const SELECTED_POINT_STROKE_PULSE = 1;
-
 /**
  * Frame budget for runThrow's setData work: ~30Hz rather than every rAF
  * (~60-144Hz depending on the display). setData is a worker round trip —
@@ -785,25 +766,6 @@ export class MapController {
    * (relatedPoints, thrown paths) are single-source for the same reason.
    */
   private selectedPolygon: { layerId: string; featureId: string } | null = null;
-  /**
-   * The one feature-state-selected *point* geometry, if any — the point
-   * counterpart to `selectedPolygon` above, for layers that aren't
-   * `polygonClick: 'highlight'` (ALPR cameras among them). Singular for the
-   * same reason: markPointSelected releases whatever held it before taking
-   * it, so only one point ever carries the `selected` feature-state (and the
-   * pulse it drives) at a time.
-   */
-  private selectedPoint: { layerId: string; featureId: string } | null = null;
-  /**
-   * rAF handle for the selected point's pulse — separate from both
-   * throwFrame and nearMeSweepFrame so a camera pulsing under a selection
-   * never fights either of those loops for a frame. Only ever running
-   * while `selectedPoint` is set and REDUCED_MOTION is false — see
-   * startSelectedPointPulse's own comment.
-   */
-  private selectedPointPulseFrame: number | null = null;
-  /** `performance.now()` when the current pulse loop began — the breathing curve is derived from elapsed time since this, the same shape nearMeSweepStart drives the sweep's own angle from. */
-  private selectedPointPulseStart = 0;
   /**
    * Resolved `markerIcon` expression per layer, filled in by loadLayer
    * before it draws. Cached because building it decodes an SVG per icon, and
@@ -1296,35 +1258,6 @@ export class MapController {
    * says "layer not added"). One interpolate, data-driven at its stop.
    */
   /**
-   * Wrap a point layer's existing `circle-radius`/`circle-stroke-width`
-   * expression in a `selected`-feature-state `case` (see markPointSelected),
-   * so a selected point scales up by `multiplier` and breathes by a further
-   * `pulseAmount` on top, driven by the `selectedPulse` feature-state
-   * startSelectedPointPulse writes each frame — `coalesce`d to 0 since it's
-   * unset until the pulse loop's first tick (and always 0 under
-   * REDUCED_MOTION, which never starts that loop — see its own comment).
-   * Multiplies the wrapped expression rather than hand-duplicating its own
-   * stops, so this can never drift out of sync with whatever curve the base
-   * expression happens to use.
-   */
-  private withSelectedPointScale(
-    base: maplibregl.ExpressionSpecification | number,
-    multiplier: number,
-    pulseAmount: number,
-  ): maplibregl.ExpressionSpecification {
-    return [
-      'case',
-      ['boolean', ['feature-state', 'selected'], false],
-      [
-        '+',
-        ['*', base, multiplier],
-        ['*', ['coalesce', ['feature-state', 'selectedPulse'], 0], pulseAmount],
-      ],
-      base,
-    ] as unknown as maplibregl.ExpressionSpecification;
-  }
-
-  /**
    * Recursively replaces every `['zoom']` leaf inside a style expression
    * with the literal `atZoom`, "freezing" a zoom-driven curve at whatever
    * output it would produce at that zoom regardless of the map's actual
@@ -1368,15 +1301,11 @@ export class MapController {
     for (const [layerId, style] of this.nearMePointStyle) {
       const id = `${layerId}-points`;
       if (!this.map.getLayer(id)) continue;
-      this.map.setPaintProperty(
-        id,
-        'circle-radius',
-        this.withSelectedPointScale(active ? style.fixedRadius : style.liveRadius, SELECTED_POINT_RADIUS_SCALE, SELECTED_POINT_RADIUS_PULSE),
-      );
+      this.map.setPaintProperty(id, 'circle-radius', active ? style.fixedRadius : style.liveRadius);
       this.map.setPaintProperty(
         id,
         'circle-stroke-width',
-        this.withSelectedPointScale(active ? style.fixedStrokeWidth : style.liveStrokeWidth, SELECTED_POINT_STROKE_SCALE, SELECTED_POINT_STROKE_PULSE),
+        active ? style.fixedStrokeWidth : style.liveStrokeWidth,
       );
       this.map.setPaintProperty(id, 'circle-opacity', active ? style.fixedOpacity : style.liveOpacity);
     }
@@ -1800,7 +1729,6 @@ export class MapController {
       this.preSelectCamera = null;
     }
     this.releaseHighlight();
-    this.releasePointSelection();
     this.releaseHover();
     this.events.onSelect?.(null);
   }
@@ -2866,7 +2794,28 @@ export class MapController {
       source: src,
       paint: {
         'circle-color': circleColor,
-        'circle-radius': this.withSelectedPointScale(radiusExpr, SELECTED_POINT_RADIUS_SCALE, SELECTED_POINT_RADIUS_PULSE),
+        /*
+         * Below `emergeFrom`, radius follows the same 5/10/15 curve every
+         * point layer has always used. A layer that also names `speckleFrom`
+         * (ALPR, so far — see scaleOf's comment) gets earlier anchors
+         * instead: a true speck — sub-pixel at the map's own minimum zoom —
+         * climbing to a small, clean dot at metro scale rather than the
+         * bigger close-up size. Cut down from the original curve specifically
+         * to match deflock.org's own metro-zoom rendering, which is small
+         * and uncluttered even packed as tight as the Twin Cities get.
+         * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
+         * take the unchanged branch below.
+         */
+        'circle-radius': (tier.speckleFrom < tier.emergeFrom
+          ? [
+              'interpolate', ['linear'], ['zoom'],
+              tier.speckleFrom, 0.5,
+              7, 1.2,
+              tier.emergeFrom, 2.8,
+              15, 8,
+            ]
+          : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
+        ) as unknown as maplibregl.ExpressionSpecification,
         'circle-stroke-color': this.pointStrokeColorExpr(layer),
         /*
          * Dots fade in rather than switching on at a single zoom.
@@ -2885,7 +2834,7 @@ export class MapController {
          * declared, shared with the theme-independent zoom curve here so the
          * two can never disagree about when the ring is allowed to appear.
          */
-        'circle-stroke-width': this.withSelectedPointScale(strokeWidthExpr, SELECTED_POINT_STROKE_SCALE, SELECTED_POINT_STROKE_PULSE),
+        'circle-stroke-width': this.pointStrokeWidthExpr(layer, tier),
         'circle-stroke-opacity': this.pointStrokeOpacityExpr(layer),
         'circle-opacity': opacityExpr,
       },
@@ -3255,7 +3204,6 @@ export class MapController {
       if (this.selectedPolygon?.layerId === layer.id || this.relationOverlayOwner === layer.id) {
         this.releaseHighlight();
       }
-      if (this.selectedPoint?.layerId === layer.id) this.releasePointSelection();
       if (this.hoveredPolygon?.layerId === layer.id) this.releaseHover();
       this.applyVisibility(layer);
     }
@@ -3673,30 +3621,12 @@ export class MapController {
     // same selection reached a different way.
     if (layer.polygonClick === 'highlight') {
       this.markPolygonSelected(layer, featureId);
-      // Selecting a polygon is still a new selection: a camera that was
-      // pulsing, and the rAF loop driving that pulse, describe a record the
-      // panel no longer shows. Without this a previously-selected point kept
-      // pulsing indefinitely under an unrelated record for the rest of the
-      // session — the exact same bug markPolygonSelected's own release
-      // already prevents in the other direction.
-      this.releasePointSelection();
     } else {
       // Selecting a camera is still a new selection: the ward that was lit,
       // and the lines it threw, describe a record the panel no longer shows.
       // Without this a jurisdiction stayed highlighted under an unrelated
       // record for the rest of the session.
       this.releaseHighlight();
-      // A point-geometry layer (ALPR cameras among them) gets the point
-      // counterpart to markPolygonSelected: a `selected` feature-state the
-      // shared point-circle paint expressions read to scale up and pulse the
-      // selected dot. Generic to any point layer, not hardcoded to `alpr` —
-      // driven by the feature's own geometry, the same way markPolygonSelected
-      // is driven by the layer's own `polygonClick` rather than an id.
-      if (feature.geometry.type === 'Point') {
-        this.markPointSelected(layer, featureId);
-      } else {
-        this.releasePointSelection();
-      }
     }
     if (layer.relation) void this.showRelation(feature, layer);
   }
@@ -3761,89 +3691,6 @@ export class MapController {
       { selected: true },
     );
     this.selectedPolygon = { layerId: layer.id, featureId };
-  }
-
-  /**
-   * Point counterpart to markPolygonSelected — the same shape, one feature
-   * ever holding the `selected` feature-state, releasing whichever one held
-   * it before. Also (re)starts the pulse loop, since a freshly-selected
-   * point's pulse should begin from a fresh breath, not wherever the last
-   * one's cycle happened to be.
-   */
-  private markPointSelected(layer: ClientLayer, featureId: string) {
-    const held = this.selectedPoint;
-    if (held?.layerId === layer.id && held.featureId === featureId) return;
-    if (held) {
-      this.map.setFeatureState(
-        { source: this.sourceId(held.layerId), id: held.featureId },
-        { selected: false, selectedPulse: 0 },
-      );
-    }
-    this.map.setFeatureState(
-      { source: this.sourceId(layer.id), id: featureId },
-      { selected: true },
-    );
-    this.selectedPoint = { layerId: layer.id, featureId };
-    this.startSelectedPointPulse();
-  }
-
-  /** Drop the point selection, if any, and stop its pulse. The point counterpart to releaseHighlight. */
-  private releasePointSelection() {
-    this.stopSelectedPointPulse();
-    const held = this.selectedPoint;
-    if (held) {
-      this.map.setFeatureState(
-        { source: this.sourceId(held.layerId), id: held.featureId },
-        { selected: false, selectedPulse: 0 },
-      );
-      this.selectedPoint = null;
-    }
-  }
-
-  /**
-   * Begin the selected point's pulse — a slow rAF loop writing a numeric
-   * `selectedPulse` feature-state each frame, read by the shared point-circle
-   * paint expressions (see the `${layer.id}-points` layer builder) as a small
-   * additional swing on top of the static "selected" size bump. No-op under
-   * REDUCED_MOTION: the static bump alone is the accessible, motion-free
-   * version of "this is selected" — same branching as startNearMeSweep's own
-   * REDUCED_MOTION comment.
-   */
-  private startSelectedPointPulse() {
-    if (REDUCED_MOTION) return;
-    if (this.selectedPointPulseFrame !== null) return;
-    this.selectedPointPulseStart = performance.now();
-    // Same THROW_FRAME_BUDGET_MS gate startNearMeSweep's own step() uses,
-    // for the same reason: a 1.4s breath doesn't read any smoother written
-    // at 60-144Hz than at ~30Hz, and setFeatureState still costs a repaint
-    // each call, not a free write.
-    let lastPulseStepElapsed = -Infinity;
-    const step = () => {
-      const held = this.selectedPoint;
-      if (!held) {
-        this.selectedPointPulseFrame = null;
-        return;
-      }
-      const elapsed = performance.now() - this.selectedPointPulseStart;
-      if (elapsed - lastPulseStepElapsed >= THROW_FRAME_BUDGET_MS) {
-        lastPulseStepElapsed = elapsed;
-        const pulse = (Math.sin((elapsed / SELECTED_POINT_PULSE_MS) * 2 * Math.PI) + 1) / 2;
-        this.map.setFeatureState(
-          { source: this.sourceId(held.layerId), id: held.featureId },
-          { selectedPulse: pulse },
-        );
-      }
-      this.selectedPointPulseFrame = requestAnimationFrame(step);
-    };
-    this.selectedPointPulseFrame = requestAnimationFrame(step);
-  }
-
-  /** Stop the selected-point pulse loop, if running. Does not clear the `selected`/`selectedPulse` feature-state itself — see releasePointSelection, which calls this. */
-  private stopSelectedPointPulse() {
-    if (this.selectedPointPulseFrame !== null) {
-      cancelAnimationFrame(this.selectedPointPulseFrame);
-      this.selectedPointPulseFrame = null;
-    }
   }
 
   flyTo(center: [number, number], zoom = 12) {
@@ -5178,12 +5025,11 @@ export class MapController {
     this.setOverlay(null);
     this.cancelThrow();
     this.stopNearMeSweep();
-    this.releasePointSelection();
-    // The fourth of four independent rAF handles this class runs
-    // (throwFrame/nearMeSweepFrame/selectedPointPulseFrame are the other
-    // three, cancelled above) — missed here, a radius-slider drag mid-flight
-    // at teardown would still fire its queued callback after map.remove(),
-    // touching a destroyed map/source.
+    // The third of three independent rAF handles this class runs
+    // (throwFrame/nearMeSweepFrame are the other two, cancelled above) —
+    // missed here, a radius-slider drag mid-flight at teardown would still
+    // fire its queued callback after map.remove(), touching a destroyed
+    // map/source.
     if (this.nearMeDragFrame !== null) {
       cancelAnimationFrame(this.nearMeDragFrame);
       this.nearMeDragFrame = null;
