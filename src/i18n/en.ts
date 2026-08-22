@@ -241,4 +241,21 @@ export const en: Record<string, string> = {
   newsTopicImmigration: 'Immigration enforcement',
   newsTopicDetention: 'Detention',
   newsTopicOther: 'Other',
+
+  // News rail + archive controls.
+  newsRailTitle: 'Related MN coverage',
+  newsRange24h: '24H',
+  newsRange7d: '7D',
+  newsRange30d: '30D',
+  newsRange1y: '1Y',
+  newsRangeAll: 'All',
+  newsRangeLabel: 'Date range',
+  newsTopicLabel: 'Topic',
+  newsTopicAll: 'All topics',
+  newsNoneInRange: 'No stories in this range.',
+  newsOpenArchive: 'Open the full archive',
+  newsTierRail:
+    'Press coverage, not records. Headlines are leads — the map beside this is the sourced record.',
+  newsCurveCaption: 'Stories published per month —',
+  newsCurveAlt: 'Stories published per month:',
 };

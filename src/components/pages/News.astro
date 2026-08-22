@@ -1,189 +1,24 @@
 ---
 import type { Locale } from '~/layers/types';
-import { loadNews, groupByMonth, screenedTotal, type NewsTopic } from '~/layers/news';
-import { useTranslations, localePath } from '~/lib/i18n';
+import NewsFeed from '~/components/news/NewsFeed.astro';
 
 interface Props {
   locale: Locale;
 }
 const { locale } = Astro.props;
-const t = useTranslations(locale);
-
-const archive = await loadNews();
-const months = archive ? groupByMonth(archive.items) : [];
-const screened = archive ? screenedTotal(archive) : 0;
 
 /*
- * No client JS on this page, and no topic filter.
+ * A wrapper, not a layout.
  *
- * A filter is the obvious next feature and it is deliberately absent. The whole
- * archive is a few hundred headlines of static HTML, which a five-year-old
- * phone on a bad connection renders instantly; a filter would either cost a
- * script or lean on `:has()`, and §0.7 puts that reader ahead of the
- * convenience. The topic is on every row as a label, so Ctrl-F does the job a
- * filter would, works in every browser, and works for a screen reader without
- * anything being announced dynamically.
+ * Everything this page renders — header, Tier 4 notice, the curve, the range
+ * and topic chips, the list, the coverage-honesty section — lives in
+ * ~/components/news/NewsFeed.astro at `full` density, because the map rail
+ * renders the same component at `rail` density. Two copies of that markup is
+ * how the rail and the archive end up disagreeing about what a story looks
+ * like, which is the drift CLAUDE.md §2 keeps warning about for layers.
  */
-
-const TOPIC_LABELS: Record<NewsTopic, string> = {
-  alpr: t('newsTopicAlpr'),
-  surveillance: t('newsTopicSurveillance'),
-  'immigration-enforcement': t('newsTopicImmigration'),
-  detention: t('newsTopicDetention'),
-  other: t('newsTopicOther'),
-};
-
-/*
- * Every formatter here is pinned to UTC, and that is a correctness fix rather
- * than a preference.
- *
- * `groupByMonth` buckets on the first seven characters of the stored ISO
- * string, which is UTC. Formatting the same month in the builder's local zone
- * renders `Date.UTC(2026, 7, 1)` — midnight on 1 August — as 31 July in any
- * zone behind UTC, so the heading above a bucket of August stories read "July
- * 2026". Observed on the first build of this page from a US Central machine:
- * every heading was one month early and August was missing entirely.
- *
- * The same applies per item: a story stamped 23:38 UTC belongs to the month it
- * was grouped into, and a local-zone day label can disagree with that. Pinning
- * both to UTC also makes the built page independent of which machine built it,
- * which §0.8 wants for its own reasons.
- */
-const monthFormatter = new Intl.DateTimeFormat(locale, {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-const dayFormatter = new Intl.DateTimeFormat(locale, {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-});
-
-/** "2026-08" -> "August 2026", built from a real date so the locale applies. */
-function monthLabel(key: string): string {
-  const [year, month] = key.split('-').map(Number);
-  return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
-}
-
-const updated = archive
-  ? new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeZone: 'UTC' }).format(
-      new Date(archive.metadata.lastUpdated),
-    )
-  : null;
 ---
 
 <div class="mx-auto max-w-4xl px-4 py-10">
-  <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">{t('newsTitle')}</h1>
-  <p class="prose-civic mt-3">{t('newsIntro')}</p>
-
-  {/*
-    The Tier 4 notice is first and is not dismissible. §3 says journalism is a
-    lead list and never the sole basis of a published feature, and §0.2 says the
-    data layers stay literal and sourced. A reader who lands here from the map
-    has just been looking at signed contracts and permit numbers; nothing about
-    a list of headlines signals on its own that it is a different kind of claim.
-    Saying so is cheaper than being wrong about it later.
-  */}
-  <aside class="mt-6 rounded-lg border border-amber-500/40 bg-amber-500/5 p-4" role="note">
-    <h2 class="text-sm font-semibold text-amber-200">{t('newsTierTitle')}</h2>
-    <p class="mt-1.5 text-sm leading-relaxed text-ink-200">{t('newsTierWarning')}</p>
-    <p class="mt-2 text-sm leading-relaxed text-ink-300">
-      {t('newsTierPointer')}{' '}
-      <a class="text-accent underline underline-offset-2" href={localePath(locale, '/')}>
-        {t('navMap')}
-      </a>{' '}
-      {t('newsTierPointerAnd')}{' '}
-      <a class="text-accent underline underline-offset-2" href={localePath(locale, '/sources')}>
-        {t('navSources')}
-      </a>.
-    </p>
-  </aside>
-
-  {
-    !archive && (
-      <p class="prose-civic mt-8 rounded-lg border border-ink-700 bg-ink-900 p-4">
-        {t('newsEmpty')}
-      </p>
-    )
-  }
-
-  {
-    archive && (
-      <>
-        <p class="mt-6 text-sm text-ink-400">
-          {archive.items.length} {t('newsArchiveCount')}
-          {updated && <> · {t('newsUpdated')} {updated}</>}
-        </p>
-
-        {months.map((month) => (
-          <section class="mt-8">
-            <h2 class="border-b border-ink-800 pb-1.5 text-lg font-semibold text-ink-100">
-              {monthLabel(month.key)}
-            </h2>
-            {/*
-              An ordinary list of links, which is the accessible primitive here:
-              a screen reader announces the count, and each row is one link with
-              its outlet and date as plain text after it. Nothing is announced
-              dynamically because nothing changes after load.
-            */}
-            <ul class="mt-3 divide-y divide-ink-850">
-              {month.items.map((item) => (
-                <li class="py-3">
-                  <a
-                    href={item.url}
-                    rel="noopener noreferrer nofollow"
-                    target="_blank"
-                    class="text-ink-100 underline decoration-ink-600 underline-offset-2 hover:decoration-accent"
-                  >
-                    {item.title}
-                  </a>
-                  <p class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-400">
-                    <span class="rounded border border-ink-700 px-1.5 py-0.5 text-ink-300">
-                      {TOPIC_LABELS[item.topic] ?? TOPIC_LABELS.other}
-                    </span>
-                    <span>{item.source}</span>
-                    <span aria-hidden="true">·</span>
-                    <time datetime={item.published}>
-                      {dayFormatter.format(new Date(item.published))}
-                    </time>
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-
-        {/*
-          §3's coverage honesty section, rendered from the ingest's own fields
-          rather than written by hand here, so it cannot drift from what the
-          script actually did.
-        */}
-        <section class="mt-12 rounded-lg border border-ink-700 bg-ink-900 p-5">
-          <h2 class="text-lg font-semibold text-ink-100">{t('newsCoverageTitle')}</h2>
-          <ul class="prose-civic mt-3 list-disc space-y-2 pl-5 text-sm">
-            {archive.coverage.map((line) => (
-              <li>{line}</li>
-            ))}
-            {archive.knownGaps.map((line) => (
-              <li>{line}</li>
-            ))}
-          </ul>
-
-          {/*
-            §1b permits aggregate counts and forbids enumeration, so this number
-            is the only form in which the person screen's work can be shown at
-            all — and it is worth showing, because it is a claim about the
-            project's own discipline that a reader cannot otherwise check.
-          */}
-          <p class="mt-4 border-t border-ink-800 pt-4 text-sm leading-relaxed text-ink-300">
-            {t('newsScreenedPrefix')} <strong class="text-ink-100">{screened}</strong>{' '}
-            {t('newsScreenedSuffix')}
-          </p>
-
-          <p class="mt-3 text-xs leading-relaxed text-ink-400">{archive.metadata.license}</p>
-        </section>
-      </>
-    )
-  }
+  <NewsFeed locale={locale} density="full" />
 </div>

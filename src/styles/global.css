@@ -564,6 +564,28 @@
     display: none;
   }
 }
+/*
+ * The news rail yields the right column to a selected record.
+ *
+ * Same `:has()` shape as the #map-keys rule above, and for the same reason:
+ * the state lives on #detail-panel's own `hidden` attribute, so whatever opens
+ * or closes that panel drives this too and there is no second source of truth
+ * to fall out of sync.
+ *
+ * Scoped to `>= 80rem`, and getting that wrong is worth recording: this first
+ * landed inside the neighbouring `(width < 80rem)` block, where it is a no-op
+ * — #news-dock is already `display: none` there from its own `hidden xl:flex`
+ * utility — while the width that actually needs it, `xl`, got no rule at all.
+ * The visible result would have been the failure this whole arrangement exists
+ * to avoid: a 21rem layer panel, a 24rem news rail and a 24rem detail panel
+ * docked at once, leaving a 176px map on a 1280px screen.
+ */
+@media (width >= 80rem) {
+  #map-shell:has(#detail-panel:not([hidden])) #news-dock {
+    display: none;
+  }
+}
+
 @media (width < 64rem) {
   /*
    * The layers list is a drawer below `lg` — see #controls in MapView.astro.

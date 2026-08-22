@@ -5,6 +5,7 @@ import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { labelForDetailField } from '~/lib/detailFields';
 import CompareView from '~/components/map/CompareView.astro';
+import NewsFeed from '~/components/news/NewsFeed.astro';
 import type { ClientLayer } from '~/lib/mapController';
 
 interface Props {
@@ -756,6 +757,40 @@ const strings = {
       >
       </div>
     </div>
+
+    {/*
+      ---------------------------- News rail -----------------------------
+      Shares the right column with the detail panel below rather than adding a
+      third one, and that is geometry rather than taste. `--controls-w` is
+      21rem and `--detail-w` is 24rem, so the docked chrome already costs 720px
+      at the 1280px breakpoint where both appear — a third 24rem column would
+      leave a 176px map. The detail panel's own comment records the same
+      arithmetic being what kept it from docking at `lg`.
+
+      Sharing works because the column is empty most of the time: #detail-panel
+      is `hidden` until a record is selected. So the column shows coverage by
+      default and the record when there is one, which is also the better
+      reading of what that space is for — it answers "what else is going on"
+      until the reader asks about something specific.
+
+      The swap is a CSS rule in global.css keyed on
+      `#map-shell:has(#detail-panel:not([hidden]))`, matching the `:has()`
+      pattern #map-keys already uses. No script, so it cannot desynchronise
+      from whatever opened the panel.
+
+      `xl` only, and it does not become a sheet below that. The bottom nav is
+      already seven icons and the detail sheet already claims 45% of the map on
+      a phone; a third surface competing for that space is what the near-me
+      rebuild just finished reclaiming. Below `xl` the archive page is the
+      whole feature, and the nav links straight to it.
+    */}
+    <aside
+      id="news-dock"
+      aria-label={t('newsRailTitle')}
+      class="hidden shrink-0 border-l border-ink-800 bg-ink-900 xl:flex xl:w-[var(--detail-w)]"
+    >
+      <NewsFeed locale={locale} density="rail" />
+    </aside>
 
     {/*
       --------------------------- Detail panel ---------------------------

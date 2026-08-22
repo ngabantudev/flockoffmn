@@ -207,4 +207,21 @@ export const es: Record<string, string> = {
   newsTopicImmigration: 'Aplicación de leyes migratorias',
   newsTopicDetention: 'Detención',
   newsTopicOther: 'Otros',
+
+  // Panel de noticias y controles del archivo.
+  newsRailTitle: 'Cobertura de MN relacionada',
+  newsRange24h: '24H',
+  newsRange7d: '7D',
+  newsRange30d: '30D',
+  newsRange1y: '1A',
+  newsRangeAll: 'Todo',
+  newsRangeLabel: 'Rango de fechas',
+  newsTopicLabel: 'Tema',
+  newsTopicAll: 'Todos los temas',
+  newsNoneInRange: 'No hay noticias en este rango.',
+  newsOpenArchive: 'Abrir el archivo completo',
+  newsTierRail:
+    'Cobertura de prensa, no registros. Los titulares son pistas — el mapa que aparece al lado es el registro documentado.',
+  newsCurveCaption: 'Noticias publicadas por mes —',
+  newsCurveAlt: 'Noticias publicadas por mes:',
 };

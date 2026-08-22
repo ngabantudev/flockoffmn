@@ -1,0 +1,499 @@
+---
+import { Newspaper } from 'lucide-astro';
+import type { Locale } from '~/layers/types';
+import { loadNews, screenedTotal, type NewsItem, type NewsTopic } from '~/layers/news';
+import { useTranslations, localePath } from '~/lib/i18n';
+
+interface Props {
+  locale: Locale;
+  /**
+   * `rail` is the map page's right column; `full` is the /news archive.
+   *
+   * One component at two densities rather than two components, because the
+   * only real differences are how many items are rendered and how much
+   * explanatory copy surrounds them. Two implementations of the same list is
+   * how the rail and the page end up disagreeing about what a story is.
+   */
+  density: 'rail' | 'full';
+}
+const { locale, density } = Astro.props;
+const t = useTranslations(locale);
+const rail = density === 'rail';
+
+const archive = await loadNews();
+const all = archive?.items ?? [];
+
+/*
+ * The rail renders a bounded slice; the archive renders everything.
+ *
+ * The map page is already the heaviest document on the site — MapLibre, the
+ * layer registry, the detail panel's templates — and §0.7 puts an old phone
+ * ahead of completeness here. Sixty stories is roughly six months of this
+ * feed, which covers every range chip except "all"; picking "all" in the rail
+ * is what the archive link at the foot of it is for.
+ */
+const RAIL_LIMIT = 60;
+const items = rail ? all.slice(0, RAIL_LIMIT) : all;
+
+/*
+ * Range options, matching the source project's chips.
+ *
+ * `0` means everything, and it is new here. mndatacenter tops out at 1Y
+ * because a KV mirror only ever holds what the last fetch returned, so there
+ * is no "all" for it to offer. This archive is cumulative and committed, so
+ * "all" is a real answer and is the one that shows the curve.
+ */
+const RANGE_OPTIONS = [
+  { label: t('newsRange24h'), days: 1 },
+  { label: t('newsRange7d'), days: 7 },
+  { label: t('newsRange30d'), days: 30 },
+  { label: t('newsRange1y'), days: 365 },
+  { label: t('newsRangeAll'), days: 0 },
+];
+
+const DEFAULT_DAYS = rail ? 30 : 0;
+
+const TOPIC_LABELS: Record<NewsTopic, string> = {
+  alpr: t('newsTopicAlpr'),
+  surveillance: t('newsTopicSurveillance'),
+  'immigration-enforcement': t('newsTopicImmigration'),
+  detention: t('newsTopicDetention'),
+  other: t('newsTopicOther'),
+};
+
+// Only offer a topic chip for a topic that actually has stories behind it. An
+// empty facet is a dead control, and a dead control reads as a broken page.
+const presentTopics = [...new Set(items.map((i) => i.topic))].sort(
+  (a, b) => (TOPIC_LABELS[a] ?? '').localeCompare(TOPIC_LABELS[b] ?? ''),
+);
+
+/*
+ * The curve. §0.5's whole argument in one element.
+ *
+ * "It's only a few cameras" is answered with a curve, and this is the cheapest
+ * honest one available: stories per month across the archive. It is coverage
+ * volume, not deployment volume — the caption says so, because conflating the
+ * two would be exactly the inferred claim §1c forbids.
+ *
+ * Server-rendered inline SVG with no script and no library: it cannot fail to
+ * load, it prints, and it costs nothing on a phone.
+ */
+function monthlyCounts(source: NewsItem[]): { key: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const item of source) {
+    const key = item.published.slice(0, 7);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, count]) => ({ key, count }));
+}
+
+const series = monthlyCounts(all);
+const peak = Math.max(1, ...series.map((s) => s.count));
+const SPARK_W = 100;
+const SPARK_H = 24;
+const barGap = 1;
+const barW = series.length > 0 ? Math.max(1, SPARK_W / series.length - barGap) : 0;
+
+const monthFormatter = new Intl.DateTimeFormat(locale, {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+const dayFormatter = new Intl.DateTimeFormat(locale, {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
+
+function monthLabel(key: string): string {
+  const [year, month] = key.split('-').map(Number);
+  return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+const sparkCaption =
+  series.length > 1
+    ? `${t('newsCurveCaption')} ${monthLabel(series[0].key)} – ${monthLabel(series[series.length - 1].key)}`
+    : '';
+
+const screened = archive ? screenedTotal(archive) : 0;
+---
+
+<section
+  id={rail ? 'news-rail' : 'news-archive'}
+  data-news-feed
+  data-default-days={DEFAULT_DAYS}
+  aria-label={t('newsTitle')}
+  class:list={[
+    'flex min-h-0 flex-col',
+    rail ? 'h-full overflow-hidden' : '',
+  ]}
+>
+  {/* ------------------------------ Header ------------------------------ */}
+  <div
+    class:list={[
+      'flex shrink-0 items-center gap-2.5',
+      rail ? 'border-b border-ink-800 px-4 py-3' : 'pb-1',
+    ]}
+  >
+    <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-ink-800">
+      <Newspaper size={14} stroke-width={2} class="text-accent" />
+    </span>
+    <div class="min-w-0 flex-1">
+      {
+        rail ? (
+          <h2 class="text-[10px] leading-none font-bold tracking-wider text-ink-200 uppercase">
+            {t('newsRailTitle')}
+          </h2>
+        ) : (
+          <h1 class="text-2xl font-semibold tracking-tight text-ink-100 sm:text-3xl">
+            {t('newsTitle')}
+          </h1>
+        )
+      }
+    </div>
+  </div>
+
+  {!rail && <p class="prose-civic mt-3">{t('newsIntro')}</p>}
+
+  {/*
+    The Tier 4 notice, and it is not dismissible in either density.
+
+    §3 makes journalism a lead list and never the sole basis of a feature. In
+    the rail this matters more than it does on its own page, not less: the
+    reader has the map open beside it, where every pin resolves to a signed
+    document. Headlines sitting in the next column make a visibly different
+    kind of claim, and nothing about the layout says so unless the layout says
+    so. The source project has no equivalent because a data center headline
+    beside a data center pin is the same kind of claim.
+  */}
+  <aside
+    class:list={[
+      'shrink-0 border-amber-500/40 bg-amber-500/5',
+      rail ? 'border-b px-4 py-2.5' : 'mt-6 rounded-lg border p-4',
+    ]}
+    role="note"
+  >
+    {
+      rail ? (
+        <p class="text-[10px] leading-snug text-amber-200/90">{t('newsTierRail')}</p>
+      ) : (
+        <>
+          <h2 class="text-sm font-semibold text-amber-200">{t('newsTierTitle')}</h2>
+          <p class="mt-1.5 text-sm leading-relaxed text-ink-200">{t('newsTierWarning')}</p>
+          <p class="mt-2 text-sm leading-relaxed text-ink-300">
+            {t('newsTierPointer')}{' '}
+            <a class="text-accent underline underline-offset-2" href={localePath(locale, '/')}>
+              {t('navMap')}
+            </a>{' '}
+            {t('newsTierPointerAnd')}{' '}
+            <a class="text-accent underline underline-offset-2" href={localePath(locale, '/sources')}>
+              {t('navSources')}
+            </a>.
+          </p>
+        </>
+      )
+    }
+  </aside>
+
+  {/*
+    The curve. Rail gets it too — it is 24px tall and it is the one thing here
+    the map cannot already show.
+  */}
+  {
+    series.length > 1 && (
+      <figure
+        class:list={['shrink-0', rail ? 'border-b border-ink-800 px-4 py-2.5' : 'mt-6']}
+      >
+        <svg
+          viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+          preserveAspectRatio="none"
+          class:list={['w-full', rail ? 'h-6' : 'h-16']}
+          role="img"
+          aria-label={`${t('newsCurveAlt')} ${series.map((s) => `${monthLabel(s.key)}: ${s.count}`).join(', ')}`}
+        >
+          {series.map((point, i) => (
+            <rect
+              x={i * (barW + barGap)}
+              y={SPARK_H - (point.count / peak) * SPARK_H}
+              width={barW}
+              height={Math.max(0.5, (point.count / peak) * SPARK_H)}
+              class="fill-accent/70"
+            />
+          ))}
+        </svg>
+        <figcaption
+          class:list={[
+            'text-ink-400',
+            rail ? 'mt-1 text-[9px] leading-snug' : 'mt-2 text-xs leading-relaxed',
+          ]}
+        >
+          {sparkCaption}
+        </figcaption>
+      </figure>
+    )
+  }
+
+  {/*
+    ------------------------------ Filters ------------------------------
+    Hidden until the script reveals them, which is the whole progressive-
+    enhancement contract here: with no JS the reader gets every story in the
+    archive and no controls that do nothing. The source project cannot do this
+    — its list *is* a fetch result, so with no JS there is no list.
+  */}
+  <div
+    data-news-controls
+    hidden
+    class:list={[
+      'shrink-0',
+      rail ? 'border-b border-ink-800 px-4 py-2.5' : 'mt-6',
+    ]}
+  >
+    <div role="group" aria-label={t('newsRangeLabel')} class="flex flex-wrap items-center gap-1.5">
+      {
+        RANGE_OPTIONS.map((opt) => (
+          <button
+            type="button"
+            data-news-range
+            data-days={opt.days}
+            aria-pressed={opt.days === DEFAULT_DAYS ? 'true' : 'false'}
+            class="rounded-full border border-ink-700 px-3 py-1 text-[9px] font-bold tracking-wider text-ink-400 uppercase transition-colors hover:text-ink-100"
+          >
+            {opt.label}
+          </button>
+        ))
+      }
+      <span
+        data-news-status
+        role="status"
+        aria-live="polite"
+        class="ml-auto text-[9px] tracking-wider text-ink-400 uppercase"
+      />
+    </div>
+
+    {
+      presentTopics.length > 1 && (
+        <div
+          role="group"
+          aria-label={t('newsTopicLabel')}
+          class="mt-2 flex flex-wrap items-center gap-1.5"
+        >
+          <button
+            type="button"
+            data-news-topic
+            data-topic="all"
+            aria-pressed="true"
+            class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
+          >
+            {t('newsTopicAll')}
+          </button>
+          {presentTopics.map((topic) => (
+            <button
+              type="button"
+              data-news-topic
+              data-topic={topic}
+              aria-pressed="false"
+              class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
+            >
+              {TOPIC_LABELS[topic]}
+            </button>
+          ))}
+        </div>
+      )
+    }
+  </div>
+
+  {/* ------------------------------- List ------------------------------- */}
+  <div
+    class:list={[
+      rail ? 'scroll-slim min-h-0 flex-1 overflow-y-auto px-4 py-3' : 'mt-6',
+    ]}
+  >
+    {
+      !archive && (
+        <p class="rounded-lg border border-ink-700 bg-ink-900 p-4 text-sm text-ink-300">
+          {t('newsEmpty')}
+        </p>
+      )
+    }
+
+    <ol data-news-list class="space-y-0">
+      {
+        items.map((item) => (
+          <li
+            data-news-item
+            data-published={item.published}
+            data-topic={item.topic}
+            class="border-b border-ink-850 py-3 first:pt-0 last:border-0"
+          >
+            {/*
+              Source above headline, in accent caps — the source project's
+              shape, and it is the right one: the outlet is how a reader
+              decides whether to trust a headline before reading it, so it
+              belongs before rather than after.
+            */}
+            <span class="mb-1 block text-[9px] font-bold tracking-wider text-accent uppercase">
+              {item.source}
+            </span>
+            <h3 class:list={[rail ? 'text-xs' : 'text-sm', 'leading-snug font-medium']}>
+              <a
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+                class="text-ink-100 hover:text-accent"
+              >
+                {item.title}
+              </a>
+            </h3>
+            <span class="mt-1.5 flex flex-wrap items-center gap-x-2 text-[10px] font-medium text-ink-400">
+              <span class="rounded border border-ink-700 px-1 py-px text-ink-300">
+                {TOPIC_LABELS[item.topic] ?? TOPIC_LABELS.other}
+              </span>
+              <time datetime={item.published}>{dayFormatter.format(new Date(item.published))}</time>
+            </span>
+          </li>
+        ))
+      }
+    </ol>
+
+    {/*
+      Shown by the script when a range and topic combination has nothing in it.
+      Authored here as real markup rather than built as a string in the script,
+      so Tailwind's scan sees these classes and the copy has one owner.
+    */}
+    <p
+      data-news-none
+      hidden
+      class="py-6 text-center text-xs text-ink-400"
+    >
+      {t('newsNoneInRange')}
+    </p>
+  </div>
+
+  {
+    rail && (
+      <a
+        href={localePath(locale, '/news')}
+        class="shrink-0 border-t border-ink-800 px-4 py-2.5 text-center text-[10px] font-semibold tracking-wider text-ink-300 uppercase transition-colors hover:text-accent"
+      >
+        {t('newsOpenArchive')}
+      </a>
+    )
+  }
+
+  {/* ------------------------- Coverage honesty ------------------------- */}
+  {
+    !rail && archive && (
+      <section class="mt-12 rounded-lg border border-ink-700 bg-ink-900 p-5">
+        <h2 class="text-lg font-semibold text-ink-100">{t('newsCoverageTitle')}</h2>
+        <ul class="prose-civic mt-3 list-disc space-y-2 pl-5 text-sm">
+          {archive.coverage.map((line) => (
+            <li>{line}</li>
+          ))}
+          {archive.knownGaps.map((line) => (
+            <li>{line}</li>
+          ))}
+        </ul>
+        <p class="mt-4 border-t border-ink-800 pt-4 text-sm leading-relaxed text-ink-300">
+          {t('newsScreenedPrefix')} <strong class="text-ink-100">{screened}</strong>{' '}
+          {t('newsScreenedSuffix')}
+        </p>
+        <p class="mt-3 text-xs leading-relaxed text-ink-400">{archive.metadata.license}</p>
+      </section>
+    )
+  }
+</section>
+
+<script>
+  /*
+   * Range and topic filtering, entirely in the document.
+   *
+   * THE ONE DESIGN DECISION HERE, and the reason this is ~70 lines where the
+   * project it was ported from needs ~600: there is no fetch. The whole archive
+   * is already in the page, so switching range is a class toggle rather than a
+   * network round trip. Everything the original needs to manage — a loading
+   * skeleton, an outage panel, a stale-copy banner with an age, a retry button,
+   * a partial-range notice, a session pool of items accumulated across fetches
+   * so re-sorting doesn't lose earlier results — describes states that cannot
+   * occur here. Porting them would ship code that can never run, and a "showing
+   * saved headlines from 3 hours ago" banner over a build-time snapshot would
+   * be false rather than merely dead.
+   *
+   * Consequences worth stating, because they are the argument for doing it this
+   * way: switching range is instant rather than seconds, it works offline, and
+   * it cannot fail. The controls are revealed by this script, so with no
+   * JavaScript the reader gets the complete list and no controls that do
+   * nothing — which the original cannot offer, its list being a fetch result.
+   */
+  const PILL_ON = ['text-accent', 'border-accent/30', 'bg-accent/10'];
+  const PILL_OFF = ['text-ink-400', 'border-ink-700'];
+
+  function setPressed(btn: HTMLElement, on: boolean): void {
+    btn.setAttribute('aria-pressed', String(on));
+    btn.classList.add(...(on ? PILL_ON : PILL_OFF));
+    btn.classList.remove(...(on ? PILL_OFF : PILL_ON));
+  }
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-news-feed]')) {
+    const controls = root.querySelector<HTMLElement>('[data-news-controls]');
+    const status = root.querySelector<HTMLElement>('[data-news-status]');
+    const none = root.querySelector<HTMLElement>('[data-news-none]');
+    const items = [...root.querySelectorAll<HTMLElement>('[data-news-item]')];
+    if (!controls || items.length === 0) continue;
+
+    // Revealed only now: before this line the controls are `hidden`, so a
+    // reader with no JavaScript never sees a chip that would not respond.
+    controls.hidden = false;
+
+    let days = Number(root.dataset.defaultDays ?? 0);
+    let topic = 'all';
+
+    const apply = () => {
+      // Computed once per apply rather than per item — 700 `Date.now()` calls
+      // to answer one question is the kind of thing that shows up on the phone
+      // this page is built for.
+      const cutoff = days > 0 ? Date.now() - days * 86_400_000 : -Infinity;
+      let shown = 0;
+
+      for (const item of items) {
+        const at = new Date(item.dataset.published ?? '').getTime();
+        const inRange = !Number.isFinite(at) || at >= cutoff;
+        const inTopic = topic === 'all' || item.dataset.topic === topic;
+        const visible = inRange && inTopic;
+        item.hidden = !visible;
+        if (visible) shown += 1;
+      }
+
+      if (none) none.hidden = shown > 0;
+      // Announced politely rather than silently, because the list it describes
+      // changes with no other cue a screen reader would pick up.
+      if (status) status.textContent = String(shown);
+    };
+
+    controls.addEventListener('click', (event) => {
+      const btn = (event.target as HTMLElement).closest<HTMLElement>(
+        '[data-news-range], [data-news-topic]',
+      );
+      if (!btn) return;
+
+      const group = btn.hasAttribute('data-news-range') ? 'data-news-range' : 'data-news-topic';
+      for (const sibling of controls.querySelectorAll<HTMLElement>(`[${group}]`)) {
+        setPressed(sibling, sibling === btn);
+      }
+
+      if (group === 'data-news-range') days = Number(btn.dataset.days ?? 0);
+      else topic = btn.dataset.topic ?? 'all';
+
+      apply();
+    });
+
+    // Paint the initial pressed state through the same path that handles a
+    // click, so the two can't style the same state differently.
+    for (const btn of controls.querySelectorAll<HTMLElement>('[data-news-range]')) {
+      setPressed(btn, Number(btn.dataset.days) === days);
+    }
+    for (const btn of controls.querySelectorAll<HTMLElement>('[data-news-topic]')) {
+      setPressed(btn, (btn.dataset.topic ?? 'all') === topic);
+    }
+    apply();
+  }
+</script>
