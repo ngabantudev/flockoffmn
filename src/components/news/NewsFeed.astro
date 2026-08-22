@@ -273,6 +273,29 @@ function monthLabel(key: string): string {
   return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
+/*
+ * Year ticks for the curve's axis.
+ *
+ * The caption states the span, which tells a reader the curve covers two years
+ * but not which bar is which — with two dozen evenly spaced bars and no axis,
+ * "when did this start climbing" has no answer you can read off. A label at
+ * each year boundary gives every bar a rough date at a glance.
+ *
+ * Positioned as a percentage rather than drawn in the SVG because that SVG is
+ * `preserveAspectRatio="none"` — it stretches to whatever width it is given, so
+ * any text inside it stretches with it. HTML underneath stays the size it says
+ * it is. The maths lines up exactly: a bar starts at `i * (barW + barGap)` out
+ * of SPARK_W, and `barW + barGap` is `SPARK_W / series.length`, so bar `i`
+ * begins at `i / series.length` of the width either way you compute it.
+ */
+const yearMarks = series
+  .map((point, index) => ({ index, year: point.key.slice(0, 4) }))
+  .filter((mark, i, all) => i === 0 || mark.year !== all[i - 1].year)
+  .map((mark) => ({
+    ...mark,
+    pct: (mark.index / series.length) * 100,
+  }));
+
 const sparkCaption =
   series.length > 1
     ? `${t('newsCurveCaption')} ${monthLabel(series[0].key)} – ${monthLabel(series[series.length - 1].key)}`
@@ -489,10 +512,37 @@ const screened = archive ? screenedTotal(archive) : 0;
             />
           ))}
         </svg>
+        {/*
+          The axis. `aria-hidden` because the SVG's own aria-label already reads
+          every month and its count in order — a screen reader that has heard
+          "September 2024: 0, October 2024: 1 …" does not also need three loose
+          years, and the ticks carry no information that list does not.
+
+          A mark in the last eighth of the width is anchored to the right edge
+          instead, so a series that happens to start a new year in its final
+          months prints "2027" inside the panel rather than off it.
+        */}
+        <div
+          class:list={['relative', rail ? 'mt-0.5 h-3' : 'mt-1 h-4']}
+          aria-hidden="true"
+        >
+          {yearMarks.map((mark) => (
+            <span
+              class:list={[
+                'absolute top-0 tabular-nums text-ink-400',
+                rail ? 'text-[8px]' : 'text-[10px]',
+              ]}
+              style={mark.pct > 87.5 ? 'right: 0' : `left: ${mark.pct}%`}
+            >
+              {mark.year}
+            </span>
+          ))}
+        </div>
+
         <figcaption
           class:list={[
             'text-ink-400',
-            rail ? 'mt-1 text-[9px] leading-snug' : 'mt-2 text-xs leading-relaxed',
+            rail ? 'mt-0.5 text-[9px] leading-snug' : 'mt-1 text-xs leading-relaxed',
           ]}
         >
           {sparkCaption}
