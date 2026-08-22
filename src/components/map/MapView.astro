@@ -1416,8 +1416,16 @@ const strings = {
     detailTabNameEl.textContent = fill(S.mapNearMeListTabSuffix, { count: nearMeRecords.length });
 
     const header = el('div', 'flex items-start justify-between gap-2 border-b border-ink-800 p-3');
-    const titleWrap = el('div', 'min-w-0');
-    titleWrap.append(el('h2', 'text-base font-semibold leading-snug text-ink-100', S.mapNearMe));
+    const titleWrap = el('div', 'min-w-0 flex-1');
+    // The heading and the (possibly empty, at >=xl) mobile radius slot share
+    // one row — the slider reads as acting on this heading specifically when
+    // it sits right next to it, not below it. See nearMeRadiusMobileSlot's
+    // own comment for why re-attaching it here on every render is not
+    // itself the corner-vs-sheet placement decision.
+    const headingRow = el('div', 'flex items-center justify-between gap-2');
+    headingRow.append(el('h2', 'min-w-0 truncate text-base font-semibold leading-snug text-ink-100', S.mapNearMe));
+    headingRow.append(nearMeRadiusMobileSlot);
+    titleWrap.append(headingRow);
     const radiusInput = document.querySelector<HTMLInputElement>('.near-me-radius-input');
     if (radiusInput) {
       titleWrap.append(
@@ -1428,10 +1436,6 @@ const strings = {
         ),
       );
     }
-    // Re-attach the (possibly empty, at >=xl) mobile radius slot to this
-    // freshly-built header — see nearMeRadiusMobileSlot's own comment for
-    // why this is not itself the corner-vs-sheet placement decision.
-    titleWrap.append(nearMeRadiusMobileSlot);
     const close = el(
       'button',
       'flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-400 hover:text-ink-100',

@@ -764,15 +764,16 @@
  * see MapView.astro's `nearMeRadiusMobileSlot` comment. Collapses to
  * nothing at `>=xl`, where syncNearMeRadiusPlacement leaves it empty (the
  * control lives back in the corner popover there); once the control is
- * actually moved in below `xl`, its own flex/gap (`.near-me-radius-control`
- * plus the `--inline` override above) does the row layout, so this wrapper
- * only ever needs to reserve the vertical gap above it.
+ * actually moved in below `xl`, it sits in the same row as the sheet's own
+ * heading (headingRow, MapView.astro's renderNearMeList), right-aligned by
+ * that row's own `justify-between` — this wrapper just needs to not shrink
+ * out of its own width when the heading text is long.
  */
 .nearme-radius-slot:empty {
   display: none;
 }
 .nearme-radius-slot:not(:empty) {
-  margin-top: 0.5rem;
+  flex-shrink: 0;
 }
 .near-me-radius-input {
   width: 6.5rem;
