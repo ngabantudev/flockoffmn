@@ -586,6 +586,18 @@
   }
 }
 
+/*
+ * The bottom nav's column count follows `links.length` (see Nav.astro), via the
+ * `--nav-cols` custom property it sets inline. Below 26rem the grid keeps the
+ * four-per-row wrap its `grid-cols-4` utility provides, which is where the
+ * labels stop clipping on a 320px phone.
+ */
+@media (width >= 26rem) {
+  .nav-icon-grid {
+    grid-template-columns: repeat(var(--nav-cols, 8), minmax(0, 1fr));
+  }
+}
+
 @media (width < 64rem) {
   /*
    * The layers list is a drawer below `lg` — see #controls in MapView.astro.

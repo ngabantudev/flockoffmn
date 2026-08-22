@@ -15,6 +15,14 @@
  *
  *  - national/  Works for any US state via STATE_FIPS/STATE_USPS/STATE_ISO
  *               env vars (see .env.example). Start here on a fork.
+ * Press coverage (mn/news.mjs) is deliberately NOT here. It is a Tier 4 lead
+ * list rather than a layer (see src/lib/news.ts), it depends on nothing, and it
+ * moves daily where these move on their publishers' schedules — so it has its
+ * own `npm run data:news` and its own workflow. Folding it in meant `npm run
+ * data`, run to refresh one layer locally, silently re-fetched Google and
+ * rewrote the news archive; it also forced refresh-data.yml to carry a copy of
+ * the §1b headline-review checklist that refresh-news.yml owns.
+ *
  *  - mn/        Built against a Minnesota-specific statute, agency, or
  *               dataset (MESB, the BCA's § 13.824 filings, MnDOT, MPCA's
  *               CI-MAP, Mapping Prejudice's MN county coverage, and the
@@ -84,10 +92,6 @@ const STEPS = [
   // agreement check it measures every run, and ej-cumulative.geojson for the
   // 2020 tract boundaries each block resolves against. See its own header.
   { name: 'holc-detail', script: 'mn/holc-detail.mjs' },
-  // Last, and dependent on nothing. Press coverage is a Tier 4 lead list, not
-  // a layer (see src/layers/news.ts), and Google is the least reliable upstream
-  // in this pipeline — so it runs after every real layer has already written.
-  { name: 'news', script: 'mn/news.mjs' },
 ];
 
 function run(script) {

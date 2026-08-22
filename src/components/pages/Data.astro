@@ -2,6 +2,7 @@
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, mergedProvenance } from '~/layers/data';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { loadNews } from '~/lib/news';
 
 interface Props {
   locale: Locale;
@@ -10,6 +11,9 @@ const { locale } = Astro.props;
 const t = useTranslations(locale);
 
 const loaded = await loadAllLayers();
+// Tier 4, not a layer — see src/lib/news.ts. Read here so the licence and tier
+// on the card below come from the generated file rather than from prose.
+const news = await loadNews();
 ---
 
 <div class="mx-auto max-w-4xl px-4 py-10">
@@ -104,12 +108,19 @@ const loaded = await loadAllLayers();
     <div class="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div class="min-w-0">
-          <h2 class="text-base font-semibold text-ink-100">News coverage (Tier 4 — leads only)</h2>
+          <h2 class="text-base font-semibold text-ink-100">
+            News coverage (Tier {news?.metadata.tier ?? 4} — leads only)
+          </h2>
+          {/*
+            The licence sentence comes out of the generated file rather than
+            being written here, the same way every layer card above renders
+            `p.license` — §2's build-reader rule. It was duplicated in three
+            places (the ingest, this page, the sources page), so changing the
+            terms left two of them asserting the old ones.
+          */}
+          <p class="mt-1 text-sm text-ink-400">{news?.metadata.license}</p>
           <p class="mt-1 text-sm text-ink-400">
-            Headlines, outlet names and links for Minnesota surveillance and enforcement stories,
-            collected from Google News. No article text is copied or stored, and stories about
-            individual people are removed before anything is saved. Use it to find records, never as
-            a source for a claim.
+            Use it to find records, never as a source for a claim.
           </p>
         </div>
         <div class="flex shrink-0 gap-2">

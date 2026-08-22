@@ -2,6 +2,7 @@
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, mergedProvenance } from '~/layers/data';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { loadNews, screenedTotal } from '~/lib/news';
 import { formatValue } from '~/lib/detailFields';
 
 interface Props {
@@ -13,6 +14,9 @@ const t = useTranslations(locale);
 // Read from the generated files, not the registry: counts and dates shown here
 // are whatever the last ingest actually produced.
 const loaded = await loadAllLayers();
+// Tier 4, not a layer — see src/lib/news.ts. Read so the tier and the screening
+// count below are the file's own numbers rather than prose that can go stale.
+const news = await loadNews();
 
 const fmtDate = (iso: string | null | undefined) => formatValue(iso, 'date', locale) ?? '—';
 
@@ -215,9 +219,10 @@ const CADENCE: Record<string, string> = {
       request for review before anything publishes.
     </p>
     <p class="prose-civic mt-2">
-      It is a <strong>Tier 4</strong> source: journalism, useful as a lead list, never the sole
-      basis of a feature on this site. Nothing on the map comes from it. A headline there is a
-      pointer to a record worth requesting, and the record is what gets published.
+      It is a <strong>Tier {news?.metadata.tier ?? 4}</strong> source: journalism, useful as a
+      lead list, never the sole basis of a feature on this site. Nothing on the map comes from it.
+      A headline there is a pointer to a record worth requesting, and the record is what gets
+      published.
     </p>
     <p class="prose-civic mt-2">
       Stories about individual people are removed before anything is saved — arrests, court cases,
@@ -227,6 +232,20 @@ const CADENCE: Record<string, string> = {
       </a>. The filter runs at ingest, so those headlines are counted but never written to disk. The
       count is published on the coverage page; the headlines are not kept anywhere.
     </p>
+    {
+      news && (
+        <p class="prose-civic mt-2">
+          {/*
+            The number is the generated file's own, not a figure typed here.
+            §1b permits aggregates and forbids enumeration, so a count is the
+            only form this can take — and a count that drifts from the file it
+            describes is worse than no count.
+          */}
+          On the most recent ingest, <strong>{screenedTotal(news)}</strong> stories were dropped
+          before anything was saved, and {news.items.length} were kept.
+        </p>
+      )
+    }
   </section>
 
   <section class="mt-12 border-t border-ink-800 pt-8">

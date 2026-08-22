@@ -1,7 +1,7 @@
 ---
 import { Newspaper } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
-import { loadNews, groupByMonth, screenedTotal, type NewsTopic } from '~/layers/news';
+import { loadNews, groupByMonth, screenedTotal, type NewsTopic } from '~/lib/news';
 import NewsItemRow from '~/components/news/NewsItemRow.astro';
 import { useTranslations, localePath } from '~/lib/i18n';
 
@@ -100,7 +100,11 @@ const items = rail ? railItems : all;
  * column are noise — so the rail prints the year on the row instead, via
  * NewsItemRow's `showYear`.
  */
-const monthGroups = rail ? [] : groupByMonth(items);
+// Grouped once and used twice. `items === all` on the archive, so computing
+// this separately for the headings and for the curve below read as if the two
+// might describe different sets — they cannot, but only via that aliasing.
+const byMonth = groupByMonth(all);
+const monthGroups = rail ? [] : byMonth;
 const currentYear = new Date().getUTCFullYear();
 
 /*
@@ -152,7 +156,7 @@ const TOPIC_LABELS: Record<NewsTopic, string> = {
 // Only offer a topic chip for a topic that actually has stories behind it. An
 // empty facet is a dead control, and a dead control reads as a broken page.
 const presentTopics = [...new Set(items.map((i) => i.topic))].sort(
-  (a, b) => (TOPIC_LABELS[a] ?? '').localeCompare(TOPIC_LABELS[b] ?? ''),
+  (a, b) => TOPIC_LABELS[a].localeCompare(TOPIC_LABELS[b]),
 );
 
 /*
@@ -166,7 +170,7 @@ const presentTopics = [...new Set(items.map((i) => i.topic))].sort(
  * Server-rendered inline SVG with no script and no library: it cannot fail to
  * load, it prints, and it costs nothing on a phone.
  */
-const series = groupByMonth(all)
+const series = byMonth
   .map((group) => ({ key: group.key, count: group.items.length }))
   .reverse(); // groupByMonth is newest-first; a curve reads left to right.
 const peak = Math.max(1, ...series.map((s) => s.count));
@@ -180,6 +184,34 @@ const monthFormatter = new Intl.DateTimeFormat(locale, {
   year: 'numeric',
   timeZone: 'UTC',
 });
+/*
+ * Two row formatters, built once for the whole page.
+ *
+ * NewsItemRow used to construct an Intl.DateTimeFormat in its own frontmatter,
+ * which runs per rendered row. Measured: constructing and formatting is ~125x
+ * the cost of formatting on a reused instance, so a full archive build was
+ * paying for hundreds of constructions to produce two distinct formats.
+ *
+ * `withYear` exists because the rail has no month headings to carry the year,
+ * so a row from a previous year has to say so — see the `showYear` reasoning
+ * that moved here with it.
+ */
+const rowDate = {
+  bare: new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+  withYear: new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }),
+};
+
+/** Row date label: the archive's month headings carry the year, the rail's rows do not. */
+function dateLabel(published: string, showYear: boolean): string {
+  const at = new Date(published);
+  return (showYear ? rowDate.withYear : rowDate.bare).format(at);
+}
+
 function monthLabel(key: string): string {
   const [year, month] = key.split('-').map(Number);
   return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
@@ -419,10 +451,9 @@ const screened = archive ? screenedTotal(archive) : 0;
           {items.map((item) => (
             <NewsItemRow
               item={item}
-              locale={locale}
-              topicLabel={TOPIC_LABELS[item.topic] ?? TOPIC_LABELS.other}
+                          topicLabel={TOPIC_LABELS[item.topic]}
+              dateLabel={dateLabel(item.published, new Date(item.published).getUTCFullYear() !== currentYear)}
               compact={true}
-              showYear={new Date(item.published).getUTCFullYear() !== currentYear}
             />
           ))}
         </ol>
@@ -436,10 +467,9 @@ const screened = archive ? screenedTotal(archive) : 0;
               {group.items.map((item) => (
                 <NewsItemRow
                   item={item}
-                  locale={locale}
-                  topicLabel={TOPIC_LABELS[item.topic] ?? TOPIC_LABELS.other}
+                                  topicLabel={TOPIC_LABELS[item.topic]}
+                  dateLabel={dateLabel(item.published, false)}
                   compact={false}
-                  showYear={false}
                 />
               ))}
             </ol>
@@ -554,7 +584,6 @@ const screened = archive ? screenedTotal(archive) : 0;
       // to answer one question is the kind of thing that shows up on the phone
       // this page is built for.
       const cutoff = days > 0 ? Date.now() - days * 86_400_000 : -Infinity;
-      let shown = 0;
 
       for (const item of items) {
         const at = new Date(item.dataset.published ?? '').getTime();
@@ -562,7 +591,6 @@ const screened = archive ? screenedTotal(archive) : 0;
         const inTopic = topic === 'all' || item.dataset.topic === topic;
         const visible = inRange && inTopic;
         item.hidden = !visible;
-        if (visible) shown += 1;
       }
 
       // A month heading with every row beneath it filtered away is a heading
@@ -582,6 +610,7 @@ const screened = archive ? screenedTotal(archive) : 0;
        * story. Applied here instead, against what is actually on screen.
        */
       const visible = items.filter((item) => !item.hidden);
+      const shown = visible.length;
       for (const item of items) item.classList.remove('pt-0', 'border-b-0');
       visible[0]?.classList.add('pt-0');
       visible[visible.length - 1]?.classList.add('border-b-0');

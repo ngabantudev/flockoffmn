@@ -1,35 +1,15 @@
 ---
-import type { Locale } from '~/layers/types';
-import type { NewsItem } from '~/layers/news';
+import type { NewsItem } from '~/lib/news';
 
 interface Props {
   item: NewsItem;
-  locale: Locale;
   topicLabel: string;
+  /** Already-formatted publication date. See NewsFeed.astro's `dateLabel`. */
+  dateLabel: string;
   /** Rail uses smaller type than the archive. */
   compact: boolean;
-  /**
-   * Whether to print the year alongside the date.
-   *
-   * The archive groups by month and the heading already carries the year, so
-   * repeating it on every row is noise. The rail has no headings, so a row
-   * from a previous year has to say so — "Jan 27" in an archive spanning two
-   * Januaries is genuinely ambiguous, which is the bug this prop exists to
-   * fix rather than a stylistic preference.
-   */
-  showYear: boolean;
 }
-const { item, locale, topicLabel, compact, showYear } = Astro.props;
-
-// UTC throughout, matching the month bucketing in ~/layers/news.ts. A local
-// zone renders a 23:38 UTC story on the previous day, which would put it under
-// the wrong month heading.
-const formatted = new Intl.DateTimeFormat(locale, {
-  month: 'short',
-  day: 'numeric',
-  ...(showYear ? { year: 'numeric' } : {}),
-  timeZone: 'UTC',
-}).format(new Date(item.published));
+const { item, topicLabel, dateLabel, compact } = Astro.props;
 ---
 
 <li
@@ -58,6 +38,6 @@ const formatted = new Intl.DateTimeFormat(locale, {
   </h3>
   <span class="mt-1.5 flex flex-wrap items-center gap-x-2 text-[10px] font-medium text-ink-400">
     <span class="rounded border border-ink-700 px-1 py-px text-ink-300">{topicLabel}</span>
-    <time datetime={item.published}>{formatted}</time>
+    <time datetime={item.published}>{dateLabel}</time>
   </span>
 </li>

@@ -64,12 +64,11 @@ import {
   hasSubject,
   hasMinnesota,
   isNonArticle,
-  screenForPeople,
   classifyTopic,
   collapseDuplicates,
   byPublishedDesc,
-  PERSON_RULE_NAMES,
 } from '../../../src/lib/newsFilter.mjs';
+import { screenForPeople, PERSON_RULE_NAMES } from '../../../src/lib/personScreen.mjs';
 
 const SCOPE = 'news';
 const OUT = 'news.json';
@@ -233,9 +232,10 @@ async function main() {
   // made the published "dropped because they were about individual people"
   // figure report 30 on a run where the person screen fired 12 times.
   const rejected = Object.fromEntries(PERSON_RULE_NAMES.map((r) => [r, 0]));
-  let droppedNonArticle = 0;
-  let droppedOffTopic = 0;
-  let droppedOutOfState = 0;
+  // Keyed by the name they are published under, so adding a relevance filter is
+  // one line here and one increment below rather than four edits that can drift
+  // apart (declaration, increment, metadata literal, log line).
+  const dropped = { nonArticle: 0, offTopic: 0, outOfState: 0 };
 
   const accepted = [];
   for (const item of fetched) {
@@ -244,15 +244,15 @@ async function main() {
     const haystack = buildHaystack(item.title, item.description);
 
     if (isNonArticle(item.title)) {
-      droppedNonArticle += 1;
+      dropped.nonArticle += 1;
       continue;
     }
     if (!hasSubject(haystack)) {
-      droppedOffTopic += 1;
+      dropped.offTopic += 1;
       continue;
     }
     if (!hasMinnesota(haystack, item.source)) {
-      droppedOutOfState += 1;
+      dropped.outOfState += 1;
       continue;
     }
 
@@ -307,10 +307,43 @@ async function main() {
   // growth, and it silently reports 0 on any run where as many items aged past
   // RETENTION_DAYS as were added. The number a reviewer needs is how many new
   // headlines this run is asking them to look at.
-  const addedNet = merged.filter((i) => !knownUrls.has(i.url)).length;
+  /*
+   * §1b is re-checked over the WHOLE archive, not just this run's arrivals.
+   *
+   * The screen used to run only over `accepted`, which made it a property of
+   * how an item arrived rather than of what the published file contains. That
+   * is the wrong invariant: the merge below makes the existing entry win, so
+   * anything the rules missed on the day it landed stayed permanently, and
+   * strengthening PERSON_RULES had no retroactive effect at all. The rules have
+   * now been strengthened twice after measurement caught leaks — both times,
+   * only future runs benefited.
+   *
+   * Re-screening here means the rule reads "nothing in public/data/news.json
+   * matches a §1b pattern", which is what §1b actually asks for, and it means a
+   * tightened pattern cleans up its own history on the next run instead of
+   * waiting for a human to remember. §0.10 says the floor must not depend on
+   * whoever is at the keyboard; this is what stops it depending on that.
+   *
+   * The archive keeps no description — only the headline — so this pass sees
+   * less text than the intake screen did. It is a backstop for rules added
+   * later, not a replacement for screening at intake.
+   */
+  const retroRemoved = {};
+  const screened = merged.filter((item) => {
+    const verdict = screenForPeople(buildHaystack(item.title, ''));
+    if (verdict.ok) return true;
+    retroRemoved[verdict.rule] = (retroRemoved[verdict.rule] ?? 0) + 1;
+    return false;
+  });
+  const retroTotal = Object.values(retroRemoved).reduce((a, b) => a + b, 0);
+  if (retroTotal > 0) {
+    log(SCOPE, `removed ${retroTotal} archived item(s) that a newer §1b rule now catches`);
+  }
+
+  const addedNet = screened.filter((i) => !knownUrls.has(i.url)).length;
 
   const perTopic = {};
-  for (const item of merged) perTopic[item.topic] = (perTopic[item.topic] ?? 0) + 1;
+  for (const item of screened) perTopic[item.topic] = (perTopic[item.topic] ?? 0) + 1;
 
   await writeReference(OUT, {
     metadata: {
@@ -333,9 +366,11 @@ async function main() {
       // things NOT published. The headlines behind them are never written.
       screened: {
         person: rejected,
-        nonArticle: droppedNonArticle,
-        offTopic: droppedOffTopic,
-        outOfState: droppedOutOfState,
+        // Items already in the archive that a newer §1b rule now catches. A
+        // non-zero value here is the rules improving retroactively, which is
+        // the whole point of re-screening the merged file.
+        personRemovedFromArchive: retroRemoved,
+        ...dropped,
       },
       truncated,
     },
@@ -368,15 +403,15 @@ async function main() {
       'Hmong-language and Spanish-language Minnesota outlets are not indexed as sources by Google News, so this feed structurally cannot see their reporting — the communities carrying most of this enforcement are covered here only when an English-language outlet also files the story. Adding those outlets to the source list would not fix it; the upstream has no items to return.',
     ].filter(Boolean),
     topicCounts: perTopic,
-    items: merged,
+    items: screened,
   });
 
   const personTotal = Object.values(rejected).reduce((a, b) => a + b, 0);
-  log(SCOPE, `${merged.length} items in archive (+${addedNet} new this run, ${added} before duplicate collapse)`);
+  log(SCOPE, `${screened.length} items in archive (+${addedNet} new this run, ${added} before duplicate collapse)`);
   log(
     SCOPE,
-    `screened out: ${personTotal} person-level, ${droppedNonArticle} non-article, ` +
-      `${droppedOffTopic} off-topic, ${droppedOutOfState} out-of-state`,
+    `screened out: ${personTotal} person-level, ${dropped.nonArticle} non-article, ` +
+      `${dropped.offTopic} off-topic, ${dropped.outOfState} out-of-state`,
   );
   if (failures > 0) log(SCOPE, `${failures} of ${queries.length} searches failed`);
 }

@@ -6,7 +6,7 @@ name: Refresh news coverage
 # WHY A PULL REQUEST AND NOT A COMMIT. Same reason refresh-data.yml opens one:
 # this file is published data, and a silent overwrite is how a bad upstream day
 # becomes a wrong page nobody noticed. It matters more here than there. The
-# §1b person screen in src/lib/newsFilter.mjs is pattern-matching against
+# §1b person screen in src/lib/personScreen.mjs is pattern-matching against
 # headlines written by strangers, and pattern-matching is not a guarantee — the
 # first live measurement of it leaked four person-level stories that the second
 # pass caught. A human looking at the diff before it merges is the second gate,
@@ -137,7 +137,7 @@ jobs:
             - Does any new headline name or describe an individual — someone
               arrested, charged, held, deported, or identified? Does any name a
               deputy, officer, or agent? If so, the screen leaked. Remove the
-              item and add the pattern to `src/lib/newsFilter.mjs`.
+              item and add the pattern to `src/lib/personScreen.mjs`.
             - Is anything here not actually about Minnesota, or not actually
               about surveillance, enforcement, or detention?
             - Does the off-topic count look wildly different from the last run?

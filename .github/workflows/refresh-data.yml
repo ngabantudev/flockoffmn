@@ -99,14 +99,6 @@ jobs:
               actually issued a new file.
             - Check the ingest log for unmatched counties or geocoding
               failures.
-            - If `public/data/news.json` is in this diff, it carries the same
-              §1b obligation refresh-news.yml spells out: `npm run data`
-              includes the news ingest, so this PR is that feed's human gate
-              too. Read every added headline. Does any name or describe an
-              individual — arrested, charged, held, deported, identified — or
-              name a deputy, officer, or agent? If so the pattern screen
-              leaked: drop the item and add the pattern to
-              `src/lib/newsFilter.mjs`.
 
             Layer counts are in the workflow run summary.
           labels: data

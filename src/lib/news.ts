@@ -4,12 +4,18 @@ import path from 'node:path';
 /**
  * Build-time access to the news archive written by `scripts/ingest/mn/news.mjs`.
  *
- * Separate from `./data.ts` on purpose. That module reads map layers out of the
- * registry, and this feed is deliberately not one: §3 makes journalism a Tier 4
- * source — lead lists only, never the sole basis of a published feature — so it
- * gets no registry entry, no legend row, no pin, and no filter. Giving it one
- * would put press coverage on the same footing as a signed contract, which is
- * the exact conflation §0.2 and §1c exist to prevent.
+ * It lives here rather than in `src/layers/` because it is not a layer. §3
+ * makes journalism a Tier 4 source — lead lists only, never the sole basis of a
+ * published feature — so this feed gets no registry entry, no legend row, no
+ * pin, and no filter; giving it one would put press coverage on the same
+ * footing as a signed contract, which is the exact conflation §0.2 and §1c
+ * exist to prevent.
+ *
+ * That distinction used to be a paragraph at the top of a file sitting in
+ * `src/layers/` anyway. It is a directory now: membership of `src/layers/`
+ * answers "is this a registry layer?" on its own, so §2's two-file invariant
+ * stays checkable by listing that directory rather than by reading every
+ * header comment in it.
  *
  * Read at build time and baked into the page, which is what keeps §4 true: no
  * reader's browser ever contacts Google. See the ingest script's own header for

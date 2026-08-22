@@ -161,11 +161,18 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
 
     26rem (416px) is where eight columns stop clipping this particular set, so
     the breakpoint is derived from the labels rather than picked from the scale.
-    Below it the grid wraps to two rows of four — 80px per item at 320px, which
-    fits every label with room to spare. It costs roughly one extra row of
-    height on a narrow phone; a nav that reads "Sourc…" costs more.
+    Below it the grid wraps to four per row — 80px per item at 320px, which fits
+    every label with room to spare. It costs roughly one extra row of height on
+    a narrow phone; a nav that reads "Sourc…" costs more.
+
+    The column count above the breakpoint comes from `links.length` through the
+    `--nav-cols` custom property, not from a `grid-cols-8` literal. The literal
+    encoded the array's length in a string, and the stale "seven icons" comment
+    this same change had to correct in MapView.astro is that drift already
+    happening once. A ninth link now widens the row instead of orphaning a cell
+    on a phone.
   */}
-  <ul class="grid grid-cols-4 min-[26rem]:grid-cols-8">
+  <ul class="nav-icon-grid grid grid-cols-4" style={`--nav-cols:${links.length}`}>
     {
       links.map((link) => (
         <li>
