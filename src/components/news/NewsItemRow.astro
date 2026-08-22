@@ -1,0 +1,63 @@
+---
+import type { Locale } from '~/layers/types';
+import type { NewsItem } from '~/layers/news';
+
+interface Props {
+  item: NewsItem;
+  locale: Locale;
+  topicLabel: string;
+  /** Rail uses smaller type than the archive. */
+  compact: boolean;
+  /**
+   * Whether to print the year alongside the date.
+   *
+   * The archive groups by month and the heading already carries the year, so
+   * repeating it on every row is noise. The rail has no headings, so a row
+   * from a previous year has to say so — "Jan 27" in an archive spanning two
+   * Januaries is genuinely ambiguous, which is the bug this prop exists to
+   * fix rather than a stylistic preference.
+   */
+  showYear: boolean;
+}
+const { item, locale, topicLabel, compact, showYear } = Astro.props;
+
+// UTC throughout, matching the month bucketing in ~/layers/news.ts. A local
+// zone renders a 23:38 UTC story on the previous day, which would put it under
+// the wrong month heading.
+const formatted = new Intl.DateTimeFormat(locale, {
+  month: 'short',
+  day: 'numeric',
+  ...(showYear ? { year: 'numeric' } : {}),
+  timeZone: 'UTC',
+}).format(new Date(item.published));
+---
+
+<li
+  data-news-item
+  data-published={item.published}
+  data-topic={item.topic}
+  class="border-b border-ink-850 py-3"
+>
+  {/*
+    Source above headline, in accent caps — the source project's shape, and it
+    is the right one: the outlet is how a reader decides whether to trust a
+    headline before reading it, so it belongs before rather than after.
+  */}
+  <span class="mb-1 block text-[9px] font-bold tracking-wider text-accent uppercase">
+    {item.source}
+  </span>
+  <h3 class:list={[compact ? 'text-xs' : 'text-sm', 'leading-snug font-medium']}>
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      class="text-ink-100 hover:text-accent"
+    >
+      {item.title}
+    </a>
+  </h3>
+  <span class="mt-1.5 flex flex-wrap items-center gap-x-2 text-[10px] font-medium text-ink-400">
+    <span class="rounded border border-ink-700 px-1 py-px text-ink-300">{topicLabel}</span>
+    <time datetime={item.published}>{formatted}</time>
+  </span>
+</li>

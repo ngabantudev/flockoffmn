@@ -258,4 +258,5 @@ export const en: Record<string, string> = {
     'Press coverage, not records. Headlines are leads — the map beside this is the sourced record.',
   newsCurveCaption: 'Stories published per month —',
   newsCurveAlt: 'Stories published per month:',
+  newsShownSuffix: 'shown',
 };

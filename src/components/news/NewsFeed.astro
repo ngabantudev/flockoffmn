@@ -1,7 +1,8 @@
 ---
 import { Newspaper } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
-import { loadNews, screenedTotal, type NewsItem, type NewsTopic } from '~/layers/news';
+import { loadNews, groupByMonth, screenedTotal, type NewsItem, type NewsTopic } from '~/layers/news';
+import NewsItemRow from '~/components/news/NewsItemRow.astro';
 import { useTranslations, localePath } from '~/lib/i18n';
 
 interface Props {
@@ -36,6 +37,23 @@ const RAIL_LIMIT = 60;
 const items = rail ? all.slice(0, RAIL_LIMIT) : all;
 
 /*
+ * The archive groups by month; the rail does not.
+ *
+ * Grouping was in the first version of this page and was lost when the page and
+ * the rail were merged into one component — leaving a flat list whose rows read
+ * "Jan 27" across an archive spanning two Januaries. The heading is what
+ * carries the year, and it is also the cheapest time axis on the page: §0.5
+ * wants the shape over time visible, and an undifferentiated scroll of several
+ * hundred headlines hides exactly that.
+ *
+ * A 24rem rail is the wrong place for it — headings every few rows in a narrow
+ * column are noise — so the rail prints the year on the row instead, via
+ * NewsItemRow's `showYear`.
+ */
+const monthGroups = rail ? [] : groupByMonth(items);
+const currentYear = new Date().getUTCFullYear();
+
+/*
  * Range options, matching the source project's chips.
  *
  * `0` means everything, and it is new here. mndatacenter tops out at 1Y
@@ -43,13 +61,31 @@ const items = rail ? all.slice(0, RAIL_LIMIT) : all;
  * is no "all" for it to offer. This archive is cumulative and committed, so
  * "all" is a real answer and is the one that shows the curve.
  */
-const RANGE_OPTIONS = [
+const ALL_RANGES = [
   { label: t('newsRange24h'), days: 1 },
   { label: t('newsRange7d'), days: 7 },
   { label: t('newsRange30d'), days: 30 },
   { label: t('newsRange1y'), days: 365 },
   { label: t('newsRangeAll'), days: 0 },
 ];
+
+/*
+ * The rail stops at 30 days, and that is a correctness constraint rather than
+ * a space one.
+ *
+ * It renders the most recent RAIL_LIMIT stories regardless of their dates, so
+ * any chip covering a longer period than those stories happen to span is a
+ * lie: with a full archive, "1Y" in the rail would filter sixty recent items
+ * and present the result as a year. Today the archive is small enough that the
+ * two coincide, which is exactly why this is worth fixing now — it would start
+ * misreporting silently as the archive grows, and nothing about the UI would
+ * change to say so.
+ *
+ * Thirty days is the longest window the rail can always serve honestly at this
+ * feed's volume. Anything longer is the archive's job, and the link at the foot
+ * of the rail goes there.
+ */
+const RANGE_OPTIONS = rail ? ALL_RANGES.filter((o) => o.days > 0 && o.days <= 30) : ALL_RANGES;
 
 const DEFAULT_DAYS = rail ? 30 : 0;
 
@@ -99,12 +135,6 @@ const monthFormatter = new Intl.DateTimeFormat(locale, {
   year: 'numeric',
   timeZone: 'UTC',
 });
-const dayFormatter = new Intl.DateTimeFormat(locale, {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-});
-
 function monthLabel(key: string): string {
   const [year, month] = key.split('-').map(Number);
   return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
@@ -262,8 +292,15 @@ const screened = archive ? screenedTotal(archive) : 0;
           </button>
         ))
       }
+      {/*
+        `data-news-label` rather than the script building the phrase: this is
+        the one string here that has to be translated, and a live region that
+        announced a bare "60" told a screen-reader user a number with no noun
+        attached to it.
+      */}
       <span
         data-news-status
+        data-news-label={t('newsShownSuffix')}
         role="status"
         aria-live="polite"
         class="ml-auto text-[9px] tracking-wider text-ink-400 uppercase"
@@ -316,50 +353,41 @@ const screened = archive ? screenedTotal(archive) : 0;
       )
     }
 
-    <ol data-news-list class="space-y-0">
-      {
-        items.map((item) => (
-          <li
-            data-news-item
-            data-published={item.published}
-            data-topic={item.topic}
-            class="border-b border-ink-850 py-3 first:pt-0 last:border-0"
-          >
-            {/*
-              Source above headline, in accent caps — the source project's
-              shape, and it is the right one: the outlet is how a reader
-              decides whether to trust a headline before reading it, so it
-              belongs before rather than after.
-            */}
-            <span class="mb-1 block text-[9px] font-bold tracking-wider text-accent uppercase">
-              {item.source}
-            </span>
-            <h3 class:list={[rail ? 'text-xs' : 'text-sm', 'leading-snug font-medium']}>
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer nofollow"
-                class="text-ink-100 hover:text-accent"
-              >
-                {item.title}
-              </a>
-            </h3>
-            <span class="mt-1.5 flex flex-wrap items-center gap-x-2 text-[10px] font-medium text-ink-400">
-              <span class="rounded border border-ink-700 px-1 py-px text-ink-300">
-                {TOPIC_LABELS[item.topic] ?? TOPIC_LABELS.other}
-              </span>
-              <time datetime={item.published}>{dayFormatter.format(new Date(item.published))}</time>
-            </span>
-          </li>
+    {
+      rail ? (
+        <ol data-news-list class="space-y-0">
+          {items.map((item) => (
+            <NewsItemRow
+              item={item}
+              locale={locale}
+              topicLabel={TOPIC_LABELS[item.topic] ?? TOPIC_LABELS.other}
+              compact={true}
+              showYear={new Date(item.published).getUTCFullYear() !== currentYear}
+            />
+          ))}
+        </ol>
+      ) : (
+        monthGroups.map((group) => (
+          <section data-news-month class="mt-8 first:mt-0">
+            <h2 class="border-b border-ink-800 pb-1.5 text-lg font-semibold text-ink-100">
+              {monthLabel(group.key)}
+            </h2>
+            <ol class="mt-1 space-y-0">
+              {group.items.map((item) => (
+                <NewsItemRow
+                  item={item}
+                  locale={locale}
+                  topicLabel={TOPIC_LABELS[item.topic] ?? TOPIC_LABELS.other}
+                  compact={false}
+                  showYear={false}
+                />
+              ))}
+            </ol>
+          </section>
         ))
-      }
-    </ol>
+      )
+    }
 
-    {/*
-      Shown by the script when a range and topic combination has nothing in it.
-      Authored here as real markup rather than built as a string in the script,
-      so Tailwind's scan sees these classes and the copy has one owner.
-    */}
     <p
       data-news-none
       hidden
@@ -438,6 +466,7 @@ const screened = archive ? screenedTotal(archive) : 0;
     const status = root.querySelector<HTMLElement>('[data-news-status]');
     const none = root.querySelector<HTMLElement>('[data-news-none]');
     const items = [...root.querySelectorAll<HTMLElement>('[data-news-item]')];
+    const months = [...root.querySelectorAll<HTMLElement>('[data-news-month]')];
     if (!controls || items.length === 0) continue;
 
     // Revealed only now: before this line the controls are `hidden`, so a
@@ -463,10 +492,34 @@ const screened = archive ? screenedTotal(archive) : 0;
         if (visible) shown += 1;
       }
 
+      // A month heading with every row beneath it filtered away is a heading
+      // for nothing, and on the archive that reads as a gap in the record
+      // rather than as a filter doing its job.
+      for (const section of months) {
+        const anyVisible = [...section.querySelectorAll<HTMLElement>('[data-news-item]')].some(
+          (item) => !item.hidden,
+        );
+        section.hidden = !anyVisible;
+      }
+
+      /*
+       * `first:`/`last:` are compile-time positions and know nothing about
+       * `hidden`, so after a filter the first visible row kept its top padding
+       * and the last kept its bottom rule — a stray divider under the final
+       * story. Applied here instead, against what is actually on screen.
+       */
+      const visible = items.filter((item) => !item.hidden);
+      for (const item of items) item.classList.remove('pt-0', 'border-b-0');
+      visible[0]?.classList.add('pt-0');
+      visible[visible.length - 1]?.classList.add('border-b-0');
+
       if (none) none.hidden = shown > 0;
       // Announced politely rather than silently, because the list it describes
       // changes with no other cue a screen reader would pick up.
-      if (status) status.textContent = String(shown);
+      if (status) {
+        const suffix = status.dataset.newsLabel ?? '';
+        status.textContent = suffix ? `${shown} ${suffix}` : String(shown);
+      }
     };
 
     controls.addEventListener('click', (event) => {
