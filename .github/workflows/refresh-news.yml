@@ -79,7 +79,26 @@ jobs:
         id: diff
         run: |
           set -euo pipefail
-          if git diff --quiet -- public/data/news.json; then
+          # Compare the STORIES, not the file.
+          #
+          # The metadata carries per-run diagnostics — how many searches
+          # answered, how many items each screen rejected — which move on almost
+          # every run even when no story arrived. Gating on `git diff` therefore
+          # opened a pull request nearly every day whose entire content was a
+          # counter ticking, and the §1b headline review is a human gate: it
+          # works only while a PR appearing means there is something to read.
+          # Daily no-op PRs are how that gate gets skimmed and then ignored.
+          #
+          # The diagnostics still publish; they just no longer, on their own,
+          # ask anyone to review them.
+          if node -e '
+            const { execSync } = require("child_process");
+            const now = require("./public/data/news.json").items;
+            let before = [];
+            try { before = JSON.parse(execSync("git show HEAD:public/data/news.json", {encoding:"utf8"})).items; } catch {}
+            const key = (a) => a.map((i) => i.url).sort().join("\n");
+            process.exit(key(now) === key(before) ? 0 : 1);
+          '; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No new coverage." >> "$GITHUB_STEP_SUMMARY"
           else

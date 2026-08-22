@@ -41,9 +41,19 @@
 const PERSON_RULES = [
   {
     // §1b, first clause — anyone subject to enforcement.
+    //
+    // Widened after three person-level headlines were found sitting in the
+    // committed archive, having passed every rule here. The gaps were narrow
+    // and specific: `in custody` was matched but `from custody` was not, so an
+    // escape read as systemic; `remains in detention` had no verb in either
+    // rule; and a headline opening `Charge:` announced a prosecution the
+    // alternation did not recognise. None of these are exotic phrasings — they
+    // are how a newsroom ordinarily writes about an individual, which is the
+    // point: the screen has now leaked three times, and each time the leak was
+    // a synonym rather than a new category.
     rule: 'enforcement-subject',
     pattern:
-      /\b(detained|detainee|detainees|arrested|arrest of|deported|deportation of|facing deportation|in custody|taken into custody|released from|charged with|pleads?|pleaded|convicted|sentenced|indicted|faces? charges|awaiting trial|removal proceedings|asylum seeker|asylum-seeker|undocumented (man|woman|immigrant|resident|student|worker|father|mother)|green card holder|visa holder|accused|accused of|felony|misdemeanor|booked into|jailed|returns? home from|criminal charges)\b/,
+      /\b(detained|detainee|detainees|arrested|arrest of|deported|deportation of|facing deportation|in custody|taken into custody|released from|charged with|pleads?|pleaded|convicted|sentenced|indicted|faces? charges|awaiting trial|removal proceedings|asylum seeker|asylum-seeker|undocumented (man|woman|immigrant|resident|student|worker|father|mother)|green card holder|visa holder|accused|accused of|felony|misdemeanor|booked into|jailed|returns? home from|criminal charges|from custody|out of custody|escapes?|escaped|remains in custody|remains in detention|remains in ice|still in custody|still detained|charge:|charged:)\b/,
   },
   {
     // The person-shaped headline, added after the first live measurement.
@@ -56,7 +66,7 @@ const PERSON_RULES = [
     // naming. An institution is never "a man".
     rule: 'person-subject-headline',
     pattern:
-      /\b(man|woman|boy|girl|teen|teenager|child|toddler|father|mother|couple|grandmother|grandfather|driver|passenger|student|worker|resident)\b[^.]{0,40}\b(accused|charged|arrested|jailed|sentenced|convicted|faces|face|pleads|pleaded|returns|return|deported|detained|identified|held|freed|released|sues|sued)\b/,
+      /\b(man|woman|boy|girl|teen|teenager|child|toddler|father|mother|couple|grandmother|grandfather|driver|passenger|student|worker|resident)\b[^.]{0,40}\b(accused|charged|arrested|jailed|sentenced|convicted|faces|face|pleads|pleaded|returns|return|deported|detained|identified|held|freed|released|sues|sued|escapes|escaped|flees|fled|remains|remain|tried|sought|solicited|hired)\b/,
   },
   {
     // §1b, second clause — rank-and-file officers, agents, corrections staff.

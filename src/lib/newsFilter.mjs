@@ -206,12 +206,16 @@ const OTHER_STATE_PATTERN = new RegExp(
  * federal agreement history, and the cities whose councils have voted on ALPR
  * contracts.
  */
-const MINNESOTA_TERMS = [
+const UNAMBIGUOUS_MINNESOTA_TERMS = [
   'minnesota',
   ' mn ',
   'twin cities',
   ...METRO_COUNTY_TERMS,
   ...EXURBAN_COUNTY_TERMS,
+];
+
+const MINNESOTA_TERMS = [
+  ...UNAMBIGUOUS_MINNESOTA_TERMS,
   // Largest MN cities by population.
   'minneapolis', 'st. paul', 'saint paul', 'rochester', 'duluth', 'bloomington',
   'brooklyn park', 'plymouth', 'maple grove', 'woodbury', 'st. cloud',
@@ -282,19 +286,33 @@ export function hasSubject(haystack) {
  * Does this story belong to Minnesota?
  *
  * Satisfied either by a place named in the headline or by the outlet being a
- * Minnesota one — and in the second case only when the story names no other
- * state and carries no national framing. The source is checked separately from
- * the haystack rather than folded into it, so an outlet name can never stand in
- * for the subject half of the test.
+ * Minnesota one. The source is checked separately from the haystack rather than
+ * folded into it, so an outlet name can never stand in for the subject half of
+ * the test.
+ *
+ * THE OTHER-STATE GUARD APPLIES TO BOTH PATHS, and it used to apply only to the
+ * outlet path. That was wrong, and measurably: MINNESOTA_TERMS is mostly city
+ * names, and the comment above METRO_COUNTY_TERMS asserting they "do not
+ * collide" is only true of the county names. "Austin police expand license
+ * plate reader network / Austin, Texas — the city council voted Thursday",
+ * filed by KXAN Austin, matched `austin` and was published as Minnesota
+ * coverage. So did Stillwater, Oklahoma; Blaine, Washington (Border Patrol);
+ * and Marshall County, Alabama — all four run programs on this project's exact
+ * topics, which is why they reach the feed in the first place.
+ *
+ * UNAMBIGUOUS_MINNESOTA_TERMS is the escape hatch, and it has to exist: a story
+ * that says "Minnesota" or names a Minnesota county is Minnesota coverage even
+ * when it also says "Wisconsin", and comparisons across state lines are common
+ * on these topics. Only the ambiguous city names are subject to the veto.
  */
 export function hasMinnesota(haystack, source) {
-  const namesPlace = MINNESOTA_TERMS.some((t) => haystack.includes(t));
-  if (namesPlace) return true;
-  return (
-    isLocalOutlet(source) &&
-    !OTHER_STATE_PATTERN.test(haystack) &&
-    !NATIONAL_SCOPE_PATTERN.test(haystack)
-  );
+  if (UNAMBIGUOUS_MINNESOTA_TERMS.some((t) => haystack.includes(t))) return true;
+
+  // Everything below rests on a signal another state can produce, so a named
+  // other state or national framing vetoes it.
+  if (OTHER_STATE_PATTERN.test(haystack) || NATIONAL_SCOPE_PATTERN.test(haystack)) return false;
+
+  return MINNESOTA_TERMS.some((t) => haystack.includes(t)) || isLocalOutlet(source);
 }
 
 /* ------------------------------------------------------------------ *
@@ -359,8 +377,14 @@ const ECHO_FILLER = new Set(['and', 'in', 'of', 'the', 'a', 'an', 'for', 'on', '
  *
  * The word-count floor this replaces was wrong, and measurably so: it rejected
  * any title of three words or fewer, which threw away real headlines —
- * "Duluth cancels Flock" and "ICE contract signed" are stories, and both were
- * being discarded as tag pages.
+ * "ICE contract signed" and "Sherburne ends ALPR pilot" are stories, and both
+ * were being discarded as tag pages.
+ *
+ * A near-miss worth recording, since it looks like a counter-example: "Duluth
+ * cancels Flock" clears this gate and is still dropped, because SUBJECT_TERMS
+ * carries "flock safety" and not bare "flock". That is deliberate — a bare
+ * "flock" plus any Minnesota place name admits every story about geese — so
+ * the vendor's full name is the price of the term being usable at all.
  *
  * Length was never the signal. The tag page actually observed in the wild was
  * "Immigration Enforcement Minnesota", and what makes it a tag page is that
@@ -372,6 +396,14 @@ const ECHO_FILLER = new Set(['and', 'in', 'of', 'the', 'a', 'an', 'for', 'on', '
  * Bounded to short titles as well, because a long title made entirely of
  * vocabulary is far more likely to be a genuine headline than a tag page, and
  * the cost of being wrong is a dropped story.
+ *
+ * THREE WORDS, NOT FIVE. The five-word bound was still throwing away real
+ * headlines for the same reason the word-count floor did: at four and five
+ * words an all-vocabulary title is ordinarily a story. "Ramsey County ICE
+ * contract" (4) and "St. Paul surveillance camera program" (5) were both being
+ * filed as tag pages. The tag page actually observed is three words, every
+ * confirmed example of the shape is three words, and past three the signal
+ * stops distinguishing anything.
  */
 function isQueryEcho(title) {
   const words = title
@@ -379,7 +411,7 @@ function isQueryEcho(title) {
     .replace(/[^a-z0-9 ]/g, ' ')
     .split(/\s+/)
     .filter(Boolean);
-  if (words.length === 0 || words.length > 5) return false;
+  if (words.length === 0 || words.length > 3) return false;
   return words.every((w) => QUERY_VOCABULARY.has(w) || ECHO_FILLER.has(w));
 }
 

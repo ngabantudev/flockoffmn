@@ -236,13 +236,22 @@ const CADENCE: Record<string, string> = {
       news && (
         <p class="prose-civic mt-2">
           {/*
-            The number is the generated file's own, not a figure typed here.
+            The numbers are the generated file's own, not figures typed here.
             §1b permits aggregates and forbids enumeration, so a count is the
             only form this can take — and a count that drifts from the file it
             describes is worse than no count.
+
+            Both halves of the ratio come from the same run. It read
+            "N dropped … and {items.length} kept", which put one run's rejects
+            beside the whole two-year archive: 13 against 76, when that run had
+            actually kept 1. A ratio assembled from two different denominators
+            is the kind of number §0.2 says gets the project dismissed, and it
+            was on the page that exists to establish sourcing discipline.
           */}
           On the most recent ingest, <strong>{screenedTotal(news)}</strong> stories were dropped
-          before anything was saved, and {news.items.length} were kept.
+          before anything was saved, and {news.metadata.addedThisRun}{' '}
+          {news.metadata.addedThisRun === 1 ? 'was' : 'were'} kept. The archive holds{' '}
+          {news.items.length} stories in total.
         </p>
       )
     }
