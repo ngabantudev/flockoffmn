@@ -308,7 +308,7 @@ const screened = archive ? screenedTotal(archive) : 0;
     <div class="min-w-0 flex-1">
       {
         rail ? (
-          <h2 class="text-[10px] leading-none font-bold tracking-wider text-ink-200 uppercase">
+          <h2 class="text-[10px] leading-none font-bold tracking-wider text-ink-100 uppercase">
             {t('newsRailTitle')}
           </h2>
         ) : (
@@ -441,17 +441,17 @@ const screened = archive ? screenedTotal(archive) : 0;
   */}
   <aside
     class:list={[
-      'shrink-0 border-amber-500/40 bg-amber-500/5',
+      'news-notice shrink-0',
       rail ? 'border-b px-4 py-2.5' : 'mt-6 rounded-lg border p-4',
     ]}
     role="note"
   >
     {
       rail ? (
-        <p class="text-[10px] leading-snug text-amber-200/90">{t('newsTierRail')}</p>
+        <p class="text-[10px] leading-snug">{t('newsTierRail')}</p>
       ) : (
         <>
-          <h2 class="text-sm font-semibold text-amber-200">{t('newsTierTitle')}</h2>
+          <h2 class="news-notice-strong text-sm font-semibold">{t('newsTierTitle')}</h2>
           <p class="mt-1.5 text-sm leading-relaxed text-ink-200">{t('newsTierWarning')}</p>
           <p class="mt-2 text-sm leading-relaxed text-ink-300">
             {t('newsTierPointer')}{' '}

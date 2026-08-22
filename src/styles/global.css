@@ -149,6 +149,50 @@
 }
 
 /*
+ * The Tier 4 notice surface — `.news-notice`.
+ *
+ * The notice was styled with literal amber utilities (`text-amber-200` on
+ * `bg-amber-500/5`), which are a dark-mode palette: amber-200 is a pale wash
+ * meant to sit on near-black. In light mode it lands on a near-white panel and
+ * measures 1.07:1 — the §3 disclaimer that says "this is press coverage, not
+ * records" was, on the light theme, invisible. That is the worst possible
+ * element to lose, because the whole point of the panel's honesty is that the
+ * caveat is impossible to miss.
+ *
+ * A class rather than `dark:` variants because this repo has none — it themes
+ * by flipping custom properties, and these follow the same two light selectors
+ * `.nav-band` uses. Dark keeps the original amber-200; light drops to
+ * amber-800, which measures about 8:1 on the tinted panel.
+ */
+.news-notice {
+  --notice-fg: #fde68a;
+  --notice-bg: rgb(245 158 11 / 0.05);
+  --notice-edge: rgb(245 158 11 / 0.4);
+
+  color: var(--notice-fg);
+  background-color: var(--notice-bg);
+  border-color: var(--notice-edge);
+}
+
+.news-notice-strong {
+  color: var(--notice-fg);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .news-notice {
+    --notice-fg: #92400e;
+    --notice-bg: rgb(245 158 11 / 0.1);
+    --notice-edge: rgb(180 83 9 / 0.45);
+  }
+}
+
+:root[data-theme='light'] .news-notice {
+  --notice-fg: #92400e;
+  --notice-bg: rgb(245 158 11 / 0.1);
+  --notice-edge: rgb(180 83 9 / 0.45);
+}
+
+/*
  * The news rail's control strip — `.news-band-sub`, light mode only.
  *
  * The rail's chip strip is a third surface: it has to read as chrome sitting
