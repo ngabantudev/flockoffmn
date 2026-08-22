@@ -794,6 +794,25 @@ export class MapController {
   private nearMeBlips: Array<{ point: [number, number]; startedAt: number }> = [];
   /** Set once the near-me sources/layers exist, so a second lookup only calls setData rather than re-adding them (see ensureRelatedLayers's own reasoning). */
   private nearMeLayersReady = false;
+  /**
+   * The outside-radius darkening mask's own DOM element — a plain CSS
+   * "spotlight" div (see ensureNearMeMaskEl), not a GL fill layer. Two prior
+   * GL-layer attempts (a polygon with an interior hole, then a hole-free
+   * ring of wedge polygons — see git history on this file for both) each
+   * independently darkened cameras *inside* the search radius too, not just
+   * outside it: both put the mask's fill in the same single WebGL canvas
+   * every point layer also paints into, so getting the mask's z-order
+   * relative to those layers right depended on internals (geojson-vt
+   * tiling, MapLibre's own layer-paint order) neither attempt could pin
+   * down before shipping. A DOM element sidesteps the question entirely —
+   * it paints in the browser's own compositor, one whole step above
+   * anything the WebGL canvas draws, so there is no layer order to get
+   * wrong: the canvas (basemap + every point/line/polygon layer, cameras
+   * included) always renders first, this mask always composites over the
+   * *entire* canvas after, and the circular cutout (see updateNearMeMask)
+   * either reveals a pixel or dims it with nothing in between.
+   */
+  private nearMeMaskEl: HTMLDivElement | null = null;
   /** The point a "near me" lookup currently has lines thrown from, or null if none is active — also NearMeControl's toggle state. */
   private nearMeOrigin: [number, number] | null = null;
   /** True between requesting a location and the browser answering — see toggleNearMe's own comment for the double-click race this closes. */
@@ -1057,6 +1076,17 @@ export class MapController {
       this.map.fitBounds(METRO_BOUNDS, { padding: 24, animate: false });
     });
 
+    // The darkening mask (see updateNearMeMask) is a DOM element tracking
+    // screen-space pixels, not a GL layer MapLibre repaints for free on
+    // every camera move — it needs its own 'move' listener to stay under
+    // the origin as the reader pans, zooms, or rotates while near-me is
+    // active. Guarded on `nearMeOrigin` so this is a cheap no-op the
+    // overwhelming majority of the time the map moves, which is never while
+    // near-me is on.
+    this.map.on('move', () => {
+      if (this.nearMeOrigin) this.updateNearMeMask();
+    });
+
     // The single map-level mousemove/mouseout/click handlers for every
     // interactive layer — cursor shape, hover cards, ward hover-preview,
     // and click-to-select all derive from one `ownerAt` query each. See its
@@ -1195,6 +1225,17 @@ export class MapController {
     return this.basemapDark ? '#39ff6a' : '#0a8f3c';
   }
 
+  /**
+   * The outside-radius darkening mask's own colour — see nearMeMaskEl's own
+   * comment for why this is a CSS box-shadow rather than a paint property.
+   * Same two rgba pairs an earlier GL-layer version of this mask settled on
+   * (see git history): a light basemap needs less pushed toward black to
+   * read as "dimmed," and a full ink-950-strength overlay there would read
+   * as a hole in the map rather than a dimmed area.
+   */
+  private get nearMeMaskColor(): string {
+    return this.basemapDark ? 'rgba(3, 4, 5, 0.72)' : 'rgba(15, 17, 20, 0.5)';
+  }
 
   /**
    * The `circle-stroke-*` `case` branch shared by the three `pointStroke*Expr`
@@ -1661,6 +1702,14 @@ export class MapController {
       this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-color', this.nearMeSweepColor);
       this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-halo-color', this.basemapColor);
     }
+    // The darkening mask isn't a paint property (see nearMeMaskEl's own
+    // comment) so it's outside the getLayer-guarded block above, but the
+    // same re-key applies: its colour was baked into a `box-shadow` string
+    // at the last updateNearMeMask call, which doesn't re-run itself just
+    // because the basemap did. Only while a lookup is actually active
+    // (nearMeOrigin set) — off-screen (display: none), there's nothing to
+    // recolour and no origin to recompute a position from.
+    if (this.nearMeOrigin) this.updateNearMeMask();
 
     void this.refreshMarkerIcons();
   }
@@ -4331,6 +4380,86 @@ export class MapController {
 
     this.nearMeLayersReady = true;
     this.pinOverlays();
+    this.ensureNearMeMaskEl();
+  }
+
+  /**
+   * Create the outside-radius darkening mask's own DOM element, once, empty
+   * (hidden until the first updateNearMeMask call gives it a real position).
+   *
+   * Inserted as the canvas container's next sibling — MapLibre appends the
+   * canvas container to the map's own container first, then its control
+   * container (zoom buttons, attribution, this map's own NearMeControl and
+   * NearMeRadiusControl) after — so `insertAdjacentElement('afterend', …)`
+   * lands this element between the two: above the entire canvas (basemap
+   * and every layer painted into it, including camera dots), but below
+   * every DOM control, which stay fully legible and clickable no matter
+   * where the circle currently sits. `pointer-events: none` is what actually
+   * keeps it from intercepting map drags/taps or control clicks; the DOM
+   * position just keeps it from *visually* dimming the controls too.
+   */
+  private ensureNearMeMaskEl() {
+    if (this.nearMeMaskEl) return;
+    const el = document.createElement('div');
+    el.className = 'nearme-mask';
+    el.style.position = 'absolute';
+    el.style.top = '0';
+    el.style.left = '0';
+    el.style.width = '0';
+    el.style.height = '0';
+    el.style.borderRadius = '50%';
+    el.style.pointerEvents = 'none';
+    el.style.display = 'none';
+    this.map.getCanvasContainer().insertAdjacentElement('afterend', el);
+    this.nearMeMaskEl = el;
+  }
+
+  /**
+   * Position and size the darkening mask around `nearMeOrigin` at the
+   * current `nearMeSweepRadiusM` — called on every radius change
+   * (applyNearMeRadius) and on every camera move (the map's own 'move'
+   * listener in the constructor), since both change where the circle needs
+   * to sit in screen space even though neither changes the origin itself.
+   *
+   * The circle is a transparent disc whose `box-shadow` paints everywhere
+   * *outside* it — the standard CSS "spotlight" technique, chosen over the
+   * `mask`/`clip-path` properties for the inverse shape (a see-through hole
+   * in an opaque sheet) because a huge box-shadow spread needs no browser
+   * support beyond box-shadow itself, while `mask` support is patchier and
+   * `clip-path`'s inverse (a hole rather than a shape) needs a second,
+   * larger path around the whole viewport, more to get wrong for the same
+   * result. `9999px` is comfortably larger than any viewport this map is
+   * shown in, so the shadow always reaches every edge.
+   *
+   * `nearMeSweepRadiusM`'s screen radius is derived from the map's own
+   * `project()` — the exact same Mercator math MapLibre uses to place every
+   * point on the canvas — rather than a manual metres-per-pixel formula, so
+   * this can never disagree with where the boundary ring (renderNearMeBoundary,
+   * drawn by the map itself) actually sits on screen. Projected due east of
+   * the origin: at this map's latitudes the two points sit close enough in
+   * latitude that east/west and north/south read as the same pixel distance
+   * to the eye, and the shape being masked is a circle either way.
+   */
+  private updateNearMeMask() {
+    if (!this.nearMeOrigin) return;
+    this.ensureNearMeMaskEl();
+    const el = this.nearMeMaskEl;
+    if (!el) return;
+    const centerPx = this.map.project(this.nearMeOrigin);
+    const edge = destinationPoint(this.nearMeOrigin, 90, this.nearMeSweepRadiusM) as [number, number];
+    const edgePx = this.map.project(edge);
+    const radiusPx = Math.hypot(edgePx.x - centerPx.x, edgePx.y - centerPx.y);
+    el.style.display = 'block';
+    el.style.left = `${centerPx.x - radiusPx}px`;
+    el.style.top = `${centerPx.y - radiusPx}px`;
+    el.style.width = `${radiusPx * 2}px`;
+    el.style.height = `${radiusPx * 2}px`;
+    el.style.boxShadow = `0 0 0 9999px ${this.nearMeMaskColor}`;
+  }
+
+  /** Hide the darkening mask without discarding the element — clearNearMe's counterpart to updateNearMeMask, same "empty the source, keep the layer" shape the rest of near-me teardown uses. */
+  private hideNearMeMask() {
+    if (this.nearMeMaskEl) this.nearMeMaskEl.style.display = 'none';
   }
 
   /**
@@ -4494,6 +4623,7 @@ export class MapController {
 
     this.nearMeSweepRadiusM = radiusM;
     this.renderNearMeBoundary();
+    this.updateNearMeMask();
     if (REDUCED_MOTION) this.renderNearMeSweepStatic();
 
     if (announce) {
@@ -4944,6 +5074,7 @@ export class MapController {
   /** Undo showNearMe — clears the marker and sweep, and the control's pressed state. */
   private clearNearMe() {
     this.stopNearMeSweep();
+    this.hideNearMeMask();
     this.setNearMeDotStyleFixed(false);
     if (this.nearMeDragFrame !== null) {
       cancelAnimationFrame(this.nearMeDragFrame);
@@ -5038,6 +5169,11 @@ export class MapController {
     this.hoverPopup?.remove();
     this.disposeContainerWatch?.();
     if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
+    // Not one of map.remove()'s own children (see ensureNearMeMaskEl's own
+    // comment on why it's inserted directly rather than via addControl), so
+    // it needs the same explicit teardown the controls below get.
+    this.nearMeMaskEl?.remove();
+    this.nearMeMaskEl = null;
     // Explicit onRemove() for all four — map.remove() only tears down
     // controls added via map.addControl(), and these were deliberately
     // kept out of that list (see the constructor).
