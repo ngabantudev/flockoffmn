@@ -40,6 +40,21 @@ export class ResetViewControl implements IControl {
     return container;
   }
 
+  /**
+   * Hidden while "ALPRs Near Me" is active (mapController.ts's showNearMe/
+   * clearNearMe) — resetView() jumps back to METRO_BOUNDS, which would
+   * silently abandon a live lookup's own camera fit (refitNearMeCamera) and
+   * everything drawn around it (sweep, mask, boundary ring) without ever
+   * clearing that state, leaving the reader looking at the statewide view
+   * with near-me still technically running. Same `container.hidden`
+   * mechanism NearMeRadiusControl's own setVisible uses, for the same
+   * "gone entirely, not just disabled" reason — a visible-but-inert button
+   * invites exactly the tap this is trying to prevent.
+   */
+  setVisible(visible: boolean) {
+    if (this.container) this.container.hidden = !visible;
+  }
+
   onRemove(): void {
     this.container?.parentNode?.removeChild(this.container);
     this.container = null;

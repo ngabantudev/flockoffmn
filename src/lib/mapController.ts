@@ -9,7 +9,7 @@ import {
   METRO_BOUNDS,
   METRO_CENTER,
 } from './mapStyle';
-import { bboxOf, representativePoint, haversineMeters } from './geo.mjs';
+import { bboxOf, representativePoint, haversineMeters, bearingDeg, destinationPoint } from './geo.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
@@ -79,6 +79,28 @@ export interface ClientLayer {
    * `clientLayers` mapping.
    */
   nearMeRadiusMi?: number;
+  /**
+   * The DOM record list a "what's near me" lookup renders for this layer,
+   * present only where the registry names one (`nearMe.list`) — the
+   * homepage map's own accessible record list beside the canvas throw (see
+   * MapControllerEvents.onNearMeRecords). `detail` labels are resolved at
+   * build time in MapView.astro against this same layer's own
+   * `detailFields`, the identical labelFor build-time-throw guard
+   * NearMe.astro already uses for the same registry block, so a typo in
+   * `nearMe.list.detail` fails the build rather than the render. `caveat`
+   * is repeated from the registry's own `nearMe.caveat` rather than a
+   * second field name, since it is the exact same warning /near-me already
+   * shows for this layer.
+   */
+  nearMeList?: {
+    entityKey: string | null;
+    detail: { key: string; label: string }[];
+    caveat: string | null;
+    /** See NearMeSummary.list.unattributedLabel's own comment in layers/types.ts. Already picked to this locale's string, or null if the layer names none. */
+    unattributedLabel: string | null;
+    /** See NearMeSummary.list.showCoordsWhenUnattributed's own comment in layers/types.ts. */
+    showCoordsWhenUnattributed: boolean;
+  };
   /** The zooms across which this layer's records emerge. */
   scale?: LayerDefinition['scale'];
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
@@ -129,6 +151,22 @@ export interface LoadedFeature {
   properties: FeatureProperties;
 }
 
+/**
+ * One "near me" candidate as handed to `onNearMeRecords` — enough for
+ * MapView.astro to render a DOM row (layer + feature id resolve the entity
+ * name and detail lines via the layer registry, the same way search results
+ * and `focusFeature` already do) without this file duplicating any of that
+ * rendering knowledge. `featureId` matches `feature.properties.id` exactly —
+ * the same key `featureById`/`focusFeature` already resolve against — so a
+ * row's tap can call `focusFeature(layerId, featureId)` directly.
+ */
+export interface NearMeRecord {
+  layerId: string;
+  featureId: string;
+  distanceM: number;
+  point: [number, number];
+}
+
 type FilterState = Map<string, Set<string>>;
 
 export interface ControllerEvents {
@@ -148,8 +186,46 @@ export interface ControllerEvents {
   locationTimedOutLabel?: string;
   /** A geolocation lookup for the "what's near me" control failed — see the labels above. */
   onNearMeError?: (message: string) => void;
-  /** A "what's near me" lookup succeeded — total records found within radius, and how many were drawn (see NEARME_MAX_LINES). The only accessible-DOM feedback this canvas-only overlay has. */
-  onNearMeResult?: (totalFound: number, shown: number) => void;
+  /**
+   * A "what's near me" lookup succeeded — total records found within
+   * radius, how many were drawn (see NEARME_MAX_LINES), and the fix's own
+   * accuracy in meters (the same value refitNearMeCamera's accuracyZoomCap
+   * already reads privately) — carried here too so MapView.astro's DOM list
+   * can show the same low-accuracy warning /near-me's own page already
+   * gives a reader, without a second geolocation read of its own.
+   *
+   * Fired on every radius change, drag ticks included — unconditionally,
+   * the same as `onNearMeRecords` below, so the two numbers this callback
+   * and that one feed a shared summary line ("N found, M shown") can never
+   * disagree mid-drag. `announce` is *not* a fire/skip gate on this call
+   * (it used to be, which is exactly what let `totalFound` go stale while
+   * `onNearMeRecords`'s `shown` kept live-updating) — it only tells the
+   * caller whether this update should also reach a screen reader: true on
+   * the initial draw and on a slider's commit, false on every intermediate
+   * drag tick, matching dragNearMeRadius's own "don't narrate every mile"
+   * reasoning.
+   */
+  onNearMeResult?: (totalFound: number, shown: number, accuracyM: number, announce: boolean) => void;
+  /**
+   * The drawn "what's near me" candidates themselves, in the same
+   * nearest-first order the throw lines use — fired unconditionally
+   * alongside `onNearMeResult` on every radius change, drag ticks included
+   * (see applyNearMeRadius's own comment), and with an empty array on
+   * `clearNearMe`, so a DOM record list built from this stays in lockstep
+   * with the canvas throw rather than drifting out of sync with it.
+   */
+  onNearMeRecords?: (records: NearMeRecord[]) => void;
+  /**
+   * A near-me-eligible layer's own data failed to fetch during a "what's
+   * near me" lookup. `ensureDataLoaded`'s ordinary contract is to swallow a
+   * failed fetch and return an empty array — the right default for a
+   * cross-layer join, where a reader never asked for that layer at all —
+   * but a layer that failed here is one the reader is actively being told
+   * "nothing found" about, so the DOM list names it rather than repeating
+   * that silence. Fired once per failed layer per lookup, before
+   * onNearMeRecords for the same lookup.
+   */
+  onNearMeLayerError?: (layerId: string, message: string) => void;
   /** Localized label for the search-radius slider (NearMeRadiusControl) — read by screen readers via aria-label. */
   nearMeRadiusLabel?: string;
   /** Localized "N mi" formatter for the slider's live value — both the visible number beside it and its aria-valuetext. */
@@ -356,6 +432,20 @@ const RELATED_IMPACT_SOURCE = 'src-related-impacts';
 const RELATED_IMPACT_LAYER = 'related-impacts';
 
 /**
+ * The "focus frame" marking whichever point feature is currently selected
+ * (markPointSelected) — four camera-viewfinder corner brackets, not a scale/
+ * pulse treatment on the dot itself. See ensureSelectedMarkerSprite's own
+ * comment for why: a prior version of "which camera is selected" drove a
+ * continuous per-frame feature-state write to animate a breathing pulse,
+ * implicated in a real rendering bug (git history, commit 34b14f3, isolated
+ * on buggy/selected-camera-pulse). This is a single baked bitmap positioned
+ * by one setData() call on selection change and never touched again until
+ * the selection changes once more.
+ */
+const SELECTED_MARKER_SOURCE = 'src-selected-marker';
+const SELECTED_MARKER_LAYER = 'selected-marker';
+
+/**
  * The selection overlays, bottom to top. restack() pins these above every
  * registry layer in this order — the thrown lines under the marks they
  * connect, the answer to the reader's question on top of everything.
@@ -365,6 +455,7 @@ const OVERLAY_STACK = [
   RELATED_IMPACT_LAYER,
   RELATION_GLOW_LAYER,
   RELATION_LAYER,
+  SELECTED_MARKER_LAYER,
 ];
 
 /**
@@ -383,12 +474,122 @@ const NEARME_ORIGIN_GLOW_LAYER = 'nearme-origin-glow';
 const NEARME_ORIGIN_LAYER = 'nearme-origin';
 const NEARME_PATHS_SOURCE = 'src-nearme-paths';
 const NEARME_PATHS_LAYER = 'nearme-paths';
-const NEARME_IMPACT_SOURCE = 'src-nearme-impacts';
-const NEARME_IMPACT_LAYER = 'nearme-impacts';
-const NEARME_STACK = [NEARME_PATHS_LAYER, NEARME_IMPACT_LAYER, NEARME_ORIGIN_GLOW_LAYER, NEARME_ORIGIN_LAYER];
 /**
- * Nearest-first cap so a metro-wide "near me" throw stays legible and the
- * animation stays cheap — see throwPaths's own cost comment. Raised from
+ * The persistent radius boundary — unlike the sweep and its blips, drawn at
+ * all times near-me is active, under both motion preferences (see
+ * ensureNearMeLayers's own comment on why it's not folded into the
+ * REDUCED_MOTION branch the sweep is). A stroke-only ring at the current
+ * search radius, reusing the same ring geometry (nearMeRadiusRing) as,
+ * under REDUCED_MOTION, the sweep's own static ring.
+ *
+ * A darkening mask outside this radius was tried and removed (see git
+ * history around #135) — first as a single polygon with the radius cut out
+ * as an interior "hole" ring, then as a hole-free ring of wedge polygons
+ * once the hole approach turned out to render as fully opaque with no
+ * visible hole at all once actually deployed (this map's GeoJSON source is
+ * re-tiled through geojson-vt before rendering, which evidently doesn't
+ * preserve either shape the way an untiled render would). The wedge version
+ * still left cameras near the origin looking wrong, so the mask concept
+ * itself is on hold rather than re-attempted a third way blind — the
+ * boundary ring alone is the "where's the edge" cue for now.
+ */
+const NEARME_BOUNDARY_SOURCE = 'src-nearme-boundary';
+const NEARME_BOUNDARY_LAYER = 'nearme-boundary';
+/**
+ * Faint intermediate rings inside the main boundary — one per whole mile
+ * short of the current radius (nearMeMileMarkerRadiiM), so a wide search
+ * still reads as measured distance, not just "near" vs "far." See that
+ * function's own comment for exactly which radii it returns.
+ */
+const NEARME_MARKERS_SOURCE = 'src-nearme-markers';
+const NEARME_MARKERS_LAYER = 'nearme-markers';
+/**
+ * The "1 mi"/"2 mi" labels sitting in the gap each marker ring leaves at its
+ * own top (due north from `nearMeOrigin`) — see nearMeRadiusRing's `gapDeg`
+ * for the gap itself and nearMeMarkerLabelPoints for the label points. A
+ * separate symbol source/layer from the marker rings themselves (line vs.
+ * text), positioned to land exactly in the gap the ring geometry leaves open.
+ */
+const NEARME_MARKER_LABELS_SOURCE = 'src-nearme-marker-labels';
+const NEARME_MARKER_LABELS_LAYER = 'nearme-marker-labels';
+/**
+ * How wide a gap, in degrees of bearing centered on due north, each marker
+ * ring leaves at its own top for its "N mi" label — wide enough that the
+ * label's own halo never has to fight the ring line for the same pixels at
+ * any radius this overlay draws (down to nearMeSweepRadiusM's practical
+ * floor, well under a mile), narrow enough that the ring still reads as one
+ * continuous circle with a notch, not two unrelated arcs.
+ */
+const NEARME_MARKER_LABEL_GAP_DEG = 28;
+/**
+ * `backdrop-filter` blur radius for the outside-radius darkening mask (see
+ * updateNearMeMask) — enough to read as deliberately obscured, not just
+ * dimmed, without smearing so far that a reader loses their own sense of
+ * *what kind* of thing is out there (a road grid, a lake, a cluster of
+ * buildings), which the dark tint alone still preserves.
+ */
+const NEARME_MASK_BLUR = 'blur(6px)';
+/**
+ * How many degrees of trailing arc the sweep's own afterglow (see
+ * updateNearMeSweepGlow) fades out over behind the leading edge — a real
+ * PPI radar's phosphor doesn't switch off the instant the beam passes, it
+ * decays over a wedge behind it. Wide enough to read as a glow with real
+ * extent, narrow enough that it still reads as *trailing* something rather
+ * than as a static quarter-circle wash.
+ */
+const NEARME_SWEEP_TRAIL_DEG = 40;
+/**
+ * Peak opacity of the sweep afterglow (see updateNearMeSweepGlow), at the
+ * leading edge, fading to 0 by the trail's own end. Translucent on purpose:
+ * a camera dot under the glow this frame still needs to read through it,
+ * the same way a real scope's phosphor wash never actually hides a target
+ * blip underneath it.
+ */
+const NEARME_SWEEP_GLOW_OPACITY = 0.35;
+/**
+ * Radial spokes from `nearMeOrigin` out to the current boundary, at east,
+ * south, and west — not north: due north is where the mile-marker labels
+ * already sit (nearMeMarkerLabelPoints), and a fourth spoke running straight
+ * through that gap would either cut through the text or need its own,
+ * different gap logic for one direction only. Fainter than the main
+ * boundary (same nearMeSweepColor, lower line-opacity — see
+ * ensureNearMeLayers) so they read as orientation cues, not a second thing
+ * being measured.
+ */
+const NEARME_CARDINALS_SOURCE = 'src-nearme-cardinals';
+const NEARME_CARDINALS_LAYER = 'nearme-cardinals';
+/**
+ * Bottom to top: the cardinal spokes and mile markers/labels sit lowest, the
+ * main boundary above those, then the sweep's own stack in its existing
+ * relative order.
+ */
+const NEARME_STACK = [
+  NEARME_CARDINALS_LAYER,
+  NEARME_MARKERS_LAYER,
+  NEARME_MARKER_LABELS_LAYER,
+  NEARME_BOUNDARY_LAYER,
+  NEARME_PATHS_LAYER,
+  NEARME_ORIGIN_GLOW_LAYER,
+  NEARME_ORIGIN_LAYER,
+];
+
+/**
+ * One full rotation of the near-me sonar sweep (renderNearMeSweepFrame) —
+ * a deliberate presentational departure from this map's otherwise
+ * restrained "boring is credible" register (§0.11), chosen explicitly over
+ * the plainer dashed throw-lines it replaces. Tuned to read as a slow,
+ * deliberate scan of the search radius rather than as an alarm: unhurried
+ * enough that it never reads as urgent about equipment whose whole story is
+ * that it's routine (§0.4) — a fast spin read as an alert, which is exactly
+ * the register this map is trying not to strike.
+ */
+const NEARME_SWEEP_PERIOD_MS = 32000;
+
+/**
+ * Nearest-first cap so a metro-wide "near me" sweep stays legible and
+ * cheap to redraw — see throwPaths's own cost comment for the shared
+ * reasoning (runThrow's setData budgeting applies here too, even though
+ * near-me no longer routes through runThrow itself). Raised from
  * an original 20: with the radius slider (and the autozoom that now
  * follows it), a cap that low saturates well inside the slider's own
  * range in a dense area — downtown Minneapolis already has >20 candidates
@@ -491,14 +692,18 @@ function accuracyZoomCap(accuracyM: number, lat: number, minDimensionPx: number)
  * The total time every line takes to *start* (the stagger span, not
  * THROW_MS/IMPACT_MS below) is capped at THROW_SPREAD_MS — see runThrow's
  * own stagger calculation. THROW_STAGGER_MS is a ceiling on the per-line
- * gap, not the actual gap: a jurisdiction throw or a near-me search rarely
- * has more than a handful of targets, so most throws still space lines
- * THROW_STAGGER_MS apart exactly as before. Only once a batch is large
- * enough that spacing every line that far apart would itself exceed
- * THROW_SPREAD_MS does the per-line gap shrink, so a near-me throw at a
- * wide radius in a dense area (up to NEARME_MAX_LINES lines) finishes in
- * the same total time as one with a handful of results, not several
- * seconds longer — "found more" should not read as "got slower."
+ * gap, not the actual gap: a jurisdiction throw rarely has more than a
+ * handful of targets, so most throws still space lines THROW_STAGGER_MS
+ * apart exactly as before. Only once a batch is large enough that spacing
+ * every line that far apart would itself exceed THROW_SPREAD_MS does the
+ * per-line gap shrink.
+ *
+ * IMPACT_MS is shared with the near-me sonar sweep's own bearing-crossing
+ * blips (renderNearMeSweepFrame) — the same ring-grows-then-fades visual
+ * language, just triggered by a bearing crossing instead of a landed line,
+ * so it keeps the one constant rather than tuning a near-duplicate. Near-me
+ * itself no longer routes through runThrow/THROW_MS/THROW_STAGGER_MS/
+ * THROW_SPREAD_MS at all — see startNearMeSweep.
  */
 const THROW_MS = 420;
 const THROW_STAGGER_MS = 70;
@@ -610,6 +815,13 @@ export class MapController {
    */
   private selectedPolygon: { layerId: string; featureId: string } | null = null;
   /**
+   * The one point feature currently marked with the focus-frame overlay, if
+   * any — the point counterpart to `selectedPolygon` above, singular for the
+   * same reason. See markPointSelected/updateSelectedMarker and
+   * SELECTED_MARKER_SOURCE's own comment.
+   */
+  private selectedPoint: { layerId: string; featureId: string } | null = null;
+  /**
    * Resolved `markerIcon` expression per layer, filled in by loadLayer
    * before it draws. Cached because building it decodes an SVG per icon, and
    * because addLayer — which needs it — is synchronous.
@@ -617,18 +829,96 @@ export class MapController {
   private markerExpressions = new Map<string, maplibregl.ExpressionSpecification | string>();
   /** rAF handle for the path-throw animation, so a new selection can cancel the last. */
   private throwFrame: number | null = null;
-  /** rAF handle for the "near me" throw — separate from throwFrame so a jurisdiction pick and a near-me lookup never cancel each other's animation. */
-  private nearMeThrowFrame: number | null = null;
+  /**
+   * rAF handle for the continuous near-me sonar sweep — separate from
+   * throwFrame so a jurisdiction pick and a near-me lookup never cancel
+   * each other's animation, same reasoning the old nearMeThrowFrame this
+   * replaces had. Distinct name because the purpose changed: the old field
+   * drove a one-shot throw-and-land animation that stopped itself; this one
+   * drives a loop that keeps running for as long as near-me mode is active
+   * (see startNearMeSweep/stopNearMeSweep).
+   */
+  private nearMeSweepFrame: number | null = null;
+  /** `performance.now()` when the current sweep rotation began — sweepAngleDeg is derived from elapsed time since this, so a radius change mid-rotation (dragNearMeRadius/commitNearMeRadius) never resets it; only nearMeSweepRadiusM below changes. */
+  private nearMeSweepStart = 0;
+  /** The radius, in metres, the sweep loop reads on its next frame — kept current by applyNearMeRadius on every redraw, independently of nearMeSweepStart. */
+  private nearMeSweepRadiusM = 0;
+  /** The sweep's own angle, in degrees, as of the previous rendered frame — bearing-crossing detection needs both the previous and current angle to tell whether a candidate's bearing fell between them, including across the 360°→0° wrap. */
+  private nearMeSweepPrevAngle = 0;
+  /**
+   * Candidates the sweep has recently crossed and whose `blip` feature-state
+   * brightness is still decaying in place on the candidate's own dot — see
+   * renderNearMeSweepFrame and withBlipBrighten. Cleared (each entry's
+   * feature-state zeroed first) on stopNearMeSweep.
+   */
+  private nearMeBlips: Array<{ layerId: string; featureId: string; startedAt: number }> = [];
   /** Set once the near-me sources/layers exist, so a second lookup only calls setData rather than re-adding them (see ensureRelatedLayers's own reasoning). */
   private nearMeLayersReady = false;
+  /**
+   * The outside-radius darkening mask's own DOM element — a plain CSS
+   * "spotlight" div (see ensureNearMeMaskEl), not a GL fill layer. Two prior
+   * GL-layer attempts (a polygon with an interior hole, then a hole-free
+   * ring of wedge polygons — see git history on this file for both) each
+   * independently darkened cameras *inside* the search radius too, not just
+   * outside it: both put the mask's fill in the same single WebGL canvas
+   * every point layer also paints into, so getting the mask's z-order
+   * relative to those layers right depended on internals (geojson-vt
+   * tiling, MapLibre's own layer-paint order) neither attempt could pin
+   * down before shipping. A DOM element sidesteps the question entirely —
+   * it paints in the browser's own compositor, one whole step above
+   * anything the WebGL canvas draws, so there is no layer order to get
+   * wrong: the canvas (basemap + every point/line/polygon layer, cameras
+   * included) always renders first, this mask always composites over the
+   * *entire* canvas after, and the circular cutout (see updateNearMeMask)
+   * either reveals a pixel or dims it with nothing in between.
+   */
+  private nearMeMaskEl: HTMLDivElement | null = null;
+  /**
+   * The sweep's own afterglow trail — a DOM element, same reasoning as
+   * nearMeMaskEl's own comment (a `conic-gradient` can't be expressed as a
+   * paint property, and painting it into the WebGL canvas as a GL layer
+   * would put its z-order at the mercy of the exact same tiling/paint-order
+   * uncertainty that mask has already burned two attempts on). Only ever
+   * created and updated under motion — REDUCED_MOTION never runs the rAF
+   * loop that calls updateNearMeSweepGlow (see startNearMeSweep's own
+   * comment), so this stays null and unused there, same as the trail itself
+   * would be meaningless on a sweep that isn't moving.
+   */
+  private nearMeSweepGlowEl: HTMLDivElement | null = null;
   /** The point a "near me" lookup currently has lines thrown from, or null if none is active — also NearMeControl's toggle state. */
   private nearMeOrigin: [number, number] | null = null;
   /** True between requesting a location and the browser answering — see toggleNearMe's own comment for the double-click race this closes. */
   private nearMeLocating = false;
   /** Bumped on every showNearMe/clearNearMe so an in-flight lookup's async data-load can tell it's been superseded and skip drawing. */
   private nearMeToken = 0;
-  /** Every candidate within NEARME_RADIUS_MAX_MI of the current nearMeOrigin, nearest-first — computed once per lookup; applyNearMeRadius re-slices this on every slider move instead of re-scanning the layers. */
-  private nearMeCandidates: Array<{ point: [number, number]; distance: number }> = [];
+  /** Every candidate within NEARME_RADIUS_MAX_MI of the current nearMeOrigin, nearest-first — computed once per lookup; applyNearMeRadius re-slices this on every slider move instead of re-scanning the layers. `bearingDeg` is computed in the same scan, for the sonar sweep's bearing-crossing blips (see renderNearMeSweepFrame). */
+  private nearMeCandidates: Array<{
+    point: [number, number];
+    distance: number;
+    bearingDeg: number;
+    layerId: string;
+    featureId: string;
+  }> = [];
+  /** Set once in the constructor from `events.formatNearMeRadiusValue` — see that assignment's own comment. Reused by nearMeMarkerLabelPoints. */
+  private formatNearMeRadiusValue: (mi: number) => string = (mi) => `${mi} mi`;
+  /**
+   * Live and "fixed" (frozen at the resolved-zoom endpoint) paint variants
+   * for every near-me-eligible layer's circle-radius/stroke-width/opacity —
+   * populated once, when each such layer's `-points` circle layer is first
+   * built (see addLayer's own comment). setNearMeDotStyleFixed reads this to
+   * swap between the two without needing `layers`/`tier` again at toggle time.
+   */
+  private nearMePointStyle = new Map<
+    string,
+    {
+      liveRadius: maplibregl.ExpressionSpecification | number;
+      fixedRadius: maplibregl.ExpressionSpecification | number;
+      liveStrokeWidth: maplibregl.ExpressionSpecification | number;
+      fixedStrokeWidth: maplibregl.ExpressionSpecification | number;
+      liveOpacity: maplibregl.ExpressionSpecification | number;
+      fixedOpacity: maplibregl.ExpressionSpecification | number;
+    }
+  >();
   /** rAF handle coalescing NearMeRadiusControl's drag ticks — see dragNearMeRadius's own comment for why a redraw per tick is too many. */
   private nearMeDragFrame: number | null = null;
   /** The most recent radius a drag tick asked for, applied by nearMeDragFrame's queued callback — only the latest value in a frame ever gets drawn. */
@@ -771,6 +1061,11 @@ export class MapController {
     this.resetViewControl = new ResetViewControl(events.resetViewLabel ?? 'Reset view', () => this.resetView());
     this.nearMeControl = new NearMeControl(events.nearMeLabel ?? 'What’s near me', () => this.toggleNearMe());
     const formatRadius = events.formatNearMeRadiusValue ?? ((mi) => `${mi} mi`);
+    // Stored, not just passed to the slider control: nearMeMarkerLabelPoints
+    // reuses this exact formatter for the "1 mi"/"2 mi" ring labels, so a
+    // marker's label and the slider's own live value are always worded (and
+    // localized) identically rather than maintaining two copies.
+    this.formatNearMeRadiusValue = formatRadius;
     this.nearMeRadiusControl = new NearMeRadiusControl(
       events.nearMeRadiusLabel ?? 'Search radius',
       NEARME_RADIUS_MIN_MI,
@@ -851,6 +1146,17 @@ export class MapController {
       // METRO_BOUNDS, so the reset button returns a reader who has panned
       // or filtered elsewhere to exactly what they saw on first load.
       this.map.fitBounds(METRO_BOUNDS, { padding: 24, animate: false });
+    });
+
+    // The darkening mask (see updateNearMeMask) is a DOM element tracking
+    // screen-space pixels, not a GL layer MapLibre repaints for free on
+    // every camera move — it needs its own 'move' listener to stay under
+    // the origin as the reader pans, zooms, or rotates while near-me is
+    // active. Guarded on `nearMeOrigin` so this is a cheap no-op the
+    // overwhelming majority of the time the map moves, which is never while
+    // near-me is on.
+    this.map.on('move', () => {
+      if (this.nearMeOrigin) this.updateNearMeMask();
     });
 
     // The single map-level mousemove/mouseout/click handlers for every
@@ -975,6 +1281,35 @@ export class MapController {
   }
 
   /**
+   * The sonar sweep's own colour, for the current basemap — a fixed
+   * phosphor green rather than nearMeColor's basemap-adaptive near-white/
+   * near-black pair: nearMeColor marks *the reader's own location* (the
+   * origin dot/glow, unchanged), while this marks the sweep and its
+   * bearing-crossing blips, a deliberate radar-display presentational
+   * choice (see NEARME_SWEEP_PERIOD_MS's own comment) that reads as green
+   * on purpose, not as a selection highlight. The single source of truth
+   * for this colour — a matching `--color-nearme-sweep` CSS token was tried
+   * and removed (no DOM chrome ever ended up reading it, since MapLibre
+   * paint properties can't read a CSS custom property directly, so it was
+   * just a second hex to keep hand-synced with this one).
+   */
+  private get nearMeSweepColor(): string {
+    return this.basemapDark ? '#39ff6a' : '#0a8f3c';
+  }
+
+  /**
+   * The outside-radius darkening mask's own colour — see nearMeMaskEl's own
+   * comment for why this is a CSS `background` rather than a paint property.
+   * Same two rgba pairs an earlier GL-layer version of this mask settled on
+   * (see git history): a light basemap needs less pushed toward black to
+   * read as "dimmed," and a full ink-950-strength overlay there would read
+   * as a hole in the map rather than a dimmed area.
+   */
+  private get nearMeMaskColor(): string {
+    return this.basemapDark ? 'rgba(3, 4, 5, 0.72)' : 'rgba(15, 17, 20, 0.5)';
+  }
+
+  /**
    * The `circle-stroke-*` `case` branch shared by the three `pointStroke*Expr`
    * methods below, for a "cross-listed corner" match (crossSourceSiteId !=
    * null — see alpr-cross-source.mjs) and its weaker "near miss" sibling
@@ -1035,6 +1370,85 @@ export class MapController {
    * and emits an `error` event instead of adding it; nothing in the console
    * says "layer not added"). One interpolate, data-driven at its stop.
    */
+  /**
+   * Recursively replaces every `['zoom']` leaf inside a style expression
+   * with the literal `atZoom`, "freezing" a zoom-driven curve at whatever
+   * output it would produce at that zoom regardless of the map's actual
+   * current zoom — used to build the near-me-active point styles (see
+   * nearMePointStyle/setNearMeDotStyleFixed) from the exact same expressions
+   * the layer's ordinary paint already uses, rather than a second,
+   * hand-picked set of numbers that could drift out of sync with them.
+   * Works on any expression shape (interpolate, case, nested) since it just
+   * walks the array structure looking for the `['zoom']` leaf itself,
+   * without needing to know what's wrapping it.
+   */
+  private freezeZoom(expr: unknown, atZoom: number): unknown {
+    if (Array.isArray(expr)) {
+      if (expr.length === 1 && expr[0] === 'zoom') return atZoom;
+      return expr.map((e) => this.freezeZoom(e, atZoom));
+    }
+    return expr;
+  }
+
+  /**
+   * Wrap a near-me-eligible (ALPR) layer's `circle-color` in an
+   * `interpolate` keyed on its own `blip` feature-state — 0 (or unset, via
+   * `coalesce`) is the layer's ordinary colour, 1 is `nearMeSweepColor`'s
+   * own phosphor green, and MapLibre interpolates the colour itself in
+   * between. Written by renderNearMeSweepFrame's bearing-crossing loop, and
+   * nowhere else: a camera's dot brightens the instant the sweep passes its
+   * bearing and decays back to its own colour over IMPACT_MS, in place —
+   * see that method's own comment for why this replaced a separate
+   * expanding-ring layer (a real PPI radar's phosphor doesn't spawn a ring,
+   * and feature-state is cheaper than a second source's setData() every
+   * frame).
+   */
+  private withBlipBrighten(base: maplibregl.ExpressionSpecification | string): maplibregl.ExpressionSpecification {
+    return [
+      'interpolate',
+      ['linear'],
+      ['coalesce', ['feature-state', 'blip'], 0],
+      0,
+      base,
+      1,
+      this.nearMeSweepColor,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
+   * Swap every near-me-eligible layer's circle-radius/circle-stroke-width/
+   * circle-opacity between their ordinary zoom-based curves and the
+   * "fixed" variant frozen at each curve's own `pointsFrom` endpoint (see
+   * freezeZoom and nearMePointStyle) — called once on showNearMe and once on
+   * clearNearMe, a plain style swap rather than a per-frame animation.
+   *
+   * Exists because refitNearMeCamera fits the *entire* current search
+   * radius, not just the cameras actually found inside it — in a sparse
+   * area that can land at a noticeably wider zoom than the old
+   * fit-to-matched-targets behaviour ever produced, and at that wider zoom
+   * a camera's ordinary zoom-based fade curve (unchanged, correct on its
+   * own terms) would legitimately render smaller/fainter than it does once
+   * fully resolved. A camera the reader is specifically searching for
+   * shouldn't cost its own clarity to a zoom level that's now a function of
+   * the *search radius* rather than of how close the reader has zoomed in —
+   * so near-me pins every eligible layer to its fully-resolved look for as
+   * long as a lookup is active, same as any other selected/highlighted
+   * state on this map already does.
+   */
+  private setNearMeDotStyleFixed(active: boolean) {
+    for (const [layerId, style] of this.nearMePointStyle) {
+      const id = `${layerId}-points`;
+      if (!this.map.getLayer(id)) continue;
+      this.map.setPaintProperty(id, 'circle-radius', active ? style.fixedRadius : style.liveRadius);
+      this.map.setPaintProperty(
+        id,
+        'circle-stroke-width',
+        active ? style.fixedStrokeWidth : style.liveStrokeWidth,
+      );
+      this.map.setPaintProperty(id, 'circle-opacity', active ? style.fixedOpacity : style.liveOpacity);
+    }
+  }
+
   private pointStrokeWidthExpr(
     layer: ClientLayer,
     tier: { emergeFrom: number; pointsFrom: number },
@@ -1306,7 +1720,11 @@ export class MapController {
       // a bitmap rather than held in a paint property.
       if (this.map.getLayer(`${layer.id}-points`)?.type === 'circle') {
         const circleColor = this.pointCircleColor(layer);
-        this.map.setPaintProperty(`${layer.id}-points`, 'circle-color', circleColor);
+        this.map.setPaintProperty(
+          `${layer.id}-points`,
+          'circle-color',
+          layer.nearMeRadiusMi ? this.withBlipBrighten(circleColor) : circleColor,
+        );
         this.map.setPaintProperty(
           `${layer.id}-points`,
           'circle-stroke-color',
@@ -1360,12 +1778,46 @@ export class MapController {
     // owning `layer` to iterate from, ensureNearMeLayers creates it lazily
     // and independent of any registry layer. Same re-key, done once here.
     if (this.map.getLayer(NEARME_PATHS_LAYER)) {
+      // The sweep/blips are always phosphor green (nearMeSweepColor) — not
+      // basemap-adaptive the way the origin dot/glow (nearMeColor) is; see
+      // that getter's own comment for why the two are deliberately
+      // different colours answering to different things.
+      const sweepColor = this.nearMeSweepColor;
       const nearMeColor = this.nearMeColor;
-      this.map.setPaintProperty(NEARME_PATHS_LAYER, 'line-color', nearMeColor);
-      this.map.setPaintProperty(NEARME_IMPACT_LAYER, 'circle-stroke-color', nearMeColor);
+      this.map.setPaintProperty(NEARME_PATHS_LAYER, 'line-color', sweepColor);
       this.map.setPaintProperty(NEARME_ORIGIN_GLOW_LAYER, 'circle-color', nearMeColor);
       this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-color', nearMeColor);
       this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-stroke-color', this.basemapColor);
+    }
+    if (this.map.getLayer(NEARME_BOUNDARY_LAYER)) {
+      this.map.setPaintProperty(NEARME_BOUNDARY_LAYER, 'line-color', this.nearMeSweepColor);
+    }
+    if (this.map.getLayer(NEARME_CARDINALS_LAYER)) {
+      this.map.setPaintProperty(NEARME_CARDINALS_LAYER, 'line-color', this.nearMeSweepColor);
+    }
+    if (this.map.getLayer(NEARME_MARKERS_LAYER)) {
+      this.map.setPaintProperty(NEARME_MARKERS_LAYER, 'line-color', this.nearMeSweepColor);
+    }
+    if (this.map.getLayer(NEARME_MARKER_LABELS_LAYER)) {
+      this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-color', this.nearMeSweepColor);
+      this.map.setPaintProperty(NEARME_MARKER_LABELS_LAYER, 'text-halo-color', this.basemapColor);
+    }
+    // The darkening mask isn't a paint property (see nearMeMaskEl's own
+    // comment) so it's outside the getLayer-guarded block above, but the
+    // same re-key applies: its colour was baked into a `background` string
+    // at the last updateNearMeMask call, which doesn't re-run itself just
+    // because the basemap did. Only while a lookup is actually active
+    // (nearMeOrigin set) — off-screen (display: none), there's nothing to
+    // recolour and no origin to recompute a position from.
+    if (this.nearMeOrigin) this.updateNearMeMask();
+
+    // The focus-frame marker's own bitmap bakes its colour in (see
+    // ensureSelectedMarkerSprite), same as every other generated sprite
+    // this re-bakes — a fresh id under the new basemap, reassigned onto the
+    // existing layer rather than repainting it.
+    if (this.map.getLayer(SELECTED_MARKER_LAYER)) {
+      const iconId = this.ensureSelectedMarkerSprite();
+      if (iconId) this.map.setLayoutProperty(SELECTED_MARKER_LAYER, 'icon-image', iconId);
     }
 
     void this.refreshMarkerIcons();
@@ -1422,6 +1874,23 @@ export class MapController {
   }
 
   /**
+   * Ease back to wherever `preSelectCamera` was captured from (see
+   * focusFeature's own comment) and drop it, then release the point
+   * focus-frame marker — the map-side half of "undo a selection," shared by
+   * clearSelection (the generic deselect: empty tap, a second tap on an
+   * already-selected ward) and deselectPoint (near-me's own "back to list,"
+   * which needs the same camera/marker undo but not the rest of
+   * clearSelection's generic cleanup — see that method's own comment).
+   */
+  private restoreCameraAndReleasePoint() {
+    if (this.preSelectCamera) {
+      this.easeToCamera(this.preSelectCamera, REDUCED_MOTION ? 0 : 500);
+      this.preSelectCamera = null;
+    }
+    this.releasePointSelection();
+  }
+
+  /**
    * Undo a tap-to-select: back to the pre-tap camera, detail panel closed,
    * and any `polygonClick: 'highlight'` ward released. This is the one
    * shared "undo" both a tap on empty ground and a second tap on an
@@ -1430,13 +1899,27 @@ export class MapController {
    * somewhere this layer's own click handler never sees.
    */
   private clearSelection() {
-    if (this.preSelectCamera) {
-      this.easeToCamera(this.preSelectCamera, REDUCED_MOTION ? 0 : 500);
-      this.preSelectCamera = null;
-    }
+    this.restoreCameraAndReleasePoint();
     this.releaseHighlight();
     this.releaseHover();
     this.events.onSelect?.(null);
+  }
+
+  /**
+   * Near-me's own "deselect a camera" — backToList's map-side counterpart
+   * (MapView.astro). Restores the camera to wherever it was before the
+   * current selection and releases the focus-frame marker, same as
+   * clearSelection, but deliberately *without* clearSelection's
+   * `onSelect?.(null)` — that fires MapView.astro's handleSelect(null),
+   * which closes the sheet outright (see handleSelect's own comment). Going
+   * back to the near-me list is a real deselection of the camera the
+   * reader was just looking at, but the sheet is supposed to reappear
+   * showing that list, not close — backToList already handles switching
+   * sheetMode back to 'list' itself; this only ever needs to undo the map
+   * side of the selection.
+   */
+  deselectPoint() {
+    this.restoreCameraAndReleasePoint();
   }
 
   /**
@@ -1572,6 +2055,95 @@ export class MapController {
       ctx.lineWidth = px * 0.03;
       ctx.stroke();
     });
+  }
+
+  /**
+   * The selected-point "focus frame": four camera-viewfinder corner
+   * brackets, phosphor green (nearMeSweepColor, the same hue the sonar
+   * sweep/boundary already mark "what the reader is looking at" with),
+   * baked once per basemap via ensureSprite — the same mechanism
+   * ensureConeSprite uses, for the same reason (a bitmap's colour is baked
+   * in, so a basemap toggle needs a freshly-baked image under a new id, not
+   * a repaint of an existing one — see repaintThemedLayers' own re-bake
+   * call).
+   *
+   * Deliberately corner brackets, not a ring or a crosshair: a ring
+   * collides visually with every other ring this map already draws (the
+   * near-me boundary, mile markers, a cross-listed corner's own ring), and
+   * a full crosshair reads as a weapon sight rather than the camera-focus
+   * framing this is going for — a bracket is unambiguous both against this
+   * map's existing vocabulary and against what it's marking (a camera).
+   */
+  private ensureSelectedMarkerSprite(): string | null {
+    const id = `selected-marker-${this.basemapDark ? 'dark' : 'light'}`;
+    return this.ensureSprite(id, 64 * 2, (ctx, px) => {
+      const inset = px * 0.16;
+      const arm = px * 0.22;
+      ctx.strokeStyle = this.nearMeSweepColor;
+      ctx.lineWidth = px * 0.045;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const bracket = (x: number, y: number, hDir: 1 | -1, vDir: 1 | -1) => {
+        ctx.beginPath();
+        ctx.moveTo(x + hDir * arm, y);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x, y + vDir * arm);
+        ctx.stroke();
+      };
+      bracket(inset, inset, 1, 1); // top-left
+      bracket(px - inset, inset, -1, 1); // top-right
+      bracket(inset, px - inset, 1, -1); // bottom-left
+      bracket(px - inset, px - inset, -1, -1); // bottom-right
+    });
+  }
+
+  /** Create the selected-marker's source/layer, once, empty. */
+  private ensureSelectedMarkerLayer() {
+    if (this.map.getSource(SELECTED_MARKER_SOURCE)) return;
+    this.map.addSource(SELECTED_MARKER_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: SELECTED_MARKER_LAYER,
+      type: 'symbol',
+      source: SELECTED_MARKER_SOURCE,
+      layout: {
+        'icon-image': this.ensureSelectedMarkerSprite() ?? '',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        // Loosely tracks a point layer's own dot growth (radiusExpr, addLayer)
+        // so the frame keeps hugging the dot rather than swamping it at a
+        // wide zoom or shrinking to invisible at a close one.
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.55, 15, 1.05] as never,
+      },
+    });
+    this.pinOverlays();
+  }
+
+  /**
+   * Move the selected marker to `selectedPoint`'s current coordinates, or
+   * clear it — the *only* place this marker's source is ever written, called
+   * once per selection change (markPointSelected/releasePointSelection),
+   * never per frame. featureById rather than trusting a caller-supplied
+   * coordinate: a layer's data can be reloaded between a selection and this
+   * call, and re-resolving here is the same defensiveness focusFeature's own
+   * featureById lookups already use.
+   */
+  private updateSelectedMarker() {
+    this.ensureSelectedMarkerLayer();
+    const src = this.map.getSource(SELECTED_MARKER_SOURCE) as GeoJSONSource | undefined;
+    if (!src) return;
+    const point = this.selectedPoint
+      ? this.featureById(this.selectedPoint.layerId, this.selectedPoint.featureId)
+      : undefined;
+    if (!this.selectedPoint || !point || point.geometry.type !== 'Point') {
+      src.setData(EMPTY_FC as never);
+      return;
+    }
+    src.setData({
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', geometry: { type: 'Point', coordinates: point.geometry.coordinates }, properties: {} },
+      ],
+    } as never);
   }
 
   private coneSourceId = (layerId: string) => `src-${layerId}-cones`;
@@ -2336,13 +2908,20 @@ export class MapController {
           // that collide would misrepresent how many are there.
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
+          // Scaled up from the original 0.75/1.05/1.3 curve — a plate
+          // reader's actual effective read range is a wider notion of "how
+          // far this camera sees" than the original sizing read as; this
+          // still isn't a measurement (see ensureConeSprite's own comment on
+          // DEFAULT_CONE_ARC — the *width* was never a measurement either),
+          // just a stylised indicator now drawn to look like it reaches as
+          // far as the direction it names, not a token pointing at it.
           'icon-size': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            tier.pointsFrom, 0.75,
-            tier.pointsFrom + 2, 1.05,
-            18, 1.3,
+            tier.pointsFrom, 1.3,
+            tier.pointsFrom + 2, 1.9,
+            18, 2.4,
           ],
         },
         paint: {
@@ -2427,34 +3006,85 @@ export class MapController {
       return;
     }
 
+    /*
+     * Below `emergeFrom`, radius follows the same 5/10/15 curve every
+     * point layer has always used. A layer that also names `speckleFrom`
+     * (ALPR, so far — see scaleOf's comment) gets earlier anchors
+     * instead: a true speck — sub-pixel at the map's own minimum zoom —
+     * climbing to a small, clean dot at metro scale rather than the
+     * bigger close-up size. Cut down from the original curve specifically
+     * to match deflock.org's own metro-zoom rendering, which is small
+     * and uncluttered even packed as tight as the Twin Cities get.
+     * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
+     * take the unchanged branch below.
+     */
+    const radiusExpr = (tier.speckleFrom < tier.emergeFrom
+      ? [
+          'interpolate', ['linear'], ['zoom'],
+          tier.speckleFrom, 0.5,
+          7, 1.2,
+          tier.emergeFrom, 2.8,
+          15, 8,
+        ]
+      : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
+    ) as unknown as maplibregl.ExpressionSpecification;
+    const strokeWidthExpr = this.pointStrokeWidthExpr(layer, tier);
+    /*
+     * Opacity follows the same two-branch shape as radius, just above.
+     * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
+     * dot is already visible at the map's own minimum zoom, and it climbs
+     * to solid across `emergeFrom` → `pointsFrom` same as before. Nothing
+     * here is a density estimate — it is the same records, just visible
+     * further out, at a size and opacity that don't claim more precision
+     * than a speck can carry.
+     */
+    const opacityExpr = (tier.speckleFrom < tier.emergeFrom
+      ? [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          tier.speckleFrom, 0.55,
+          tier.emergeFrom, 0.65,
+          tier.pointsFrom, 0.95,
+        ]
+      : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
+    ) as unknown as maplibregl.ExpressionSpecification;
+
+    // Only near-me-eligible layers (alpr/alpr_reported — see
+    // ClientLayer.nearMeRadiusMi) get a "fixed" variant stashed: setNearMeDotStyleFixed
+    // swaps circle-radius/circle-stroke-width/circle-opacity to these while a
+    // lookup is active, so refitNearMeCamera's whole-circle fit (which can
+    // land at a wider zoom than the old fit-to-matched-targets behaviour
+    // ever did) doesn't cost a camera the reader is specifically looking for
+    // any of its normal size/clarity — frozen at each expression's own
+    // `pointsFrom`-and-beyond value via freezeZoom, not a separately
+    // hand-chosen number, so it can never drift out of sync with the live
+    // curve's own "fully resolved" endpoint.
+    if (layer.nearMeRadiusMi) {
+      this.nearMePointStyle.set(layer.id, {
+        liveRadius: radiusExpr,
+        fixedRadius: this.freezeZoom(radiusExpr, tier.pointsFrom) as maplibregl.ExpressionSpecification | number,
+        liveStrokeWidth: strokeWidthExpr,
+        fixedStrokeWidth: this.freezeZoom(strokeWidthExpr, tier.pointsFrom) as
+          | maplibregl.ExpressionSpecification
+          | number,
+        liveOpacity: opacityExpr,
+        fixedOpacity: this.freezeZoom(opacityExpr, tier.pointsFrom) as maplibregl.ExpressionSpecification | number,
+      });
+    }
+
     this.map.addLayer({
       id: `${layer.id}-points`,
       type: 'circle',
       source: src,
       paint: {
-        'circle-color': circleColor,
-        /*
-         * Below `emergeFrom`, radius follows the same 5/10/15 curve every
-         * point layer has always used. A layer that also names `speckleFrom`
-         * (ALPR, so far — see scaleOf's comment) gets earlier anchors
-         * instead: a true speck — sub-pixel at the map's own minimum zoom —
-         * climbing to a small, clean dot at metro scale rather than the
-         * bigger close-up size. Cut down from the original curve specifically
-         * to match deflock.org's own metro-zoom rendering, which is small
-         * and uncluttered even packed as tight as the Twin Cities get.
-         * Layers that don't name `speckleFrom` see it equal `emergeFrom` and
-         * take the unchanged branch below.
-         */
-        'circle-radius': (tier.speckleFrom < tier.emergeFrom
-          ? [
-              'interpolate', ['linear'], ['zoom'],
-              tier.speckleFrom, 0.5,
-              7, 1.2,
-              tier.emergeFrom, 2.8,
-              15, 8,
-            ]
-          : ['interpolate', ['linear'], ['zoom'], 5, 3.4, 10, 5.5, 15, 8]
-        ) as unknown as maplibregl.ExpressionSpecification,
+        // A near-me-eligible (ALPR) layer's dot brightens toward
+        // nearMeSweepColor when the sonar sweep crosses its bearing — see
+        // withBlipBrighten's own comment. Every other layer's dots keep
+        // their plain colour, unwrapped.
+        'circle-color': layer.nearMeRadiusMi ? this.withBlipBrighten(circleColor) : circleColor,
+        // See radiusExpr's own comment, just above, for the curve itself.
+        'circle-radius': radiusExpr,
         'circle-stroke-color': this.pointStrokeColorExpr(layer),
         /*
          * Dots fade in rather than switching on at a single zoom.
@@ -2473,28 +3103,9 @@ export class MapController {
          * declared, shared with the theme-independent zoom curve here so the
          * two can never disagree about when the ring is allowed to appear.
          */
-        'circle-stroke-width': this.pointStrokeWidthExpr(layer, tier),
+        'circle-stroke-width': strokeWidthExpr,
         'circle-stroke-opacity': this.pointStrokeOpacityExpr(layer),
-        /*
-         * Opacity follows the same two-branch shape as radius, just above.
-         * ALPR's `speckleFrom` branch never touches zero: a faint, uncoloured
-         * dot is already visible at the map's own minimum zoom, and it climbs
-         * to solid across `emergeFrom` → `pointsFrom` same as before. Nothing
-         * here is a density estimate — it is the same records, just visible
-         * further out, at a size and opacity that don't claim more precision
-         * than a speck can carry.
-         */
-        'circle-opacity': (tier.speckleFrom < tier.emergeFrom
-          ? [
-              'interpolate',
-              ['linear'],
-              ['zoom'],
-              tier.speckleFrom, 0.55,
-              tier.emergeFrom, 0.65,
-              tier.pointsFrom, 0.95,
-            ]
-          : ['interpolate', ['linear'], ['zoom'], tier.emergeFrom, 0, tier.pointsFrom, 0.95]
-        ) as unknown as maplibregl.ExpressionSpecification,
+        'circle-opacity': opacityExpr,
       },
     });
 
@@ -2552,6 +3163,15 @@ export class MapController {
    * than an HTML string, so a value out of a data file can never be markup.
    */
   private updateHoverCard(layer: ClientLayer, id: string, lngLat: maplibregl.LngLat) {
+    // While "ALPRs Near Me" is active, a tapped/clicked camera's data
+    // already opens in the detail panel (focusFeature, called from the
+    // map's own click handler) — a hover-card popup floating over that same
+    // dot repeated the same data redundantly, reading as a second UI
+    // disagreeing with the panel about where "the record" actually lives.
+    // Many touch browsers fire a synthetic hover/mousemove at the tapped
+    // point alongside the click, which is what put a popup over the dot in
+    // the first place on a device with no real pointer to hover with.
+    if (this.nearMeOrigin) return this.hideHoverCard();
     if (!layer.hoverCard) return this.hideHoverCard();
     // A selected record already has the full panel open beside the map;
     // a card repeating it would just cover the ground the reader is
@@ -2828,12 +3448,9 @@ export class MapController {
       // Same move the search results already give a record: centre and zoom
       // in on it, not just open its detail. A tapped record is a reader
       // saying "this one" — the camera should go to it, the way it already
-      // does when the same record is picked from search. Saved once, the
-      // first tap of a run, so tapping a second pin without ever tapping
-      // away still returns to where the reader actually started.
-      if (!this.preSelectCamera) {
-        this.preSelectCamera = this.currentCamera();
-      }
+      // does when the same record is picked from search. focusFeature
+      // itself captures preSelectCamera (see its own comment) — one tap
+      // here is the same "first call of a run" it already accounts for.
       this.focusFeature(layer.id, id);
     });
   }
@@ -2862,6 +3479,7 @@ export class MapController {
       if (this.selectedPolygon?.layerId === layer.id || this.relationOverlayOwner === layer.id) {
         this.releaseHighlight();
       }
+      if (this.selectedPoint?.layerId === layer.id) this.releasePointSelection();
       if (this.hoveredPolygon?.layerId === layer.id) this.releaseHover();
       this.applyVisibility(layer);
     }
@@ -3202,11 +3820,26 @@ export class MapController {
     }
   }
 
-  /** Centre on a feature and open its detail. Used by search and a map tap alike. */
+  /**
+   * Centre on a feature and open its detail. Used by search, a map tap, and
+   * a near-me list row alike — the one funnel every route to a record
+   * passes through (see the class's own click-handler comment), so this is
+   * also the one place `preSelectCamera` gets captured, not just the map's
+   * own click handler: a near-me list row calls this directly, bypassing
+   * that handler entirely, and deselectPoint (backToList's own map-side
+   * counterpart) needs somewhere to return the camera to regardless of
+   * which route reached the selection. Saved once, the first call of a
+   * run — set only if unset, so selecting a second record without ever
+   * deselecting still returns to where the reader actually started, not to
+   * the first record's own view.
+   */
   focusFeature(layerId: string, featureId: string) {
     const feature = this.featureById(layerId, featureId);
     const layer = this.layers.find((l) => l.id === layerId);
     if (!feature || !layer) return;
+    if (!this.preSelectCamera) {
+      this.preSelectCamera = this.currentCamera();
+    }
 
     // onSelect first, camera move second — deliberately, not the more obvious
     // order. onSelect is what opens the detail panel, and the panel is a
@@ -3244,9 +3877,21 @@ export class MapController {
       // the detail sheet covers. Half the obstruction, because the offset
       // moves the target away from the container's centre and the visible
       // strip's centre sits exactly that far above it.
+      //
+      // A `bearingKey` layer (ALPR's own coverage cone — see addLayer's own
+      // comment) draws nothing below `pointsFrom`, and fades in over the two
+      // zooms past it (icon-opacity, addLayer). A flat 13 floor landed a
+      // selected camera below that threshold whenever `pointsFrom` (14 for
+      // ALPR) was higher, so the reader who just selected a camera never
+      // actually saw its cone without a further manual zoom of their own —
+      // the one moment the cone matters most. `+ 2` lands at the cone's own
+      // fully-resolved opacity (0.95) rather than its faint 0.4 arrival
+      // value, so selecting a camera shows its coverage clearly, not
+      // technically-but-barely.
+      const zoomFloor = layer.bearingKey ? Math.max(13, scaleOf(layer).pointsFrom + 2) : 13;
       this.map.easeTo({
         center: representativePoint(feature.geometry) as [number, number],
-        zoom: Math.max(this.map.getZoom(), 13),
+        zoom: Math.max(this.map.getZoom(), zoomFloor),
         offset: [0, -this.bottomObstruction() / 2],
         duration,
       });
@@ -3285,6 +3930,17 @@ export class MapController {
       // Without this a jurisdiction stayed highlighted under an unrelated
       // record for the rest of the session.
       this.releaseHighlight();
+    }
+    // Point counterpart to the polygon branch above — independent of it (a
+    // click can only ever hit one geometry type) rather than nested inside
+    // either branch, since a point selection needs both to mark a fresh one
+    // (feature.geometry.type === 'Point') and to release a stale one (any
+    // other geometry), so the focus frame never stays pinned to a camera an
+    // unrelated jurisdiction/facility selection just replaced.
+    if (feature.geometry.type === 'Point') {
+      this.markPointSelected(layer, featureId);
+    } else {
+      this.releasePointSelection();
     }
     if (layer.relation) void this.showRelation(feature, layer);
   }
@@ -3349,6 +4005,29 @@ export class MapController {
       { selected: true },
     );
     this.selectedPolygon = { layerId: layer.id, featureId };
+  }
+
+  /**
+   * Point counterpart to markPolygonSelected — same "one at a time,
+   * releasing whichever held it before" shape, but there is no feature-state
+   * to write here: the focus-frame marker (updateSelectedMarker) reads
+   * `selectedPoint` directly rather than a paint expression watching a
+   * feature-state, so a click just updates the field and repositions the
+   * one marker. See SELECTED_MARKER_SOURCE's own comment for why this is
+   * deliberately not the feature-state/pulse shape markPolygonSelected's
+   * `selected` state uses for polygons.
+   */
+  private markPointSelected(layer: ClientLayer, featureId: string) {
+    if (this.selectedPoint?.layerId === layer.id && this.selectedPoint.featureId === featureId) return;
+    this.selectedPoint = { layerId: layer.id, featureId };
+    this.updateSelectedMarker();
+  }
+
+  /** Drop the point selection, if any. The point counterpart to releaseHighlight. */
+  private releasePointSelection() {
+    if (!this.selectedPoint) return;
+    this.selectedPoint = null;
+    this.updateSelectedMarker();
   }
 
   flyTo(center: [number, number], zoom = 12) {
@@ -3527,13 +4206,14 @@ export class MapController {
   }
 
   /**
-   * The animation itself, shared by throwPaths and throwNearMeLines (see the
-   * latter's own comment for why the two still keep independent rAF handles
-   * and sources rather than sharing a call site entirely — a jurisdiction
-   * throw and a near-me throw can be on screen at once). Only the tuned
-   * stagger/ease/impact math and the setData calls belong here; which frame
-   * field to write to is threaded in as `setFrame` so each caller's own
-   * cancel/clear stays in charge of its own handle.
+   * The animation itself — today only throwPaths' jurisdiction throw calls
+   * this. Near-me used to share it (a "twin" throw to a second pair of
+   * sources, so a jurisdiction throw and a near-me throw could be on screen
+   * at once) but now runs its own continuous sonar sweep instead — see
+   * startNearMeSweep/renderNearMeSweepFrame — so this is no longer a shared
+   * call site, just a single caller kept general via the `setFrame`
+   * indirection in case a future caller needs the same stagger/ease/impact
+   * math again.
    */
   private runThrow(
     origin: [number, number],
@@ -3802,6 +4482,15 @@ export class MapController {
     }
     this.nearMeLocating = true;
     this.nearMeControl?.setActive(true);
+    // Optimistic, the same instant nearMeControl itself goes active — not
+    // deferred to showNearMe, which only runs once geolocation actually
+    // resolves. resetView jumps to METRO_BOUNDS, which would silently
+    // abandon a live lookup's own camera fit without ever clearing that
+    // lookup's state; hiding it the moment the reader commits to "locate
+    // near me" (rather than only once a fix arrives, maybe several seconds
+    // later) means there's never a window where it's visible but wrong to
+    // press.
+    this.resetViewControl?.setVisible(false);
     this.events.onNearMeModeChange?.(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -3813,6 +4502,7 @@ export class MapController {
         this.nearMeControl?.setActive(false);
         // The mode never actually started — roll the layer-forcing back
         // rather than leaving the reader in it with no location to show.
+        this.resetViewControl?.setVisible(true);
         this.events.onNearMeModeChange?.(false);
         // Three distinct codes, three distinct reasons — collapsing any pair
         // of them tells the reader something false. A timeout isn't a
@@ -3845,32 +4535,108 @@ export class MapController {
   private ensureNearMeLayers() {
     if (this.nearMeLayersReady) return;
 
+    // The east/south/west cardinal spokes — three radial lines from
+    // nearMeOrigin out to the current boundary (nearMeCardinalPoints), faint
+    // orientation cues rather than a second measurement. No north spoke: see
+    // NEARME_CARDINALS_SOURCE's own comment for why.
+    this.map.addSource(NEARME_CARDINALS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_CARDINALS_LAYER,
+      type: 'line',
+      source: NEARME_CARDINALS_SOURCE,
+      paint: {
+        'line-color': this.nearMeSweepColor,
+        'line-width': 1,
+        'line-opacity': 0.28,
+      },
+    });
+
+    // The persistent radius boundary — a stroke-only ring at the current
+    // search radius, always visible, redrawn on every radius change by
+    // applyNearMeRadius. Also independent of REDUCED_MOTION: unlike the
+    // sweep's own REDUCED_MOTION substitute (renderNearMeSweepStatic, drawn
+    // on NEARME_PATHS_LAYER), this ring is not a substitute for
+    // anything — it's the one persistent "here's the edge" cue this overlay
+    // has, present under every motion preference.
+    // The intermediate mile-marker rings — one whole-mile ring per mile
+    // short of the current radius, plus a halfway ring when the radius
+    // itself is under a mile (see nearMeMileMarkerRadiiM). Fainter than the
+    // main boundary (lower opacity, thinner) so the outer edge still reads
+    // as *the* boundary at a glance and these read as measure, not a second
+    // edge competing with it.
+    this.map.addSource(NEARME_MARKERS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_MARKERS_LAYER,
+      type: 'line',
+      source: NEARME_MARKERS_SOURCE,
+      paint: {
+        'line-color': this.nearMeSweepColor,
+        'line-width': 1,
+        'line-opacity': 0.22,
+      },
+    });
+
+    // The "1 mi"/"2 mi" text sitting in the gap each marker ring above
+    // leaves at its own top — same symbol-layer shape (text-field/
+    // text-size/text-font, text-color over a basemap-dark halo) every other
+    // labelled point layer in this file already uses (see labelBy's own
+    // addLayer, `${layer.id}-labels`), just fed from a dedicated near-me
+    // source instead of a registry layer's own data.
+    this.map.addSource(NEARME_MARKER_LABELS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_MARKER_LABELS_LAYER,
+      type: 'symbol',
+      source: NEARME_MARKER_LABELS_SOURCE,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-size': 11,
+        'text-font': ['Noto Sans Regular'],
+        'text-allow-overlap': true,
+      },
+      paint: {
+        'text-color': this.nearMeSweepColor,
+        'text-halo-color': this.basemapColor,
+        'text-halo-width': 1.2,
+      },
+    });
+
+    this.map.addSource(NEARME_BOUNDARY_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: NEARME_BOUNDARY_LAYER,
+      type: 'line',
+      source: NEARME_BOUNDARY_SOURCE,
+      paint: {
+        'line-color': this.nearMeSweepColor,
+        'line-width': 1.8,
+        'line-opacity': 0.6,
+      },
+    });
+
+    // A single-feature LineString, redrawn every frame by
+    // renderNearMeSweepFrame (or, under REDUCED_MOTION, once by
+    // renderNearMeSweepStatic as a many-sided ring) — the sonar sweep that
+    // replaced this layer's original dashed throw-lines. Solid, not dashed:
+    // a dashed stroke read as "a connection being drawn"; a solid one reads
+    // as "the line currently sweeping," which is what it now is.
     this.map.addSource(NEARME_PATHS_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
     this.map.addLayer({
       id: NEARME_PATHS_LAYER,
       type: 'line',
       source: NEARME_PATHS_SOURCE,
       paint: {
-        'line-color': this.nearMeColor,
-        'line-width': 1.4,
-        'line-opacity': 0.75,
-        'line-dasharray': [2, 1.5],
+        'line-color': this.nearMeSweepColor,
+        'line-width': 1.6,
+        'line-opacity': 0.8,
       },
     });
 
-    this.map.addSource(NEARME_IMPACT_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
-    this.map.addLayer({
-      id: NEARME_IMPACT_LAYER,
-      type: 'circle',
-      source: NEARME_IMPACT_SOURCE,
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 22] as never,
-        'circle-color': 'rgba(0,0,0,0)',
-        'circle-stroke-color': this.nearMeColor,
-        'circle-stroke-width': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 0.5] as never,
-        'circle-stroke-opacity': ['interpolate', ['linear'], ['get', 't'], 0, 0.9, 1, 0] as never,
-      },
-    });
+    // A bearing crossing (renderNearMeSweepFrame) no longer draws a separate
+    // "impact ring" feature here — it brightens the crossed camera's own dot
+    // in place, via `blip` feature-state read by that layer's own
+    // `circle-color` (withBlipBrighten, addLayer). See renderNearMeSweepFrame's
+    // own comment for why: a real PPI radar's phosphor brightens the target
+    // spot itself and decays there, it doesn't spawn an expanding ring, and
+    // feature-state is cheaper than a second source's setData() every frame.
 
     // The origin itself — a small glow plus a solid dot, the same two-layer
     // treatment RELATION uses for the building a throw comes from,
@@ -3901,10 +4667,183 @@ export class MapController {
 
     this.nearMeLayersReady = true;
     this.pinOverlays();
+    this.ensureNearMeMaskEl();
   }
 
   /**
-   * Draw the reader's own location and throw lines to whatever's nearby.
+   * Create the outside-radius darkening mask's own DOM element, once, empty
+   * (hidden until the first updateNearMeMask call gives it a real position).
+   *
+   * Inserted as the canvas container's next sibling — MapLibre appends the
+   * canvas container to the map's own container first, then its control
+   * container (zoom buttons, attribution, this map's own NearMeControl and
+   * NearMeRadiusControl) after — so `insertAdjacentElement('afterend', …)`
+   * lands this element between the two: above the entire canvas (basemap
+   * and every layer painted into it, including camera dots), but below
+   * every DOM control, which stay fully legible and clickable no matter
+   * where the circle currently sits. `pointer-events: none` is what actually
+   * keeps it from intercepting map drags/taps or control clicks; the DOM
+   * position just keeps it from *visually* dimming the controls too.
+   */
+  private ensureNearMeMaskEl() {
+    if (this.nearMeMaskEl) return;
+    const el = document.createElement('div');
+    el.className = 'nearme-mask';
+    el.style.position = 'absolute';
+    el.style.inset = '0';
+    el.style.pointerEvents = 'none';
+    el.style.display = 'none';
+    this.map.getCanvasContainer().insertAdjacentElement('afterend', el);
+    this.nearMeMaskEl = el;
+  }
+
+  /**
+   * Position and recolour the darkening mask around `nearMeOrigin` at the
+   * current `nearMeSweepRadiusM` — called on every radius change
+   * (applyNearMeRadius), every camera move (the map's own 'move' listener in
+   * the constructor), and every basemap toggle (repaintThemedLayers), since
+   * all three change something this element's own CSS needs to reflect even
+   * though none of them change the origin itself.
+   *
+   * The element covers the whole container (`inset: 0`, set once in
+   * ensureNearMeMaskEl) and darkens *and blurs* — `background` plus
+   * `backdrop-filter: blur()` — everywhere it's visible; `mask-image`'s
+   * radial-gradient is what makes it visible only outside the search
+   * radius, punching a see-through, unfiltered hole over the circle itself.
+   * `mask-image` (not `clip-path`) because a gradient can feather the
+   * hole's edge in one declaration — `clip-path`'s circle is hard-edged, and
+   * its *inverse* (a hole rather than a shape) needs a second, larger path
+   * around the whole viewport for the same result `mask-image` gets in one.
+   * The gradient's stops use `white`→`transparent` rather than `black`→
+   * `transparent`: opaque white reads as fully visible under both of the
+   * two mask interpretations browsers actually ship (alpha-channel masking,
+   * where only the stop's own alpha matters, and luminance masking, where
+   * white is maximum luminance) — `black`→`transparent` would render
+   * correctly under alpha masking and invisibly under luminance masking,
+   * silently losing the whole mask in whichever engine uses the latter.
+   * `-webkit-` duplicates are Safari's own prefix for both properties.
+   *
+   * `nearMeSweepRadiusM`'s screen radius is derived from the map's own
+   * `project()` — the exact same Mercator math MapLibre uses to place every
+   * point on the canvas — rather than a manual metres-per-pixel formula, so
+   * this can never disagree with where the boundary ring (renderNearMeBoundary,
+   * drawn by the map itself) actually sits on screen. Projected due east of
+   * the origin: at this map's latitudes the two points sit close enough in
+   * latitude that east/west and north/south read as the same pixel distance
+   * to the eye, and the shape being masked is a circle either way.
+   */
+  /**
+   * The search-radius circle's own screen-space centre and radius, in CSS
+   * pixels — the one place this projection is computed, shared by
+   * updateNearMeMask and updateNearMeSweepGlow so "where does the current
+   * radius actually land on screen" can never quietly disagree between the
+   * two (they used to each carry an independent copy of this exact math).
+   * Projected due east of the origin: at this map's latitudes the two
+   * points sit close enough in latitude that east/west and north/south read
+   * as the same pixel distance to the eye, and the shape being measured is
+   * a circle either way. Null when there is no origin to project from.
+   */
+  private nearMeOriginPx(): { centerPx: maplibregl.Point; radiusPx: number } | null {
+    if (!this.nearMeOrigin) return null;
+    const centerPx = this.map.project(this.nearMeOrigin);
+    const edge = destinationPoint(this.nearMeOrigin, 90, this.nearMeSweepRadiusM) as [number, number];
+    const edgePx = this.map.project(edge);
+    const radiusPx = Math.hypot(edgePx.x - centerPx.x, edgePx.y - centerPx.y);
+    return { centerPx, radiusPx };
+  }
+
+  /** Both `mask-image` and its Safari-prefixed twin need the same value; every caller wants both set together, never one alone. */
+  private setMaskImage(el: HTMLElement, mask: string) {
+    el.style.maskImage = mask;
+    (el.style as unknown as { webkitMaskImage: string }).webkitMaskImage = mask;
+  }
+
+  private updateNearMeMask() {
+    this.ensureNearMeMaskEl();
+    const el = this.nearMeMaskEl;
+    const origin = this.nearMeOriginPx();
+    if (!el || !origin) return;
+    const { centerPx, radiusPx } = origin;
+    // An 8px feather between "fully visible" and "fully hidden" — a hard
+    // stop here reads as a jagged, aliased edge; the boundary ring
+    // (renderNearMeBoundary) is still what draws the crisp line the reader
+    // actually reads as "the edge."
+    el.style.display = 'block';
+    el.style.background = this.nearMeMaskColor;
+    el.style.backdropFilter = NEARME_MASK_BLUR;
+    (el.style as unknown as { webkitBackdropFilter: string }).webkitBackdropFilter = NEARME_MASK_BLUR;
+    this.setMaskImage(
+      el,
+      `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, transparent ${radiusPx}px, white ${radiusPx + 8}px)`,
+    );
+  }
+
+  /** Hide the darkening mask without discarding the element — clearNearMe's counterpart to updateNearMeMask, same "empty the source, keep the layer" shape the rest of near-me teardown uses. */
+  private hideNearMeMask() {
+    if (this.nearMeMaskEl) this.nearMeMaskEl.style.display = 'none';
+  }
+
+  /** Create the sweep afterglow's own DOM element, once, empty — see nearMeSweepGlowEl's own comment. Same insertion point as ensureNearMeMaskEl (the canvas container's next sibling); order between the two doesn't matter, since the mask paints outside the search radius and the glow paints inside it — they never cover the same pixel. */
+  private ensureNearMeSweepGlowEl() {
+    if (this.nearMeSweepGlowEl) return;
+    const el = document.createElement('div');
+    el.className = 'nearme-sweep-glow';
+    el.style.position = 'absolute';
+    el.style.inset = '0';
+    el.style.pointerEvents = 'none';
+    el.style.display = 'none';
+    this.map.getCanvasContainer().insertAdjacentElement('afterend', el);
+    this.nearMeSweepGlowEl = el;
+  }
+
+  /**
+   * Paint the sweep's afterglow trail at the current frame's `angleDeg` —
+   * called once per renderNearMeSweepFrame tick (so only ever while
+   * !REDUCED_MOTION; see nearMeSweepGlowEl's own comment).
+   *
+   * `conic-gradient`'s own `0deg` points straight up and increases
+   * clockwise — the exact same convention `angleDeg` already uses (compass
+   * bearing, 0° north, clockwise), so `from` needs no conversion to line up
+   * with where `destinationPoint` actually drew the sweep line this frame.
+   * The gradient itself is three stops: transparent from the trail's
+   * trailing edge up to (but not including) the leading edge, full colour
+   * exactly at the leading edge, then transparent again immediately after —
+   * so the glow only ever occupies the `NEARME_SWEEP_TRAIL_DEG` wedge behind
+   * the line, not the rest of the circle.
+   *
+   * `mask-image` (not a smaller element) confines the glow to the current
+   * search radius, the same radial-gradient-based technique updateNearMeMask
+   * uses for its own cutout — deliberately *not* combined with a
+   * `backdrop-filter` the way an earlier version of that mask was: this
+   * paints a colour rather than sampling/blurring what's beneath it, so
+   * there's no repeat of the cross-implementation interaction that mask
+   * combination reproduced a real bug with (see updateNearMeMask's own
+   * comment).
+   */
+  private updateNearMeSweepGlow(angleDeg: number) {
+    this.ensureNearMeSweepGlowEl();
+    const el = this.nearMeSweepGlowEl;
+    const origin = this.nearMeOriginPx();
+    if (!el || !origin) return;
+    const { centerPx, radiusPx } = origin;
+    const from = angleDeg - NEARME_SWEEP_TRAIL_DEG;
+    el.style.display = 'block';
+    el.style.opacity = String(NEARME_SWEEP_GLOW_OPACITY);
+    el.style.background = `conic-gradient(from ${from}deg at ${centerPx.x}px ${centerPx.y}px, transparent 0deg, ${this.nearMeSweepColor} ${NEARME_SWEEP_TRAIL_DEG}deg, transparent ${NEARME_SWEEP_TRAIL_DEG + 0.5}deg 360deg)`;
+    this.setMaskImage(
+      el,
+      `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, white ${radiusPx}px, transparent ${radiusPx + 2}px)`,
+    );
+  }
+
+  /** Hide the sweep afterglow without discarding the element — stopNearMeSweep's counterpart to updateNearMeSweepGlow. */
+  private hideNearMeSweepGlow() {
+    if (this.nearMeSweepGlowEl) this.nearMeSweepGlowEl.style.display = 'none';
+  }
+
+  /**
+   * Draw the reader's own location and start the sonar sweep scanning
+   * whatever's nearby.
    *
    * `origin` lives only in this call's arguments and the `nearMeOrigin`
    * field below — never in a URL, `localStorage`, or a network request (see
@@ -3921,11 +4860,13 @@ export class MapController {
    * comment), which would otherwise make "what's near me" under-report
    * exactly the layers nobody happened to have on.
    *
-   * Candidates are gathered once here, out to NEARME_RADIUS_MAX_MI, and
+   * Candidates (including each one's bearing from `origin`, for the sweep's
+   * blip detection) are gathered once here, out to NEARME_RADIUS_MAX_MI, and
    * handed to applyNearMeRadius to draw the reader's own starting radius;
    * every further radius change re-slices the same candidate list rather
-   * than re-scanning the layers. The camera then autozooms to fit whatever
-   * that starting set turns out to be — see refitNearMeCamera.
+   * than re-scanning the layers. startNearMeSweep then begins the
+   * continuous rotation, and the camera autozooms to fit whatever the
+   * starting set turns out to be — see refitNearMeCamera.
    */
   private async showNearMe(origin: [number, number], accuracyM: number) {
     await this.ready();
@@ -3934,7 +4875,30 @@ export class MapController {
     const token = (this.nearMeToken += 1);
 
     const eligible = this.layers.filter((l) => l.nearMeRadiusMi);
-    const perLayer = await Promise.all(eligible.map((l) => this.ensureDataLoaded(l.id)));
+    // Not routed through ensureDataLoaded: that helper's contract is to
+    // swallow a failed fetch silently (the right default for an incidental
+    // cross-layer join), but a layer failing here is one this exact lookup
+    // is about to report zero results for — worth telling the reader why,
+    // via onNearMeLayerError, rather than repeating that silence.
+    const perLayer = await Promise.all(
+      eligible.map(async (l) => {
+        try {
+          return await this.fetchFeatures(l);
+        } catch (err) {
+          // Guarded the same way the `token !== this.nearMeToken` check a
+          // few lines down guards everything after it — without this, a
+          // slow fetch that only rejects after the reader has toggled
+          // near-me off and back on (bumping nearMeToken) fires
+          // onNearMeLayerError for a lookup that's no longer current,
+          // landing a stale "could not load" warning on whatever *new*
+          // lookup happens to be active by the time this catch runs.
+          if (token === this.nearMeToken) {
+            this.events.onNearMeLayerError?.(l.id, err instanceof Error ? err.message : String(err));
+          }
+          return [];
+        }
+      }),
+    );
     if (token !== this.nearMeToken) return;
 
     this.ensureNearMeLayers();
@@ -3943,13 +4907,27 @@ export class MapController {
     this.nearMeControl?.setActive(true);
 
     const maxRadiusM = NEARME_RADIUS_MAX_MI * 1609.344;
-    const candidates: Array<{ point: [number, number]; distance: number }> = [];
-    eligible.forEach((_layer, i) => {
+    const candidates: Array<{
+      point: [number, number];
+      distance: number;
+      bearingDeg: number;
+      layerId: string;
+      featureId: string;
+    }> = [];
+    eligible.forEach((layer, i) => {
       for (const feature of perLayer[i]) {
         if (feature.geometry.type !== 'Point') continue;
         const point = feature.geometry.coordinates as [number, number];
         const distance = haversineMeters(origin, point);
-        if (distance <= maxRadiusM) candidates.push({ point, distance });
+        if (distance <= maxRadiusM) {
+          candidates.push({
+            point,
+            distance,
+            bearingDeg: bearingDeg(origin, point),
+            layerId: layer.id,
+            featureId: feature.properties.id,
+          });
+        }
       }
     });
     candidates.sort((a, b) => a.distance - b.distance);
@@ -3962,62 +4940,96 @@ export class MapController {
 
     this.nearMeRadiusControl?.reset();
     this.nearMeRadiusControl?.setVisible(true);
-    const targets = this.applyNearMeRadius(NEARME_RADIUS_DEFAULT_MI);
-    this.refitNearMeCamera(targets);
+    // Before the fit below, which is what actually needs it — see
+    // setNearMeDotStyleFixed's own comment for why this exists at all.
+    this.setNearMeDotStyleFixed(true);
+    this.applyNearMeRadius(NEARME_RADIUS_DEFAULT_MI);
+    this.startNearMeSweep();
+    this.refitNearMeCamera();
   }
 
   /**
-   * Re-slice `nearMeCandidates` to `radiusMi` and redraw the throw lines —
-   * the only thing that changes as the reader drags NearMeRadiusControl, or
-   * on the first draw after a fresh showNearMe. `nearMeOrigin` is the
-   * single source of truth for where the throw originates, so origin's own
-   * source is untouched here. Returns the drawn targets so callers that
-   * also want a camera refit (showNearMe, commitNearMeRadius — not
-   * dragNearMeRadius, see its own comment) can hand them to
-   * refitNearMeCamera without re-deriving them.
+   * Re-slice `nearMeCandidates` to `radiusMi` and update what the sonar
+   * sweep is currently scanning — the only thing that changes as the reader
+   * drags NearMeRadiusControl, or on the first draw after a fresh
+   * showNearMe. `nearMeOrigin` is the single source of truth for where the
+   * sweep is rooted, so origin's own source is untouched here. Returns the
+   * matched targets so callers that also want a camera refit (showNearMe,
+   * commitNearMeRadius — not dragNearMeRadius, see its own comment) can
+   * hand them to refitNearMeCamera without re-deriving them.
    *
    * `nearMeCandidates` is sorted nearest-first (showNearMe), so this walks
    * from the front and stops the moment a candidate is past `radiusMi` or
    * NEARME_MAX_LINES targets are already collected — O(targets found), not
    * a full-array filter/slice repeated on every drag tick.
    *
-   * `announce` skips the aria-live update (onNearMeResult) — set false by
-   * dragNearMeRadius's live callback so a screen reader isn't read every
+   * Only `nearMeSweepRadiusM` is written here — the continuous rAF loop
+   * (renderNearMeSweepFrame) reads it on its own next frame, so a radius
+   * change never restarts the sweep's rotation (see nearMeSweepStart's own
+   * comment). Under REDUCED_MOTION there is no loop to pick the change up,
+   * so the static ring is redrawn immediately instead.
+   *
+   * `announce` skips only the aria-live update (onNearMeResult) — set false
+   * by dragNearMeRadius's live callback so a screen reader isn't read every
    * intermediate mile of a slider drag, and true on both the initial draw
-   * and the slider's commit.
+   * and the slider's commit. `onNearMeRecords` (the DOM list) fires every
+   * call regardless of `announce`: the map's boundary/sweep already redraw
+   * live on every drag tick, and a list that stayed frozen next to a
+   * visibly-moving map read as broken, not as "waiting for you to let go."
+   * A sighted drag gets a live-updating list; a screen-reader user still
+   * only hears the count once, on commit — the two audiences get what each
+   * one actually needs from a drag, not the same gate applied to both.
    */
   private applyNearMeRadius(radiusMi: number, announce = true): Array<[number, number]> {
     if (!this.nearMeOrigin) return [];
     const radiusM = radiusMi * 1609.344;
     const targets: Array<[number, number]> = [];
+    const records: NearMeRecord[] = [];
     let totalWithin = 0;
     for (const candidate of this.nearMeCandidates) {
       if (candidate.distance > radiusM) break;
       totalWithin += 1;
-      if (targets.length < NEARME_MAX_LINES) targets.push(candidate.point);
+      if (targets.length < NEARME_MAX_LINES) {
+        targets.push(candidate.point);
+        records.push({
+          layerId: candidate.layerId,
+          featureId: candidate.featureId,
+          distanceM: candidate.distance,
+          point: candidate.point,
+        });
+      }
     }
 
-    this.throwNearMeLines(this.nearMeOrigin, targets);
-    if (announce) {
-      // The only accessible-DOM equivalent this control has today: an
-      // aria-live count, since the throw itself is canvas-only. Not full
-      // parity with /near-me's own record list (see NearMeSummary.list) — a
-      // screen-reader user learns how many and how far, not each one by
-      // name — but it's the difference between silence and something.
-      this.events.onNearMeResult?.(totalWithin, targets.length);
-    }
+    this.nearMeSweepRadiusM = radiusM;
+    this.renderNearMeBoundary();
+    this.updateNearMeMask();
+    if (REDUCED_MOTION) this.renderNearMeSweepStatic();
+
+    // Unconditional — see onNearMeResult's own comment for why `announce`
+    // is passed through rather than used to gate this call itself. The only
+    // accessible-DOM equivalent this control used to have is the aria-live
+    // count `announce` still gates, inside the callback — read instantly on
+    // commit, before the DOM list even has to be found and stepped through.
+    this.events.onNearMeResult?.(totalWithin, targets.length, this.nearMeAccuracyM, announce);
+    // Unconditional — see this method's own comment on why the list isn't
+    // gated by `announce` the same way the aria-live count is.
+    this.events.onNearMeRecords?.(records);
     return targets;
   }
 
   /**
-   * Move the camera to frame `nearMeOrigin` and every camera a line was
-   * just thrown at — "Nearest" only helps a reader if the nearest ones are
-   * actually visible, on a phone as much as a desktop, so the map's zoom
-   * is itself a function of how many cameras the current radius connects:
-   * a wide radius with many results zooms out to fit them all; a narrow
-   * radius with few (or none) zooms in, down to NEARME_ZOOM's floor. See
-   * NEARME_ZOOM's own comment for why that floor doesn't apply when there
-   * are targets to fit.
+   * Move the camera to frame `nearMeOrigin` and the *entire* current search
+   * radius — not just whatever cameras happen to be in it. Fitting to the
+   * actual targets used to mean a narrow radius with one nearby camera
+   * zoomed in tight around just that dot, and a radius with zero results
+   * zoomed to NEARME_ZOOM's floor with no frame around the search area at
+   * all — both disagreed with what the boundary ring (renderNearMeBoundary)
+   * now draws on screen: the reader is looking at a circle, so the camera
+   * should always show that whole circle, every time the radius changes,
+   * regardless of how many (or how few) cameras happen to be inside it this
+   * time. `nearMeRadiusRing()` is the exact same geometry the boundary
+   * already draws, so "what the map fits to" and "what the map draws as the
+   * search area" can never disagree.
    *
    * cameraForBounds only *computes* the camera; easeToCamera does the
    * actual move, with its moveend/jumpTo landing correction — a bare
@@ -4032,27 +5044,32 @@ export class MapController {
    * center/zoom — so passing the live bearing back in just keeps the fit
    * honest about the frame it's actually being fit into.
    *
-   * The zoom ceiling — accuracyZoomCap's honesty clamp (§0.2, §0.7), and
-   * for the no-target case the NEARME_ZOOM floor as well — is computed
-   * once and handed to cameraForBounds as its own `maxZoom`, rather than
-   * left to override the result afterwards: overriding zoom post hoc
-   * without recomputing center leaves the two disagreeing about which
-   * zoom the sheet-padding offset was computed for, silently shrinking
-   * that offset. Passed only when finite: accuracy of exactly 0 (no fix
-   * recorded yet, or a mocked one — real fixes are never exactly 0) makes
-   * accuracyZoomCap return +Infinity, and a container with zero real width
-   * or height (a hidden ancestor mid-layout) makes it -Infinity — either
-   * one reaching MapLibre as `maxZoom` produces a NaN camera, so neither
-   * is ever passed; cameraForBounds is left to its own default instead.
+   * The zoom ceiling — accuracyZoomCap's honesty clamp (§0.2, §0.7) — is
+   * computed once and handed to cameraForBounds as its own `maxZoom`,
+   * rather than left to override the result afterwards: overriding zoom
+   * post hoc without recomputing center leaves the two disagreeing about
+   * which zoom the sheet-padding offset was computed for, silently
+   * shrinking that offset. Passed only when finite: accuracy of exactly 0
+   * (no fix recorded yet, or a mocked one — real fixes are never exactly 0)
+   * makes accuracyZoomCap return +Infinity, and a container with zero real
+   * width or height (a hidden ancestor mid-layout) makes it -Infinity —
+   * either one reaching MapLibre as `maxZoom` produces a NaN camera, so
+   * neither is ever passed; cameraForBounds is left to its own default
+   * instead. NEARME_ZOOM's floor now only ever applies to the fallback
+   * branch below, when cameraForBounds itself fails to produce a fit (a
+   * zero-sized container mid-layout) — not to a low target count, since
+   * there is always a circle to fit regardless of target count.
    */
-  private refitNearMeCamera(targets: Array<[number, number]>) {
+  private refitNearMeCamera() {
     if (!this.nearMeOrigin) return;
     const container = this.map.getContainer();
     const minDimensionPx = Math.min(container.clientWidth, container.clientHeight);
     const cap = accuracyZoomCap(this.nearMeAccuracyM, this.nearMeOrigin[1], minDimensionPx);
-    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
-    const intendedZoom = targets.length > 0 ? cap : Number.isFinite(cap) ? Math.min(floor, cap) : floor;
-    const bounds = bboxOf({ type: 'MultiPoint', coordinates: [this.nearMeOrigin, ...targets] });
+    const ring = this.nearMeRadiusRing();
+    const bounds = bboxOf({
+      type: 'MultiPoint',
+      coordinates: ring.length ? ring : [this.nearMeOrigin],
+    });
     const fit = this.map.cameraForBounds(
       [
         [bounds[0], bounds[1]],
@@ -4061,11 +5078,12 @@ export class MapController {
       {
         padding: this.fitPadding(),
         bearing: this.map.getBearing(),
-        ...(Number.isFinite(intendedZoom) ? { maxZoom: intendedZoom } : {}),
+        ...(Number.isFinite(cap) ? { maxZoom: cap } : {}),
       },
     );
     const fitCenter = fit?.center != null ? maplibregl.LngLat.convert(fit.center) : null;
     const fitZoom = fit?.zoom != null && Number.isFinite(fit.zoom) ? fit.zoom : null;
+    const floor = Math.max(this.map.getZoom(), NEARME_ZOOM);
     const camera =
       fitCenter && fitZoom != null
         ? { center: [fitCenter.lng, fitCenter.lat] as [number, number], zoom: fitZoom }
@@ -4076,14 +5094,16 @@ export class MapController {
   /**
    * NearMeRadiusControl's `input` handler — fires on every integer step a
    * drag crosses, up to ~24 times across the slider's full range in well
-   * under a second. Redrawing/refitting on every one of those would cancel
-   * and restart throwNearMeLines' rAF animation (and its underlying
-   * `setData` — "a worker round trip with a re-parse and re-index, not a
-   * cheap buffer write," per runThrow's own comment), and kick off a fresh
-   * easeToCamera, that often — so ticks are coalesced to at most one
-   * redraw+refit per animation frame: a tick just records the latest
-   * requested radius, and only the first tick in a frame schedules the
-   * rAF callback that actually applies it.
+   * under a second. The sweep itself no longer needs coalescing to redraw
+   * cheaply (updating `nearMeSweepRadiusM` is a plain field write the
+   * running rAF loop picks up on its own next frame — see
+   * applyNearMeRadius's own comment), but `applyNearMeRadius` also rebuilds
+   * the `targets`/`records` arrays and `refitNearMeCamera` kicks off a fresh
+   * `easeToCamera` — both real work worth not repeating ~24 times a second —
+   * so ticks are still coalesced to at most one redraw+refit per animation
+   * frame: a tick just records the latest requested radius, and only the
+   * first tick in a frame schedules the rAF callback that actually applies
+   * it.
    *
    * No aria-live announcement here either way (see applyNearMeRadius's own
    * comment) — a screen-reader user gets the count once, on commit, not
@@ -4095,20 +5115,20 @@ export class MapController {
     this.nearMeDragFrame = requestAnimationFrame(() => {
       this.nearMeDragFrame = null;
       if (this.pendingNearMeRadiusMi === null) return;
-      const targets = this.applyNearMeRadius(this.pendingNearMeRadiusMi, false);
-      // Newly-connected cameras a wider drag just pulled in are otherwise
-      // drawn off-screen until the reader lets go — the camera has to
-      // follow live, not just redraw the lines, or a farther-out camera is
-      // invisible the whole time it's actually "connected." Each tick's
-      // easeToCamera restarts from wherever the last one left off, which
-      // reads as the view tracking the drag rather than N separate jumps —
-      // same restart-in-place behavior any of this class's other
+      this.applyNearMeRadius(this.pendingNearMeRadiusMi, false);
+      // The circle itself grows or shrinks with every tick, not just
+      // whatever cameras happen to be inside it — the camera has to follow
+      // live, not just redraw the boundary, or the ring is drawn partly
+      // off-screen the whole time the reader is dragging toward it. Each
+      // tick's easeToCamera restarts from wherever the last one left off,
+      // which reads as the view tracking the drag rather than N separate
+      // jumps — same restart-in-place behavior any of this class's other
       // easeToCamera call sites already rely on for a fast second call.
-      this.refitNearMeCamera(targets);
+      this.refitNearMeCamera();
     });
   }
 
-  /** NearMeRadiusControl's `change` handler — fires once on release; commits the value, announces the result, and refits the camera to the newly-connected set. */
+  /** NearMeRadiusControl's `change` handler — fires once on release; commits the value, announces the result, and refits the camera to the whole newly-committed radius. */
   private commitNearMeRadius(radiusMi: number) {
     // A commit right after the last coalesced drag frame already queued
     // itself would otherwise redraw twice for the same value — cancel
@@ -4118,33 +5138,351 @@ export class MapController {
       this.nearMeDragFrame = null;
     }
     this.pendingNearMeRadiusMi = null;
-    const targets = this.applyNearMeRadius(radiusMi, true);
-    this.refitNearMeCamera(targets);
+    this.applyNearMeRadius(radiusMi, true);
+    this.refitNearMeCamera();
   }
 
   /**
-   * throwPaths's near-me twin. Shares runThrow's animation math (see its own
-   * comment) but keeps its own rAF handle (nearMeThrowFrame) and its own
-   * pair of sources, so a jurisdiction throw and a near-me throw can be on
-   * screen — and animating — at the same time without cancelling each other.
+   * Begin the continuous sonar-sweep rotation — called once, from
+   * showNearMe, after the first radius has already been applied (so
+   * `nearMeSweepRadiusM` has a real value the moment the first frame
+   * renders). A no-op if a sweep is already running: nothing else in this
+   * class calls this a second time while `nearMeOrigin` is still set, but
+   * the guard keeps that an invariant rather than a hope.
+   *
+   * Under REDUCED_MOTION there is no rAF loop at all — a real, continuously
+   * rotating sweep is a vestibular/motion concern (§4), not just a style
+   * preference, so this instead renders the static ring once via
+   * renderNearMeSweepStatic and stops there; every later radius change
+   * re-renders that same static ring from applyNearMeRadius directly, since
+   * there is no running loop to pick the change up on its own.
    */
-  private throwNearMeLines(origin: [number, number], targets: Array<[number, number]>) {
-    this.cancelNearMeThrow();
-    this.runThrow(origin, targets, NEARME_PATHS_SOURCE, NEARME_IMPACT_SOURCE, (id) => {
-      this.nearMeThrowFrame = id;
-    });
-  }
-
-  private cancelNearMeThrow() {
-    if (this.nearMeThrowFrame !== null) {
-      cancelAnimationFrame(this.nearMeThrowFrame);
-      this.nearMeThrowFrame = null;
+  private startNearMeSweep() {
+    if (REDUCED_MOTION) {
+      this.renderNearMeSweepStatic();
+      return;
     }
+    if (this.nearMeSweepFrame !== null) return;
+    this.nearMeSweepStart = performance.now();
+    this.nearMeSweepPrevAngle = 0;
+    this.nearMeBlips = [];
+    // Same THROW_FRAME_BUDGET_MS gate runThrow's own step() uses, and the
+    // same reason: renderNearMeSweepFrame's two setData calls are a worker
+    // round trip each, not a cheap buffer write, and this loop runs for as
+    // long as near-me stays open (up to NEARME_SWEEP_PERIOD_MS per
+    // rotation) rather than for one brief throw-and-land animation — paying
+    // that cost at every rAF tick (~60-144Hz) rather than ~30Hz bought
+    // nothing perceptible for a rotation this slow. -Infinity so the first
+    // frame always runs.
+    let lastSweepStepElapsed = -Infinity;
+    const step = () => {
+      // showNearMe/clearNearMe bump nearMeToken and null nearMeOrigin
+      // together — if the origin's gone, near-me mode ended and this loop
+      // has no business still ticking (clearNearMe also calls
+      // stopNearMeSweep directly, but this is the belt to that braces in
+      // case a stray frame lands between the two).
+      if (!this.nearMeOrigin) {
+        this.nearMeSweepFrame = null;
+        return;
+      }
+      const elapsed = performance.now() - this.nearMeSweepStart;
+      if (elapsed - lastSweepStepElapsed >= THROW_FRAME_BUDGET_MS) {
+        lastSweepStepElapsed = elapsed;
+        this.renderNearMeSweepFrame();
+      }
+      this.nearMeSweepFrame = requestAnimationFrame(step);
+    };
+    this.nearMeSweepFrame = requestAnimationFrame(step);
   }
 
-  /** Undo showNearMe — clears the marker and lines, and the control's pressed state. */
+  /**
+   * One frame of the sonar sweep: derive the current angle from elapsed
+   * time since `nearMeSweepStart` (so continuity survives a radius change —
+   * see applyNearMeRadius's own comment), draw the sweep line to that
+   * bearing at `nearMeSweepRadiusM`, and brighten every candidate within
+   * that same radius whose bearing the sweep just crossed — in place, on
+   * the candidate's own dot, via `blip` feature-state (withBlipBrighten),
+   * not a separate expanding-ring feature: a real PPI radar's phosphor
+   * brightens the target spot itself and decays there, it doesn't spawn a
+   * ring, and a feature-state write is far cheaper than a second source's
+   * setData() every frame (see nearMeBlips' own comment). Called at
+   * THROW_FRAME_BUDGET_MS resolution (~30Hz), not every rAF tick — see
+   * startNearMeSweep's own comment.
+   */
+  private renderNearMeSweepFrame() {
+    if (!this.nearMeOrigin) return;
+    const now = performance.now();
+    const elapsed = now - this.nearMeSweepStart;
+    const angle = ((elapsed % NEARME_SWEEP_PERIOD_MS) / NEARME_SWEEP_PERIOD_MS) * 360;
+    const prevAngle = this.nearMeSweepPrevAngle;
+
+    const endpoint = destinationPoint(this.nearMeOrigin, angle, this.nearMeSweepRadiusM);
+    const paths = this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined;
+    paths?.setData({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [this.nearMeOrigin, endpoint] },
+          properties: {},
+        },
+      ],
+    } as never);
+    this.updateNearMeSweepGlow(angle);
+
+    // "Did the sweep just pass this bearing" — a plain `prevAngle < b <=
+    // angle` breaks once per rotation at the 360°→0° wrap, where `angle`
+    // is numerically *less* than `prevAngle` despite the sweep having moved
+    // forward through zero. The `angle < prevAngle` branch below is exactly
+    // that wrapped frame: the swept arc is actually two pieces, prevAngle
+    // through 360 and 0 through angle, so a bearing counts if it falls in
+    // either.
+    const crossed = (bearing: number) =>
+      angle >= prevAngle ? bearing > prevAngle && bearing <= angle : bearing > prevAngle || bearing <= angle;
+
+    // Decay every still-tracked blip's brightness one step and drop it once
+    // it's fully faded — writing `blip: 0` on expiry rather than just
+    // dropping the entry, so the dot's own colour actually settles back to
+    // its base rather than freezing at whatever fractional brightness this
+    // was last written to.
+    this.nearMeBlips = this.nearMeBlips.filter((b) => {
+      const t = (now - b.startedAt) / IMPACT_MS;
+      const state = { source: this.sourceId(b.layerId), id: b.featureId };
+      if (t >= 1) {
+        this.map.setFeatureState(state, { blip: 0 });
+        return false;
+      }
+      this.map.setFeatureState(state, { blip: 1 - t });
+      return true;
+    });
+
+    // Only candidates the current radius actually connects can blip — the
+    // same NEARME_MAX_LINES-capped, nearest-first set applyNearMeRadius
+    // draws lines/records for, so "does this camera blip" always agrees
+    // with "is this camera in the DOM list." Capped by how many candidates
+    // have been considered this frame, not by `nearMeBlips.length` — that
+    // array can legitimately hold up to NEARME_MAX_LINES still-fading (not
+    // yet expired) entries from recent crossings in a dense area, and
+    // capping on its length meant a genuinely new crossing this same frame
+    // got silently dropped whenever older, still-animating blips happened
+    // to already fill it, even though it was well within the candidate set
+    // the DOM list itself shows.
+    let consideredCount = 0;
+    for (const candidate of this.nearMeCandidates) {
+      if (candidate.distance > this.nearMeSweepRadiusM) break;
+      if (consideredCount >= NEARME_MAX_LINES) break;
+      consideredCount += 1;
+      if (crossed(candidate.bearingDeg)) {
+        // A candidate already mid-fade from an earlier crossing this same
+        // near-me session gets its timer restarted rather than a second,
+        // duplicate entry — two entries for the same feature would fight
+        // over the same `blip` feature-state every subsequent frame, with
+        // whichever is processed later in the array each time silently
+        // winning.
+        this.nearMeBlips = this.nearMeBlips.filter(
+          (b) => !(b.layerId === candidate.layerId && b.featureId === candidate.featureId),
+        );
+        this.nearMeBlips.push({ layerId: candidate.layerId, featureId: candidate.featureId, startedAt: now });
+        this.map.setFeatureState(
+          { source: this.sourceId(candidate.layerId), id: candidate.featureId },
+          { blip: 1 },
+        );
+      }
+    }
+    this.nearMeSweepPrevAngle = angle;
+  }
+
+  /**
+   * A many-sided polygon approximation of the circle at `radiusM` around
+   * `nearMeOrigin` (a real circle isn't an expressible GeoJSON geometry) —
+   * shared by renderNearMeSweepStatic (REDUCED_MOTION's stand-in for the
+   * rotating sweep), renderNearMeBoundary (the persistent boundary, drawn
+   * under every motion preference), and the mile-marker rings (also
+   * renderNearMeBoundary) so all three read exactly the same radius from
+   * exactly the same math.
+   *
+   * Built by walking `destinationPoint` clockwise from `gapDeg / 2` around to
+   * `360 - gapDeg / 2` (0 is north, 90 is east — see that function's own
+   * comment — so this starts and ends at due north, matching standard
+   * map/clock orientation). With the default `gapDeg = 0` that's the full
+   * circle, closed (first point repeated last, valid as both a LineString
+   * ring and a Polygon ring); a non-zero gap instead leaves an open arc at
+   * the top — where nearMeMarkerLabelPoints' "1 mi"/"2 mi" text sits for a
+   * mile-marker ring, so the ring itself doesn't run directly under the
+   * label.
+   */
+  private nearMeRadiusRing(radiusM = this.nearMeSweepRadiusM, gapDeg = 0, steps = 72): [number, number][] {
+    if (!this.nearMeOrigin) return [];
+    const start = gapDeg / 2;
+    const end = 360 - gapDeg / 2;
+    const ring: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const bearing = start + ((end - start) * i) / steps;
+      ring.push(destinationPoint(this.nearMeOrigin, bearing, radiusM) as [number, number]);
+    }
+    return ring;
+  }
+
+  /**
+   * The intermediate mile-marker radii, in metres, for the *current*
+   * `nearMeSweepRadiusM` — whole-mile rings strictly inside the main
+   * boundary, plus a halfway ring when the radius itself is under a mile
+   * (today's slider floor is 1mi — NEARME_RADIUS_MIN_MI — so that branch
+   * isn't reachable from the slider as shipped, but this stays correct if
+   * that floor is ever lowered, rather than silently drawing nothing below
+   * it). Deliberately excludes the radius itself: that ring is already the
+   * main boundary (renderNearMeBoundary), and drawing a second, fainter ring
+   * exactly on top of it would either be invisible or read as a rendering
+   * glitch, not a second measurement.
+   */
+  private nearMeMileMarkerRadiiM(): Array<{ mi: number; radiusM: number }> {
+    const radiusMi = this.nearMeSweepRadiusM / 1609.344;
+    if (radiusMi < 1) {
+      const half = radiusMi / 2;
+      return half > 0 ? [{ mi: half, radiusM: half * 1609.344 }] : [];
+    }
+    const wholeMiles = Math.floor(radiusMi - 1e-9);
+    const markers: Array<{ mi: number; radiusM: number }> = [];
+    for (let mi = 1; mi <= wholeMiles; mi++) markers.push({ mi, radiusM: mi * 1609.344 });
+    return markers;
+  }
+
+  /**
+   * One label point per mile marker, sitting exactly in the gap
+   * nearMeRadiusRing's `gapDeg` leaves at that same radius's own top (bearing
+   * 0 from nearMeOrigin) — text reuses formatNearMeRadiusValue so a marker's
+   * wording always matches the radius slider's own live value ("1 mi", not
+   * a second, differently-worded convention).
+   */
+  private nearMeMarkerLabelPoints(): GeoJSON.Feature<GeoJSON.Point>[] {
+    if (!this.nearMeOrigin) return [];
+    return this.nearMeMileMarkerRadiiM().map(({ mi, radiusM }) => ({
+      type: 'Feature' as const,
+      geometry: {
+        type: 'Point' as const,
+        coordinates: destinationPoint(this.nearMeOrigin as [number, number], 0, radiusM),
+      },
+      properties: { label: this.formatNearMeRadiusValue(mi) },
+    }));
+  }
+
+  /**
+   * The three cardinal spokes — east (90°), south (180°), west (270°) — as
+   * LineStrings from `nearMeOrigin` out to the current `nearMeSweepRadiusM`.
+   * No 90-degree loop here: three bearings, not a general-purpose sweep, so
+   * they're just named. See NEARME_CARDINALS_SOURCE's own comment for why
+   * north is deliberately absent.
+   */
+  private nearMeCardinalLines(): GeoJSON.Feature<GeoJSON.LineString>[] {
+    if (!this.nearMeOrigin) return [];
+    const origin = this.nearMeOrigin;
+    const radiusM = this.nearMeSweepRadiusM;
+    return [90, 180, 270].map((bearing) => ({
+      type: 'Feature' as const,
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: [origin, destinationPoint(origin, bearing, radiusM) as [number, number]],
+      },
+      properties: {},
+    }));
+  }
+
+  /**
+   * Redraw the persistent radius boundary and its intermediate mile markers
+   * from the current `nearMeSweepRadiusM` — called from applyNearMeRadius on
+   * every radius change (drag and commit alike) and on the very first draw,
+   * unlike the sweep/its REDUCED_MOTION substitute, both of which this is
+   * independent of.
+   */
+  private renderNearMeBoundary() {
+    const ring = this.nearMeRadiusRing();
+    const boundary = this.map.getSource(NEARME_BOUNDARY_SOURCE) as GeoJSONSource | undefined;
+    boundary?.setData(
+      ring.length
+        ? ({
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: ring }, properties: {} }],
+          } as never)
+        : (EMPTY_FC as never),
+    );
+    const cardinals = this.map.getSource(NEARME_CARDINALS_SOURCE) as GeoJSONSource | undefined;
+    cardinals?.setData({
+      type: 'FeatureCollection',
+      features: this.nearMeCardinalLines(),
+    } as never);
+    const markerRadii = this.nearMeMileMarkerRadiiM();
+    const markers = this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined;
+    markers?.setData({
+      type: 'FeatureCollection',
+      features: markerRadii.map(({ radiusM }) => ({
+        type: 'Feature' as const,
+        // Gapped, not the plain closed ring a bare nearMeRadiusRing() call
+        // returns: the gap at bearing 0 is where nearMeMarkerLabelPoints'
+        // label for this exact radius sits, so the line doesn't run
+        // directly under the text.
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: this.nearMeRadiusRing(radiusM, NEARME_MARKER_LABEL_GAP_DEG),
+        },
+        properties: {},
+      })),
+    } as never);
+    const labels = this.map.getSource(NEARME_MARKER_LABELS_SOURCE) as GeoJSONSource | undefined;
+    labels?.setData({
+      type: 'FeatureCollection',
+      features: this.nearMeMarkerLabelPoints(),
+    } as never);
+  }
+
+  /**
+   * The REDUCED_MOTION substitute for the rotating sweep: a single static
+   * ring at `nearMeSweepRadiusM`, drawn on the sweep's own NEARME_PATHS_LAYER
+   * (nearMeRadiusRing — a real circle isn't an expressible GeoJSON geometry)
+   * — "this is the area currently being searched," with no rotation and no
+   * blips. A reader under reduced motion still gets every connected camera
+   * by name, same as anyone else, from the DOM list MapView.astro renders
+   * (onNearMeRecords) — this ring is a supplementary map cue, not the only
+   * way to learn what's in range, so skipping blips here costs nothing a
+   * screen reader or a motion-sensitive reader actually needs. Distinct from
+   * the always-on boundary ring (renderNearMeBoundary) drawn on its own
+   * layer regardless of motion preference — this one exists only because
+   * the sweep itself has nothing to show under REDUCED_MOTION.
+   */
+  private renderNearMeSweepStatic() {
+    if (!this.nearMeOrigin) return;
+    const ring = this.nearMeRadiusRing();
+    const paths = this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined;
+    paths?.setData({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: ring }, properties: {} }],
+    } as never);
+  }
+
+  /**
+   * Stop the sweep loop (if running) and drop any still-fading blips —
+   * clearNearMe and destroy() both call this. Each still-tracked blip's
+   * `blip` feature-state is explicitly zeroed before the array is dropped,
+   * not just abandoned mid-fade — otherwise a camera frozen at whatever
+   * brightness its last write left it at would stay tinted after near-me
+   * itself has closed, with nothing left running to ever finish its decay.
+   */
+  private stopNearMeSweep() {
+    if (this.nearMeSweepFrame !== null) {
+      cancelAnimationFrame(this.nearMeSweepFrame);
+      this.nearMeSweepFrame = null;
+    }
+    for (const b of this.nearMeBlips) {
+      this.map.setFeatureState({ source: this.sourceId(b.layerId), id: b.featureId }, { blip: 0 });
+    }
+    this.nearMeBlips = [];
+    this.hideNearMeSweepGlow();
+  }
+
+  /** Undo showNearMe — clears the marker and sweep, and the control's pressed state. */
   private clearNearMe() {
-    this.cancelNearMeThrow();
+    this.stopNearMeSweep();
+    this.hideNearMeMask();
+    this.setNearMeDotStyleFixed(false);
     if (this.nearMeDragFrame !== null) {
       cancelAnimationFrame(this.nearMeDragFrame);
       this.nearMeDragFrame = null;
@@ -4157,10 +5495,17 @@ export class MapController {
     this.nearMeCandidates = [];
     this.nearMeControl?.setActive(false);
     this.nearMeRadiusControl?.setVisible(false);
+    this.resetViewControl?.setVisible(true);
     this.events.onNearMeModeChange?.(false);
+    // Tears the DOM list down with the lines — see onNearMeRecords's own
+    // comment.
+    this.events.onNearMeRecords?.([]);
     (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
-    (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_BOUNDARY_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_CARDINALS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
+    (this.map.getSource(NEARME_MARKER_LABELS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
   }
 
   /**
@@ -4203,14 +5548,41 @@ export class MapController {
     return this.data.get(layerId) ?? [];
   }
 
+  /**
+   * One record by id, O(1) against the same index featureById (used
+   * internally by focusFeature) already reads — exposed so a caller outside
+   * this class (MapView.astro's near-me row resolver, which needs the same
+   * lookup) doesn't have to fall back to a linear `getFeatures(layerId)
+   * .find(...)` scan over the whole layer.
+   */
+  getFeatureById(layerId: string, id: string): LoadedFeature | undefined {
+    return this.featureById(layerId, id);
+  }
+
   destroy() {
     this.setOverlay(null);
     this.cancelThrow();
-    this.cancelNearMeThrow();
+    this.stopNearMeSweep();
+    // The third of three independent rAF handles this class runs
+    // (throwFrame/nearMeSweepFrame are the other two, cancelled above) —
+    // missed here, a radius-slider drag mid-flight at teardown would still
+    // fire its queued callback after map.remove(), touching a destroyed
+    // map/source.
+    if (this.nearMeDragFrame !== null) {
+      cancelAnimationFrame(this.nearMeDragFrame);
+      this.nearMeDragFrame = null;
+    }
     this.popup?.remove();
     this.hoverPopup?.remove();
     this.disposeContainerWatch?.();
     if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
+    // Not one of map.remove()'s own children (see ensureNearMeMaskEl's own
+    // comment on why it's inserted directly rather than via addControl), so
+    // it needs the same explicit teardown the controls below get.
+    this.nearMeMaskEl?.remove();
+    this.nearMeMaskEl = null;
+    this.nearMeSweepGlowEl?.remove();
+    this.nearMeSweepGlowEl = null;
     // Explicit onRemove() for all four — map.remove() only tears down
     // controls added via map.addControl(), and these were deliberately
     // kept out of that list (see the constructor).

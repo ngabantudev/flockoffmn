@@ -2,6 +2,7 @@
 import type { Locale, LayerDefinition } from '~/layers/types';
 import { LAYERS } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { labelForDetailField } from '~/lib/detailFields';
 
 interface Props {
   locale: Locale;
@@ -12,16 +13,13 @@ const t = useTranslations(locale);
 /**
  * A `nearMe` key in `detail` must also be a `detailFields` entry, so the label
  * is written once. Throwing here turns a registry typo into a build failure
- * rather than a card that silently renders "undefined: 3" to a reader.
+ * rather than a card that silently renders "undefined: 3" to a reader. Shared
+ * with the homepage map's own near-me list (labelForDetailField) so the two
+ * surfaces check the identical rule with the identical error wording — see
+ * that function's own comment.
  */
 function labelFor(layer: LayerDefinition, key: string): string {
-  const field = layer.detailFields.find((f) => f.key === key);
-  if (!field) {
-    throw new Error(
-      `Layer "${layer.id}" names "${key}" in nearMe.detail but has no detailFields entry for it.`,
-    );
-  }
-  return pick(field.label, locale);
+  return labelForDetailField(layer, key, 'nearMe.detail', locale);
 }
 
 /**
@@ -51,6 +49,12 @@ const nearMeLayers = LAYERS.filter((l) => l.nearMe).map((l) => {
           detail: (n.list.detail ?? []).map((key) => ({ key, label: labelFor(l, key) })),
           initialCount: n.list.initialCount ?? 8,
           showOnMap: n.list.showOnMap ?? false,
+          // See NearMeSummary.list.unattributedLabel/showCoordsWhenUnattributed's
+          // own comments in layers/types.ts — MapView.astro's own near-me DOM
+          // list honors the exact same two fields, so the two surfaces can
+          // never describe the same blank-operator camera differently.
+          unattributedLabel: n.list.unattributedLabel ? pick(n.list.unattributedLabel, locale) : null,
+          showCoordsWhenUnattributed: n.list.showCoordsWhenUnattributed ?? false,
         }
       : null,
   };
@@ -201,7 +205,11 @@ const homePath = localePath(locale, '/');
     metersToMiles,
     findContaining,
     distanceToGeometryMeters,
+    formatMiles,
+    formatCoords,
+    LOW_ACCURACY_MILES,
   } from '~/lib/geo.mjs';
+  import { isUnattributedValue } from '~/lib/detailFields';
   import { resolveAuthorities, operatorGap, displayName } from '~/lib/authority.mjs';
   import { MN_BOUNDS } from '~/lib/mapStyle';
 
@@ -223,6 +231,8 @@ const homePath = localePath(locale, '/');
       detail: { key: string; label: string }[];
       initialCount: number;
       showOnMap: boolean;
+      unattributedLabel: string | null;
+      showCoordsWhenUnattributed: boolean;
     } | null;
   };
 
@@ -253,10 +263,6 @@ const homePath = localePath(locale, '/');
    */
   const inMinnesota = ([lng, lat]: [number, number]) =>
     lng >= MN_BOUNDS[0][0] && lng <= MN_BOUNDS[1][0] && lat >= MN_BOUNDS[0][1] && lat <= MN_BOUNDS[1][1];
-
-  // Below this, a 5-mile radius stops being a meaningful promise — worth
-  // saying so, not worth alarming a reader whose fix was merely ordinary.
-  const LOW_ACCURACY_MILES = 2;
 
   type Jurisdiction = {
     geoid: string;
@@ -362,10 +368,7 @@ const homePath = localePath(locale, '/');
     template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
 
   const miles = (m: number) => metersToMiles(m);
-  const fmtMiles = (m: number) => {
-    const mi = miles(m);
-    return mi < 0.1 ? '< 0.1' : mi.toFixed(mi < 10 ? 1 : 0);
-  };
+  const fmtMiles = formatMiles;
 
   /* --------------------------- Place search --------------------------- */
 
@@ -505,14 +508,17 @@ const homePath = localePath(locale, '/');
     li.setAttribute('style', `border-color:${layer.color}`);
 
     const entityValue = list.entityKey ? row.feature.properties.attributes?.[list.entityKey] : null;
+    const unattributed = isUnattributedValue(entityValue);
     const head = el('div', 'flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5');
     head.append(
       el(
         'span',
         'text-sm text-ink-100',
-        entityValue === null || entityValue === undefined || entityValue === ''
-          ? S.entityUnattributed
-          : String(entityValue),
+        // See NearMeSummary.list.unattributedLabel's own comment — a layer
+        // that names one gets it instead of the generic fallback, so the
+        // same record doesn't read differently here than on the homepage
+        // map's own near-me list (MapView.astro's own nearMeEntityName).
+        unattributed ? (list.unattributedLabel ?? S.entityUnattributed) : String(entityValue),
       ),
       el('span', 'font-mono text-xs text-ink-400 shrink-0', `${fmtMiles(row.distance)} mi`),
     );
@@ -520,8 +526,20 @@ const homePath = localePath(locale, '/');
 
     for (const d of list.detail) {
       const value = row.feature.properties.attributes?.[d.key];
-      if (value === null || value === undefined || value === '') continue;
+      if (isUnattributedValue(value)) continue;
       li.append(el('p', 'mt-0.5 text-xs text-ink-400', `${d.label}: ${value}`));
+    }
+
+    // The record's own position — only when there's no operator name to show
+    // in its place, and only in addition to the detail lines above.
+    if (list.showCoordsWhenUnattributed && unattributed && row.feature.geometry.type === 'Point') {
+      li.append(
+        el(
+          'p',
+          'mt-0.5 font-mono text-xs text-ink-400',
+          formatCoords((row.feature.geometry as GeoJSON.Point).coordinates as [number, number]),
+        ),
+      );
     }
 
     if (list.showOnMap && row.feature.geometry.type === 'Point') {

@@ -57,7 +57,7 @@ export const en: Record<string, string> = {
   loading: 'Loading map data…',
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
-  mapNearMe: 'What’s near me',
+  mapNearMe: 'ALPRs Near Me',
   mapNearMeFound: '{count} nearby, {shown} shown.',
   mapNearMeNone: 'Nothing mapped within range of this location.',
   // Announced via #map-status (aria-live) whenever a record is selected —
@@ -70,6 +70,17 @@ export const en: Record<string, string> = {
   // narrow which cameras/readers are drawn.
   mapNearMeRadiusLabel: 'Search radius',
   mapNearMeRadiusValue: '{mi} mi',
+  // The homepage map's own DOM record list for "near me" — reuses
+  // mapNearMe/mapNearMeFound/mapNearMeNone/locationDenied/etc. above for the
+  // sheet's title and status text; these are the pieces those don't cover.
+  mapNearMeListSummary: '{found} found, {shown} shown within {radius} mi',
+  mapNearMeBack: 'Back to list',
+  mapNearMeCrossListed: 'Cross-listed',
+  mapNearMeLoading: 'Looking for nearby cameras…',
+  mapNearMeLayerError: 'Could not load {layer} — results for it may be incomplete.',
+  // Appended to #detail-tab's sr-only name while the sheet shows the list
+  // rather than one record — see MapView.astro's [data-detail-tab-name].
+  mapNearMeListTabSuffix: ', {count} nearby',
   closePanel: 'Close panel',
   noResults: 'No records match the current filters.',
   // Label for the pull tab that collapses/expands the detail panel — see

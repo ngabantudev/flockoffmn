@@ -715,6 +715,14 @@
  * the container is still how setVisible(false) keeps it gone entirely
  * between lookups — with the control now out of flow, that toggle no longer
  * has anything else to disturb.
+ *
+ * `top: 50%` here is a fallback for the instant before JS runs — the stack
+ * holds more siblings than just the near-me button (theme toggle, reset,
+ * zoom buttons, attribution), so the stack's own middle isn't the near-me
+ * button's middle. MapView.astro's syncNearMeRadiusPlacement overwrites
+ * `top` with an inline pixel value aligned to that button specifically as
+ * soon as it runs, which wins over this rule regardless of specificity —
+ * inline style always beats a class.
  */
 .near-me-radius-control {
   position: absolute;
@@ -738,6 +746,42 @@
  */
 .near-me-radius-control[hidden] {
   display: none;
+}
+/*
+ * Below `xl`, MapView.astro's own syncNearMeRadiusPlacement reparents this
+ * same control (there is only ever the one live `<input>` — see its own
+ * comment) out of #map-corner-controls and into the near-me sheet's
+ * list-mode header, toggling this modifier class in the same move. The
+ * popover positioning above only makes sense while the element is actually
+ * a child of the corner-controls stack; parented into an ordinary header
+ * flex row instead, it needs to lay out as an ordinary flex child of that
+ * row, not float over the map with its old `right`/`top` offsets. Higher
+ * specificity than the bare class above wins regardless of source order,
+ * including inside the `width < 40rem` touch-sizing block further down —
+ * only the properties that actually differ between the two placements are
+ * restated here.
+ */
+.near-me-radius-control.near-me-radius-control--inline {
+  position: static;
+  transform: none;
+  max-width: none;
+  padding: 0;
+}
+/*
+ * The near-me sheet header's own mount point for the reparented control —
+ * see MapView.astro's `nearMeRadiusMobileSlot` comment. Collapses to
+ * nothing at `>=xl`, where syncNearMeRadiusPlacement leaves it empty (the
+ * control lives back in the corner popover there); once the control is
+ * actually moved in below `xl`, it sits in the same row as the sheet's own
+ * heading (headingRow, MapView.astro's renderNearMeList), right-aligned by
+ * that row's own `justify-between` — this wrapper just needs to not shrink
+ * out of its own width when the heading text is long.
+ */
+.nearme-radius-slot:empty {
+  display: none;
+}
+.nearme-radius-slot:not(:empty) {
+  flex-shrink: 0;
 }
 .near-me-radius-input {
   width: 6.5rem;
@@ -1008,6 +1052,43 @@
   .layer-group-chevron,
   .layer-group::details-content {
     transition: none;
+  }
+}
+
+/*
+ * A landscape phone caps #detail-panel's sheet to a couple hundred pixels
+ * at most — the near-me record list still fits, but a full three-line row
+ * (entity, distance, detail line, cross-listed marker) does not without
+ * scrolling defeating the point of a compact list. Condensing each row to
+ * one line (entity + distance only) is a CSS-only concern, not a JS
+ * layout mode — the row markup never changes shape, only what's painted.
+ *
+ * Visually hidden, not removed: `[data-nearme-row-secondary]` marks the
+ * detail line and the cross-listed marker (see MapView.astro's
+ * buildNearMeRow), and this reproduces Tailwind's own `.sr-only` technique
+ * rather than a `display: none` — the row's accessible name already
+ * carries both in full (see the same function), so hiding them visually
+ * here keeps the DOM order, and what a screen reader announces, identical
+ * at every orientation. No horizontal-scroll/carousel treatment: this site
+ * has no such pattern anywhere, and one here would break the
+ * DOM-order-matches-map-order parity #4 requires.
+ *
+ * 420px is a deliberately generous cutoff — comfortably above a phone's
+ * landscape height (iPhone SE: 375px; most modern phones: 400-430px) and
+ * comfortably below a small tablet's, so this only ever fires on a phone
+ * actually rotated, not a short desktop window.
+ */
+@media (max-height: 420px) and (orientation: landscape) {
+  [data-nearme-row-secondary] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
   }
 }
 
