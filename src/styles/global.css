@@ -149,6 +149,58 @@
 }
 
 /*
+ * The news rail's control strip — `.news-band-sub`, light mode only.
+ *
+ * The rail's chip strip is a third surface: it has to read as chrome sitting
+ * between the masthead and the list, not as the first row of content. In dark
+ * mode `bg-ink-950` does that on its own. In light mode it does not — ink-950
+ * resolves to #f0f0f0 against a #f2f2f2 rail, two units apart and effectively
+ * invisible, so the strip vanished and the chips floated on the list.
+ *
+ * The values are mndatacenter.org's `.band-sub`, which solves the identical
+ * problem between its navy header and its off-white list. That is not a
+ * borrowed palette: the two projects already share this one. Every light token
+ * in the ramp above is value-for-value what that project publishes (#f2f2f2,
+ * #e5e5e5, #1b1b1b, #0062b2), and `.nav-band` below already carries the same
+ * 2024 flag colours its `.band` does. This fills the one gap.
+ *
+ * Water Blue (#52c9e8) is the accent here rather than the body's #0062b2,
+ * carried down from the flag band above for a measured reason that project
+ * records: the link blue lands at about 2.1:1 on this grey, which fails, and
+ * the flag's own light blue is the colour already available at this depth.
+ *
+ * Dark mode is deliberately untouched — no override exists outside these two
+ * light selectors, so the strip falls through to the ink ramp it uses today.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .news-band-sub {
+    --color-ink-950: #303030;
+    --color-ink-900: #303030;
+    --color-ink-850: #4a4a4a;
+    --color-ink-800: #ffffff38;
+    --color-ink-700: #ffffff38;
+    --color-ink-400: #b2b2b2;
+    --color-ink-300: #d9d9d9;
+    --color-ink-200: #e6e6e6;
+    --color-ink-100: #ffffff;
+    --color-accent: #52c9e8;
+  }
+}
+
+:root[data-theme='light'] .news-band-sub {
+  --color-ink-950: #303030;
+  --color-ink-900: #303030;
+  --color-ink-850: #4a4a4a;
+  --color-ink-800: #ffffff38;
+  --color-ink-700: #ffffff38;
+  --color-ink-400: #b2b2b2;
+  --color-ink-300: #d9d9d9;
+  --color-ink-200: #e6e6e6;
+  --color-ink-100: #ffffff;
+  --color-accent: #52c9e8;
+}
+
+/*
  * The flag band — `.nav-band`, applied to Nav.astro's top `<header>` and
  * bottom mobile `<nav>`, light mode only. wealldobettermn.org's own header
  * (`SiteHeader.tsx`'s `.band` class, src/app/globals.css) doesn't carry the

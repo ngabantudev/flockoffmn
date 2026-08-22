@@ -295,7 +295,11 @@ const screened = archive ? screenedTotal(archive) : 0;
   <div
     class:list={[
       'flex shrink-0 items-center gap-2.5',
-      rail ? 'border-b border-ink-800 px-4 py-3' : 'pb-1',
+      // `nav-band` is the site header's own light-mode flag treatment (Night
+      // Sky Blue, light-mode only, dark untouched). The rail masthead is the
+      // same kind of surface and mndatacenter heads its panel identically, so
+      // it reuses the class rather than restating the colours.
+      rail ? 'nav-band border-b border-ink-800 bg-ink-900 px-4 py-3' : 'pb-1',
     ]}
   >
     <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-ink-800">
@@ -341,7 +345,10 @@ const screened = archive ? screenedTotal(archive) : 0;
   <div
     data-news-controls
     hidden
-    class:list={['shrink-0', rail ? '' : 'mt-6']}
+    class:list={[
+      'shrink-0',
+      rail ? 'news-band-sub border-b border-ink-800 bg-ink-950' : 'mt-6',
+    ]}
   >
     {/*
       The band. `bg-ink-950` against the rail's own `bg-ink-900` is the third
@@ -354,7 +361,7 @@ const screened = archive ? screenedTotal(archive) : 0;
       aria-label={t('newsRangeLabel')}
       class:list={[
         'flex flex-wrap items-center gap-1.5',
-        rail ? 'border-b border-ink-800 bg-ink-950 px-4 py-2.5' : '',
+        rail ? 'px-4 py-2.5' : '',
       ]}
     >
       {
@@ -392,7 +399,7 @@ const screened = archive ? screenedTotal(archive) : 0;
           aria-label={t('newsTopicLabel')}
           class:list={[
             'flex flex-wrap items-center gap-1.5',
-            rail ? 'border-b border-ink-800 px-4 py-2' : 'mt-2',
+            rail ? 'px-4 pb-2.5' : 'mt-2',
           ]}
         >
           <button
