@@ -715,6 +715,14 @@
  * the container is still how setVisible(false) keeps it gone entirely
  * between lookups — with the control now out of flow, that toggle no longer
  * has anything else to disturb.
+ *
+ * `top: 50%` here is a fallback for the instant before JS runs — the stack
+ * holds more siblings than just the near-me button (theme toggle, reset,
+ * zoom buttons, attribution), so the stack's own middle isn't the near-me
+ * button's middle. MapView.astro's syncNearMeRadiusPlacement overwrites
+ * `top` with an inline pixel value aligned to that button specifically as
+ * soon as it runs, which wins over this rule regardless of specificity —
+ * inline style always beats a class.
  */
 .near-me-radius-control {
   position: absolute;

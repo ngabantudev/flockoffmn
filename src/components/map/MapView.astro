@@ -1239,9 +1239,25 @@ const strings = {
     if (detailDockMql.matches) {
       if (radiusEl.parentElement !== cornerControlsEl) cornerControlsEl?.appendChild(radiusEl);
       radiusEl.classList.remove('near-me-radius-control--inline');
+      // Align the popover's own vertical centre with the "near me" button's
+      // centre specifically, not global.css's plain `top: 50%` fallback
+      // (the corner stack's own middle) — the stack holds more than two
+      // evenly-sized siblings (theme toggle, reset, near-me, zoom buttons,
+      // attribution), so the stack's middle and the near-me button's own
+      // middle are two different pixels. `.maplibregl-ctrl-group` is the
+      // button's own container and cornerControlsEl's direct child, so its
+      // `offsetTop` is already in the same coordinate space radiusEl's own
+      // `top` resolves against.
+      const nearMeGroup = cornerControlsEl
+        ?.querySelector<HTMLElement>('.near-me-control-button')
+        ?.closest<HTMLElement>('.maplibregl-ctrl-group');
+      if (nearMeGroup) {
+        radiusEl.style.top = `${nearMeGroup.offsetTop + nearMeGroup.offsetHeight / 2}px`;
+      }
     } else {
       if (radiusEl.parentElement !== nearMeRadiusMobileSlot) nearMeRadiusMobileSlot.appendChild(radiusEl);
       radiusEl.classList.add('near-me-radius-control--inline');
+      radiusEl.style.top = '';
     }
   }
   detailDockMql.addEventListener('change', syncNearMeRadiusPlacement);
