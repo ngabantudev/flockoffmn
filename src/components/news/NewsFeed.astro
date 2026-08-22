@@ -356,10 +356,13 @@ const screened = archive ? screenedTotal(archive) : 0;
     first article — and that is the right shape: the chips are how you drive
     the panel, so they belong where a toolbar belongs.
 
-    The topic facet follows in the same block rather than getting a third band.
-    It is secondary (this feed has four topics; the range is the axis everyone
-    uses) and a third full-width strip would push the first headline below the
-    fold on a laptop.
+    The topic facet gets a section of its own below it, on the panel surface
+    rather than in the charcoal strip. Two control groups sharing one band read
+    as one long row of pills where nothing says which axis a given pill belongs
+    to — the range is time, the facet is subject, and mixing them makes both
+    harder to scan. Putting the facet on the panel also means its active pill
+    picks up the panel's own accent rather than the strip's Water Blue, so each
+    group is coloured by the surface it sits on.
 
     Still hidden until the script reveals them, which is the progressive-
     enhancement contract: with no JS the reader gets every story in the archive
@@ -368,10 +371,7 @@ const screened = archive ? screenedTotal(archive) : 0;
   <div
     data-news-controls
     hidden
-    class:list={[
-      'shrink-0',
-      rail ? 'news-band-sub border-b border-ink-800 bg-ink-950' : 'mt-6',
-    ]}
+    class:list={['shrink-0', rail ? '' : 'mt-6']}
   >
     {/*
       The band. `bg-ink-950` against the rail's own `bg-ink-900` is the third
@@ -384,7 +384,7 @@ const screened = archive ? screenedTotal(archive) : 0;
       aria-label={t('newsRangeLabel')}
       class:list={[
         'flex flex-wrap items-center gap-1.5',
-        rail ? 'px-4 py-2.5' : '',
+        rail ? 'news-band-sub border-b border-ink-800 bg-ink-950 px-4 py-2.5' : '',
       ]}
     >
       {
@@ -422,7 +422,7 @@ const screened = archive ? screenedTotal(archive) : 0;
           aria-label={t('newsTopicLabel')}
           class:list={[
             'flex flex-wrap items-center gap-1.5',
-            rail ? 'px-4 pb-2.5' : 'mt-2',
+            rail ? 'border-b border-ink-800 bg-ink-900 px-4 py-2.5' : 'mt-3',
           ]}
         >
           <button
