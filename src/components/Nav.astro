@@ -1,5 +1,5 @@
 ---
-import { Map, LocateFixed, Network, Megaphone, Database, BookOpen, Info, Ghost, Radar, Siren, BookLock } from 'lucide-astro';
+import { Map, LocateFixed, Network, Newspaper, Megaphone, Database, BookOpen, Info, Ghost, Radar, Siren, BookLock } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
 import { useTranslations, localePath, stripLocale, LOCALES, LOCALE_NAMES } from '~/lib/i18n';
 
@@ -27,6 +27,7 @@ const links = [
   { href: '/', label: t('navMap'), shortLabel: t('navMapShort'), icon: Map, spookyIcon: Ghost },
   { href: '/near-me', label: t('navNearMe'), shortLabel: t('navNearMeShort'), icon: LocateFixed, spookyIcon: Radar },
   { href: '/explainer', label: t('navExplainer'), shortLabel: t('navExplainerShort'), icon: Network },
+  { href: '/news', label: t('navNews'), shortLabel: t('navNewsShort'), icon: Newspaper },
   { href: '/act', label: t('navAct'), shortLabel: t('navActShort'), icon: Megaphone, spookyIcon: Siren },
   { href: '/data', label: t('navData'), shortLabel: t('navDataShort'), icon: Database },
   { href: '/sources', label: t('navSources'), shortLabel: t('navSourcesShort'), icon: BookOpen, spookyIcon: BookLock },

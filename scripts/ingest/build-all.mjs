@@ -84,6 +84,11 @@ const STEPS = [
   // agreement check it measures every run, and ej-cumulative.geojson for the
   // 2020 tract boundaries each block resolves against. See its own header.
   { name: 'holc-detail', script: 'mn/holc-detail.mjs' },
+  // Last, and dependent on nothing. Press coverage is a Tier 4 lead list, not
+  // a layer (see src/layers/news.ts), and Google is the least reliable upstream
+  // in this pipeline — so it runs after every real layer has already written.
+  { name: 'news', script: 'mn/news.mjs' },
+
 ];
 
 function run(script) {
