@@ -3014,6 +3014,15 @@ export class MapController {
    * than an HTML string, so a value out of a data file can never be markup.
    */
   private updateHoverCard(layer: ClientLayer, id: string, lngLat: maplibregl.LngLat) {
+    // While "ALPRs Near Me" is active, a tapped/clicked camera's data
+    // already opens in the detail panel (focusFeature, called from the
+    // map's own click handler) — a hover-card popup floating over that same
+    // dot repeated the same data redundantly, reading as a second UI
+    // disagreeing with the panel about where "the record" actually lives.
+    // Many touch browsers fire a synthetic hover/mousemove at the tapped
+    // point alongside the click, which is what put a popup over the dot in
+    // the first place on a device with no real pointer to hover with.
+    if (this.nearMeOrigin) return this.hideHoverCard();
     if (!layer.hoverCard) return this.hideHoverCard();
     // A selected record already has the full panel open beside the map;
     // a card repeating it would just cover the ground the reader is
