@@ -906,6 +906,15 @@ const strings = {
     onNearMeModeChange: (active) => {
       nearMeActive = active;
       setNearMeLayerMode(active);
+      // The desktop radius popover aligns to the near-me button's own
+      // vertical centre (syncNearMeRadiusPlacement), computed from that
+      // button's offsetTop within the corner-controls column — which shifts
+      // by one slot the instant resetViewControl hides/shows alongside this
+      // same mode change (mapController.ts's toggleNearMe/clearNearMe).
+      // Recomputed here, not left to the load/breakpoint-change triggers
+      // syncNearMeRadiusPlacement's own comment describes, since neither of
+      // those fires from a plain near-me toggle.
+      syncNearMeRadiusPlacement();
       if (active) {
         // A fresh lookup — clear whatever the previous one left behind
         // before its own onNearMeRecords/onNearMeResult have a chance to
@@ -1230,12 +1239,16 @@ const strings = {
    * Moves the radius control's real DOM node between the corner-controls
    * stack (`>=xl`, matching #detail-panel's own dock breakpoint —
    * `detailDockMql`, declared above alongside #detail-panel's own dock
-   * sync) and `nearMeRadiusMobileSlot`. Called once on load and again only
-   * when that breakpoint is crossed — not on every sheet-mode change, per
-   * this feature's own spec. `--inline` is the JS-toggled modifier class
-   * global.css's `.near-me-radius-control` rules key off of to swap from
-   * floating-popover positioning to laying out inline within whatever flex
-   * row it's currently parented in.
+   * sync) and `nearMeRadiusMobileSlot`, and — while docked in the corner
+   * stack — realigns its vertical position to the near-me button's own
+   * centre (see below). Called once on load, on every breakpoint crossing,
+   * and on every onNearMeModeChange (resetViewControl hiding/showing
+   * alongside that same event shifts the near-me button up or down one
+   * slot in the column, which the alignment has to track) — not on every
+   * sheet-mode change beyond that, per this feature's own spec. `--inline`
+   * is the JS-toggled modifier class global.css's `.near-me-radius-control`
+   * rules key off of to swap from floating-popover positioning to laying
+   * out inline within whatever flex row it's currently parented in.
    */
   function syncNearMeRadiusPlacement() {
     const radiusEl = document.querySelector<HTMLElement>('.near-me-radius-control');

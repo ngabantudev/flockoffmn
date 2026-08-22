@@ -4265,6 +4265,15 @@ export class MapController {
     }
     this.nearMeLocating = true;
     this.nearMeControl?.setActive(true);
+    // Optimistic, the same instant nearMeControl itself goes active — not
+    // deferred to showNearMe, which only runs once geolocation actually
+    // resolves. resetView jumps to METRO_BOUNDS, which would silently
+    // abandon a live lookup's own camera fit without ever clearing that
+    // lookup's state; hiding it the moment the reader commits to "locate
+    // near me" (rather than only once a fix arrives, maybe several seconds
+    // later) means there's never a window where it's visible but wrong to
+    // press.
+    this.resetViewControl?.setVisible(false);
     this.events.onNearMeModeChange?.(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -4276,6 +4285,7 @@ export class MapController {
         this.nearMeControl?.setActive(false);
         // The mode never actually started — roll the layer-forcing back
         // rather than leaving the reader in it with no location to show.
+        this.resetViewControl?.setVisible(true);
         this.events.onNearMeModeChange?.(false);
         // Three distinct codes, three distinct reasons — collapsing any pair
         // of them tells the reader something false. A timeout isn't a
@@ -5247,6 +5257,7 @@ export class MapController {
     this.nearMeCandidates = [];
     this.nearMeControl?.setActive(false);
     this.nearMeRadiusControl?.setVisible(false);
+    this.resetViewControl?.setVisible(true);
     this.events.onNearMeModeChange?.(false);
     // Tears the DOM list down with the lines — see onNearMeRecords's own
     // comment.
