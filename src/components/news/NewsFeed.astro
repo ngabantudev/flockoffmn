@@ -33,23 +33,31 @@ const all = archive?.items ?? [];
 const RAIL_LIMIT = 60;
 
 /**
- * The longest window the rail offers. Anything longer is the archive's job.
+ * The longest window the rail offers.
  *
- * Seven days, and the number is measured rather than chosen for feel. The rail
- * is `xl`-only, so every byte it renders is shipped to phones that will never
- * display it — §0.7 puts that reader first, and this is one of the few places
- * on the site where the two audiences pull in opposite directions. Measured on
- * the map page, gzipped: a 30-day window costs 9,755 B for 29 stories, 14 days
- * costs 6,194 B, and 7 days costs 3,829 B for 8 — against a 52 KB page. Thirty
- * days was adding roughly a fifth to a document a phone user gets nothing from.
+ * Thirty days. It was briefly seven, on a payload argument that used the wrong
+ * denominator, and the correction is worth writing down because the reasoning
+ * looked rigorous while being wrong.
  *
- * It also has to land on a chip boundary, which is what rules out the middle
- * option. The chips below are filtered to what the window can back, so a
- * 14-day window offers 24H and 7D and nothing else — the second week would be
- * rendered, shipped, and unreachable by any control. Seven is the largest
- * window where every rendered story is also reachable.
+ * The rail is `xl`-only, so everything it renders ships to phones that never
+ * display it, and that cost is real: measured gzipped on the map page, a
+ * 30-day window is 9,755 B against 3,829 B for seven days. The mistake was
+ * comparing that against the HTML document alone (~52 KB) and concluding a
+ * 30-day rail added "roughly a fifth" to what a phone downloads.
+ *
+ * It does not. Measured on a 390px viewport against the deployed site, the map
+ * page transfers about 889 KB — 466 KB of JavaScript and 375 KB of map data
+ * before a single headline. The extra six kilobytes is 0.7% of that. §0.7 asks
+ * that the reader on an old phone comes first, and it still does; it does not
+ * ask for a 0.7% saving paid for by cutting three weeks of coverage out of the
+ * panel.
+ *
+ * The window still has to land on a chip boundary — the chips below are
+ * filtered to what the slice can actually back, so a 14-day window would render
+ * a second week that no control could reach. Thirty is a boundary; fourteen is
+ * not.
  */
-const RAIL_WINDOW_DAYS = 7;
+const RAIL_WINDOW_DAYS = 30;
 
 /*
  * The rail slices by WINDOW, then caps for payload. It used to slice by count,
@@ -394,7 +402,7 @@ const screened = archive ? screenedTotal(archive) : 0;
             data-news-range
             data-days={opt.days}
             aria-pressed={opt.days === DEFAULT_DAYS ? 'true' : 'false'}
-            class="rounded-full border border-ink-700 px-3 py-1 text-[9px] font-bold tracking-wider text-ink-400 uppercase transition-colors hover:text-ink-100"
+            class="inline-flex min-h-6 items-center rounded-full border border-ink-700 px-3 py-1 text-[9px] font-bold tracking-wider text-ink-400 uppercase transition-colors hover:text-ink-100"
           >
             {opt.label}
           </button>
@@ -430,7 +438,7 @@ const screened = archive ? screenedTotal(archive) : 0;
             data-news-topic
             data-topic="all"
             aria-pressed="true"
-            class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
+            class="inline-flex min-h-6 items-center rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
           >
             {t('newsTopicAll')}
           </button>
@@ -440,7 +448,7 @@ const screened = archive ? screenedTotal(archive) : 0;
               data-news-topic
               data-topic={topic}
               aria-pressed="false"
-              class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
+              class="inline-flex min-h-6 items-center rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
             >
               {TOPIC_LABELS[topic]}
             </button>
