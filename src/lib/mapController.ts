@@ -2867,13 +2867,20 @@ export class MapController {
           // that collide would misrepresent how many are there.
           'icon-allow-overlap': true,
           'icon-ignore-placement': true,
+          // Scaled up from the original 0.75/1.05/1.3 curve — a plate
+          // reader's actual effective read range is a wider notion of "how
+          // far this camera sees" than the original sizing read as; this
+          // still isn't a measurement (see ensureConeSprite's own comment on
+          // DEFAULT_CONE_ARC — the *width* was never a measurement either),
+          // just a stylised indicator now drawn to look like it reaches as
+          // far as the direction it names, not a token pointing at it.
           'icon-size': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            tier.pointsFrom, 0.75,
-            tier.pointsFrom + 2, 1.05,
-            18, 1.3,
+            tier.pointsFrom, 1.3,
+            tier.pointsFrom + 2, 1.9,
+            18, 2.4,
           ],
         },
         paint: {
@@ -3837,9 +3844,21 @@ export class MapController {
       // the detail sheet covers. Half the obstruction, because the offset
       // moves the target away from the container's centre and the visible
       // strip's centre sits exactly that far above it.
+      //
+      // A `bearingKey` layer (ALPR's own coverage cone — see addLayer's own
+      // comment) draws nothing below `pointsFrom`, and fades in over the two
+      // zooms past it (icon-opacity, addLayer). A flat 13 floor landed a
+      // selected camera below that threshold whenever `pointsFrom` (14 for
+      // ALPR) was higher, so the reader who just selected a camera never
+      // actually saw its cone without a further manual zoom of their own —
+      // the one moment the cone matters most. `+ 2` lands at the cone's own
+      // fully-resolved opacity (0.95) rather than its faint 0.4 arrival
+      // value, so selecting a camera shows its coverage clearly, not
+      // technically-but-barely.
+      const zoomFloor = layer.bearingKey ? Math.max(13, scaleOf(layer).pointsFrom + 2) : 13;
       this.map.easeTo({
         center: representativePoint(feature.geometry) as [number, number],
-        zoom: Math.max(this.map.getZoom(), 13),
+        zoom: Math.max(this.map.getZoom(), zoomFloor),
         offset: [0, -this.bottomObstruction() / 2],
         duration,
       });
