@@ -448,8 +448,6 @@ const NEARME_ORIGIN_GLOW_LAYER = 'nearme-origin-glow';
 const NEARME_ORIGIN_LAYER = 'nearme-origin';
 const NEARME_PATHS_SOURCE = 'src-nearme-paths';
 const NEARME_PATHS_LAYER = 'nearme-paths';
-const NEARME_IMPACT_SOURCE = 'src-nearme-impacts';
-const NEARME_IMPACT_LAYER = 'nearme-impacts';
 /**
  * The persistent radius boundary — unlike the sweep and its blips, drawn at
  * all times near-me is active, under both motion preferences (see
@@ -545,7 +543,6 @@ const NEARME_STACK = [
   NEARME_MARKER_LABELS_LAYER,
   NEARME_BOUNDARY_LAYER,
   NEARME_PATHS_LAYER,
-  NEARME_IMPACT_LAYER,
   NEARME_ORIGIN_GLOW_LAYER,
   NEARME_ORIGIN_LAYER,
 ];
@@ -815,8 +812,13 @@ export class MapController {
   private nearMeSweepRadiusM = 0;
   /** The sweep's own angle, in degrees, as of the previous rendered frame — bearing-crossing detection needs both the previous and current angle to tell whether a candidate's bearing fell between them, including across the 360°→0° wrap. */
   private nearMeSweepPrevAngle = 0;
-  /** Candidates the sweep has recently crossed and whose impact ring is still fading — see renderNearMeSweepFrame. Cleared on stopNearMeSweep. */
-  private nearMeBlips: Array<{ point: [number, number]; startedAt: number }> = [];
+  /**
+   * Candidates the sweep has recently crossed and whose `blip` feature-state
+   * brightness is still decaying in place on the candidate's own dot — see
+   * renderNearMeSweepFrame and withBlipBrighten. Cleared (each entry's
+   * feature-state zeroed first) on stopNearMeSweep.
+   */
+  private nearMeBlips: Array<{ layerId: string; featureId: string; startedAt: number }> = [];
   /** Set once the near-me sources/layers exist, so a second lookup only calls setData rather than re-adding them (see ensureRelatedLayers's own reasoning). */
   private nearMeLayersReady = false;
   /**
@@ -1356,6 +1358,31 @@ export class MapController {
   }
 
   /**
+   * Wrap a near-me-eligible (ALPR) layer's `circle-color` in an
+   * `interpolate` keyed on its own `blip` feature-state — 0 (or unset, via
+   * `coalesce`) is the layer's ordinary colour, 1 is `nearMeSweepColor`'s
+   * own phosphor green, and MapLibre interpolates the colour itself in
+   * between. Written by renderNearMeSweepFrame's bearing-crossing loop, and
+   * nowhere else: a camera's dot brightens the instant the sweep passes its
+   * bearing and decays back to its own colour over IMPACT_MS, in place —
+   * see that method's own comment for why this replaced a separate
+   * expanding-ring layer (a real PPI radar's phosphor doesn't spawn a ring,
+   * and feature-state is cheaper than a second source's setData() every
+   * frame).
+   */
+  private withBlipBrighten(base: maplibregl.ExpressionSpecification | string): maplibregl.ExpressionSpecification {
+    return [
+      'interpolate',
+      ['linear'],
+      ['coalesce', ['feature-state', 'blip'], 0],
+      0,
+      base,
+      1,
+      this.nearMeSweepColor,
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
    * Swap every near-me-eligible layer's circle-radius/circle-stroke-width/
    * circle-opacity between their ordinary zoom-based curves and the
    * "fixed" variant frozen at each curve's own `pointsFrom` endpoint (see
@@ -1660,7 +1687,11 @@ export class MapController {
       // a bitmap rather than held in a paint property.
       if (this.map.getLayer(`${layer.id}-points`)?.type === 'circle') {
         const circleColor = this.pointCircleColor(layer);
-        this.map.setPaintProperty(`${layer.id}-points`, 'circle-color', circleColor);
+        this.map.setPaintProperty(
+          `${layer.id}-points`,
+          'circle-color',
+          layer.nearMeRadiusMi ? this.withBlipBrighten(circleColor) : circleColor,
+        );
         this.map.setPaintProperty(
           `${layer.id}-points`,
           'circle-stroke-color',
@@ -1721,7 +1752,6 @@ export class MapController {
       const sweepColor = this.nearMeSweepColor;
       const nearMeColor = this.nearMeColor;
       this.map.setPaintProperty(NEARME_PATHS_LAYER, 'line-color', sweepColor);
-      this.map.setPaintProperty(NEARME_IMPACT_LAYER, 'circle-stroke-color', sweepColor);
       this.map.setPaintProperty(NEARME_ORIGIN_GLOW_LAYER, 'circle-color', nearMeColor);
       this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-color', nearMeColor);
       this.map.setPaintProperty(NEARME_ORIGIN_LAYER, 'circle-stroke-color', this.basemapColor);
@@ -2879,7 +2909,11 @@ export class MapController {
       type: 'circle',
       source: src,
       paint: {
-        'circle-color': circleColor,
+        // A near-me-eligible (ALPR) layer's dot brightens toward
+        // nearMeSweepColor when the sonar sweep crosses its bearing — see
+        // withBlipBrighten's own comment. Every other layer's dots keep
+        // their plain colour, unwrapped.
+        'circle-color': layer.nearMeRadiusMi ? this.withBlipBrighten(circleColor) : circleColor,
         /*
          * Below `emergeFrom`, radius follows the same 5/10/15 curve every
          * point layer has always used. A layer that also names `speckleFrom`
@@ -4369,24 +4403,13 @@ export class MapController {
       },
     });
 
-    // One ring per active "blip" — a candidate whose bearing the sweep has
-    // just crossed (renderNearMeSweepFrame) — using the exact same
-    // grow-then-fade `t`-driven expressions the old throw-landing rings
-    // used, just re-triggered by a bearing crossing instead of a line
-    // landing.
-    this.map.addSource(NEARME_IMPACT_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
-    this.map.addLayer({
-      id: NEARME_IMPACT_LAYER,
-      type: 'circle',
-      source: NEARME_IMPACT_SOURCE,
-      paint: {
-        'circle-radius': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 22] as never,
-        'circle-color': 'rgba(0,0,0,0)',
-        'circle-stroke-color': this.nearMeSweepColor,
-        'circle-stroke-width': ['interpolate', ['linear'], ['get', 't'], 0, 3, 1, 0.5] as never,
-        'circle-stroke-opacity': ['interpolate', ['linear'], ['get', 't'], 0, 0.9, 1, 0] as never,
-      },
-    });
+    // A bearing crossing (renderNearMeSweepFrame) no longer draws a separate
+    // "impact ring" feature here — it brightens the crossed camera's own dot
+    // in place, via `blip` feature-state read by that layer's own
+    // `circle-color` (withBlipBrighten, addLayer). See renderNearMeSweepFrame's
+    // own comment for why: a real PPI radar's phosphor brightens the target
+    // spot itself and decays there, it doesn't spawn an expanding ring, and
+    // feature-state is cheaper than a second source's setData() every frame.
 
     // The origin itself — a small glow plus a solid dot, the same two-layer
     // treatment RELATION uses for the building a throw comes from,
@@ -4928,8 +4951,13 @@ export class MapController {
    * One frame of the sonar sweep: derive the current angle from elapsed
    * time since `nearMeSweepStart` (so continuity survives a radius change —
    * see applyNearMeRadius's own comment), draw the sweep line to that
-   * bearing at `nearMeSweepRadiusM`, and blip every candidate within that
-   * same radius whose bearing the sweep just crossed. Called at
+   * bearing at `nearMeSweepRadiusM`, and brighten every candidate within
+   * that same radius whose bearing the sweep just crossed — in place, on
+   * the candidate's own dot, via `blip` feature-state (withBlipBrighten),
+   * not a separate expanding-ring feature: a real PPI radar's phosphor
+   * brightens the target spot itself and decays there, it doesn't spawn a
+   * ring, and a feature-state write is far cheaper than a second source's
+   * setData() every frame (see nearMeBlips' own comment). Called at
    * THROW_FRAME_BUDGET_MS resolution (~30Hz), not every rAF tick — see
    * startNearMeSweep's own comment.
    */
@@ -4964,10 +4992,21 @@ export class MapController {
     const crossed = (bearing: number) =>
       angle >= prevAngle ? bearing > prevAngle && bearing <= angle : bearing > prevAngle || bearing <= angle;
 
-    // Drop expired blips before adding new ones, not after — otherwise a
-    // still-fading blip from an earlier crossing could occupy a
-    // NEARME_MAX_LINES slot this frame's genuinely new crossings should get.
-    this.nearMeBlips = this.nearMeBlips.filter((b) => now - b.startedAt < IMPACT_MS);
+    // Decay every still-tracked blip's brightness one step and drop it once
+    // it's fully faded — writing `blip: 0` on expiry rather than just
+    // dropping the entry, so the dot's own colour actually settles back to
+    // its base rather than freezing at whatever fractional brightness this
+    // was last written to.
+    this.nearMeBlips = this.nearMeBlips.filter((b) => {
+      const t = (now - b.startedAt) / IMPACT_MS;
+      const state = { source: this.sourceId(b.layerId), id: b.featureId };
+      if (t >= 1) {
+        this.map.setFeatureState(state, { blip: 0 });
+        return false;
+      }
+      this.map.setFeatureState(state, { blip: 1 - t });
+      return true;
+    });
 
     // Only candidates the current radius actually connects can blip — the
     // same NEARME_MAX_LINES-capped, nearest-first set applyNearMeRadius
@@ -4986,20 +5025,23 @@ export class MapController {
       if (consideredCount >= NEARME_MAX_LINES) break;
       consideredCount += 1;
       if (crossed(candidate.bearingDeg)) {
-        this.nearMeBlips.push({ point: candidate.point, startedAt: now });
+        // A candidate already mid-fade from an earlier crossing this same
+        // near-me session gets its timer restarted rather than a second,
+        // duplicate entry — two entries for the same feature would fight
+        // over the same `blip` feature-state every subsequent frame, with
+        // whichever is processed later in the array each time silently
+        // winning.
+        this.nearMeBlips = this.nearMeBlips.filter(
+          (b) => !(b.layerId === candidate.layerId && b.featureId === candidate.featureId),
+        );
+        this.nearMeBlips.push({ layerId: candidate.layerId, featureId: candidate.featureId, startedAt: now });
+        this.map.setFeatureState(
+          { source: this.sourceId(candidate.layerId), id: candidate.featureId },
+          { blip: 1 },
+        );
       }
     }
     this.nearMeSweepPrevAngle = angle;
-
-    const impacts = this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined;
-    impacts?.setData({
-      type: 'FeatureCollection',
-      features: this.nearMeBlips.map((b) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: b.point },
-        properties: { t: (now - b.startedAt) / IMPACT_MS },
-      })),
-    } as never);
   }
 
   /**
@@ -5166,15 +5208,23 @@ export class MapController {
       type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates: ring }, properties: {} }],
     } as never);
-    const impacts = this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined;
-    impacts?.setData(EMPTY_FC as never);
   }
 
-  /** Stop the sweep loop (if running) and drop any still-fading blips — clearNearMe and destroy() both call this. */
+  /**
+   * Stop the sweep loop (if running) and drop any still-fading blips —
+   * clearNearMe and destroy() both call this. Each still-tracked blip's
+   * `blip` feature-state is explicitly zeroed before the array is dropped,
+   * not just abandoned mid-fade — otherwise a camera frozen at whatever
+   * brightness its last write left it at would stay tinted after near-me
+   * itself has closed, with nothing left running to ever finish its decay.
+   */
   private stopNearMeSweep() {
     if (this.nearMeSweepFrame !== null) {
       cancelAnimationFrame(this.nearMeSweepFrame);
       this.nearMeSweepFrame = null;
+    }
+    for (const b of this.nearMeBlips) {
+      this.map.setFeatureState({ source: this.sourceId(b.layerId), id: b.featureId }, { blip: 0 });
     }
     this.nearMeBlips = [];
     this.hideNearMeSweepGlow();
@@ -5203,7 +5253,6 @@ export class MapController {
     this.events.onNearMeRecords?.([]);
     (this.map.getSource(NEARME_ORIGIN_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_PATHS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
-    (this.map.getSource(NEARME_IMPACT_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_BOUNDARY_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_CARDINALS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
     (this.map.getSource(NEARME_MARKERS_SOURCE) as GeoJSONSource | undefined)?.setData(EMPTY_FC as never);
