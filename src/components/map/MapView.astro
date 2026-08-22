@@ -1522,9 +1522,14 @@ const strings = {
    * The back affordance's own handler — returns to 'list' without losing
    * track of which record was open, then scrolls/focuses that row so the
    * reader lands back where they left off rather than at the top of a long
-   * list.
+   * list. Also undoes the map's own half of the selection (deselectPoint):
+   * the camera eases back to wherever it was before the reader zoomed into
+   * this camera, and its focus-frame marker clears — a camera going back
+   * to "not selected" without the map itself agreeing read as the record
+   * panel and the map disagreeing about whether anything was still open.
    */
   function backToList() {
+    controller.deselectPoint();
     sheetMode = 'list';
     renderNearMeList();
     if (!openRecord) return;
@@ -1550,15 +1555,21 @@ const strings = {
    * back-to-list affordance exactly when it is currently one of near-me's
    * own drawn candidates — not "was this reached from the list", which
    * would also have to cover a map tap landing on the same record the list
-   * already names. Deselection (feature/layer both null — a map tap on
-   * empty space) closes the sheet outright, matching this panel's
-   * pre-existing behaviour; it does not fall back to 'list' even while
-   * near-me is active, since a tap on empty map is the reader stepping back
-   * out, not asking for the list.
+   * already names.
+   *
+   * Deselection (feature/layer both null — a map tap on empty space) falls
+   * back to the near-me list, not a full close, while near-me is active:
+   * "ALPRs Near Me" is the one modal a reader in that mode should always be
+   * able to find their way back to short of actually toggling the mode
+   * itself off (the near-me sheet's own header lost its ✕ for exactly this
+   * reason — see renderNearMeList's own comment). Only when near-me is
+   * *not* active does a deselecting tap close the sheet outright, its
+   * original behaviour.
    */
   function handleSelect(feature: LoadedFeature | null, layer?: ClientLayer) {
     if (!feature || !layer) {
-      closeSheet();
+      if (nearMeActive) backToList();
+      else closeSheet();
       return;
     }
     const featureId = feature.properties.id;

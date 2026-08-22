@@ -1874,6 +1874,23 @@ export class MapController {
   }
 
   /**
+   * Ease back to wherever `preSelectCamera` was captured from (see
+   * focusFeature's own comment) and drop it, then release the point
+   * focus-frame marker — the map-side half of "undo a selection," shared by
+   * clearSelection (the generic deselect: empty tap, a second tap on an
+   * already-selected ward) and deselectPoint (near-me's own "back to list,"
+   * which needs the same camera/marker undo but not the rest of
+   * clearSelection's generic cleanup — see that method's own comment).
+   */
+  private restoreCameraAndReleasePoint() {
+    if (this.preSelectCamera) {
+      this.easeToCamera(this.preSelectCamera, REDUCED_MOTION ? 0 : 500);
+      this.preSelectCamera = null;
+    }
+    this.releasePointSelection();
+  }
+
+  /**
    * Undo a tap-to-select: back to the pre-tap camera, detail panel closed,
    * and any `polygonClick: 'highlight'` ward released. This is the one
    * shared "undo" both a tap on empty ground and a second tap on an
@@ -1882,14 +1899,27 @@ export class MapController {
    * somewhere this layer's own click handler never sees.
    */
   private clearSelection() {
-    if (this.preSelectCamera) {
-      this.easeToCamera(this.preSelectCamera, REDUCED_MOTION ? 0 : 500);
-      this.preSelectCamera = null;
-    }
+    this.restoreCameraAndReleasePoint();
     this.releaseHighlight();
-    this.releasePointSelection();
     this.releaseHover();
     this.events.onSelect?.(null);
+  }
+
+  /**
+   * Near-me's own "deselect a camera" — backToList's map-side counterpart
+   * (MapView.astro). Restores the camera to wherever it was before the
+   * current selection and releases the focus-frame marker, same as
+   * clearSelection, but deliberately *without* clearSelection's
+   * `onSelect?.(null)` — that fires MapView.astro's handleSelect(null),
+   * which closes the sheet outright (see handleSelect's own comment). Going
+   * back to the near-me list is a real deselection of the camera the
+   * reader was just looking at, but the sheet is supposed to reappear
+   * showing that list, not close — backToList already handles switching
+   * sheetMode back to 'list' itself; this only ever needs to undo the map
+   * side of the selection.
+   */
+  deselectPoint() {
+    this.restoreCameraAndReleasePoint();
   }
 
   /**
@@ -3418,12 +3448,9 @@ export class MapController {
       // Same move the search results already give a record: centre and zoom
       // in on it, not just open its detail. A tapped record is a reader
       // saying "this one" — the camera should go to it, the way it already
-      // does when the same record is picked from search. Saved once, the
-      // first tap of a run, so tapping a second pin without ever tapping
-      // away still returns to where the reader actually started.
-      if (!this.preSelectCamera) {
-        this.preSelectCamera = this.currentCamera();
-      }
+      // does when the same record is picked from search. focusFeature
+      // itself captures preSelectCamera (see its own comment) — one tap
+      // here is the same "first call of a run" it already accounts for.
       this.focusFeature(layer.id, id);
     });
   }
@@ -3793,11 +3820,26 @@ export class MapController {
     }
   }
 
-  /** Centre on a feature and open its detail. Used by search and a map tap alike. */
+  /**
+   * Centre on a feature and open its detail. Used by search, a map tap, and
+   * a near-me list row alike — the one funnel every route to a record
+   * passes through (see the class's own click-handler comment), so this is
+   * also the one place `preSelectCamera` gets captured, not just the map's
+   * own click handler: a near-me list row calls this directly, bypassing
+   * that handler entirely, and deselectPoint (backToList's own map-side
+   * counterpart) needs somewhere to return the camera to regardless of
+   * which route reached the selection. Saved once, the first call of a
+   * run — set only if unset, so selecting a second record without ever
+   * deselecting still returns to where the reader actually started, not to
+   * the first record's own view.
+   */
   focusFeature(layerId: string, featureId: string) {
     const feature = this.featureById(layerId, featureId);
     const layer = this.layers.find((l) => l.id === layerId);
     if (!feature || !layer) return;
+    if (!this.preSelectCamera) {
+      this.preSelectCamera = this.currentCamera();
+    }
 
     // onSelect first, camera move second — deliberately, not the more obvious
     // order. onSelect is what opens the detail panel, and the panel is a
