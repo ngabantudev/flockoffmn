@@ -38,6 +38,28 @@
  * writes that person into a public git repository permanently. §1b settles that
  * trade in advance so it is not re-argued per headline.
  */
+/**
+ * Verbs that make a headline an account of someone's experience rather than a
+ * report about an institution. "Describes", "waited", "spent" attach to a
+ * person; "approves", "renews", "signs" attach to a body.
+ */
+const NARRATIVE =
+  '(describes|described|recounts|recounted|tells|told|shares|shared|recalls|recalled' +
+  '|waited|waits|waiting|spent|fears|feared|hopes|struggled|survived|endured)';
+
+/**
+ * Officials acting in their capacity are §1a — named on purpose. A pronoun
+ * beside one of these is "the sheriff defends his department's contract", not a
+ * person being exposed, so the pronoun rules below stand down when one appears.
+ *
+ * Role words only. `county`, `city`, `department`, `office` and `agency` were in
+ * this list and had to come out: in this feed they are place and facility names
+ * rather than people, and "Sherburne County jail" was suppressing the whole
+ * guard — measured, on a headline the rules should have caught.
+ */
+const OFFICIAL_ROLE =
+  /\b(sheriff|police chief|chief|mayor|council|councilmember|commissioner|county attorney|attorney general|governor|senator|representative|board|administrator|superintendent|spokesperson)\b/;
+
 const PERSON_RULES = [
   {
     // §1b, first clause — anyone subject to enforcement.
@@ -66,7 +88,7 @@ const PERSON_RULES = [
     // naming. An institution is never "a man".
     rule: 'person-subject-headline',
     pattern:
-      /\b(man|woman|boy|girl|teen|teenager|child|toddler|father|mother|couple|grandmother|grandfather|driver|passenger|student|worker|resident)\b[^.]{0,40}\b(accused|charged|arrested|jailed|sentenced|convicted|faces|face|pleads|pleaded|returns|return|deported|detained|identified|held|freed|released|sues|sued|escapes|escaped|flees|fled|remains|remain|tried|sought|solicited|hired)\b/,
+      /\b(man|woman|boy|girl|teen|teenager|child|toddler|father|mother|couple|grandmother|grandfather|driver|passenger|student|worker|resident)\b[^.]{0,40}\b(accused|charged|arrested|jailed|sentenced|convicted|faces|face|pleads|pleaded|returns|return|deported|detained|identified|held|freed|released|sues|sued|escapes|escaped|flees|fled|remains|remain|tried|sought|solicited|hired|describes|described|recounts|recounted|tells|told|shares|shared|recalls|recalled|waited|waits|waiting|spent|fears|feared|hopes|struggled|survived|endured)\b/,
   },
   {
     // §1b, second clause — rank-and-file officers, agents, corrections staff.
@@ -97,6 +119,49 @@ const PERSON_RULES = [
     pattern:
       /\b(license plate number|plate number|caught on camera|captured on camera|surveillance footage shows|tracked (his|her|their) (car|vehicle|movements)|identified through|facial recognition (match|identified|led to))\b/,
   },
+  {
+    // A pronoun doing subject work with no official role in the headline.
+    //
+    // Added after a survivor check reported a clean archive while three
+    // person-shaped headlines passed every rule — "He waited 14 months for a
+    // hearing" names nobody and describes one person entirely. Matches in both
+    // directions, because a headline puts the pronoun either side of its verb:
+    // "he waited" and "describes her night" are the same shape.
+    rule: 'pronoun-subject',
+    test: (haystack) =>
+      !OFFICIAL_ROLE.test(haystack) &&
+      new RegExp(
+        `\\b(he|she|his|her|him|hers)\\b[^.]{0,40}\\b${NARRATIVE}\\b` +
+          `|\\b${NARRATIVE}\\b[^.]{0,25}\\b(he|she|his|her|him|hers)\\b` +
+          `|^\\s*(he|she)\\b`,
+      ).test(haystack),
+  },
+  {
+    // A family as the subject of an experience.
+    //
+    // Narrowed deliberately: "families protest camera expansion" is residents
+    // in aggregate, which §1b permits and this project exists to report. "One
+    // family is still waiting" is a household's private circumstances, which it
+    // does not.
+    rule: 'family-subject',
+    test: (haystack) =>
+      !OFFICIAL_ROLE.test(haystack) &&
+      new RegExp(`\\bfamil(y|ies)\\b[^.]{0,40}\\b${NARRATIVE}\\b|\\b(one|a|the) famil(y|ies)\\b`).test(haystack),
+  },
+  {
+    // First-person account of someone's own experience.
+    //
+    // "my" has to be paired with a narrative verb rather than matched bare: a
+    // newsroom's "our visual coverage" and an official quoted saying "can we get
+    // rid of the rest of them" are both first-person and both systemic. Both
+    // are in the committed archive, and a bare first-person rule dropped both.
+    rule: 'first-person-account',
+    test: (haystack) =>
+      !OFFICIAL_ROLE.test(haystack) &&
+      new RegExp(
+        `\\bmy\\b[^.]{0,40}\\b${NARRATIVE}\\b|\\b${NARRATIVE}\\b[^.]{0,20}\\bmy\\b|\\bwhat it.s like\\b|\\bmy story\\b`,
+      ).test(haystack),
+  },
 ];
 
 /**
@@ -109,8 +174,14 @@ const PERSON_RULES = [
  * @returns {{ok: true} | {ok: false, rule: string}}
  */
 export function screenForPeople(haystack) {
-  for (const { rule, pattern } of PERSON_RULES) {
-    if (pattern.test(haystack)) return { ok: false, rule };
+  for (const { rule, pattern, test } of PERSON_RULES) {
+    // Two rule shapes, on purpose. Most rules are a bare regex, which is the
+    // most readable form and the one to prefer. The three that carry a guard
+    // clause — "…and no official role is named" — supply a `test` function
+    // instead, because expressing a negative lookahead over an unrelated
+    // vocabulary inside the same regex makes it unreadable, and this is the one
+    // file in the repo where the patterns have to stay legible to be auditable.
+    if (pattern ? pattern.test(haystack) : test(haystack)) return { ok: false, rule };
   }
   return { ok: true };
 }
