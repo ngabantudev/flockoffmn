@@ -706,20 +706,25 @@ const strings = {
         it. The overlay it opens is not built until first opened — see
         CompareView.astro's start()/IntersectionObserver.
 
-        top-left rather than alongside reset-view at the bottom: the bottom
-        of the map is already the most crowded strip on screen — the
-        colour-coded key, the scale bar, and the attribution control all
-        live there, and on a narrow phone that's not enough room for a
-        fourth thing. A first pass put this button at bottom-right and it
-        overlapped the attribution control badly enough that a scripted
-        click on a 375px-wide viewport landed on attribution instead of the
-        button. Top-left has nothing else on it at any breakpoint.
+        bottom-left, not bottom-right: #map-corner-controls (theme toggle,
+        reset, near-me, zoom buttons, attribution) already owns the
+        bottom-right corner at every breakpoint — a first pass put this
+        button there instead and it overlapped the attribution control badly
+        enough that a scripted click on a 375px-wide viewport landed on
+        attribution instead of the button. Bottom-left has nothing else on it
+        at `>=xl`, where #detail-panel docks as a static sidebar rather than
+        overlaying the map. Below `xl`, an open sheet (#detail-panel,
+        `absolute inset-x-0 bottom-0`) does cover this corner while it's
+        open — no explicit z-index needed to resolve that: the sheet's own
+        z-20 already wins the stack over this button's default z-index, so
+        it's simply hidden underneath rather than floating awkwardly on top
+        of sheet content.
       */}
       <button
         id="open-compare"
         type="button"
         title={t('compareOpenButton')}
-        class="absolute top-2 left-2 max-w-[75vw] rounded-full border border-ink-700 bg-ink-900/90 px-3 py-1.5 text-xs font-medium text-ink-100 hover:bg-ink-800"
+        class="absolute bottom-2 left-2 max-w-[75vw] rounded-full border border-ink-700 bg-ink-900/90 px-3 py-1.5 text-xs font-medium text-ink-100 hover:bg-ink-800"
       >
         {t('compareOpenButton')}
       </button>
@@ -1452,15 +1457,16 @@ const strings = {
         ),
       );
     }
-    const close = el(
-      'button',
-      'flex h-9 w-9 shrink-0 items-center justify-center rounded text-ink-400 hover:text-ink-100',
-      '✕',
-    );
-    close.setAttribute('type', 'button');
-    close.setAttribute('aria-label', S.closePanel);
-    close.addEventListener('click', () => closeSheet());
-    header.append(titleWrap, close);
+    // No close (✕) button here on purpose — near-me's own map toggle
+    // ("locate near me") is the one control that starts *and* ends this
+    // mode, per its own onNearMeModeChange comment: turning it off already
+    // calls closeSheet() itself, in the same place the sweep stops, the
+    // mask hides, and the forced-clarity dot style resets. A second exit
+    // control that only closed the sheet — the sweep/mask/pinned camera all
+    // still running underneath, sonar sweep included — read as "back to the
+    // regular map" when it wasn't; removing it makes the one real exit the
+    // only exit.
+    header.append(titleWrap);
     detailEl.append(header);
 
     const body = el('div', 'p-3');
