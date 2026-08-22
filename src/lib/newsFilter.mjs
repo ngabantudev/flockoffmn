@@ -315,33 +315,39 @@ export function hasSubject(haystack) {
  */
 export function hasMinnesota(haystack, source, agencyTerms = []) {
   /*
-   * A named agency is the strongest Minnesota signal available, and the one
-   * this filter was missing.
-   *
-   * "Alexandria Police Department" is unambiguous in a way "Alexandria" is not:
-   * the place name alone is shared with Virginia and Louisiana, but the agency
-   * name is a specific body. That matters because the veto below only fires
-   * when another state is *named* — a headline reading "Alexandria police
-   * expand plate readers" names no state, so a bare place list would admit
-   * Virginia's version of it with nothing to catch the error.
+   * A named agency is the strongest Minnesota signal available, and the one this
+   * filter was missing — measured, 52 of 116 filed agencies were recognised
+   * before it existed.
    *
    * The terms come from the BCA's own § 13.824 filings via
    * public/data/reference/bca-alpr-agencies.json — the agencies that reported
-   * operating this equipment. Passed in by the caller rather than read here,
-   * because this module has to stay dependency-free and importable from the
-   * browser (same contract as ~/lib/geo.mjs), and a file read would end that.
+   * operating this equipment. They are passed in by the caller rather than read
+   * here, because this module has to stay dependency-free and importable from
+   * the browser, the same contract ~/lib/geo.mjs keeps.
    *
-   * Measured before this existed: 52 of 116 filed agencies were recognised.
+   * The check itself is at the BOTTOM of this function, below the veto, and the
+   * ordering is the whole point — see the note on that line.
    */
-  if (agencyTerms.some((t) => haystack.includes(t))) return true;
-
   if (UNAMBIGUOUS_MINNESOTA_TERMS.some((t) => haystack.includes(t))) return true;
 
   // Everything below rests on a signal another state can produce, so a named
-  // other state or national framing vetoes it.
+  // other state or national framing vetoes it. THE AGENCY LIST IS BELOW THIS
+  // LINE, not above it: half the filed agencies are "<place> Police
+  // Department" for a place name another state also has — Alexandria, Blaine,
+  // Rochester, Duluth, Winona all appear in the BCA's own filings and all have
+  // a same-named department elsewhere. Checking agencies first meant "Alexandria
+  // Police Department expands plate readers, Virginia officials say" was
+  // published as Minnesota coverage with "virginia" sitting in the haystack the
+  // veto was reading. The reason the agency signal exists is still served here:
+  // a headline that names no state at all never reaches the veto's `return
+  // false`, so "Alexandria police expand plate readers" is still admitted.
   if (OTHER_STATE_PATTERN.test(haystack) || NATIONAL_SCOPE_PATTERN.test(haystack)) return false;
 
-  return MINNESOTA_TERMS.some((t) => haystack.includes(t)) || isLocalOutlet(source);
+  return (
+    agencyTerms.some((t) => haystack.includes(t)) ||
+    MINNESOTA_TERMS.some((t) => haystack.includes(t)) ||
+    isLocalOutlet(source)
+  );
 }
 
 /* ------------------------------------------------------------------ *

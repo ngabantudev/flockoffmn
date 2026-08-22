@@ -60,6 +60,30 @@ const NARRATIVE =
 const OFFICIAL_ROLE =
   /\b(sheriff|police chief|chief|mayor|council|councilmember|commissioner|county attorney|attorney general|governor|senator|representative|board|administrator|superintendent|spokesperson)\b/;
 
+/*
+ * The three NARRATIVE-derived patterns, compiled once at module load.
+ *
+ * They were built with `new RegExp(...)` inside the rule's own `test`, which
+ * recompiles three patterns for every headline screened — and the screen now
+ * runs twice per item per ingest (at intake, and again over the whole merged
+ * archive). Compiling them here changes no behaviour and keeps the literals as
+ * readable as the bare-regex rules beside them, which is what §1b's audit
+ * requirement asks of this file.
+ */
+const PRONOUN_SUBJECT = new RegExp(
+  `\\b(he|she|his|her|him|hers)\\b[^.]{0,40}\\b${NARRATIVE}\\b` +
+    `|\\b${NARRATIVE}\\b[^.]{0,25}\\b(he|she|his|her|him|hers)\\b` +
+    `|^\\s*(he|she)\\b`,
+);
+
+const FAMILY_SUBJECT = new RegExp(
+  `\\bfamil(y|ies)\\b[^.]{0,40}\\b${NARRATIVE}\\b|\\b(one|a|the) famil(y|ies)\\b`,
+);
+
+const FIRST_PERSON_ACCOUNT = new RegExp(
+  `\\bmy\\b[^.]{0,40}\\b${NARRATIVE}\\b|\\b${NARRATIVE}\\b[^.]{0,20}\\bmy\\b|\\bwhat it.s like\\b|\\bmy story\\b`,
+);
+
 const PERSON_RULES = [
   {
     // §1b, first clause — anyone subject to enforcement.
@@ -73,9 +97,16 @@ const PERSON_RULES = [
     // are how a newsroom ordinarily writes about an individual, which is the
     // point: the screen has now leaked three times, and each time the leak was
     // a synonym rather than a new category.
+    //
+    // `charge[sd]?:` is a separate alternative OUTSIDE the `\b(...)\b` group
+    // and not another word inside it. Inside, the group's trailing `\b` sits
+    // after the colon and so demands a word character immediately following —
+    // which "Charge: Sherburne man held" does not have, it has a space. The
+    // alternative was written that way and could never fire on the headline
+    // shape it was added for.
     rule: 'enforcement-subject',
     pattern:
-      /\b(detained|detainee|detainees|arrested|arrest of|deported|deportation of|facing deportation|in custody|taken into custody|released from|charged with|pleads?|pleaded|convicted|sentenced|indicted|faces? charges|awaiting trial|removal proceedings|asylum seeker|asylum-seeker|undocumented (man|woman|immigrant|resident|student|worker|father|mother)|green card holder|visa holder|accused|accused of|felony|misdemeanor|booked into|jailed|returns? home from|criminal charges|from custody|out of custody|escapes?|escaped|remains in custody|remains in detention|remains in ice|still in custody|still detained|charge:|charged:)\b/,
+      /\b(detained|detainee|detainees|arrested|arrest of|deported|deportation of|facing deportation|in custody|taken into custody|released from|charged with|pleads?|pleaded|convicted|sentenced|indicted|faces? charges|awaiting trial|removal proceedings|asylum seeker|asylum-seeker|undocumented (man|woman|immigrant|resident|student|worker|father|mother)|green card holder|visa holder|accused|accused of|felony|misdemeanor|booked into|jailed|returns? home from|criminal charges|from custody|out of custody|escapes?|escaped|remains in custody|remains in detention|remains in ice|still in custody|still detained)\b|\bcharge[sd]?:/,
   },
   {
     // The person-shaped headline, added after the first live measurement.
@@ -128,13 +159,7 @@ const PERSON_RULES = [
     // directions, because a headline puts the pronoun either side of its verb:
     // "he waited" and "describes her night" are the same shape.
     rule: 'pronoun-subject',
-    test: (haystack) =>
-      !OFFICIAL_ROLE.test(haystack) &&
-      new RegExp(
-        `\\b(he|she|his|her|him|hers)\\b[^.]{0,40}\\b${NARRATIVE}\\b` +
-          `|\\b${NARRATIVE}\\b[^.]{0,25}\\b(he|she|his|her|him|hers)\\b` +
-          `|^\\s*(he|she)\\b`,
-      ).test(haystack),
+    test: (haystack) => !OFFICIAL_ROLE.test(haystack) && PRONOUN_SUBJECT.test(haystack),
   },
   {
     // A family as the subject of an experience.
@@ -144,9 +169,7 @@ const PERSON_RULES = [
     // family is still waiting" is a household's private circumstances, which it
     // does not.
     rule: 'family-subject',
-    test: (haystack) =>
-      !OFFICIAL_ROLE.test(haystack) &&
-      new RegExp(`\\bfamil(y|ies)\\b[^.]{0,40}\\b${NARRATIVE}\\b|\\b(one|a|the) famil(y|ies)\\b`).test(haystack),
+    test: (haystack) => !OFFICIAL_ROLE.test(haystack) && FAMILY_SUBJECT.test(haystack),
   },
   {
     // First-person account of someone's own experience.
@@ -156,11 +179,7 @@ const PERSON_RULES = [
     // rid of the rest of them" are both first-person and both systemic. Both
     // are in the committed archive, and a bare first-person rule dropped both.
     rule: 'first-person-account',
-    test: (haystack) =>
-      !OFFICIAL_ROLE.test(haystack) &&
-      new RegExp(
-        `\\bmy\\b[^.]{0,40}\\b${NARRATIVE}\\b|\\b${NARRATIVE}\\b[^.]{0,20}\\bmy\\b|\\bwhat it.s like\\b|\\bmy story\\b`,
-      ).test(haystack),
+    test: (haystack) => !OFFICIAL_ROLE.test(haystack) && FIRST_PERSON_ACCOUNT.test(haystack),
   },
 ];
 

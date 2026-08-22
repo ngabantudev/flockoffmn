@@ -60,6 +60,11 @@ export interface NewsArchive {
     screened: {
       /** Per-rule counts from the §1b person screen, and nothing else. */
       person: Record<string, number>;
+      /**
+       * Items already in the archive that a newer §1b rule caught on the most
+       * recent run. Keyed by rule name, empty when nothing was retro-removed.
+       */
+      personRemovedFromArchive: Record<string, number>;
       /** Tag pages and stream spam. Not people — kept out of `person` so the
        *  published "dropped because they were about people" figure is true. */
       nonArticle: number;
