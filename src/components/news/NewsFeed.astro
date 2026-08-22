@@ -319,6 +319,109 @@ const screened = archive ? screenedTotal(archive) : 0;
   {!rail && <p class="prose-civic mt-3">{t('newsIntro')}</p>}
 
   {/*
+    ------------------------------ Filters ------------------------------
+    Directly under the masthead, and the range chips get a band of their own.
+
+    They used to sit below the Tier 4 notice and the curve, which buried the
+    one control most readers reach for and made the top of the rail read as
+    three stacked paragraphs. mndatacenter puts its range selector in a
+    distinct strip immediately under the panel header — chrome, visibly not the
+    first article — and that is the right shape: the chips are how you drive
+    the panel, so they belong where a toolbar belongs.
+
+    The topic facet follows in the same block rather than getting a third band.
+    It is secondary (this feed has four topics; the range is the axis everyone
+    uses) and a third full-width strip would push the first headline below the
+    fold on a laptop.
+
+    Still hidden until the script reveals them, which is the progressive-
+    enhancement contract: with no JS the reader gets every story in the archive
+    and no controls that do nothing.
+  */}
+  <div
+    data-news-controls
+    hidden
+    class:list={['shrink-0', rail ? '' : 'mt-6']}
+  >
+    {/*
+      The band. `bg-ink-950` against the rail's own `bg-ink-900` is the third
+      surface that makes this read as chrome rather than as content — the same
+      job mndatacenter's `.band-sub` does between its navy header and its
+      off-white list.
+    */}
+    <div
+      role="group"
+      aria-label={t('newsRangeLabel')}
+      class:list={[
+        'flex flex-wrap items-center gap-1.5',
+        rail ? 'border-b border-ink-800 bg-ink-950 px-4 py-2.5' : '',
+      ]}
+    >
+      {
+        RANGE_OPTIONS.map((opt) => (
+          <button
+            type="button"
+            data-news-range
+            data-days={opt.days}
+            aria-pressed={opt.days === DEFAULT_DAYS ? 'true' : 'false'}
+            class="rounded-full border border-ink-700 px-3 py-1 text-[9px] font-bold tracking-wider text-ink-400 uppercase transition-colors hover:text-ink-100"
+          >
+            {opt.label}
+          </button>
+        ))
+      }
+      {/*
+        `data-news-label` rather than the script building the phrase: this is
+        the one string here that has to be translated, and a live region that
+        announced a bare "60" told a screen-reader user a number with no noun
+        attached to it.
+      */}
+      <span
+        data-news-status
+        data-news-label={t('newsShownSuffix')}
+        role="status"
+        aria-live="polite"
+        class="ml-auto text-[9px] tracking-wider text-ink-400 uppercase"
+      />
+    </div>
+
+    {
+      presentTopics.length > 1 && (
+        <div
+          role="group"
+          aria-label={t('newsTopicLabel')}
+          class:list={[
+            'flex flex-wrap items-center gap-1.5',
+            rail ? 'border-b border-ink-800 px-4 py-2' : 'mt-2',
+          ]}
+        >
+          <button
+            type="button"
+            data-news-topic
+            data-topic="all"
+            aria-pressed="true"
+            class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
+          >
+            {t('newsTopicAll')}
+          </button>
+          {presentTopics.map((topic) => (
+            <button
+              type="button"
+              data-news-topic
+              data-topic={topic}
+              aria-pressed="false"
+              class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
+            >
+              {TOPIC_LABELS[topic]}
+            </button>
+          ))}
+        </div>
+      )
+    }
+  </div>
+
+
+  {/*
     The Tier 4 notice, and it is not dismissible in either density.
 
     §3 makes journalism a lead list and never the sole basis of a feature. In
@@ -395,82 +498,6 @@ const screened = archive ? screenedTotal(archive) : 0;
       </figure>
     )
   }
-
-  {/*
-    ------------------------------ Filters ------------------------------
-    Hidden until the script reveals them, which is the whole progressive-
-    enhancement contract here: with no JS the reader gets every story in the
-    archive and no controls that do nothing. The source project cannot do this
-    — its list *is* a fetch result, so with no JS there is no list.
-  */}
-  <div
-    data-news-controls
-    hidden
-    class:list={[
-      'shrink-0',
-      rail ? 'border-b border-ink-800 px-4 py-2.5' : 'mt-6',
-    ]}
-  >
-    <div role="group" aria-label={t('newsRangeLabel')} class="flex flex-wrap items-center gap-1.5">
-      {
-        RANGE_OPTIONS.map((opt) => (
-          <button
-            type="button"
-            data-news-range
-            data-days={opt.days}
-            aria-pressed={opt.days === DEFAULT_DAYS ? 'true' : 'false'}
-            class="rounded-full border border-ink-700 px-3 py-1 text-[9px] font-bold tracking-wider text-ink-400 uppercase transition-colors hover:text-ink-100"
-          >
-            {opt.label}
-          </button>
-        ))
-      }
-      {/*
-        `data-news-label` rather than the script building the phrase: this is
-        the one string here that has to be translated, and a live region that
-        announced a bare "60" told a screen-reader user a number with no noun
-        attached to it.
-      */}
-      <span
-        data-news-status
-        data-news-label={t('newsShownSuffix')}
-        role="status"
-        aria-live="polite"
-        class="ml-auto text-[9px] tracking-wider text-ink-400 uppercase"
-      />
-    </div>
-
-    {
-      presentTopics.length > 1 && (
-        <div
-          role="group"
-          aria-label={t('newsTopicLabel')}
-          class="mt-2 flex flex-wrap items-center gap-1.5"
-        >
-          <button
-            type="button"
-            data-news-topic
-            data-topic="all"
-            aria-pressed="true"
-            class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
-          >
-            {t('newsTopicAll')}
-          </button>
-          {presentTopics.map((topic) => (
-            <button
-              type="button"
-              data-news-topic
-              data-topic={topic}
-              aria-pressed="false"
-              class="rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
-            >
-              {TOPIC_LABELS[topic]}
-            </button>
-          ))}
-        </div>
-      )
-    }
-  </div>
 
   {/* ------------------------------- List ------------------------------- */}
   <div
