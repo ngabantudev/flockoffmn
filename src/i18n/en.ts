@@ -252,8 +252,6 @@ export const en: Record<string, string> = {
   newsTopicAll: 'All topics',
   newsNoneInRange: 'No stories in this range.',
   newsOpenArchive: 'Open the full archive',
-  newsTierRail:
-    'Press coverage, not records. Headlines are leads — the map beside this is the sourced record.',
   newsCurveCaption: 'Stories published per month —',
   newsCurveAlt: 'Stories published per month:',
   newsShownSuffix: 'shown',

@@ -429,44 +429,39 @@ const screened = archive ? screenedTotal(archive) : 0;
 
 
   {/*
-    The Tier 4 notice, and it is not dismissible in either density.
+    The Tier 4 notice, archive only, and not dismissible there.
 
-    §3 makes journalism a lead list and never the sole basis of a feature. In
-    the rail this matters more than it does on its own page, not less: the
-    reader has the map open beside it, where every pin resolves to a signed
-    document. Headlines sitting in the next column make a visibly different
-    kind of claim, and nothing about the layout says so unless the layout says
-    so. The source project has no equivalent because a data center headline
-    beside a data center pin is the same kind of claim.
+    §3 makes journalism a lead list and never the sole basis of a feature, and
+    the archive page is where that gets said properly — a heading, the reason,
+    and links to the map and the sources page.
+
+    The rail used to carry a one-line version too. It is gone because it
+    restated what the rail already shows: the masthead says "Related MN
+    coverage", every row leads with its outlet in accent caps, and the foot of
+    the panel links to the archive where the full notice lives. Tier 4 is also
+    stamped per item in news.json, named on the Open data card, and explained
+    in its own section on Sources. A caveat repeated in a sixth place beside
+    eight headlines is one a reader learns to skip, which costs more than it
+    buys — and it was taking vertical space from the stories themselves.
   */}
-  <aside
-    class:list={[
-      'news-notice shrink-0',
-      rail ? 'border-b px-4 py-2.5' : 'mt-6 rounded-lg border p-4',
-    ]}
-    role="note"
-  >
-    {
-      rail ? (
-        <p class="text-[10px] leading-snug">{t('newsTierRail')}</p>
-      ) : (
-        <>
-          <h2 class="news-notice-strong text-sm font-semibold">{t('newsTierTitle')}</h2>
-          <p class="mt-1.5 text-sm leading-relaxed text-ink-200">{t('newsTierWarning')}</p>
-          <p class="mt-2 text-sm leading-relaxed text-ink-300">
-            {t('newsTierPointer')}{' '}
-            <a class="text-accent underline underline-offset-2" href={localePath(locale, '/')}>
-              {t('navMap')}
-            </a>{' '}
-            {t('newsTierPointerAnd')}{' '}
-            <a class="text-accent underline underline-offset-2" href={localePath(locale, '/sources')}>
-              {t('navSources')}
-            </a>.
-          </p>
-        </>
-      )
-    }
-  </aside>
+  {
+    !rail && (
+      <aside class="news-notice mt-6 shrink-0 rounded-lg border p-4" role="note">
+        <h2 class="news-notice-strong text-sm font-semibold">{t('newsTierTitle')}</h2>
+        <p class="mt-1.5 text-sm leading-relaxed text-ink-200">{t('newsTierWarning')}</p>
+        <p class="mt-2 text-sm leading-relaxed text-ink-300">
+          {t('newsTierPointer')}{' '}
+          <a class="text-accent underline underline-offset-2" href={localePath(locale, '/')}>
+            {t('navMap')}
+          </a>{' '}
+          {t('newsTierPointerAnd')}{' '}
+          <a class="text-accent underline underline-offset-2" href={localePath(locale, '/sources')}>
+            {t('navSources')}
+          </a>.
+        </p>
+      </aside>
+    )
+  }
 
   {/*
     The curve. Rail gets it too — it is 24px tall and it is the one thing here

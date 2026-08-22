@@ -218,8 +218,6 @@ export const es: Record<string, string> = {
   newsTopicAll: 'Todos los temas',
   newsNoneInRange: 'No hay noticias en este rango.',
   newsOpenArchive: 'Abrir el archivo completo',
-  newsTierRail:
-    'Cobertura de prensa, no registros. Los titulares son pistas — el mapa que aparece al lado es el registro documentado.',
   newsCurveCaption: 'Noticias publicadas por mes —',
   newsCurveAlt: 'Noticias publicadas por mes:',
   newsShownSuffix: 'mostradas',
