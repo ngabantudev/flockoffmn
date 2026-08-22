@@ -650,6 +650,18 @@ const strings = {
             dock: 'xl:flex',
             label: t('recordPanel'),
           },
+          // Same edge and breakpoint as #detail-tab, which is safe because the
+          // two are mutually exclusive — see the `:has(#detail-panel...)` rule
+          // in global.css that hides this one whenever a record is open.
+          {
+            id: 'news-tab',
+            side: 'right' as const,
+            controls: 'news-dock',
+            edge: 'right-0',
+            shape: 'rounded-l-lg border-r-0',
+            dock: 'xl:flex',
+            label: t('newsRailTitle'),
+          },
         ].map((tab) => (
           <button
             id={tab.id}
@@ -787,8 +799,15 @@ const strings = {
     <aside
       id="news-dock"
       aria-label={t('newsRailTitle')}
-      class="hidden shrink-0 border-l border-ink-800 bg-ink-900 xl:flex xl:w-[var(--detail-w)]"
+      class="hidden shrink-0 border-l border-ink-800 bg-ink-900 xl:flex"
     >
+      {/*
+        Second copy of the anti-flash init, and it has to be here rather than
+        only inside #controls: that one runs while the parser is still hundreds
+        of lines above this element, so it cannot see the dock. See the file's
+        own header for why running it twice is idempotent.
+      */}
+      <script is:inline src="/panels-init.js"></script>
       <NewsFeed locale={locale} density="rail" />
     </aside>
 
@@ -874,6 +893,12 @@ const strings = {
   const statusEl = document.getElementById('map-status')!;
   const layersTabEl = document.getElementById('layers-tab')!;
   const detailTabEl = document.getElementById('detail-tab')!;
+  // Queried defensively, unlike the two above: those are structural to the map
+  // and their absence is a bug worth throwing on, whereas the news dock is a
+  // feature that could reasonably be removed from this page later. A `!` here
+  // would take the whole map script down with it.
+  const newsDockEl = document.getElementById('news-dock');
+  const newsTabEl = document.getElementById('news-tab');
   // Static descendant of detailTabEl, populated per-selection in
   // renderDetail — scoped/cached here instead of a fresh
   // document.querySelector on every single record selection.
@@ -1053,6 +1078,7 @@ const strings = {
      sync with the reflow toggling either one causes. */
 
   const MAP_LAYERS_COLLAPSED_KEY = 'mapLayersCollapsed';
+  const MAP_NEWS_COLLAPSED_KEY = 'mapNewsCollapsed';
 
   /**
    * Collapse/expand one panel and its pull tab together. Mirrors
@@ -1101,6 +1127,7 @@ const strings = {
   }
   clearAnimatingOnWidthEnd(controlsEl);
   clearAnimatingOnWidthEnd(detailEl);
+  if (newsDockEl) clearAnimatingOnWidthEnd(newsDockEl);
 
   // Both tabs wire up the same way — click toggles the panel's current
   // collapsed state — differing only in whether the state persists.
@@ -1116,6 +1143,9 @@ const strings = {
   // could never be observed by anyone, so there is deliberately only the
   // one storage key, on #controls.
   wireTab(detailEl, detailTabEl);
+  // Persisted, like #controls and unlike #detail-panel: how much chrome you
+  // want standing beside the map is a preference, not a per-selection state.
+  if (newsDockEl && newsTabEl) wireTab(newsDockEl, newsTabEl, MAP_NEWS_COLLAPSED_KEY);
 
   /**
    * The single place that shows/hides #detail-panel and its pull tab
@@ -1158,6 +1188,17 @@ const strings = {
   }
   detailDockMql.addEventListener('change', syncDetailInert);
 
+  // Same breakpoint gap as the two above, and the same failure it prevents: the
+  // dock is `hidden xl:flex`, so below 1280px it is already not rendered and a
+  // lingering `inert` would be invisible and unfixable — #news-tab is itself
+  // `hidden xl:flex`, so there would be no control on screen to undo it.
+  function syncNewsInert() {
+    if (newsDockEl) {
+      newsDockEl.inert = newsDockEl.hasAttribute('data-collapsed') && detailDockMql.matches;
+    }
+  }
+  detailDockMql.addEventListener('change', syncNewsInert);
+
   // Sync the tabs' chrome to whatever /panels-init.js already stamped on
   // #controls pre-paint (or to the untouched default, if it stamped
   // nothing), then reveal both — see NO-JS in the panels spec for why they
@@ -1174,6 +1215,19 @@ const strings = {
     setDetailOpen(false);
     controlsEl.setAttribute('data-ready', '');
     detailEl.setAttribute('data-ready', '');
+
+    // Same order as #controls above: sync the tab's chrome to whatever
+    // /panels-init.js already stamped, then reveal, then turn transitions on —
+    // so a dock restored collapsed does not animate open on load.
+    if (newsDockEl && newsTabEl) {
+      newsTabEl.setAttribute(
+        'aria-expanded',
+        String(!newsDockEl.hasAttribute('data-collapsed')),
+      );
+      syncNewsInert();
+      newsTabEl.hidden = false;
+      newsDockEl.setAttribute('data-ready', '');
+    }
   }
 
   /* --------------------------- Near-me DOM list --------------------------

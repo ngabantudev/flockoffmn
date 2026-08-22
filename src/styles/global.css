@@ -1320,6 +1320,53 @@
   #detail-panel[data-animating] > * {
     min-width: var(--detail-w);
   }
+
+  /*
+   * #news-dock collapses on the same terms as #detail-panel — same width,
+   * same 200ms, same delayed visibility flip so the panel leaves the a11y
+   * tree at the moment it actually disappears. It shares that column, so
+   * anything else would make the two behave differently in one place.
+   *
+   * The width lives here rather than as a utility class for the same reason
+   * #detail-panel's does: a `width` in the class list and a `width: 0` here
+   * are the same property at different specificities, and the collapsed rule
+   * has to win without !important.
+   */
+  #news-dock {
+    width: var(--detail-w);
+  }
+  #news-dock[data-ready] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s;
+  }
+  #news-dock[data-ready][data-collapsed] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s linear 200ms;
+  }
+  #news-dock[data-collapsed] {
+    width: 0;
+    border-left-width: 0;
+    visibility: hidden;
+  }
+  /* Keeps the contents from reflowing to nothing while the width animates. */
+  #news-dock[data-collapsed] > *,
+  #news-dock[data-animating] > * {
+    min-width: var(--detail-w);
+  }
+
+  /*
+   * One tab, one column. #news-tab and #detail-tab both sit at the map's
+   * right edge, and they are mutually exclusive by construction: the dock
+   * yields that column whenever a record is selected (the rule above), and
+   * #detail-tab is itself hidden whenever one is not. Without this they
+   * would stack on the same 24px of edge in the moment between those two
+   * states.
+   */
+  #map-shell:has(#detail-panel:not([hidden])) #news-tab {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1336,7 +1383,10 @@
   #controls[data-ready][data-collapsed],
   #detail-panel,
   #detail-panel[data-ready],
-  #detail-panel[data-ready][data-collapsed] {
+  #detail-panel[data-ready][data-collapsed],
+  #news-dock,
+  #news-dock[data-ready],
+  #news-dock[data-ready][data-collapsed] {
     transition: none;
   }
 }
