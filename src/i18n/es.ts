@@ -6,7 +6,7 @@
  * showing a raw key to a reader who needs the information.
  */
 export const es: Record<string, string> = {
-  siteName: 'FlockOff',
+  siteName: 'FlockOff: MN',
   tagline: 'Hacer visibles los sistemas de vigilancia, control migratorio y política de vivienda en Minnesota.',
 
   navMap: 'Mapa',

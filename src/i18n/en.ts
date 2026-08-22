@@ -3,7 +3,7 @@
  * rather than literals so translations can differ from them.
  */
 export const en: Record<string, string> = {
-  siteName: 'FlockOff',
+  siteName: 'FlockOff: MN',
   tagline: 'Making the systems of surveillance, enforcement, and housing policy visible in Minnesota.',
 
   // Navigation
