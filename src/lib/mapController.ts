@@ -498,6 +498,14 @@ const NEARME_MARKER_LABELS_LAYER = 'nearme-marker-labels';
  */
 const NEARME_MARKER_LABEL_GAP_DEG = 28;
 /**
+ * `backdrop-filter` blur radius for the outside-radius darkening mask (see
+ * updateNearMeMask) — enough to read as deliberately obscured, not just
+ * dimmed, without smearing so far that a reader loses their own sense of
+ * *what kind* of thing is out there (a road grid, a lake, a cluster of
+ * buildings), which the dark tint alone still preserves.
+ */
+const NEARME_MASK_BLUR = 'blur(6px)';
+/**
  * Radial spokes from `nearMeOrigin` out to the current boundary, at east,
  * south, and west — not north: due north is where the mile-marker labels
  * already sit (nearMeMarkerLabelPoints), and a fourth spoke running straight
@@ -1227,7 +1235,7 @@ export class MapController {
 
   /**
    * The outside-radius darkening mask's own colour — see nearMeMaskEl's own
-   * comment for why this is a CSS box-shadow rather than a paint property.
+   * comment for why this is a CSS `background` rather than a paint property.
    * Same two rgba pairs an earlier GL-layer version of this mask settled on
    * (see git history): a light basemap needs less pushed toward black to
    * read as "dimmed," and a full ink-950-strength overlay there would read
@@ -1704,7 +1712,7 @@ export class MapController {
     }
     // The darkening mask isn't a paint property (see nearMeMaskEl's own
     // comment) so it's outside the getLayer-guarded block above, but the
-    // same re-key applies: its colour was baked into a `box-shadow` string
+    // same re-key applies: its colour was baked into a `background` string
     // at the last updateNearMeMask call, which doesn't re-run itself just
     // because the basemap did. Only while a lookup is actually active
     // (nearMeOrigin set) — off-screen (display: none), there's nothing to
@@ -4403,11 +4411,7 @@ export class MapController {
     const el = document.createElement('div');
     el.className = 'nearme-mask';
     el.style.position = 'absolute';
-    el.style.top = '0';
-    el.style.left = '0';
-    el.style.width = '0';
-    el.style.height = '0';
-    el.style.borderRadius = '50%';
+    el.style.inset = '0';
     el.style.pointerEvents = 'none';
     el.style.display = 'none';
     this.map.getCanvasContainer().insertAdjacentElement('afterend', el);
@@ -4415,21 +4419,30 @@ export class MapController {
   }
 
   /**
-   * Position and size the darkening mask around `nearMeOrigin` at the
+   * Position and recolour the darkening mask around `nearMeOrigin` at the
    * current `nearMeSweepRadiusM` — called on every radius change
-   * (applyNearMeRadius) and on every camera move (the map's own 'move'
-   * listener in the constructor), since both change where the circle needs
-   * to sit in screen space even though neither changes the origin itself.
+   * (applyNearMeRadius), every camera move (the map's own 'move' listener in
+   * the constructor), and every basemap toggle (repaintThemedLayers), since
+   * all three change something this element's own CSS needs to reflect even
+   * though none of them change the origin itself.
    *
-   * The circle is a transparent disc whose `box-shadow` paints everywhere
-   * *outside* it — the standard CSS "spotlight" technique, chosen over the
-   * `mask`/`clip-path` properties for the inverse shape (a see-through hole
-   * in an opaque sheet) because a huge box-shadow spread needs no browser
-   * support beyond box-shadow itself, while `mask` support is patchier and
-   * `clip-path`'s inverse (a hole rather than a shape) needs a second,
-   * larger path around the whole viewport, more to get wrong for the same
-   * result. `9999px` is comfortably larger than any viewport this map is
-   * shown in, so the shadow always reaches every edge.
+   * The element covers the whole container (`inset: 0`, set once in
+   * ensureNearMeMaskEl) and darkens *and blurs* — `background` plus
+   * `backdrop-filter: blur()` — everywhere it's visible; `mask-image`'s
+   * radial-gradient is what makes it visible only outside the search
+   * radius, punching a see-through, unfiltered hole over the circle itself.
+   * `mask-image` (not `clip-path`) because a gradient can feather the
+   * hole's edge in one declaration — `clip-path`'s circle is hard-edged, and
+   * its *inverse* (a hole rather than a shape) needs a second, larger path
+   * around the whole viewport for the same result `mask-image` gets in one.
+   * The gradient's stops use `white`→`transparent` rather than `black`→
+   * `transparent`: opaque white reads as fully visible under both of the
+   * two mask interpretations browsers actually ship (alpha-channel masking,
+   * where only the stop's own alpha matters, and luminance masking, where
+   * white is maximum luminance) — `black`→`transparent` would render
+   * correctly under alpha masking and invisibly under luminance masking,
+   * silently losing the whole mask in whichever engine uses the latter.
+   * `-webkit-` duplicates are Safari's own prefix for both properties.
    *
    * `nearMeSweepRadiusM`'s screen radius is derived from the map's own
    * `project()` — the exact same Mercator math MapLibre uses to place every
@@ -4449,12 +4462,17 @@ export class MapController {
     const edge = destinationPoint(this.nearMeOrigin, 90, this.nearMeSweepRadiusM) as [number, number];
     const edgePx = this.map.project(edge);
     const radiusPx = Math.hypot(edgePx.x - centerPx.x, edgePx.y - centerPx.y);
+    // An 8px feather between "fully visible" and "fully hidden" — a hard
+    // stop here reads as a jagged, aliased edge; the boundary ring
+    // (renderNearMeBoundary) is still what draws the crisp line the reader
+    // actually reads as "the edge."
+    const mask = `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, transparent ${radiusPx}px, white ${radiusPx + 8}px)`;
     el.style.display = 'block';
-    el.style.left = `${centerPx.x - radiusPx}px`;
-    el.style.top = `${centerPx.y - radiusPx}px`;
-    el.style.width = `${radiusPx * 2}px`;
-    el.style.height = `${radiusPx * 2}px`;
-    el.style.boxShadow = `0 0 0 9999px ${this.nearMeMaskColor}`;
+    el.style.background = this.nearMeMaskColor;
+    el.style.backdropFilter = NEARME_MASK_BLUR;
+    (el.style as unknown as { webkitBackdropFilter: string }).webkitBackdropFilter = NEARME_MASK_BLUR;
+    el.style.maskImage = mask;
+    (el.style as unknown as { webkitMaskImage: string }).webkitMaskImage = mask;
   }
 
   /** Hide the darkening mask without discarding the element — clearNearMe's counterpart to updateNearMeMask, same "empty the source, keep the layer" shape the rest of near-me teardown uses. */
