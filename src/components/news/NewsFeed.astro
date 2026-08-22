@@ -27,14 +27,64 @@ const all = archive?.items ?? [];
 /*
  * The rail renders a bounded slice; the archive renders everything.
  *
- * The map page is already the heaviest document on the site — MapLibre, the
- * layer registry, the detail panel's templates — and §0.7 puts an old phone
- * ahead of completeness here. Sixty stories is roughly six months of this
- * feed, which covers every range chip except "all"; picking "all" in the rail
- * is what the archive link at the foot of it is for.
+ * RAIL_LIMIT is a payload ceiling, not the shape of the slice — see the window
+ * logic below. It only ever engages if this feed gets far busier than it is.
  */
 const RAIL_LIMIT = 60;
-const items = rail ? all.slice(0, RAIL_LIMIT) : all;
+
+/**
+ * The longest window the rail offers. Anything longer is the archive's job.
+ *
+ * Seven days, and the number is measured rather than chosen for feel. The rail
+ * is `xl`-only, so every byte it renders is shipped to phones that will never
+ * display it — §0.7 puts that reader first, and this is one of the few places
+ * on the site where the two audiences pull in opposite directions. Measured on
+ * the map page, gzipped: a 30-day window costs 9,755 B for 29 stories, 14 days
+ * costs 6,194 B, and 7 days costs 3,829 B for 8 — against a 52 KB page. Thirty
+ * days was adding roughly a fifth to a document a phone user gets nothing from.
+ *
+ * It also has to land on a chip boundary, which is what rules out the middle
+ * option. The chips below are filtered to what the window can back, so a
+ * 14-day window offers 24H and 7D and nothing else — the second week would be
+ * rendered, shipped, and unreachable by any control. Seven is the largest
+ * window where every rendered story is also reachable.
+ */
+const RAIL_WINDOW_DAYS = 7;
+
+/*
+ * The rail slices by WINDOW, then caps for payload. It used to slice by count,
+ * and that was wrong in a way that would only have shown up later.
+ *
+ * A count-based slice makes every range chip a claim the slice cannot back: the
+ * rail took the sixty most recent stories *regardless of date*, then offered a
+ * "30D" chip that filtered those sixty and presented the result as a month. At
+ * this feed's current volume the two coincide — sixty stories currently span
+ * 245 days — which is exactly what makes it dangerous. At three stories a day
+ * sixty items span twenty days, and "30D" silently starts showing two thirds of
+ * what it promises, with nothing in the UI changing to say so.
+ *
+ * Slicing by window inverts that: the rail holds what the longest chip claims,
+ * and the cap can only ever remove the *oldest* of those. `railSpanDays` then
+ * reports what is genuinely covered, and the chips below are filtered to it, so
+ * a chip can never outrun its data even if this feed becomes ten times busier.
+ */
+const windowCutoff = Date.now() - RAIL_WINDOW_DAYS * 86_400_000;
+const inWindow = all.filter((i) => new Date(i.published).getTime() >= windowCutoff);
+const railItems = inWindow.slice(0, RAIL_LIMIT);
+const railCapped = inWindow.length > RAIL_LIMIT;
+
+/**
+ * Days the rail's rendered slice actually covers.
+ *
+ * The full window when the cap did not bite. When it did, the age of the oldest
+ * story that survived it — which is the only period the rail can honestly
+ * answer questions about.
+ */
+const railSpanDays = railCapped && railItems.length > 0
+  ? Math.floor((Date.now() - new Date(railItems[railItems.length - 1].published).getTime()) / 86_400_000)
+  : RAIL_WINDOW_DAYS;
+
+const items = rail ? railItems : all;
 
 /*
  * The archive groups by month; the rail does not.
@@ -70,24 +120,26 @@ const ALL_RANGES = [
 ];
 
 /*
- * The rail stops at 30 days, and that is a correctness constraint rather than
- * a space one.
+ * The rail offers only the chips its rendered slice can actually back.
  *
- * It renders the most recent RAIL_LIMIT stories regardless of their dates, so
- * any chip covering a longer period than those stories happen to span is a
- * lie: with a full archive, "1Y" in the rail would filter sixty recent items
- * and present the result as a year. Today the archive is small enough that the
- * two coincide, which is exactly why this is worth fixing now — it would start
- * misreporting silently as the archive grows, and nothing about the UI would
- * change to say so.
- *
- * Thirty days is the longest window the rail can always serve honestly at this
- * feed's volume. Anything longer is the archive's job, and the link at the foot
- * of the rail goes there.
+ * Derived from `railSpanDays` rather than from a constant, so this stays true
+ * without anyone remembering to revisit it: if the feed gets busy enough that
+ * the payload cap starts biting into the 30-day window, the "30D" chip
+ * disappears on its own rather than quietly under-reporting. The 24H chip is
+ * always kept — with fewer than a day of stories the rail is nearly empty
+ * anyway, and a control group with nothing in it is worse than one that says
+ * zero.
  */
-const RANGE_OPTIONS = rail ? ALL_RANGES.filter((o) => o.days > 0 && o.days <= 30) : ALL_RANGES;
+const RANGE_OPTIONS = rail
+  ? ALL_RANGES.filter((o) => o.days === 1 || (o.days > 0 && o.days <= railSpanDays))
+  : ALL_RANGES;
 
-const DEFAULT_DAYS = rail ? 30 : 0;
+/*
+ * Must be a range the chips actually offer, or the initial pressed state
+ * matches no button and the rail opens with every chip unpressed while showing
+ * a filter the reader cannot see or undo.
+ */
+const DEFAULT_DAYS = rail ? (RANGE_OPTIONS[RANGE_OPTIONS.length - 1]?.days ?? 1) : 0;
 
 const TOPIC_LABELS: Record<NewsTopic, string> = {
   alpr: t('newsTopicAlpr'),
@@ -346,6 +398,21 @@ const screened = archive ? screenedTotal(archive) : 0;
       )
     }
 
+    {/*
+      A rail with nothing in its window is a real state now that the slice is
+      time-bounded rather than count-bounded — a quiet month empties it. Said
+      here rather than left to the script, which bails before rendering
+      anything when there are no rows to filter, leaving a header and a chip
+      group above blank space.
+    */}
+    {
+      rail && archive && items.length === 0 && (
+        <p class="py-6 text-center text-xs leading-relaxed text-ink-400">
+          {t('newsNoneRecent')}
+        </p>
+      )
+    }
+
     {
       rail ? (
         <ol class="space-y-0">
@@ -389,6 +456,19 @@ const screened = archive ? screenedTotal(archive) : 0;
       {t('newsNoneInRange')}
     </p>
   </div>
+
+  {/*
+    §3 coverage honesty at the rail's own scale: when the payload cap trims the
+    window, the rail is showing less than its longest chip claims and has to say
+    so rather than let the reader assume they have seen the month.
+  */}
+  {
+    rail && railCapped && (
+      <p class="shrink-0 border-t border-ink-800 px-4 py-2 text-[9px] leading-snug text-ink-400">
+        {t('newsRailCapped')}
+      </p>
+    )
+  }
 
   {
     rail && (

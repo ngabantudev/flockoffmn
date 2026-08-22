@@ -162,6 +162,11 @@ const MINNESOTA_SOURCE_TERMS = [
   'duluth news tribune', 'mankato free press', 'brainerd dispatch',
   'st. cloud live', 'alpha news', "minnesota women's press",
   'racket', 'minnesota daily', 'unicorn riot',
+  // Community outlets, added only after checking Google News actually files
+  // them under their own name — see the knownGaps note in
+  // scripts/ingest/mn/news.mjs for the outlets that failed that check and why
+  // no entry here would help them.
+  'minnesota spokesman-recorder', 'the circle news',
 ];
 
 /** The check that keeps the outlet signal honest. See `hasMinnesota`. */

@@ -149,10 +149,26 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     fullBleed ? 'order-last shrink-0' : 'fixed inset-x-0 bottom-0 z-40',
   ]}
 >
-  <ul class="flex items-stretch">
+  {/*
+    Two rows of four below 26rem, one row of eight at or above it.
+
+    It was one flex row of `flex-1` items, which divides the viewport by the
+    number of links and lets `truncate` absorb the remainder. Measured against
+    this label set at 10px with `tracking-wide`, that row truncates "Network"
+    and "Sources" at every width up to 414px — so on most phones, not just the
+    narrow ones. Seven links were already marginal there; adding Coverage as an
+    eighth is what made it worth fixing rather than inheriting.
+
+    26rem (416px) is where eight columns stop clipping this particular set, so
+    the breakpoint is derived from the labels rather than picked from the scale.
+    Below it the grid wraps to two rows of four — 80px per item at 320px, which
+    fits every label with room to spare. It costs roughly one extra row of
+    height on a narrow phone; a nav that reads "Sourc…" costs more.
+  */}
+  <ul class="grid grid-cols-4 min-[26rem]:grid-cols-8">
     {
       links.map((link) => (
-        <li class="flex-1">
+        <li>
           <a
             href={localePath(locale, link.href)}
             aria-current={isActive(link.href) ? 'page' : undefined}

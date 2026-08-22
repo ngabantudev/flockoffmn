@@ -84,28 +84,36 @@ jobs:
             echo "No new coverage." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
+            # Every line of this script stays indented inside the block
+            # scalar. It previously used a multi-line template literal whose
+            # continuation lines began at column 1, which ends a YAML `|` block
+            # — the workflow did not parse at all, and would have failed on its
+            # first scheduled run. Built as an array of lines instead, so the
+            # markdown is assembled rather than laid out in the source.
             node -e '
               const a = require("./public/data/news.json");
               const s = a.metadata.screened;
-              const person = Object.entries(s.person)
-                .map(([k, v]) => `| ${k} | ${v} |`).join("\n");
-              console.log(`### Coverage archive
-
-**${a.items.length}** stories total, **${a.metadata.addedThisRun}** new this run.
-Searches: ${a.metadata.queriesRun - a.metadata.queriesFailed}/${a.metadata.queriesRun} answered.
-
-#### Screened out before saving (§1b)
-
-The person rules are the §1b screen. \`non-article\`, \`off-topic\` and
-\`out-of-state\` are relevance filters and are counted separately.
-
-| Rule | Count |
-| --- | ---: |
-${person}
-| non-article | ${s.nonArticle} |
-| off-topic | ${s.offTopic} |
-| out-of-state | ${s.outOfState} |
-`);
+              const m = a.metadata;
+              const out = [
+                "### Coverage archive",
+                "",
+                `**${a.items.length}** stories total, **${m.addedThisRun}** new this run.`,
+                `Searches: ${m.queriesRun - m.queriesFailed}/${m.queriesRun} answered.`,
+                "",
+                "#### Screened out before saving (§1b)",
+                "",
+                "The person rules are the §1b screen. non-article, off-topic and",
+                "out-of-state are relevance filters and are counted separately.",
+                "",
+                "| Rule | Count |",
+                "| --- | ---: |",
+                ...Object.entries(s.person).map(([k, v]) => `| ${k} | ${v} |`),
+                `| non-article | ${s.nonArticle} |`,
+                `| off-topic | ${s.offTopic} |`,
+                `| out-of-state | ${s.outOfState} |`,
+                "",
+              ];
+              console.log(out.join("\n"));
             ' >> "$GITHUB_STEP_SUMMARY"
           fi
 

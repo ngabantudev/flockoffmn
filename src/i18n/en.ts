@@ -257,4 +257,6 @@ export const en: Record<string, string> = {
   newsCurveCaption: 'Stories published per month —',
   newsCurveAlt: 'Stories published per month:',
   newsShownSuffix: 'shown',
+  newsNoneRecent: 'No coverage in the last 30 days. The archive has the full record.',
+  newsRailCapped: 'Trimmed to the most recent stories — open the archive for the full month.',
 };

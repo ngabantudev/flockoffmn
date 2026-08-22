@@ -328,7 +328,17 @@ async function main() {
       truncated
         ? 'At least one search returned Google\'s maximum result count, so the most recent window is a sample of the period rather than a record of it.'
         : null,
-      'No Spanish-language or Hmong-language outlets are in the source list yet, which under-represents the reporting closest to the communities carrying this enforcement.',
+      // Measured on 2026-08-22 rather than assumed, because the obvious fix —
+      // adding the outlet names to MINNESOTA_SOURCE_TERMS — does nothing.
+      // Querying Google News for each by name returned no items filed under
+      // that outlet as a source: Hmong Times, Hmong Today, La Prensa de
+      // Minnesota, Vida y Sabor and Latino Communications Network are not in
+      // its source index, so there is nothing for a term to match. Minnesota
+      // Spokesman-Recorder and The Circle News did file under their own names
+      // and have been added. This is a limit of the upstream, not of the
+      // filter, and it is the kind of gap §3 says to publish rather than paper
+      // over.
+      'Hmong-language and Spanish-language Minnesota outlets are not indexed as sources by Google News, so this feed structurally cannot see their reporting — the communities carrying most of this enforcement are covered here only when an English-language outlet also files the story. Adding those outlets to the source list would not fix it; the upstream has no items to return.',
     ].filter(Boolean),
     topicCounts: perTopic,
     items: merged,

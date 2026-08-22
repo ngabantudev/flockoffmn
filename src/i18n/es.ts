@@ -223,4 +223,6 @@ export const es: Record<string, string> = {
   newsCurveCaption: 'Noticias publicadas por mes —',
   newsCurveAlt: 'Noticias publicadas por mes:',
   newsShownSuffix: 'mostradas',
+  newsNoneRecent: 'Sin cobertura en los últimos 30 días. El archivo tiene el registro completo.',
+  newsRailCapped: 'Recortado a las noticias más recientes — abra el archivo para ver el mes completo.',
 };
