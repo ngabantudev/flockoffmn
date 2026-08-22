@@ -454,7 +454,6 @@ async function main() {
       archiveCorrupt
         ? 'The previous archive file could not be read on the most recent run, so this file was rebuilt from that run alone and earlier history is missing. Restore it from version control rather than accepting this as the record.'
         : null,
-      'One filed agency — the Wyoming, Minnesota police department — is not recognised by name, because Wyoming is also a state and the guard that keeps other states out cannot tell the two apart from a headline. Stories about it are still found when they carry another Minnesota signal, such as the county or the outlet.',
       'Hmong-language and Spanish-language Minnesota outlets are not indexed as sources by Google News, so this feed structurally cannot see their reporting — the communities carrying most of this enforcement are covered here only when an English-language outlet also files the story. Adding those outlets to the source list would not fix it; the upstream has no items to return.',
     ].filter(Boolean),
     topicCounts: perTopic,

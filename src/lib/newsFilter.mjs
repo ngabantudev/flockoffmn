@@ -314,41 +314,50 @@ export function hasSubject(haystack) {
  * on these topics. Only the ambiguous city names are subject to the veto.
  */
 export function hasMinnesota(haystack, source, agencyTerms = []) {
-  /*
-   * A named agency is the strongest Minnesota signal available, and the one this
-   * filter was missing — measured, 52 of 116 filed agencies were recognised
-   * before it existed.
-   *
-   * The terms come from the BCA's own § 13.824 filings via
-   * public/data/reference/bca-alpr-agencies.json — the agencies that reported
-   * operating this equipment. They are passed in by the caller rather than read
-   * here, because this module has to stay dependency-free and importable from
-   * the browser, the same contract ~/lib/geo.mjs keeps.
-   *
-   * The check itself is at the BOTTOM of this function, below the veto, and the
-   * ordering is the whole point — see the note on that line.
-   */
   if (UNAMBIGUOUS_MINNESOTA_TERMS.some((t) => haystack.includes(t))) return true;
 
+  /*
+   * A state word inside an agency's own name is not a reference to that state.
+   *
+   * Minnesota has a city called Wyoming, so the BCA's filings contain a
+   * "Wyoming Police Department". The veto below reads a flat haystack, saw
+   * `wyoming`, and refused the story — the agency list could never rescue it,
+   * because the veto returned first. Reordering alone does not fix it either:
+   * put the agency check above the veto and "Alexandria Police Department
+   * expands plate readers, Virginia officials say" publishes as Minnesota
+   * coverage, which is the bug that ordering already caused once.
+   *
+   * So the agency name is removed from the copy the veto reads, and only that
+   * copy. "Wyoming Police Department adds plate readers" has nothing left to
+   * veto on and is admitted; "Alexandria Police Department … Virginia officials
+   * say" still has `virginia` sitting outside the agency name and is still
+   * refused. The distinction the veto was missing is which state word belongs
+   * to the agency and which belongs to the story.
+   *
+   * One pass over the terms, and the rewrite only happens when something
+   * matched — this runs per headline per ingest.
+   */
+  let matchedAgency = false;
+  let vetoHaystack = haystack;
+  for (const term of agencyTerms) {
+    if (!haystack.includes(term)) continue;
+    matchedAgency = true;
+    vetoHaystack = vetoHaystack.split(term).join(' ');
+  }
+
   // Everything below rests on a signal another state can produce, so a named
-  // other state or national framing vetoes it. THE AGENCY LIST IS BELOW THIS
-  // LINE, not above it: half the filed agencies are "<place> Police
-  // Department" for a place name another state also has — Alexandria, Blaine,
-  // Rochester, Duluth, Winona all appear in the BCA's own filings and all have
-  // a same-named department elsewhere. Checking agencies first meant "Alexandria
-  // Police Department expands plate readers, Virginia officials say" was
-  // published as Minnesota coverage with "virginia" sitting in the haystack the
-  // veto was reading. The reason the agency signal exists is still served here:
-  // a headline that names no state at all never reaches the veto's `return
-  // false`, so "Alexandria police expand plate readers" is still admitted.
-  if (OTHER_STATE_PATTERN.test(haystack) || NATIONAL_SCOPE_PATTERN.test(haystack)) return false;
+  // other state or national framing vetoes it.
+  if (OTHER_STATE_PATTERN.test(vetoHaystack) || NATIONAL_SCOPE_PATTERN.test(vetoHaystack)) {
+    return false;
+  }
 
   return (
-    agencyTerms.some((t) => haystack.includes(t)) ||
+    matchedAgency ||
     MINNESOTA_TERMS.some((t) => haystack.includes(t)) ||
     isLocalOutlet(source)
   );
 }
+
 
 /* ------------------------------------------------------------------ *
  * Non-articles
