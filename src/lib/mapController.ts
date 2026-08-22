@@ -421,6 +421,20 @@ const RELATED_IMPACT_SOURCE = 'src-related-impacts';
 const RELATED_IMPACT_LAYER = 'related-impacts';
 
 /**
+ * The "focus frame" marking whichever point feature is currently selected
+ * (markPointSelected) — four camera-viewfinder corner brackets, not a scale/
+ * pulse treatment on the dot itself. See ensureSelectedMarkerSprite's own
+ * comment for why: a prior version of "which camera is selected" drove a
+ * continuous per-frame feature-state write to animate a breathing pulse,
+ * implicated in a real rendering bug (git history, commit 34b14f3, isolated
+ * on buggy/selected-camera-pulse). This is a single baked bitmap positioned
+ * by one setData() call on selection change and never touched again until
+ * the selection changes once more.
+ */
+const SELECTED_MARKER_SOURCE = 'src-selected-marker';
+const SELECTED_MARKER_LAYER = 'selected-marker';
+
+/**
  * The selection overlays, bottom to top. restack() pins these above every
  * registry layer in this order — the thrown lines under the marks they
  * connect, the answer to the reader's question on top of everything.
@@ -430,6 +444,7 @@ const OVERLAY_STACK = [
   RELATED_IMPACT_LAYER,
   RELATION_GLOW_LAYER,
   RELATION_LAYER,
+  SELECTED_MARKER_LAYER,
 ];
 
 /**
@@ -788,6 +803,13 @@ export class MapController {
    * (relatedPoints, thrown paths) are single-source for the same reason.
    */
   private selectedPolygon: { layerId: string; featureId: string } | null = null;
+  /**
+   * The one point feature currently marked with the focus-frame overlay, if
+   * any — the point counterpart to `selectedPolygon` above, singular for the
+   * same reason. See markPointSelected/updateSelectedMarker and
+   * SELECTED_MARKER_SOURCE's own comment.
+   */
+  private selectedPoint: { layerId: string; featureId: string } | null = null;
   /**
    * Resolved `markerIcon` expression per layer, filled in by loadLayer
    * before it draws. Cached because building it decodes an SVG per icon, and
@@ -1778,6 +1800,15 @@ export class MapController {
     // recolour and no origin to recompute a position from.
     if (this.nearMeOrigin) this.updateNearMeMask();
 
+    // The focus-frame marker's own bitmap bakes its colour in (see
+    // ensureSelectedMarkerSprite), same as every other generated sprite
+    // this re-bakes — a fresh id under the new basemap, reassigned onto the
+    // existing layer rather than repainting it.
+    if (this.map.getLayer(SELECTED_MARKER_LAYER)) {
+      const iconId = this.ensureSelectedMarkerSprite();
+      if (iconId) this.map.setLayoutProperty(SELECTED_MARKER_LAYER, 'icon-image', iconId);
+    }
+
     void this.refreshMarkerIcons();
   }
 
@@ -1845,6 +1876,7 @@ export class MapController {
       this.preSelectCamera = null;
     }
     this.releaseHighlight();
+    this.releasePointSelection();
     this.releaseHover();
     this.events.onSelect?.(null);
   }
@@ -1982,6 +2014,95 @@ export class MapController {
       ctx.lineWidth = px * 0.03;
       ctx.stroke();
     });
+  }
+
+  /**
+   * The selected-point "focus frame": four camera-viewfinder corner
+   * brackets, phosphor green (nearMeSweepColor, the same hue the sonar
+   * sweep/boundary already mark "what the reader is looking at" with),
+   * baked once per basemap via ensureSprite — the same mechanism
+   * ensureConeSprite uses, for the same reason (a bitmap's colour is baked
+   * in, so a basemap toggle needs a freshly-baked image under a new id, not
+   * a repaint of an existing one — see repaintThemedLayers' own re-bake
+   * call).
+   *
+   * Deliberately corner brackets, not a ring or a crosshair: a ring
+   * collides visually with every other ring this map already draws (the
+   * near-me boundary, mile markers, a cross-listed corner's own ring), and
+   * a full crosshair reads as a weapon sight rather than the camera-focus
+   * framing this is going for — a bracket is unambiguous both against this
+   * map's existing vocabulary and against what it's marking (a camera).
+   */
+  private ensureSelectedMarkerSprite(): string | null {
+    const id = `selected-marker-${this.basemapDark ? 'dark' : 'light'}`;
+    return this.ensureSprite(id, 64 * 2, (ctx, px) => {
+      const inset = px * 0.16;
+      const arm = px * 0.22;
+      ctx.strokeStyle = this.nearMeSweepColor;
+      ctx.lineWidth = px * 0.045;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const bracket = (x: number, y: number, hDir: 1 | -1, vDir: 1 | -1) => {
+        ctx.beginPath();
+        ctx.moveTo(x + hDir * arm, y);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x, y + vDir * arm);
+        ctx.stroke();
+      };
+      bracket(inset, inset, 1, 1); // top-left
+      bracket(px - inset, inset, -1, 1); // top-right
+      bracket(inset, px - inset, 1, -1); // bottom-left
+      bracket(px - inset, px - inset, -1, -1); // bottom-right
+    });
+  }
+
+  /** Create the selected-marker's source/layer, once, empty. */
+  private ensureSelectedMarkerLayer() {
+    if (this.map.getSource(SELECTED_MARKER_SOURCE)) return;
+    this.map.addSource(SELECTED_MARKER_SOURCE, { type: 'geojson', data: EMPTY_FC as never });
+    this.map.addLayer({
+      id: SELECTED_MARKER_LAYER,
+      type: 'symbol',
+      source: SELECTED_MARKER_SOURCE,
+      layout: {
+        'icon-image': this.ensureSelectedMarkerSprite() ?? '',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+        // Loosely tracks a point layer's own dot growth (radiusExpr, addLayer)
+        // so the frame keeps hugging the dot rather than swamping it at a
+        // wide zoom or shrinking to invisible at a close one.
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 0.55, 15, 1.05] as never,
+      },
+    });
+    this.pinOverlays();
+  }
+
+  /**
+   * Move the selected marker to `selectedPoint`'s current coordinates, or
+   * clear it — the *only* place this marker's source is ever written, called
+   * once per selection change (markPointSelected/releasePointSelection),
+   * never per frame. featureById rather than trusting a caller-supplied
+   * coordinate: a layer's data can be reloaded between a selection and this
+   * call, and re-resolving here is the same defensiveness focusFeature's own
+   * featureById lookups already use.
+   */
+  private updateSelectedMarker() {
+    this.ensureSelectedMarkerLayer();
+    const src = this.map.getSource(SELECTED_MARKER_SOURCE) as GeoJSONSource | undefined;
+    if (!src) return;
+    const point = this.selectedPoint
+      ? this.featureById(this.selectedPoint.layerId, this.selectedPoint.featureId)
+      : undefined;
+    if (!this.selectedPoint || !point || point.geometry.type !== 'Point') {
+      src.setData(EMPTY_FC as never);
+      return;
+    }
+    src.setData({
+      type: 'FeatureCollection',
+      features: [
+        { type: 'Feature', geometry: { type: 'Point', coordinates: point.geometry.coordinates }, properties: {} },
+      ],
+    } as never);
   }
 
   private coneSourceId = (layerId: string) => `src-${layerId}-cones`;
@@ -3333,6 +3454,7 @@ export class MapController {
       if (this.selectedPolygon?.layerId === layer.id || this.relationOverlayOwner === layer.id) {
         this.releaseHighlight();
       }
+      if (this.selectedPoint?.layerId === layer.id) this.releasePointSelection();
       if (this.hoveredPolygon?.layerId === layer.id) this.releaseHover();
       this.applyVisibility(layer);
     }
@@ -3757,6 +3879,17 @@ export class MapController {
       // record for the rest of the session.
       this.releaseHighlight();
     }
+    // Point counterpart to the polygon branch above — independent of it (a
+    // click can only ever hit one geometry type) rather than nested inside
+    // either branch, since a point selection needs both to mark a fresh one
+    // (feature.geometry.type === 'Point') and to release a stale one (any
+    // other geometry), so the focus frame never stays pinned to a camera an
+    // unrelated jurisdiction/facility selection just replaced.
+    if (feature.geometry.type === 'Point') {
+      this.markPointSelected(layer, featureId);
+    } else {
+      this.releasePointSelection();
+    }
     if (layer.relation) void this.showRelation(feature, layer);
   }
 
@@ -3820,6 +3953,29 @@ export class MapController {
       { selected: true },
     );
     this.selectedPolygon = { layerId: layer.id, featureId };
+  }
+
+  /**
+   * Point counterpart to markPolygonSelected — same "one at a time,
+   * releasing whichever held it before" shape, but there is no feature-state
+   * to write here: the focus-frame marker (updateSelectedMarker) reads
+   * `selectedPoint` directly rather than a paint expression watching a
+   * feature-state, so a click just updates the field and repositions the
+   * one marker. See SELECTED_MARKER_SOURCE's own comment for why this is
+   * deliberately not the feature-state/pulse shape markPolygonSelected's
+   * `selected` state uses for polygons.
+   */
+  private markPointSelected(layer: ClientLayer, featureId: string) {
+    if (this.selectedPoint?.layerId === layer.id && this.selectedPoint.featureId === featureId) return;
+    this.selectedPoint = { layerId: layer.id, featureId };
+    this.updateSelectedMarker();
+  }
+
+  /** Drop the point selection, if any. The point counterpart to releaseHighlight. */
+  private releasePointSelection() {
+    if (!this.selectedPoint) return;
+    this.selectedPoint = null;
+    this.updateSelectedMarker();
   }
 
   flyTo(center: [number, number], zoom = 12) {
