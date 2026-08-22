@@ -506,6 +506,23 @@ const NEARME_MARKER_LABEL_GAP_DEG = 28;
  */
 const NEARME_MASK_BLUR = 'blur(6px)';
 /**
+ * How many degrees of trailing arc the sweep's own afterglow (see
+ * updateNearMeSweepGlow) fades out over behind the leading edge — a real
+ * PPI radar's phosphor doesn't switch off the instant the beam passes, it
+ * decays over a wedge behind it. Wide enough to read as a glow with real
+ * extent, narrow enough that it still reads as *trailing* something rather
+ * than as a static quarter-circle wash.
+ */
+const NEARME_SWEEP_TRAIL_DEG = 40;
+/**
+ * Peak opacity of the sweep afterglow (see updateNearMeSweepGlow), at the
+ * leading edge, fading to 0 by the trail's own end. Translucent on purpose:
+ * a camera dot under the glow this frame still needs to read through it,
+ * the same way a real scope's phosphor wash never actually hides a target
+ * blip underneath it.
+ */
+const NEARME_SWEEP_GLOW_OPACITY = 0.35;
+/**
  * Radial spokes from `nearMeOrigin` out to the current boundary, at east,
  * south, and west — not north: due north is where the mile-marker labels
  * already sit (nearMeMarkerLabelPoints), and a fourth spoke running straight
@@ -821,6 +838,18 @@ export class MapController {
    * either reveals a pixel or dims it with nothing in between.
    */
   private nearMeMaskEl: HTMLDivElement | null = null;
+  /**
+   * The sweep's own afterglow trail — a DOM element, same reasoning as
+   * nearMeMaskEl's own comment (a `conic-gradient` can't be expressed as a
+   * paint property, and painting it into the WebGL canvas as a GL layer
+   * would put its z-order at the mercy of the exact same tiling/paint-order
+   * uncertainty that mask has already burned two attempts on). Only ever
+   * created and updated under motion — REDUCED_MOTION never runs the rAF
+   * loop that calls updateNearMeSweepGlow (see startNearMeSweep's own
+   * comment), so this stays null and unused there, same as the trail itself
+   * would be meaningless on a sweep that isn't moving.
+   */
+  private nearMeSweepGlowEl: HTMLDivElement | null = null;
   /** The point a "near me" lookup currently has lines thrown from, or null if none is active — also NearMeControl's toggle state. */
   private nearMeOrigin: [number, number] | null = null;
   /** True between requesting a location and the browser answering — see toggleNearMe's own comment for the double-click race this closes. */
@@ -4480,6 +4509,66 @@ export class MapController {
     if (this.nearMeMaskEl) this.nearMeMaskEl.style.display = 'none';
   }
 
+  /** Create the sweep afterglow's own DOM element, once, empty — see nearMeSweepGlowEl's own comment. Same insertion point as ensureNearMeMaskEl (the canvas container's next sibling); order between the two doesn't matter, since the mask paints outside the search radius and the glow paints inside it — they never cover the same pixel. */
+  private ensureNearMeSweepGlowEl() {
+    if (this.nearMeSweepGlowEl) return;
+    const el = document.createElement('div');
+    el.className = 'nearme-sweep-glow';
+    el.style.position = 'absolute';
+    el.style.inset = '0';
+    el.style.pointerEvents = 'none';
+    el.style.display = 'none';
+    this.map.getCanvasContainer().insertAdjacentElement('afterend', el);
+    this.nearMeSweepGlowEl = el;
+  }
+
+  /**
+   * Paint the sweep's afterglow trail at the current frame's `angleDeg` —
+   * called once per renderNearMeSweepFrame tick (so only ever while
+   * !REDUCED_MOTION; see nearMeSweepGlowEl's own comment).
+   *
+   * `conic-gradient`'s own `0deg` points straight up and increases
+   * clockwise — the exact same convention `angleDeg` already uses (compass
+   * bearing, 0° north, clockwise), so `from` needs no conversion to line up
+   * with where `destinationPoint` actually drew the sweep line this frame.
+   * The gradient itself is three stops: transparent from the trail's
+   * trailing edge up to (but not including) the leading edge, full colour
+   * exactly at the leading edge, then transparent again immediately after —
+   * so the glow only ever occupies the `NEARME_SWEEP_TRAIL_DEG` wedge behind
+   * the line, not the rest of the circle.
+   *
+   * `mask-image` (not a smaller element) confines the glow to the current
+   * search radius, the same radial-gradient-based technique updateNearMeMask
+   * uses for its own cutout — deliberately *not* combined with a
+   * `backdrop-filter` the way an earlier version of that mask was: this
+   * paints a colour rather than sampling/blurring what's beneath it, so
+   * there's no repeat of the cross-implementation interaction that mask
+   * combination reproduced a real bug with (see updateNearMeMask's own
+   * comment).
+   */
+  private updateNearMeSweepGlow(angleDeg: number) {
+    if (!this.nearMeOrigin) return;
+    this.ensureNearMeSweepGlowEl();
+    const el = this.nearMeSweepGlowEl;
+    if (!el) return;
+    const centerPx = this.map.project(this.nearMeOrigin);
+    const edge = destinationPoint(this.nearMeOrigin, 90, this.nearMeSweepRadiusM) as [number, number];
+    const edgePx = this.map.project(edge);
+    const radiusPx = Math.hypot(edgePx.x - centerPx.x, edgePx.y - centerPx.y);
+    const from = angleDeg - NEARME_SWEEP_TRAIL_DEG;
+    el.style.display = 'block';
+    el.style.opacity = String(NEARME_SWEEP_GLOW_OPACITY);
+    el.style.background = `conic-gradient(from ${from}deg at ${centerPx.x}px ${centerPx.y}px, transparent 0deg, ${this.nearMeSweepColor} ${NEARME_SWEEP_TRAIL_DEG}deg, transparent ${NEARME_SWEEP_TRAIL_DEG + 0.5}deg 360deg)`;
+    const mask = `radial-gradient(circle at ${centerPx.x}px ${centerPx.y}px, white ${radiusPx}px, transparent ${radiusPx + 2}px)`;
+    el.style.maskImage = mask;
+    (el.style as unknown as { webkitMaskImage: string }).webkitMaskImage = mask;
+  }
+
+  /** Hide the sweep afterglow without discarding the element — stopNearMeSweep's counterpart to updateNearMeSweepGlow. */
+  private hideNearMeSweepGlow() {
+    if (this.nearMeSweepGlowEl) this.nearMeSweepGlowEl.style.display = 'none';
+  }
+
   /**
    * Draw the reader's own location and start the sonar sweep scanning
    * whatever's nearby.
@@ -4863,6 +4952,7 @@ export class MapController {
         },
       ],
     } as never);
+    this.updateNearMeSweepGlow(angle);
 
     // "Did the sweep just pass this bearing" — a plain `prevAngle < b <=
     // angle` breaks once per rotation at the 360°→0° wrap, where `angle`
@@ -5087,6 +5177,7 @@ export class MapController {
       this.nearMeSweepFrame = null;
     }
     this.nearMeBlips = [];
+    this.hideNearMeSweepGlow();
   }
 
   /** Undo showNearMe — clears the marker and sweep, and the control's pressed state. */
@@ -5192,6 +5283,8 @@ export class MapController {
     // it needs the same explicit teardown the controls below get.
     this.nearMeMaskEl?.remove();
     this.nearMeMaskEl = null;
+    this.nearMeSweepGlowEl?.remove();
+    this.nearMeSweepGlowEl = null;
     // Explicit onRemove() for all four — map.remove() only tears down
     // controls added via map.addControl(), and these were deliberately
     // kept out of that list (see the constructor).
