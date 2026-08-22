@@ -96,9 +96,13 @@ Searches: ${a.metadata.queriesRun - a.metadata.queriesFailed}/${a.metadata.queri
 
 #### Screened out before saving (§1b)
 
+The person rules are the §1b screen. \`non-article\`, \`off-topic\` and
+\`out-of-state\` are relevance filters and are counted separately.
+
 | Rule | Count |
 | --- | ---: |
 ${person}
+| non-article | ${s.nonArticle} |
 | off-topic | ${s.offTopic} |
 | out-of-state | ${s.outOfState} |
 `);

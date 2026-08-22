@@ -1,7 +1,7 @@
 ---
 import { Newspaper } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
-import { loadNews, groupByMonth, screenedTotal, type NewsItem, type NewsTopic } from '~/layers/news';
+import { loadNews, groupByMonth, screenedTotal, type NewsTopic } from '~/layers/news';
 import NewsItemRow from '~/components/news/NewsItemRow.astro';
 import { useTranslations, localePath } from '~/lib/i18n';
 
@@ -114,16 +114,9 @@ const presentTopics = [...new Set(items.map((i) => i.topic))].sort(
  * Server-rendered inline SVG with no script and no library: it cannot fail to
  * load, it prints, and it costs nothing on a phone.
  */
-function monthlyCounts(source: NewsItem[]): { key: string; count: number }[] {
-  const counts = new Map<string, number>();
-  for (const item of source) {
-    const key = item.published.slice(0, 7);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, count]) => ({ key, count }));
-}
-
-const series = monthlyCounts(all);
+const series = groupByMonth(all)
+  .map((group) => ({ key: group.key, count: group.items.length }))
+  .reverse(); // groupByMonth is newest-first; a curve reads left to right.
 const peak = Math.max(1, ...series.map((s) => s.count));
 const SPARK_W = 100;
 const SPARK_H = 24;
@@ -355,7 +348,7 @@ const screened = archive ? screenedTotal(archive) : 0;
 
     {
       rail ? (
-        <ol data-news-list class="space-y-0">
+        <ol class="space-y-0">
           {items.map((item) => (
             <NewsItemRow
               item={item}

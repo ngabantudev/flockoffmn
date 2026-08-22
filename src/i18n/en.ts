@@ -230,8 +230,6 @@ export const en: Record<string, string> = {
   newsTierPointerAnd: 'and',
   newsEmpty:
     'The coverage archive has not been built yet. Run "npm run data:news" to fetch it.',
-  newsArchiveCount: 'stories in the archive',
-  newsUpdated: 'last updated',
   newsCoverageTitle: 'What this page cannot see',
   newsScreenedPrefix: 'On the most recent run,',
   newsScreenedSuffix:

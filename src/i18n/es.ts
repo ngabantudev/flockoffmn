@@ -196,8 +196,6 @@ export const es: Record<string, string> = {
   newsTierPointerAnd: 'y',
   newsEmpty:
     'El archivo de cobertura aún no se ha generado. Ejecute «npm run data:news» para obtenerlo.',
-  newsArchiveCount: 'noticias en el archivo',
-  newsUpdated: 'última actualización',
   newsCoverageTitle: 'Lo que esta página no puede ver',
   newsScreenedPrefix: 'En la ejecución más reciente, se descartaron',
   newsScreenedSuffix:

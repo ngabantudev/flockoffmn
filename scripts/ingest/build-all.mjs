@@ -88,7 +88,6 @@ const STEPS = [
   // a layer (see src/layers/news.ts), and Google is the least reliable upstream
   // in this pipeline — so it runs after every real layer has already written.
   { name: 'news', script: 'mn/news.mjs' },
-
 ];
 
 function run(script) {

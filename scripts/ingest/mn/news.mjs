@@ -96,7 +96,7 @@ const WINDOW_DAYS = 30;
  */
 const RETENTION_DAYS = 730;
 
-/** Wall-clock budget for one query, including its retry. */
+/** Timeout for a single upstream attempt. `fetchWithRetry` applies it per try. */
 const QUERY_TIMEOUT_MS = 15_000;
 
 /**
@@ -204,8 +204,12 @@ async function main() {
     throw new Error(`all ${queries.length} queries failed — Google is refusing this runner`);
   }
 
+  // Person-rule counts only. Non-articles are counted separately: they are tag
+  // pages and stream spam, not stories about people, and folding them in here
+  // made the published "dropped because they were about individual people"
+  // figure report 30 on a run where the person screen fired 12 times.
   const rejected = Object.fromEntries(PERSON_RULE_NAMES.map((r) => [r, 0]));
-  rejected['non-article'] = 0;
+  let droppedNonArticle = 0;
   let droppedOffTopic = 0;
   let droppedOutOfState = 0;
 
@@ -216,7 +220,7 @@ async function main() {
     const haystack = buildHaystack(item.title, item.description);
 
     if (isNonArticle(item.title)) {
-      rejected['non-article'] += 1;
+      droppedNonArticle += 1;
       continue;
     }
     if (!hasSubject(haystack)) {
@@ -255,6 +259,7 @@ async function main() {
   // classification does not churn the diff on every run.
   const archive = await loadArchive();
   const byUrl = new Map(archive.map((i) => [i.url, i]));
+  const knownUrls = new Set(byUrl.keys());
   let added = 0;
   for (const item of accepted) {
     if (byUrl.has(item.url)) continue;
@@ -272,8 +277,13 @@ async function main() {
   // Reported after the collapse, not before. Counting accepted-and-unseen items
   // said "+94 new" on a run that grew the archive by 74, because the duplicate
   // collapse runs afterwards and removes wire-copy repeats of the same story.
-  // The number a reviewer needs is how much the published file actually grew.
-  const addedNet = Math.max(0, merged.length - archive.length);
+  //
+  // Counted as "URLs in the published file that were not in the archive we
+  // read", not as `merged.length - archive.length`: that difference is net
+  // growth, and it silently reports 0 on any run where as many items aged past
+  // RETENTION_DAYS as were added. The number a reviewer needs is how many new
+  // headlines this run is asking them to look at.
+  const addedNet = merged.filter((i) => !knownUrls.has(i.url)).length;
 
   const perTopic = {};
   for (const item of merged) perTopic[item.topic] = (perTopic[item.topic] ?? 0) + 1;
@@ -299,6 +309,7 @@ async function main() {
       // things NOT published. The headlines behind them are never written.
       screened: {
         person: rejected,
+        nonArticle: droppedNonArticle,
         offTopic: droppedOffTopic,
         outOfState: droppedOutOfState,
       },
@@ -323,9 +334,13 @@ async function main() {
     items: merged,
   });
 
-  const screenedTotal = Object.values(rejected).reduce((a, b) => a + b, 0);
-  log(SCOPE, `${merged.length} items in archive (+${addedNet} net this run, ${added} before duplicate collapse)`);
-  log(SCOPE, `screened out: ${screenedTotal} person/non-article, ${droppedOffTopic} off-topic, ${droppedOutOfState} out-of-state`);
+  const personTotal = Object.values(rejected).reduce((a, b) => a + b, 0);
+  log(SCOPE, `${merged.length} items in archive (+${addedNet} new this run, ${added} before duplicate collapse)`);
+  log(
+    SCOPE,
+    `screened out: ${personTotal} person-level, ${droppedNonArticle} non-article, ` +
+      `${droppedOffTopic} off-topic, ${droppedOutOfState} out-of-state`,
+  );
   if (failures > 0) log(SCOPE, `${failures} of ${queries.length} searches failed`);
 }
 

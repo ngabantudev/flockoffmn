@@ -195,7 +195,10 @@ const OTHER_STATE_PATTERN = new RegExp(
     'new mexico', 'new york', 'north carolina', 'north_dakota_state', 'ohio',
     'oklahoma', 'oregon', 'pennsylvania', 'rhode island', 'south carolina',
     'south_dakota_state', 'tennessee', 'texas', 'utah', 'vermont', 'virginia',
-    'west virginia', 'wisconsin', 'wyoming',
+    // "washington" alone would match the federal shorthand and Washington,
+    // D.C., which NATIONAL_SCOPE_PATTERN already covers by other means; the
+    // state needs its qualified form to be excludable at all.
+    'washington state', 'west virginia', 'wisconsin', 'wyoming',
   ].join('|')})\\b`,
 );
 
@@ -410,7 +413,20 @@ export function hasMinnesota(haystack, source) {
  * ------------------------------------------------------------------ */
 
 const SPAM_PATTERN =
-  /\b(live[- ]?stream|livestream|watch along|play by play|full match|highlights|box score|radio broadcast|game score|vs\.?\s)/i;
+  /\b(live[- ]?stream|livestream|watch along|play by play|full match|(game|match|video|full) highlights|box score|radio broadcast|game score)/i;
+
+/*
+ * Two words were removed from SPAM_PATTERN after they were found to reject
+ * ordinary coverage:
+ *
+ *   - a bare `highlights`, which is plain headline English — "Audit highlights
+ *     gaps in plate reader policy" is exactly the kind of story this feed
+ *     exists for, and it was being filed as sports spam. Narrowed to the
+ *     compound forms a stream listing actually uses.
+ *   - `vs\.?\s`, which matches every "privacy vs. safety" framing and every
+ *     case caption. The measured spam listing carries five other tells in the
+ *     same title, so nothing is lost by dropping it.
+ */
 
 /** A stuffed title's tracking token, e.g. "(XRQ3myiKZ7)". */
 const JUNK_TOKEN_PATTERN = /\([A-Za-z0-9_-]{8,}\)/;
@@ -507,11 +523,20 @@ export function collapseDuplicates(items) {
     }
 
     if (isLocalOutlet(item.source) && !isLocalOutlet(twin.item.source)) {
+      // The comparison keys move with the item they describe. Leaving the
+      // discarded version's words and date in place meant every later item in
+      // the run was matched against a headline that is no longer in the output.
       twin.item = item;
+      twin.words = words;
+      twin.at = at;
     }
   }
 
-  return kept.map((k) => k.item);
+  // Re-sorted because the swap above can replace a cluster's kept item with an
+  // older one, which leaves `kept` in insertion order but no longer in date
+  // order — and the caller writes this array straight to the published file,
+  // which the feed renders in order.
+  return kept.map((k) => k.item).sort(byPublishedDesc);
 }
 
 /** Newest first. */

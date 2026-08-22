@@ -52,7 +52,11 @@ export interface NewsArchive {
     addedThisRun: number;
     addedBeforeDuplicateCollapse: number;
     screened: {
+      /** Per-rule counts from the §1b person screen, and nothing else. */
       person: Record<string, number>;
+      /** Tag pages and stream spam. Not people — kept out of `person` so the
+       *  published "dropped because they were about people" figure is true. */
+      nonArticle: number;
       offTopic: number;
       outOfState: number;
     };
