@@ -437,14 +437,58 @@ const SPAM_PATTERN =
 const JUNK_TOKEN_PATTERN = /\([A-Za-z0-9_-]{8,}\)/;
 
 /**
- * Is this a tag page, a stream-spam listing, or otherwise not a story?
+ * Vocabulary a tag page can be built out of: the words this feed searches for.
  *
- * The three-word floor is what catches tag pages: a real headline is a
- * sentence, and "Immigration Enforcement Minnesota" is a query echoed back.
+ * Built from the same lists the relevance filters use, so it cannot drift from
+ * them — a term added to SUBJECT_TERMS becomes a term a tag page may be made of
+ * on the same edit.
+ */
+const QUERY_VOCABULARY = new Set(
+  [...SUBJECT_TERMS, ...MINNESOTA_TERMS]
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean),
+);
+
+/** Filler that carries no topic on its own, so it cannot make a title a story. */
+const ECHO_FILLER = new Set(['and', 'in', 'of', 'the', 'a', 'an', 'for', 'on', 'at', 'to', 'news', 'latest']);
+
+/**
+ * Is this title just the search query handed back?
+ *
+ * The word-count floor this replaces was wrong, and measurably so: it rejected
+ * any title of three words or fewer, which threw away real headlines —
+ * "Duluth cancels Flock" and "ICE contract signed" are stories, and both were
+ * being discarded as tag pages.
+ *
+ * Length was never the signal. The tag page actually observed in the wild was
+ * "Immigration Enforcement Minnesota", and what makes it a tag page is that
+ * every word in it is a word this feed searched for: there is no verb, no
+ * actor, nothing the query did not already contain. A real headline reports
+ * something, so it contributes at least one word from outside the query —
+ * "cancels", "signed", "adopts".
+ *
+ * Bounded to short titles as well, because a long title made entirely of
+ * vocabulary is far more likely to be a genuine headline than a tag page, and
+ * the cost of being wrong is a dropped story.
+ */
+function isQueryEcho(title) {
+  const words = title
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0 || words.length > 5) return false;
+  return words.every((w) => QUERY_VOCABULARY.has(w) || ECHO_FILLER.has(w));
+}
+
+/**
+ * Is this a tag page, a stream-spam listing, or otherwise not a story?
  */
 export function isNonArticle(title) {
-  const words = title.trim().split(/\s+/).filter(Boolean);
-  if (words.length <= 3) return true;
+  if (isQueryEcho(title)) return true;
   if (SPAM_PATTERN.test(title)) return true;
   if (JUNK_TOKEN_PATTERN.test(title)) return true;
   return false;
