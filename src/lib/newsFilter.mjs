@@ -62,9 +62,15 @@ export const TOPIC_QUERIES = [
  * specific of the two.
  */
 const TOPIC_RULES = [
-  { topic: 'alpr', terms: ['license plate reader', 'license plate readers', 'alpr', 'plate reader', 'flock safety'] },
+  // Every Flock phrasing SUBJECT_TERMS accepts has to classify too, or the
+  // stories it recovers all land in `other` and the facet under-reports the
+  // topic this feed exists for. Measured: 34 recovered stories, most of them
+  // Flock legislation and contract fights, were filing as `other`.
+  { topic: 'alpr', terms: ['license plate reader', 'license plate readers', 'alpr', 'plate reader',
+    'flock safety', 'flock camera', 'flock cameras', 'flock contract', 'flock contracts',
+    'flock data', 'flock system', 'flock program', 'flock network'] },
   { topic: 'surveillance', terms: ['surveillance camera', 'facial recognition', 'fusion center', 'drone', 'gunshot detection', 'shotspotter'] },
-  { topic: 'immigration-enforcement', terms: ['287(g)', '287g', 'immigration enforcement', 'ice detainer', 'detainer', 'sanctuary'] },
+  { topic: 'immigration-enforcement', terms: ['287(g)', '287g', 'immigration enforcement', 'immigration agent', 'immigration agents', 'ice detainer', 'detainer', 'sanctuary'] },
   { topic: 'detention', terms: ['immigration detention', 'detention facility', 'detention center', 'ice facility', 'ice detention', 'bed-day', 'jail contract', 'ice contract'] },
 ];
 
@@ -86,7 +92,9 @@ export function classifyTopic(haystack) {
  */
 const SUBJECT_TERMS = [
   'license plate reader', 'license plate readers', 'plate reader', 'alpr',
-  'flock safety', 'surveillance camera', 'surveillance system', 'facial recognition',
+  'flock safety', 'flock camera', 'flock cameras', 'flock contract', 'flock contracts',
+  'flock data', 'flock system', 'flock program', 'flock network',
+  'surveillance camera', 'surveillance system', 'facial recognition',
   'fusion center', 'gunshot detection', 'shotspotter', 'drone program',
   '287(g)', '287g', 'immigration enforcement', 'immigration agent',
   'detainer', 'immigration detention', 'detention facility', 'detention center',
@@ -305,7 +313,28 @@ export function hasSubject(haystack) {
  * when it also says "Wisconsin", and comparisons across state lines are common
  * on these topics. Only the ambiguous city names are subject to the veto.
  */
-export function hasMinnesota(haystack, source) {
+export function hasMinnesota(haystack, source, agencyTerms = []) {
+  /*
+   * A named agency is the strongest Minnesota signal available, and the one
+   * this filter was missing.
+   *
+   * "Alexandria Police Department" is unambiguous in a way "Alexandria" is not:
+   * the place name alone is shared with Virginia and Louisiana, but the agency
+   * name is a specific body. That matters because the veto below only fires
+   * when another state is *named* — a headline reading "Alexandria police
+   * expand plate readers" names no state, so a bare place list would admit
+   * Virginia's version of it with nothing to catch the error.
+   *
+   * The terms come from the BCA's own § 13.824 filings via
+   * public/data/reference/bca-alpr-agencies.json — the agencies that reported
+   * operating this equipment. Passed in by the caller rather than read here,
+   * because this module has to stay dependency-free and importable from the
+   * browser (same contract as ~/lib/geo.mjs), and a file read would end that.
+   *
+   * Measured before this existed: 52 of 116 filed agencies were recognised.
+   */
+  if (agencyTerms.some((t) => haystack.includes(t))) return true;
+
   if (UNAMBIGUOUS_MINNESOTA_TERMS.some((t) => haystack.includes(t))) return true;
 
   // Everything below rests on a signal another state can produce, so a named

@@ -70,6 +70,33 @@ import {
 } from '../../../src/lib/newsFilter.mjs';
 import { screenForPeople, PERSON_RULE_NAMES } from '../../../src/lib/personScreen.mjs';
 
+/**
+ * Agency names that establish Minnesota, from the BCA's own § 13.824 filings.
+ *
+ * Read here rather than inside newsFilter.mjs so that module stays
+ * dependency-free and browser-importable. Lower-cased once, because the
+ * haystack the filter matches against is lower-cased.
+ *
+ * Optional on purpose: on a fresh clone this reference may not have been built
+ * yet, and a missing agency list should cost recall, not fail the run.
+ */
+async function loadAgencyTerms() {
+  try {
+    const raw = await readFile(
+      path.join(PUBLIC_DATA, 'reference/bca-alpr-agencies.json'),
+      'utf8',
+    );
+    const parsed = JSON.parse(raw);
+    return (parsed.agencies ?? [])
+      .map((a) => (typeof a === 'string' ? a : a?.name))
+      .filter(Boolean)
+      .map((n) => n.toLowerCase());
+  } catch {
+    log(SCOPE, 'bca-alpr-agencies.json not readable — agency names will not count as a Minnesota signal');
+    return [];
+  }
+}
+
 const SCOPE = 'news';
 const OUT = 'news.json';
 
@@ -201,6 +228,8 @@ async function loadArchive() {
 }
 
 async function main() {
+  const agencyTerms = await loadAgencyTerms();
+
   const queries = TOPIC_QUERIES.flatMap((topic) =>
     GEOGRAPHY_QUERIES.map((geo) => `${topic} ${geo} when:${WINDOW_DAYS}d`),
   );
@@ -251,7 +280,7 @@ async function main() {
       dropped.offTopic += 1;
       continue;
     }
-    if (!hasMinnesota(haystack, item.source)) {
+    if (!hasMinnesota(haystack, item.source, agencyTerms)) {
       dropped.outOfState += 1;
       continue;
     }
@@ -328,6 +357,31 @@ async function main() {
    * less text than the intake screen did. It is a backstop for rules added
    * later, not a replacement for screening at intake.
    */
+  /*
+   * Re-classify anything still sitting in `other`, for the same reason the §1b
+   * screen re-runs below: the merge makes the existing entry win, so a widened
+   * TOPIC_RULES never reaches history. Measured — adding the Flock phrasings
+   * recovered 34 stories and every one of them stayed labelled `other` on the
+   * next run, because they were already in the archive.
+   *
+   * Only `other` is revisited, and only ever upgraded. An item classified from
+   * its description on the day it arrived keeps that label: the archive stores
+   * no description, so re-deriving from the title alone could only ever be a
+   * worse answer than the one already recorded.
+   */
+  let reclassified = 0;
+  for (const item of merged) {
+    if (item.topic !== 'other') continue;
+    const topic = classifyTopic(buildHaystack(item.title, ''));
+    if (topic !== 'other') {
+      item.topic = topic;
+      reclassified += 1;
+    }
+  }
+  if (reclassified > 0) {
+    log(SCOPE, `re-classified ${reclassified} archived item(s) a widened topic rule now recognises`);
+  }
+
   const retroRemoved = {};
   const screened = merged.filter((item) => {
     const verdict = screenForPeople(buildHaystack(item.title, ''));
