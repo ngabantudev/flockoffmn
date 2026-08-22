@@ -166,14 +166,38 @@ async function fetchQuery(query) {
   return { items, truncated: blocks.length >= GOOGLE_RESULT_CEILING };
 }
 
-/** Load the committed archive, or an empty one on first run. */
+/**
+ * Load the committed archive, or an empty one on first run.
+ *
+ * A missing file and an unreadable one are the same to the merge below — both
+ * yield an empty archive — but they are not the same event, and collapsing them
+ * hid the dangerous one. A corrupt news.json silently restarts the archive from
+ * a single 30-day window, discarding however many months of history had
+ * accumulated, and the run reports a cheerful "+75 new this run" while doing it.
+ * The pull request would show the deletion, but only to someone reading a diff
+ * of several hundred lines of JSON for a subtraction.
+ *
+ * Absent is normal and silent. Present-but-unparseable is loud, and the caller
+ * turns it into a knownGaps entry so it survives into the published file rather
+ * than living only in a CI log nobody opens.
+ */
 async function loadArchive() {
+  let raw;
   try {
-    const raw = await readFile(path.join(PUBLIC_DATA, OUT), 'utf8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed.items) ? parsed.items : [];
+    raw = await readFile(path.join(PUBLIC_DATA, OUT), 'utf8');
   } catch {
-    return [];
+    return { items: [], corrupt: false };
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.items)) throw new Error('no items array');
+    return { items: parsed.items, corrupt: false };
+  } catch (err) {
+    log(SCOPE, `WARNING: public/data/${OUT} exists but could not be read (${err.message}).`);
+    log(SCOPE, 'The archive is being rebuilt from this run alone — previous history will be dropped.');
+    log(SCOPE, 'Restore it from git rather than merging that deletion.');
+    return { items: [], corrupt: true };
   }
 }
 
@@ -257,7 +281,7 @@ async function main() {
   // Merge into the committed archive. Identity is the article URL, which Google
   // keeps stable per item; the existing entry wins so a story's first-seen
   // classification does not churn the diff on every run.
-  const archive = await loadArchive();
+  const { items: archive, corrupt: archiveCorrupt } = await loadArchive();
   const byUrl = new Map(archive.map((i) => [i.url, i]));
   const knownUrls = new Set(byUrl.keys());
   let added = 0;
@@ -338,6 +362,9 @@ async function main() {
       // and have been added. This is a limit of the upstream, not of the
       // filter, and it is the kind of gap §3 says to publish rather than paper
       // over.
+      archiveCorrupt
+        ? 'The previous archive file could not be read on the most recent run, so this file was rebuilt from that run alone and earlier history is missing. Restore it from version control rather than accepting this as the record.'
+        : null,
       'Hmong-language and Spanish-language Minnesota outlets are not indexed as sources by Google News, so this feed structurally cannot see their reporting — the communities carrying most of this enforcement are covered here only when an English-language outlet also files the story. Adding those outlets to the source list would not fix it; the upstream has no items to return.',
     ].filter(Boolean),
     topicCounts: perTopic,
