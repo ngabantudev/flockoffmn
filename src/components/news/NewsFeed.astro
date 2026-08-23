@@ -27,10 +27,23 @@ const all = archive?.items ?? [];
 /*
  * The rail renders a bounded slice; the archive renders everything.
  *
- * RAIL_LIMIT is a payload ceiling, not the shape of the slice — see the window
- * logic below. It only ever engages if this feed gets far busier than it is.
+ * RAIL_LIMIT is a runaway guard, not the shape of the slice — the window logic
+ * below decides that. It exists so a source that suddenly floods the feed can't
+ * push an unbounded payload to phones that never render the rail.
+ *
+ * It was 60, which was too close to the working volume to be a guard. The
+ * 30-day window held 61 stories on 2026-08-22, the cap bit by exactly one row,
+ * `railSpanDays` floored to 26, and the 30D chip disappeared — the rail fell
+ * back to a 7-day window and three weeks of coverage vanished to save one
+ * headline. The degradation was designed and it fired correctly; the number was
+ * simply set below the thing it was guarding.
+ *
+ * 200 is a real ceiling: roughly three times the current 30-day volume, and
+ * measured at ~230 B gzipped per row, a full 200-row rail costs about 46 KB
+ * against the map page's ~889 KB transfer. If it ever does bite, the same
+ * honest fallback still happens — chips narrow to what the slice backs.
  */
-const RAIL_LIMIT = 60;
+const RAIL_LIMIT = 200;
 
 /**
  * The longest window the rail offers.

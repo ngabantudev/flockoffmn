@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { chromium, serveDist } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 
@@ -88,6 +89,30 @@ const check = (name, ok, detail='') => {
   check('rail: no chip claims more than the 30-day window',
         widest <= 30, `widest ${widest}d`);
   check('rail: at least one chip is offered', chipInfo.days.length >= 1);
+  // The invariant the 30D disappearance slipped through. `widest <= 30` alone
+  // is satisfied by a rail that has silently fallen back to 7 days because the
+  // payload guard bit — which is what happened when the 30-day window grew to
+  // 61 stories against a RAIL_LIMIT of 60.
+  //
+  // Phrased as "only check this when the guard has headroom" it would skip
+  // itself in exactly the broken state, so it is phrased the other way: the
+  // guard is a runaway ceiling and is required to stay above working volume.
+  // If this feed ever genuinely outgrows it, the correct response is to raise
+  // the constant deliberately — not to let the rail quietly drop three weeks of
+  // coverage to save one row.
+  const src = readFileSync(new URL('../src/components/news/NewsFeed.astro', import.meta.url), 'utf8');
+  const railLimit = Number(/const RAIL_LIMIT = (\d+);/.exec(src)[1]);
+  const railWindow = Number(/const RAIL_WINDOW_DAYS = (\d+);/.exec(src)[1]);
+  const archive = JSON.parse(readFileSync(new URL('../public/data/news.json', import.meta.url), 'utf8'));
+  const inWindow = archive.items.filter(
+    (i) => Date.now() - new Date(i.published).getTime() <= railWindow * 86400000,
+  ).length;
+  check('rail: payload guard sits above working volume',
+        inWindow * 1.5 <= railLimit,
+        `${inWindow} stories in ${railWindow}d against a ${railLimit} guard`);
+  check('rail: widest chip is the full window',
+        widest === railWindow,
+        `widest chip ${widest}d, window ${railWindow}d`);
   check('rail: no rendered story sits outside the widest chip',
         chipInfo.spanDays <= widest + 1,
         `${chipInfo.count} stories spanning ${chipInfo.spanDays}d, widest chip ${widest}d`);
