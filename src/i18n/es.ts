@@ -30,7 +30,8 @@ export const es: Record<string, string> = {
   // Comparador deslizante
   // Mayúscula inicial en cada palabra aquí — compareTitle es un <h1> visible,
   // comparePovertySide/compareBlackSide son encabezados de leyenda,
-  // compareOpenButton/compareShowAlpr son etiquetas de botón/control.
+  // compareOpenButton/compareShowAlpr/compareShowCrime son etiquetas de
+  // botón/control.
   // compareIntro, compareAccessibleNote y compareVintage son prosa y
   // mantienen mayúscula solo al inicio, a propósito.
   compareTitle: 'Tasa De Pobreza Y Proporción De Población Negra, Una Junto A La Otra',
@@ -42,6 +43,10 @@ export const es: Record<string, string> = {
   compareSourceLabel: 'Fuente:',
   compareVintage: 'Encuesta sobre la Comunidad de la Census Bureau, estimaciones de 5 años,',
   compareShowAlpr: 'Mostrar Cámaras ALPR',
+  compareShowCrime: 'Mostrar Delitos Denunciados',
+  compareCrimeKeyLabel: 'Delitos de Parte I denunciados',
+  compareCrimeKeyLow: 'menos',
+  compareCrimeKeyHigh: 'más',
   compareAccessibleNote:
     'Esta vista dividida es una herramienta de comparación visual y no tiene equivalente no visual — un lector de pantalla no puede describir qué tono queda bajo un divisor en movimiento. Para los mismos datos en forma accesible, cierra esta vista y activa las capas de tasa de pobreza y proporción de población negra una a la vez, o descarga la tabla completa desde Datos abiertos.',
   compareAccessibleLink: 'Descargas de datos abiertos',
