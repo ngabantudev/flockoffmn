@@ -37,6 +37,7 @@ not relicense it**. Where an upstream licence is more restrictive than CC BY
 | Data centers | `data-centers.geojson` | FracTracker Alliance terms, plus transcribed facts from four all-rights-reserved trackers (see below) | Attribution required, non-commercial. |
 | Cumulative impacts (MPCA) | `ej-cumulative.geojson` | No formal licence published; public government data under [Minn. Stat. ch. 13](https://www.revisor.mn.gov/statutes/cite/13) | Attribute MPCA. Draft data (CI-MAP, December 2025); see the layer's `knownGaps`. |
 | Demographics — Black share, Latinx share, poverty rate | `demographics.geojson` | Public domain (U.S. federal statistical work) | Free for any use. Attribute the U.S. Census Bureau, American Community Survey. Geometry is the same 2020 tract boundaries as `ej-cumulative.geojson` — see that row above. |
+| Reported crime, Minneapolis neighborhoods | `crime-minneapolis.geojson` | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) | Free for any use. Counts and neighborhood boundaries are both City of Minneapolis open data dedicated to the public domain; attribution requested, not required. The 87 neighborhood polygons ride inside this file rather than shipping as a layer of their own — a bare boundary layer is not a subject of this site, and both datasets come from the same publisher under the same terms, so there is no per-column split to manage. |
 | County, place and jurisdiction reference | `reference/*` | Public domain (US federal work) | Free for any use. |
 | Basemap tile archive | `minnesota.pmtiles` (R2-hosted, not in this repo — see below) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) (data) + [CC BY](https://github.com/openmaptiles/openmaptiles/#license) (OpenMapTiles schema) | **Attribution only, not share-alike.** A rendered tile archive is a Produced Work under ODbL, not a Derivative Database — see below for why that distinction is the one that lets this ship at all. Two separate attributions required: OpenStreetMap contributors (data) and OpenMapTiles (schema) — see below. |
 
@@ -81,6 +82,8 @@ Reproduce these when redistributing the corresponding layer:
   Estimates, tables B03002 and S1701.
 - **Data centers** — FracTracker Alliance; More Than Just Parks Data Center
   Tracker; Cleanview; Baxtel; PoweredByWho.
+- **Reported crime, Minneapolis neighborhoods** — City of Minneapolis Open
+  Data, NEIGHBORHOOD CRIME STATS and Minneapolis Neighborhoods.
 - **County, place and jurisdiction geography** — U.S. Census Bureau.
 - **Basemap** — © OpenMapTiles (tile schema, CC BY) © OpenStreetMap
   contributors (data, ODbL 1.0); Geofabrik credited as extract provenance,

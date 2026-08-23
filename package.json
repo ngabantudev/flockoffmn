@@ -36,6 +36,7 @@
     "data:demographics": "node --env-file-if-exists=.env scripts/ingest/national/demographics.mjs",
     "data:vendor-contracts": "node scripts/ingest/mn/vendor-contracts.mjs",
     "data:aadt": "node scripts/ingest/mn/aadt.mjs",
+    "data:crime-minneapolis": "node scripts/ingest/mn/crime-minneapolis.mjs",
     "data:news": "node scripts/ingest/mn/news.mjs",
     "tiles:build": "node scripts/tiles/build-basemap.mjs",
     "tiles:publish": "node scripts/tiles/build-basemap.mjs --upload",
