@@ -1,0 +1,24 @@
+---
+import type { Locale } from '~/layers/types';
+import NewsFeed from '~/components/news/NewsFeed.astro';
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+
+/*
+ * A wrapper, not a layout.
+ *
+ * Everything this page renders — header, Tier 4 notice, the curve, the range
+ * and topic chips, the list, the coverage-honesty section — lives in
+ * ~/components/news/NewsFeed.astro at `full` density, because the map rail
+ * renders the same component at `rail` density. Two copies of that markup is
+ * how the rail and the archive end up disagreeing about what a story looks
+ * like, which is the drift CLAUDE.md §2 keeps warning about for layers.
+ */
+---
+
+<div class="mx-auto max-w-4xl px-4 py-10">
+  <NewsFeed locale={locale} density="full" />
+</div>

@@ -2,6 +2,7 @@
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, mergedProvenance } from '~/layers/data';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
+import { loadNews, screenedTotal } from '~/lib/news';
 import { formatValue } from '~/lib/detailFields';
 
 interface Props {
@@ -13,6 +14,9 @@ const t = useTranslations(locale);
 // Read from the generated files, not the registry: counts and dates shown here
 // are whatever the last ingest actually produced.
 const loaded = await loadAllLayers();
+// Tier 4, not a layer — see src/lib/news.ts. Read so the tier and the screening
+// count below are the file's own numbers rather than prose that can go stale.
+const news = await loadNews();
 
 const fmtDate = (iso: string | null | undefined) => formatValue(iso, 'date', locale) ?? '—';
 
@@ -196,6 +200,62 @@ const CADENCE: Record<string, string> = {
       );
     })
   }
+
+  <!--
+    Deliberately outside the layer loop above, and deliberately before
+    Methodology rather than among the layers. Every section above this one is a
+    Tier 1 or Tier 2 record with a document behind it; this one is press
+    coverage. §3 forbids a Tier 4 source being the sole basis of a published
+    feature, and listing it inline with the layers would imply exactly the
+    equivalence that rule exists to deny.
+  -->
+  <section id="news-coverage" class="mt-10 scroll-mt-4 border-t border-ink-800 pt-8">
+    <h2 class="text-xl font-semibold text-ink-100">News coverage</h2>
+    <p class="prose-civic mt-2">
+      <a class="text-accent underline underline-offset-2" href={localePath(locale, '/news')}>
+        The coverage page
+      </a> collects Minnesota news stories about surveillance equipment, enforcement agreements and
+      detention contracts from Google News RSS, refreshed daily by a scheduled job that opens a pull
+      request for review before anything publishes.
+    </p>
+    <p class="prose-civic mt-2">
+      It is a <strong>Tier {news?.metadata.tier ?? 4}</strong> source: journalism, useful as a
+      lead list, never the sole basis of a feature on this site. Nothing on the map comes from it.
+      A headline there is a pointer to a record worth requesting, and the record is what gets
+      published.
+    </p>
+    <p class="prose-civic mt-2">
+      Stories about individual people are removed before anything is saved — arrests, court cases,
+      named officers, and anyone captured by a camera — per the scope rules on the
+      <a class="text-accent underline underline-offset-2" href={localePath(locale, '/about')}>
+        about page
+      </a>. The filter runs at ingest, so those headlines are counted but never written to disk. The
+      count is published on the coverage page; the headlines are not kept anywhere.
+    </p>
+    {
+      news && (
+        <p class="prose-civic mt-2">
+          {/*
+            The numbers are the generated file's own, not figures typed here.
+            §1b permits aggregates and forbids enumeration, so a count is the
+            only form this can take — and a count that drifts from the file it
+            describes is worse than no count.
+
+            Both halves of the ratio come from the same run. It read
+            "N dropped … and {items.length} kept", which put one run's rejects
+            beside the whole two-year archive: 13 against 76, when that run had
+            actually kept 1. A ratio assembled from two different denominators
+            is the kind of number §0.2 says gets the project dismissed, and it
+            was on the page that exists to establish sourcing discipline.
+          */}
+          On the most recent ingest, <strong>{screenedTotal(news)}</strong> stories were dropped
+          before anything was saved, and {news.metadata.addedThisRun}{' '}
+          {news.metadata.addedThisRun === 1 ? 'was' : 'were'} kept. The archive holds{' '}
+          {news.items.length} stories in total.
+        </p>
+      )
+    }
+  </section>
 
   <section class="mt-12 border-t border-ink-800 pt-8">
     <h2 class="text-xl font-semibold text-ink-100">Methodology</h2>

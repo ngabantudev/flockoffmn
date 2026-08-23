@@ -1,0 +1,60 @@
+---
+import type { NewsItem } from '~/lib/news';
+
+/*
+ * The row's markup lives here and only here.
+ *
+ * The rail renders its rows in the browser (see NewsFeed's hydration), and the
+ * obvious way to do that — build the element in JavaScript — would put a second
+ * copy of these class lists in a second file, where they would drift the first
+ * time either was touched. Instead the rail ships one blank instance of this
+ * component inside a `<template>` and clones it, so there is exactly one
+ * definition of what a story row is. The `data-news-*` hooks below are the
+ * fill points that makes that possible.
+ */
+interface Props {
+  item: NewsItem;
+  topicLabel: string;
+  /** Already-formatted publication date. See NewsFeed.astro's `dateLabel`. */
+  dateLabel: string;
+  /** Rail uses smaller type than the archive. */
+  compact: boolean;
+}
+const { item, topicLabel, dateLabel, compact } = Astro.props;
+---
+
+<li
+  data-news-item
+  data-published={item.published}
+  data-topic={item.topic}
+  class="border-b border-ink-850 py-3"
+>
+  {/*
+    Source above headline, in accent caps — the source project's shape, and it
+    is the right one: the outlet is how a reader decides whether to trust a
+    headline before reading it, so it belongs before rather than after.
+  */}
+  <span
+    data-news-source
+    class="mb-1 block text-[9px] font-bold tracking-wider text-accent uppercase"
+  >
+    {item.source}
+  </span>
+  <h3 class:list={[compact ? 'text-xs' : 'text-sm', 'leading-snug font-medium']}>
+    <a
+      data-news-link
+      href={item.url}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      class="text-ink-100 hover:text-accent"
+    >
+      {item.title}
+    </a>
+  </h3>
+  <span class="mt-1.5 flex flex-wrap items-center gap-x-2 text-[10px] font-medium text-ink-400">
+    <span data-news-topic-label class="rounded border border-ink-700 px-1 py-px text-ink-300">
+      {topicLabel}
+    </span>
+    <time data-news-date datetime={item.published}>{dateLabel}</time>
+  </span>
+</li>

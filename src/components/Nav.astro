@@ -1,5 +1,5 @@
 ---
-import { Map, LocateFixed, Network, Megaphone, Database, BookOpen, Info, Ghost, Radar, Siren, BookLock } from 'lucide-astro';
+import { Map, LocateFixed, Network, Newspaper, Megaphone, Database, BookOpen, Info, Ghost, Radar, Siren, BookLock } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
 import { useTranslations, localePath, stripLocale, LOCALES, LOCALE_NAMES } from '~/lib/i18n';
 
@@ -27,6 +27,7 @@ const links = [
   { href: '/', label: t('navMap'), shortLabel: t('navMapShort'), icon: Map, spookyIcon: Ghost },
   { href: '/near-me', label: t('navNearMe'), shortLabel: t('navNearMeShort'), icon: LocateFixed, spookyIcon: Radar },
   { href: '/explainer', label: t('navExplainer'), shortLabel: t('navExplainerShort'), icon: Network },
+  { href: '/news', label: t('navNews'), shortLabel: t('navNewsShort'), icon: Newspaper },
   { href: '/act', label: t('navAct'), shortLabel: t('navActShort'), icon: Megaphone, spookyIcon: Siren },
   { href: '/data', label: t('navData'), shortLabel: t('navDataShort'), icon: Database },
   { href: '/sources', label: t('navSources'), shortLabel: t('navSourcesShort'), icon: BookOpen, spookyIcon: BookLock },
@@ -148,10 +149,33 @@ const isActive = (href: string) => (href === '/' ? here === '/' : here.startsWit
     fullBleed ? 'order-last shrink-0' : 'fixed inset-x-0 bottom-0 z-40',
   ]}
 >
-  <ul class="flex items-stretch">
+  {/*
+    Two rows of four below 26rem, one row of eight at or above it.
+
+    It was one flex row of `flex-1` items, which divides the viewport by the
+    number of links and lets `truncate` absorb the remainder. Measured against
+    this label set at 10px with `tracking-wide`, that row truncates "Network"
+    and "Sources" at every width up to 414px — so on most phones, not just the
+    narrow ones. Seven links were already marginal there; adding Coverage as an
+    eighth is what made it worth fixing rather than inheriting.
+
+    26rem (416px) is where eight columns stop clipping this particular set, so
+    the breakpoint is derived from the labels rather than picked from the scale.
+    Below it the grid wraps to four per row — 80px per item at 320px, which fits
+    every label with room to spare. It costs roughly one extra row of height on
+    a narrow phone; a nav that reads "Sourc…" costs more.
+
+    The column count above the breakpoint comes from `links.length` through the
+    `--nav-cols` custom property, not from a `grid-cols-8` literal. The literal
+    encoded the array's length in a string, and the stale "seven icons" comment
+    this same change had to correct in MapView.astro is that drift already
+    happening once. A ninth link now widens the row instead of orphaning a cell
+    on a phone.
+  */}
+  <ul class="nav-icon-grid grid grid-cols-4" style={`--nav-cols:${links.length}`}>
     {
       links.map((link) => (
-        <li class="flex-1">
+        <li>
           <a
             href={localePath(locale, link.href)}
             aria-current={isActive(link.href) ? 'page' : undefined}

@@ -149,6 +149,102 @@
 }
 
 /*
+ * The Tier 4 notice surface — `.news-notice`.
+ *
+ * The notice was styled with literal amber utilities (`text-amber-200` on
+ * `bg-amber-500/5`), which are a dark-mode palette: amber-200 is a pale wash
+ * meant to sit on near-black. In light mode it lands on a near-white panel and
+ * measures 1.07:1 — the §3 disclaimer that says "this is press coverage, not
+ * records" was, on the light theme, invisible. That is the worst possible
+ * element to lose, because the whole point of the panel's honesty is that the
+ * caveat is impossible to miss.
+ *
+ * A class rather than `dark:` variants because this repo has none — it themes
+ * by flipping custom properties, and these follow the same two light selectors
+ * `.nav-band` uses. Dark keeps the original amber-200; light drops to
+ * amber-800, which measures about 8:1 on the tinted panel.
+ */
+.news-notice {
+  --notice-fg: #fde68a;
+  --notice-bg: rgb(245 158 11 / 0.05);
+  --notice-edge: rgb(245 158 11 / 0.4);
+
+  color: var(--notice-fg);
+  background-color: var(--notice-bg);
+  border-color: var(--notice-edge);
+}
+
+.news-notice-strong {
+  color: var(--notice-fg);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .news-notice {
+    --notice-fg: #92400e;
+    --notice-bg: rgb(245 158 11 / 0.1);
+    --notice-edge: rgb(180 83 9 / 0.45);
+  }
+}
+
+:root[data-theme='light'] .news-notice {
+  --notice-fg: #92400e;
+  --notice-bg: rgb(245 158 11 / 0.1);
+  --notice-edge: rgb(180 83 9 / 0.45);
+}
+
+/*
+ * The news rail's control strip — `.news-band-sub`, light mode only.
+ *
+ * The rail's chip strip is a third surface: it has to read as chrome sitting
+ * between the masthead and the list, not as the first row of content. In dark
+ * mode `bg-ink-950` does that on its own. In light mode it does not — ink-950
+ * resolves to #f0f0f0 against a #f2f2f2 rail, two units apart and effectively
+ * invisible, so the strip vanished and the chips floated on the list.
+ *
+ * The values are mndatacenter.org's `.band-sub`, which solves the identical
+ * problem between its navy header and its off-white list. That is not a
+ * borrowed palette: the two projects already share this one. Every light token
+ * in the ramp above is value-for-value what that project publishes (#f2f2f2,
+ * #e5e5e5, #1b1b1b, #0062b2), and `.nav-band` below already carries the same
+ * 2024 flag colours its `.band` does. This fills the one gap.
+ *
+ * Water Blue (#52c9e8) is the accent here rather than the body's #0062b2,
+ * carried down from the flag band above for a measured reason that project
+ * records: the link blue lands at about 2.1:1 on this grey, which fails, and
+ * the flag's own light blue is the colour already available at this depth.
+ *
+ * Dark mode is deliberately untouched — no override exists outside these two
+ * light selectors, so the strip falls through to the ink ramp it uses today.
+ */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .news-band-sub {
+    --color-ink-950: #303030;
+    --color-ink-900: #303030;
+    --color-ink-850: #4a4a4a;
+    --color-ink-800: #ffffff38;
+    --color-ink-700: #ffffff38;
+    --color-ink-400: #b2b2b2;
+    --color-ink-300: #d9d9d9;
+    --color-ink-200: #e6e6e6;
+    --color-ink-100: #ffffff;
+    --color-accent: #52c9e8;
+  }
+}
+
+:root[data-theme='light'] .news-band-sub {
+  --color-ink-950: #303030;
+  --color-ink-900: #303030;
+  --color-ink-850: #4a4a4a;
+  --color-ink-800: #ffffff38;
+  --color-ink-700: #ffffff38;
+  --color-ink-400: #b2b2b2;
+  --color-ink-300: #d9d9d9;
+  --color-ink-200: #e6e6e6;
+  --color-ink-100: #ffffff;
+  --color-accent: #52c9e8;
+}
+
+/*
  * The flag band — `.nav-band`, applied to Nav.astro's top `<header>` and
  * bottom mobile `<nav>`, light mode only. wealldobettermn.org's own header
  * (`SiteHeader.tsx`'s `.band` class, src/app/globals.css) doesn't carry the
@@ -564,6 +660,40 @@
     display: none;
   }
 }
+/*
+ * The news rail yields the right column to a selected record.
+ *
+ * Same `:has()` shape as the #map-keys rule above, and for the same reason:
+ * the state lives on #detail-panel's own `hidden` attribute, so whatever opens
+ * or closes that panel drives this too and there is no second source of truth
+ * to fall out of sync.
+ *
+ * Scoped to `>= 80rem`, and getting that wrong is worth recording: this first
+ * landed inside the neighbouring `(width < 80rem)` block, where it is a no-op
+ * — #news-dock is already `display: none` there from its own `hidden xl:flex`
+ * utility — while the width that actually needs it, `xl`, got no rule at all.
+ * The visible result would have been the failure this whole arrangement exists
+ * to avoid: a 21rem layer panel, a 24rem news rail and a 24rem detail panel
+ * docked at once, leaving a 176px map on a 1280px screen.
+ */
+@media (width >= 80rem) {
+  #map-shell:has(#detail-panel:not([hidden])) #news-dock {
+    display: none;
+  }
+}
+
+/*
+ * The bottom nav's column count follows `links.length` (see Nav.astro), via the
+ * `--nav-cols` custom property it sets inline. Below 26rem the grid keeps the
+ * four-per-row wrap its `grid-cols-4` utility provides, which is where the
+ * labels stop clipping on a 320px phone.
+ */
+@media (width >= 26rem) {
+  .nav-icon-grid {
+    grid-template-columns: repeat(var(--nav-cols, 8), minmax(0, 1fr));
+  }
+}
+
 @media (width < 64rem) {
   /*
    * The layers list is a drawer below `lg` — see #controls in MapView.astro.
@@ -1190,6 +1320,53 @@
   #detail-panel[data-animating] > * {
     min-width: var(--detail-w);
   }
+
+  /*
+   * #news-dock collapses on the same terms as #detail-panel — same width,
+   * same 200ms, same delayed visibility flip so the panel leaves the a11y
+   * tree at the moment it actually disappears. It shares that column, so
+   * anything else would make the two behave differently in one place.
+   *
+   * The width lives here rather than as a utility class for the same reason
+   * #detail-panel's does: a `width` in the class list and a `width: 0` here
+   * are the same property at different specificities, and the collapsed rule
+   * has to win without !important.
+   */
+  #news-dock {
+    width: var(--detail-w);
+  }
+  #news-dock[data-ready] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s;
+  }
+  #news-dock[data-ready][data-collapsed] {
+    transition:
+      width 200ms ease-out,
+      visibility 0s linear 200ms;
+  }
+  #news-dock[data-collapsed] {
+    width: 0;
+    border-left-width: 0;
+    visibility: hidden;
+  }
+  /* Keeps the contents from reflowing to nothing while the width animates. */
+  #news-dock[data-collapsed] > *,
+  #news-dock[data-animating] > * {
+    min-width: var(--detail-w);
+  }
+
+  /*
+   * One tab, one column. #news-tab and #detail-tab both sit at the map's
+   * right edge, and they are mutually exclusive by construction: the dock
+   * yields that column whenever a record is selected (the rule above), and
+   * #detail-tab is itself hidden whenever one is not. Without this they
+   * would stack on the same 24px of edge in the moment between those two
+   * states.
+   */
+  #map-shell:has(#detail-panel:not([hidden])) #news-tab {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1206,7 +1383,10 @@
   #controls[data-ready][data-collapsed],
   #detail-panel,
   #detail-panel[data-ready],
-  #detail-panel[data-ready][data-collapsed] {
+  #detail-panel[data-ready][data-collapsed],
+  #news-dock,
+  #news-dock[data-ready],
+  #news-dock[data-ready][data-collapsed] {
     transition: none;
   }
 }

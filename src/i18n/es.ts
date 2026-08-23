@@ -182,4 +182,45 @@ export const es: Record<string, string> = {
   openSource: 'Código abierto',
   noTrackers: 'Sin rastreadores, sin analíticas, sin cuentas.',
   attribution: 'Atribución',
+
+  // Noticias — cobertura de prensa, Nivel 4.
+  navNews: 'Cobertura',
+  navNewsShort: 'Noticias',
+  newsTitle: 'Cobertura',
+  newsIntro:
+    'Noticias de Minnesota sobre equipos de vigilancia, acuerdos de aplicación de la ley y contratos de detención — recopiladas automáticamente de Google News y actualizadas a diario. Es una lista de lectura, no un registro.',
+  newsTierTitle: 'Esta página es cobertura de prensa, no registros.',
+  newsTierWarning:
+    'Todo lo que aparece abajo es un titular escrito por un medio de comunicación. Los titulares son pistas: señalan algo que vale la pena verificar, y a veces son erróneos, incompletos o se corrigen después. Nada de esto sirve por sí solo como fuente de una afirmación.',
+  newsTierPointer: 'Para registros con números de documento y citas que los respalden, use el',
+  newsTierPointerAnd: 'y',
+  newsEmpty:
+    'El archivo de cobertura aún no se ha generado. Ejecute «npm run data:news» para obtenerlo.',
+  newsCoverageTitle: 'Lo que esta página no puede ver',
+  newsScreenedPrefix: 'En la ejecución más reciente, se descartaron',
+  newsScreenedSuffix:
+    'noticias antes de guardar nada porque trataban sobre personas concretas — detenciones, causas judiciales, agentes identificados o personas captadas por una cámara. Este sitio documenta los sistemas, nunca a las personas contra quienes se dirigen, y esos titulares se cuentan aquí pero nunca se almacenan.',
+  newsTopicAlpr: 'Lectores de matrículas',
+  newsTopicSurveillance: 'Tecnología de vigilancia',
+  newsTopicImmigration: 'Aplicación de leyes migratorias',
+  newsTopicDetention: 'Detención',
+  newsTopicOther: 'Otros',
+
+  // Panel de noticias y controles del archivo.
+  newsRailTitle: 'Cobertura de MN relacionada',
+  newsRange24h: '24H',
+  newsRange7d: '7D',
+  newsRange30d: '30D',
+  newsRange1y: '1A',
+  newsRangeAll: 'Todo',
+  newsRangeLabel: 'Rango de fechas',
+  newsTopicLabel: 'Tema',
+  newsTopicAll: 'Todos los temas',
+  newsNoneInRange: 'No hay noticias en este rango.',
+  newsOpenArchive: 'Abrir el archivo completo',
+  newsCurveCaption: 'Noticias publicadas por mes —',
+  newsCurveAlt: 'Noticias publicadas por mes:',
+  newsShownSuffix: 'mostradas',
+  newsNoneRecent: 'Sin cobertura en este periodo. El archivo tiene el registro completo.',
+  newsRailFallback: 'Los titulares recientes se cargan en su navegador.',
 };

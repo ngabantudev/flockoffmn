@@ -1,0 +1,169 @@
+name: Refresh news coverage
+
+# Re-fetches Minnesota surveillance and enforcement coverage from Google News
+# and opens a pull request when the archive changed.
+#
+# WHY A PULL REQUEST AND NOT A COMMIT. Same reason refresh-data.yml opens one:
+# this file is published data, and a silent overwrite is how a bad upstream day
+# becomes a wrong page nobody noticed. It matters more here than there. The
+# §1b person screen in src/lib/personScreen.mjs is pattern-matching against
+# headlines written by strangers, and pattern-matching is not a guarantee — the
+# first live measurement of it leaked four person-level stories that the second
+# pass caught. A human looking at the diff before it merges is the second gate,
+# and it is not optional. If this ever becomes a direct push, that gate is gone.
+#
+# WHY A SEPARATE WORKFLOW FROM refresh-data.yml. Different cadence and different
+# blast radius. The layers refresh weekly because federal and state publishers
+# issue files on that kind of schedule; news moves daily. Folding news into the
+# weekly run would either slow the feed to useless or drag every layer's ingest
+# into a daily cycle against upstreams that would rightly object.
+#
+# WHAT IT CANNOT DO:
+#   - It never deploys. Cloudflare Pages builds from `main` via its own Git
+#     integration; this workflow only ever proposes a change to one file.
+#   - `add-paths` restricts the commit to public/data/news.json. It cannot
+#     stage a source change, a layer, or anything else, whatever the ingest
+#     script writes.
+#   - It needs no secrets. The ingest is an unauthenticated GET against a public
+#     RSS endpoint, so there is no token here to leak or rotate. That is a
+#     deliberate property (§0.8) and not an accident — if a future change needs
+#     a key to refresh headlines, that is a signal the source is wrong.
+
+on:
+  schedule:
+    # 06:00 UTC daily — just under an hour before refresh-data.yml's Monday
+    # run, so the two never contend for a runner or for the same branch.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Queue rather than cancel. A cancelled run mid-write could leave the archive
+# half-merged, and the next tick is only a day out.
+concurrency:
+  group: refresh-news
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Google answers a GitHub runner and refuses Cloudflare's egress —
+      # measured by the project this was ported from, and the reason the fetch
+      # happens in CI rather than at request time. See the ingest script header.
+      #
+      # The script exits non-zero only when every one of its eight searches
+      # failed. A partial failure keeps the committed archive and reports the
+      # gap in the file's own knownGaps, which is the honest outcome.
+      - name: Fetch coverage
+        id: ingest
+        run: npm run data:news
+
+      - name: Verify the site still builds
+        run: npm run build
+
+      - name: Summarise
+        id: diff
+        run: |
+          set -euo pipefail
+          # Compare the STORIES, not the file.
+          #
+          # The metadata carries per-run diagnostics — how many searches
+          # answered, how many items each screen rejected — which move on almost
+          # every run even when no story arrived. Gating on `git diff` therefore
+          # opened a pull request nearly every day whose entire content was a
+          # counter ticking, and the §1b headline review is a human gate: it
+          # works only while a PR appearing means there is something to read.
+          # Daily no-op PRs are how that gate gets skimmed and then ignored.
+          #
+          # The diagnostics still publish; they just no longer, on their own,
+          # ask anyone to review them.
+          if node -e '
+            const { execSync } = require("child_process");
+            const now = require("./public/data/news.json").items;
+            let before = [];
+            try { before = JSON.parse(execSync("git show HEAD:public/data/news.json", {encoding:"utf8"})).items; } catch {}
+            const key = (a) => a.map((i) => i.url).sort().join("\n");
+            process.exit(key(now) === key(before) ? 0 : 1);
+          '; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No new coverage." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            # Every line of this script stays indented inside the block
+            # scalar. It previously used a multi-line template literal whose
+            # continuation lines began at column 1, which ends a YAML `|` block
+            # — the workflow did not parse at all, and would have failed on its
+            # first scheduled run. Built as an array of lines instead, so the
+            # markdown is assembled rather than laid out in the source.
+            node -e '
+              const a = require("./public/data/news.json");
+              const s = a.metadata.screened;
+              const m = a.metadata;
+              const out = [
+                "### Coverage archive",
+                "",
+                `**${a.items.length}** stories total, **${m.addedThisRun}** new this run.`,
+                `Searches: ${m.queriesRun - m.queriesFailed}/${m.queriesRun} answered.`,
+                "",
+                "#### Screened out before saving (§1b)",
+                "",
+                "The person rules are the §1b screen. non-article, off-topic and",
+                "out-of-state are relevance filters and are counted separately.",
+                "",
+                "| Rule | Count |",
+                "| --- | ---: |",
+                ...Object.entries(s.person).map(([k, v]) => `| ${k} | ${v} |`),
+                `| non-article | ${s.nonArticle} |`,
+                `| off-topic | ${s.offTopic} |`,
+                `| out-of-state | ${s.outOfState} |`,
+                "",
+              ];
+              console.log(out.join("\n"));
+            ' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Open pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          # This workflow touches exactly one file and must never stage another.
+          add-paths: public/data/news.json
+          branch: data/news-refresh
+          title: 'Refresh news coverage'
+          commit-message: 'Refresh news coverage from Google News'
+          body: |
+            Automated re-fetch of Minnesota surveillance and enforcement
+            coverage. Counts are in the workflow run summary.
+
+            **Review the added headlines before merging.** This is the second
+            gate on §1b, and the one that catches what the pattern screen
+            missed:
+
+            - Does any new headline name or describe an individual — someone
+              arrested, charged, held, deported, or identified? Does any name a
+              deputy, officer, or agent? If so, the screen leaked. Remove the
+              item and add the pattern to `src/lib/personScreen.mjs`.
+            - Is anything here not actually about Minnesota, or not actually
+              about surveillance, enforcement, or detention?
+            - Does the off-topic count look wildly different from the last run?
+              That usually means an upstream query started matching something
+              new, not that the world changed.
+
+            Merging publishes these headlines to a public page. Nothing here is
+            a source for a claim on its own — it is a Tier 4 lead list (§3).
+          labels: data
+          delete-branch: true

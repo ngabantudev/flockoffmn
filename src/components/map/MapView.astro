@@ -5,6 +5,7 @@ import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { labelForDetailField } from '~/lib/detailFields';
 import CompareView from '~/components/map/CompareView.astro';
+import NewsFeed from '~/components/news/NewsFeed.astro';
 import type { ClientLayer } from '~/lib/mapController';
 
 interface Props {
@@ -649,6 +650,18 @@ const strings = {
             dock: 'xl:flex',
             label: t('recordPanel'),
           },
+          // Same edge and breakpoint as #detail-tab, which is safe because the
+          // two are mutually exclusive — see the `:has(#detail-panel...)` rule
+          // in global.css that hides this one whenever a record is open.
+          {
+            id: 'news-tab',
+            side: 'right' as const,
+            controls: 'news-dock',
+            edge: 'right-0',
+            shape: 'rounded-l-lg border-r-0',
+            dock: 'xl:flex',
+            label: t('newsRailTitle'),
+          },
         ].map((tab) => (
           <button
             id={tab.id}
@@ -758,6 +771,47 @@ const strings = {
     </div>
 
     {/*
+      ---------------------------- News rail -----------------------------
+      Shares the right column with the detail panel below rather than adding a
+      third one, and that is geometry rather than taste. `--controls-w` is
+      21rem and `--detail-w` is 24rem, so the docked chrome already costs 720px
+      at the 1280px breakpoint where both appear — a third 24rem column would
+      leave a 176px map. The detail panel's own comment records the same
+      arithmetic being what kept it from docking at `lg`.
+
+      Sharing works because the column is empty most of the time: #detail-panel
+      is `hidden` until a record is selected. So the column shows coverage by
+      default and the record when there is one, which is also the better
+      reading of what that space is for — it answers "what else is going on"
+      until the reader asks about something specific.
+
+      The swap is a CSS rule in global.css keyed on
+      `#map-shell:has(#detail-panel:not([hidden]))`, matching the `:has()`
+      pattern #map-keys already uses. No script, so it cannot desynchronise
+      from whatever opened the panel.
+
+      `xl` only, and it does not become a sheet below that. The bottom nav is
+      already eight icons and the detail sheet already claims 45% of the map on
+      a phone; a third surface competing for that space is what the near-me
+      rebuild just finished reclaiming. Below `xl` the archive page is the
+      whole feature, and the nav links straight to it.
+    */}
+    <aside
+      id="news-dock"
+      aria-label={t('newsRailTitle')}
+      class="hidden shrink-0 border-l border-ink-800 bg-ink-900 xl:flex"
+    >
+      {/*
+        Second copy of the anti-flash init, and it has to be here rather than
+        only inside #controls: that one runs while the parser is still hundreds
+        of lines above this element, so it cannot see the dock. See the file's
+        own header for why running it twice is idempotent.
+      */}
+      <script is:inline src="/panels-init.js"></script>
+      <NewsFeed locale={locale} density="rail" />
+    </aside>
+
+    {/*
       --------------------------- Detail panel ---------------------------
       Two shapes from one element. At `xl` it is a plain flex sibling to the
       right of the map: the map's own box shrinks to make room, so a fit
@@ -839,6 +893,12 @@ const strings = {
   const statusEl = document.getElementById('map-status')!;
   const layersTabEl = document.getElementById('layers-tab')!;
   const detailTabEl = document.getElementById('detail-tab')!;
+  // Queried defensively, unlike the two above: those are structural to the map
+  // and their absence is a bug worth throwing on, whereas the news dock is a
+  // feature that could reasonably be removed from this page later. A `!` here
+  // would take the whole map script down with it.
+  const newsDockEl = document.getElementById('news-dock');
+  const newsTabEl = document.getElementById('news-tab');
   // Static descendant of detailTabEl, populated per-selection in
   // renderDetail — scoped/cached here instead of a fresh
   // document.querySelector on every single record selection.
@@ -1018,6 +1078,7 @@ const strings = {
      sync with the reflow toggling either one causes. */
 
   const MAP_LAYERS_COLLAPSED_KEY = 'mapLayersCollapsed';
+  const MAP_NEWS_COLLAPSED_KEY = 'mapNewsCollapsed';
 
   /**
    * Collapse/expand one panel and its pull tab together. Mirrors
@@ -1066,6 +1127,7 @@ const strings = {
   }
   clearAnimatingOnWidthEnd(controlsEl);
   clearAnimatingOnWidthEnd(detailEl);
+  if (newsDockEl) clearAnimatingOnWidthEnd(newsDockEl);
 
   // Both tabs wire up the same way — click toggles the panel's current
   // collapsed state — differing only in whether the state persists.
@@ -1081,6 +1143,9 @@ const strings = {
   // could never be observed by anyone, so there is deliberately only the
   // one storage key, on #controls.
   wireTab(detailEl, detailTabEl);
+  // Persisted, like #controls and unlike #detail-panel: how much chrome you
+  // want standing beside the map is a preference, not a per-selection state.
+  if (newsDockEl && newsTabEl) wireTab(newsDockEl, newsTabEl, MAP_NEWS_COLLAPSED_KEY);
 
   /**
    * The single place that shows/hides #detail-panel and its pull tab
@@ -1094,34 +1159,41 @@ const strings = {
     detailTabEl.hidden = !open;
   }
 
-  // #controls only ever collapses (visually, via CSS) at >=1024px — see the
-  // `@media (width >= 64rem)` block in global.css. `inert` has no such
-  // built-in breakpoint awareness, so it has to be kept in sync by hand: a
-  // reader who collapses #controls on a desktop-width window and then
-  // narrows past 1024px (or loads the persisted flag on a phone) would
-  // otherwise get a search box and layers button that are unfocusable and
-  // invisible to a screen reader, with no visible tab below `lg` to undo it
-  // (#layers-tab is itself `hidden lg:flex`).
-  // One MediaQueryList, not a fresh one per call — matchMedia() allocates,
-  // and syncControlsInert runs on every dock/undock as well as at startup.
+  /*
+   * `inert` has no breakpoint awareness, so it has to be kept in sync by hand.
+   *
+   * Each of these panels only ever collapses (visually, via CSS) above its own
+   * breakpoint — #controls at >=1024px, #detail-panel and #news-dock at
+   * >=1280px, matching the `@media (width >= 64rem)` and `(width >= 80rem)`
+   * blocks in global.css. Without this, a reader who collapses a panel on a
+   * desktop-width window and then narrows past that breakpoint (or loads the
+   * persisted flag on a phone) gets a panel that CSS renders again but that is
+   * still `inert` — unfocusable and invisible to a screen reader, with no
+   * visible tab to undo it, since each tab is itself gated on the same
+   * breakpoint.
+   *
+   * One function rather than three copies of the predicate: it was written out
+   * per panel, and the third copy arrived with the news dock. Three
+   * implementations of one invariant is three places for it to stop agreeing,
+   * and only the dock's is covered by a test.
+   *
+   * One MediaQueryList per breakpoint, not a fresh one per call — matchMedia()
+   * allocates, and these run on every dock/undock as well as at startup.
+   */
   const controlsDockMql = window.matchMedia('(width >= 64rem)');
-  function syncControlsInert() {
-    controlsEl.inert = controlsEl.hasAttribute('data-collapsed') && controlsDockMql.matches;
-  }
-  controlsDockMql.addEventListener('change', syncControlsInert);
-
-  // #detail-panel only ever collapses (visually, via CSS) at >=1280px — see
-  // the `@media (width >= 80rem)` block in global.css. Same breakpoint gap
-  // as #controls above: collapse the panel at >=1280px, then narrow below
-  // 1280px, and without this the panel renders visibly again (CSS no
-  // longer hides it) but stays `inert` — unfocusable and invisible to a
-  // screen reader, with no tab below `xl` to undo it (#detail-tab is
-  // itself `hidden xl:flex`).
   const detailDockMql = window.matchMedia('(width >= 80rem)');
-  function syncDetailInert() {
-    detailEl.inert = detailEl.hasAttribute('data-collapsed') && detailDockMql.matches;
+
+  function inertSync(el: HTMLElement | null, mql: MediaQueryList): () => void {
+    const sync = () => {
+      if (el) el.inert = el.hasAttribute('data-collapsed') && mql.matches;
+    };
+    mql.addEventListener('change', sync);
+    return sync;
   }
-  detailDockMql.addEventListener('change', syncDetailInert);
+
+  const syncControlsInert = inertSync(controlsEl, controlsDockMql);
+  const syncDetailInert = inertSync(detailEl, detailDockMql);
+  const syncNewsInert = inertSync(newsDockEl, detailDockMql);
 
   // Sync the tabs' chrome to whatever /panels-init.js already stamped on
   // #controls pre-paint (or to the untouched default, if it stamped
@@ -1139,6 +1211,19 @@ const strings = {
     setDetailOpen(false);
     controlsEl.setAttribute('data-ready', '');
     detailEl.setAttribute('data-ready', '');
+
+    // Same order as #controls above: sync the tab's chrome to whatever
+    // /panels-init.js already stamped, then reveal, then turn transitions on —
+    // so a dock restored collapsed does not animate open on load.
+    if (newsDockEl && newsTabEl) {
+      newsTabEl.setAttribute(
+        'aria-expanded',
+        String(!newsDockEl.hasAttribute('data-collapsed')),
+      );
+      syncNewsInert();
+      newsTabEl.hidden = false;
+      newsDockEl.setAttribute('data-ready', '');
+    }
   }
 
   /* --------------------------- Near-me DOM list --------------------------

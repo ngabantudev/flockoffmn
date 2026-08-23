@@ -215,4 +215,46 @@ export const en: Record<string, string> = {
   openSource: 'Open source',
   noTrackers: 'No trackers, no analytics, no accounts.',
   attribution: 'Attribution',
+
+  // News feed — press coverage, Tier 4. See src/lib/news.ts for why this is
+  // deliberately not a map layer.
+  navNews: 'Coverage',
+  navNewsShort: 'News',
+  newsTitle: 'Coverage',
+  newsIntro:
+    'Minnesota news stories about surveillance equipment, enforcement agreements, and detention contracts — collected automatically from Google News and refreshed daily. It is a reading list, not a record.',
+  newsTierTitle: 'This page is press coverage, not records.',
+  newsTierWarning:
+    'Everything below is a headline written by a news outlet. Headlines are leads: they point you at something worth checking, and they are sometimes wrong, incomplete, or corrected later. Nothing here is a source for a claim on its own.',
+  newsTierPointer: 'For records with document numbers and citations behind them, use the',
+  newsTierPointerAnd: 'and',
+  newsEmpty:
+    'The coverage archive has not been built yet. Run "npm run data:news" to fetch it.',
+  newsCoverageTitle: 'What this page cannot see',
+  newsScreenedPrefix: 'On the most recent run,',
+  newsScreenedSuffix:
+    'stories were dropped before anything was saved because they were about individual people — arrests, court cases, named officers, or people caught by a camera. This site records the systems, never the people they are aimed at, and those headlines are counted here but never stored.',
+  newsTopicAlpr: 'Plate readers',
+  newsTopicSurveillance: 'Surveillance tech',
+  newsTopicImmigration: 'Immigration enforcement',
+  newsTopicDetention: 'Detention',
+  newsTopicOther: 'Other',
+
+  // News rail + archive controls.
+  newsRailTitle: 'Related MN coverage',
+  newsRange24h: '24H',
+  newsRange7d: '7D',
+  newsRange30d: '30D',
+  newsRange1y: '1Y',
+  newsRangeAll: 'All',
+  newsRangeLabel: 'Date range',
+  newsTopicLabel: 'Topic',
+  newsTopicAll: 'All topics',
+  newsNoneInRange: 'No stories in this range.',
+  newsOpenArchive: 'Open the full archive',
+  newsCurveCaption: 'Stories published per month —',
+  newsCurveAlt: 'Stories published per month:',
+  newsShownSuffix: 'shown',
+  newsNoneRecent: 'No coverage in this window. The archive has the full record.',
+  newsRailFallback: 'Recent headlines load in your browser.',
 };
