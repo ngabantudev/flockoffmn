@@ -122,26 +122,40 @@ export const COLOR_HELPERS = `
 `;
 
 /**
- * Wait until the news rail has hydrated, rather than guessing a duration.
+ * Wait until the news rail has settled, and say which way it settled.
  *
- * The rail's rows and its topic chips arrive from /data/news.json at idle, and
- * its controls stay `hidden` until they do — so any suite that measures a chip
- * has to wait for this or it measures a 0x0 hidden button. A fixed sleep won a
- * fast local machine and lost on CI, where the suites failed with "24H 0x0"
- * while passing locally, which is the least useful shape a test failure can
- * have.
+ * The rail's rows and chips arrive from /data/news.json at idle, and its
+ * controls stay `hidden` until they do — so any suite that measures a chip has
+ * to wait for this or it measures a 0x0 hidden button. A fixed sleep won on a
+ * fast laptop and lost on CI, which failed with "24H 0x0" while passing
+ * locally.
  *
- * Resolves either way: a page with no rail (the archive) or an empty window is
- * a legitimate state, and the caller's own assertions say what should be true
- * there.
+ * Returns one of:
+ *   'ready'  — controls revealed, chips and rows on screen.
+ *   'empty'  — hydration finished and nothing fell inside the 30-day window,
+ *              so the controls are deliberately still hidden.
+ *   'absent' — no rail on this page at all (the archive).
+ *
+ * `empty` is a terminal state, not a failure, and reporting it is the whole
+ * reason this returns anything. Waiting only for `ready` made an empty rail
+ * indistinguishable from a slow one: every rail suite burned the full timeout
+ * and then failed on hidden chips. That is reachable by doing nothing —
+ * `public/data/news.json` is committed, the window is 30 days, so an archive
+ * left unrefreshed for a month turns `npm test` red on unrelated pull requests.
+ * Measured at 40 days stale: 16s per suite, doubled by run.mjs's retry.
  */
 export const railReady = (page) =>
   page.waitForFunction(() => {
     const d = document.getElementById('news-dock');
-    if (!d) return true;
+    if (!d) return 'absent';
     const controls = d.querySelector('[data-news-controls]');
-    return !!controls && !controls.hidden;
-  }, null, { timeout: 15_000 }).catch(() => {});
+    if (controls && !controls.hidden) return 'ready';
+    const empty = d.querySelector('[data-news-none-recent]');
+    if (empty && !empty.hidden) return 'empty';
+    return false;
+  }, null, { timeout: 15_000 })
+    .then((h) => h.jsonValue())
+    .catch(() => 'absent');
 
 /** Wait for an element's width to stop changing, rather than guessing a duration. */
 export const settle = (page, selector) =>

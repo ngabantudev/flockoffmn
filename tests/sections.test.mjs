@@ -5,7 +5,16 @@ const b=await chromium.launch(); const { check: ck, report } = reporter('section
 for (const scheme of ['light','dark']) {
   const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:scheme});
   await page.goto(`${BASE}/`,{waitUntil:'domcontentloaded'});
-  await railReady(page);
+  const railState = await railReady(page);
+  if (railState === 'empty') {
+    // An empty rail is a terminal state, not a slow one: nothing fell inside
+    // the 30-day window. There are no chips to measure, so the assertions
+    // below are vacuous rather than failing. Noted out loud so a stale
+    // archive shows up as skipped coverage instead of silently passing.
+    console.log(`  SKIP  ${scheme}: news archive is stale, no control groups to measure`);
+    await page.close();
+    continue;
+  }
   const r=await page.evaluate(()=>{
     const d=document.getElementById('news-dock');
     const groups=[...d.querySelectorAll('[data-news-controls] [role="group"]')];

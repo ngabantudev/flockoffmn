@@ -135,11 +135,14 @@ export async function loadNews(): Promise<NewsArchive | null> {
   try {
     const raw = await readFile(path.join(PUBLIC_DIR, NEWS_PATH), 'utf8');
     cache = JSON.parse(raw) as NewsArchive;
-    // Cached, so this runs once per build rather than once per page.
-    assertKnownTopics(cache.items.map((i) => i.topic));
   } catch {
     cache = null;
   }
+  // Outside the try, and defensive about `items`: inside it, a file that parsed
+  // but carried no `items` array threw here, was swallowed as a read failure,
+  // and the whole archive was reported as "the ingest has never been run".
+  // Cached, so this runs once per build rather than once per page.
+  if (cache) assertKnownTopics((cache.items ?? []).map((i) => i.topic));
   return cache;
 }
 

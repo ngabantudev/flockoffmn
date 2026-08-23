@@ -1073,13 +1073,28 @@ const screened = archive ? screenedTotal(archive) : 0;
         });
       });
     };
-    // Cheap: a bounced resize listener that removes itself the moment the rail
-    // is on screen, so a phone that never widens keeps nothing alive.
+    /*
+     * A resize listener that removes itself the moment the rail is on screen,
+     * so a phone that never widens keeps nothing alive.
+     *
+     * Coalesced through one animation frame rather than answered per event.
+     * Reading `offsetParent` forces layout, and `resize` fires in bursts — a
+     * drag across the breakpoint, and on a phone every scroll that moves the
+     * URL bar. That phone is the one case where the listener is never removed,
+     * because the rail never becomes visible there, so it is the case that has
+     * to be cheap.
+     */
+    let queued = false;
     const onResize = () => {
-      start();
-      if (started) window.removeEventListener('resize', onResize);
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        start();
+        if (started) window.removeEventListener('resize', onResize);
+      });
     };
-    window.addEventListener('resize', onResize);
+    window.addEventListener('resize', onResize, { passive: true });
     start();
   }
 </script>

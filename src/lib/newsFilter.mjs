@@ -77,15 +77,21 @@ const TOPIC_RULES = [
 /**
  * Every topic id this project recognises, `other` last.
  *
- * Exported so nothing else has to restate the list. `NewsTopic` in
- * src/lib/news.ts is derived from this, which makes adding a topic to
- * TOPIC_RULES fail `npm run check` until it also has a label and both
- * translations — the same drift-prevention argument that puts geo.mjs and
- * authority.mjs in src/lib rather than one copy per consumer.
+ * Read this before adding a topic to TOPIC_RULES: nothing here is checked at
+ * compile time. `NewsTopic` in src/lib/news.ts is NOT derived from this list —
+ * deriving it was tried and rejected, because this is a `.mjs` module the
+ * ingest runs under plain Node, so it cannot say `as const` and the union
+ * collapses to `string`, which silently removed the check on TOPIC_LABELS that
+ * already existed. The reasoning is written out in full at NewsTopic.
  *
- * The alternative was what the UI had: a runtime fallback rendering a raw id
- * like `sheriff` as an untranslated chip. That turns a mistake you cannot merge
- * into one that ships quietly, which is the wrong direction.
+ * So a new topic has to be added by hand in four more places: `NewsTopic` and
+ * `KNOWN_TOPICS` in src/lib/news.ts, `TOPIC_LABELS` in NewsFeed.astro, and
+ * `newsTopic*` in src/i18n/{en,es}.ts. What catches a miss is
+ * `assertKnownTopics`, at build time, in the build log — and the UI degrades to
+ * rendering the raw id, which is ugly on purpose.
+ *
+ * Exported so anything that needs the runtime list can read it here rather than
+ * restate it.
  */
 export const TOPIC_IDS = [...TOPIC_RULES.map((r) => r.topic), 'other'];
 

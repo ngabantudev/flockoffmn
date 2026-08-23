@@ -5,7 +5,18 @@ const { check: ck, report } = reporter('WCAG checks');
 
 const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:'light'});
 await page.goto(`${BASE}/`,{waitUntil:'domcontentloaded'});
-await railReady(page);
+const railState = await railReady(page);
+
+/*
+ * Checks that need a chip on screen. An empty rail is a terminal state, not a
+ * slow one — nothing fell inside the 30-day window — and its controls stay
+ * deliberately hidden, so measuring them asserts nothing. Skipped out loud, so
+ * a stale public/data/news.json reads as lost coverage rather than as a pass.
+ */
+const ckRail = (name, ...rest) => {
+  if (railState === 'empty') return console.log(`  SKIP  ${name} — news archive is stale, no rail controls`);
+  return ck(name, ...rest);
+};
 
 // 2.5.8 Target Size (Minimum) — 24x24 CSS px, AA in WCAG 2.2
 const targets = await page.evaluate(() => {
@@ -28,12 +39,13 @@ const targets = await page.evaluate(() => {
 const small = targets.filter(t=>(t.w<24||t.h<24) && t.centre<24);
 console.log('\n  2.5.8 Target Size (min 24x24):');
 for(const t of targets) console.log(`     ${t.w}x${t.h}  "${t.t}"`);
-ck('2.5.8 every control is at least 24x24', small.length===0, small.map(t=>`"${t.t}" ${t.w}x${t.h}`).join(', '));
+ckRail('2.5.8 every control is at least 24x24', small.length===0, small.map(t=>`"${t.t}" ${t.w}x${t.h}`).join(', '));
 
 // 2.4.7 Focus Visible + 1.4.11 focus indicator contrast
 const focus = await page.evaluate(async () => {
   const d=document.getElementById('news-dock');
   const el=d.querySelector('button');
+  if (!el) return {isFocused:false, outlineStyle:'none', outlineWidth:'0px', outlineColor:'', boxShadow:'none'};
   el.focus();
   const cs=getComputedStyle(el);
   return {outlineWidth:cs.outlineWidth, outlineStyle:cs.outlineStyle, outlineColor:cs.outlineColor,
@@ -42,7 +54,7 @@ const focus = await page.evaluate(async () => {
 console.log('\n  2.4.7 Focus Visible:');
 console.log(`     outline: ${focus.outlineStyle} ${focus.outlineWidth} ${focus.outlineColor}`);
 console.log(`     box-shadow: ${focus.boxShadow}`);
-ck('2.4.7 focused control shows a visible indicator',
+ckRail('2.4.7 focused control shows a visible indicator',
    focus.isFocused && ((focus.outlineStyle!=='none' && parseFloat(focus.outlineWidth)>0) || focus.boxShadow!=='none'));
 
 // 1.3.1 heading order within the panel
@@ -68,9 +80,9 @@ console.log('\n  4.1.2 Name/Role/Value:');
 console.log(`     groups labelled: ${JSON.stringify(nrv.groups)}`);
 console.log(`     buttons: ${nrv.total}, aria-pressed on ${nrv.pressed}, unlabelled ${nrv.unlabelled}`);
 console.log(`     live regions: ${JSON.stringify(nrv.liveRegions)}`);
-ck('4.1.2 every control has an accessible name', nrv.unlabelled===0);
-ck('4.1.2 toggle state exposed on all toggles', nrv.pressed===nrv.total);
-ck('4.1.2 every group is labelled', nrv.groups.every(Boolean));
+ckRail('4.1.2 every control has an accessible name', nrv.unlabelled===0);
+ckRail('4.1.2 toggle state exposed on all toggles', nrv.pressed===nrv.total);
+ckRail('4.1.2 every group is labelled', nrv.groups.every(Boolean));
 
 await page.close();
 

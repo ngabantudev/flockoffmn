@@ -6,7 +6,16 @@ for (const [label,url,sel] of [['rail',`${BASE}/`,'#news-dock'],
                                ['archive',`${BASE}/news/`,'#news-archive']]) {
   const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:'light'});
   await page.goto(url,{waitUntil:'domcontentloaded'});
-  await railReady(page);
+  const railState = await railReady(page);
+  if (label === 'rail' && railState === 'empty') {
+    // An empty rail is a terminal state, not a slow one: nothing fell inside
+    // the 30-day window. There are no chips to measure, so the assertions
+    // below are vacuous rather than failing. Noted out loud so a stale
+    // archive shows up as skipped coverage instead of silently passing.
+    console.log('  SKIP  rail: news archive is stale, no chips to measure');
+    await page.close();
+    continue;
+  }
   const r=await page.evaluate((sel)=>{
     const root=document.querySelector(sel);
     const box=(el)=>{const b=el.getBoundingClientRect();return {w:+b.width.toFixed(1),h:+b.height.toFixed(1),top:b.top,bottom:b.bottom,left:b.left,right:b.right}};
