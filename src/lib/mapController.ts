@@ -9,15 +9,7 @@ import {
   METRO_BOUNDS,
   METRO_CENTER,
 } from './mapStyle';
-import {
-  bboxOf,
-  representativePoint,
-  haversineMeters,
-  bearingDeg,
-  destinationPoint,
-  scatterInPolygon,
-  seedFromId,
-} from './geo.mjs';
+import { bboxOf, representativePoint, haversineMeters, bearingDeg, destinationPoint } from './geo.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
@@ -115,8 +107,6 @@ export interface ClientLayer {
   scale?: LayerDefinition['scale'];
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
   blockAggregate?: LayerDefinition['blockAggregate'];
-  /** Paint this polygon layer as scattered dots instead of a graduated fill. See LayerDefinition's own comment. */
-  dotDensity?: Localised<NonNullable<LayerDefinition['dotDensity']>>;
   /** See LayerDefinition's own comment in layers/types.ts. */
   timeSeries?: LayerDefinition['timeSeries'];
   /** Colour records by a category once they are drawn individually. */
@@ -773,8 +763,8 @@ export class MapController {
    * `timeSeries` layer draws its own latest full year" — the default, and
    * exactly today's behaviour for a reader who never touches the slider.
    * One value for every `timeSeries` layer at once (see that field's own
-   * comment on why this is shared rather than per layer), read by
-   * `dotFeatures()` below and applied by `setSelectedYear()`.
+   * comment on why this is shared rather than per layer), applied by
+   * `setSelectedYear()`.
    */
   private selectedYear: number | null = null;
   /**
@@ -1532,14 +1522,6 @@ export class MapController {
    * the first basemap toggle onward.
    */
   private polygonFillColor(layer: ClientLayer): maplibregl.ExpressionSpecification {
-    // A dotDensity layer's fill is a faint, flat hit-region for hover/click —
-    // never category-coloured, because the dots themselves are the encoding
-    // now, and a banded fill underneath would be the same "two encodings
-    // fighting for one set of pixels" problem the compare view's crime
-    // circles ran into.
-    if (layer.dotDensity) {
-      return (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT) as unknown as maplibregl.ExpressionSpecification;
-    }
     if (layer.polygonClick === 'highlight') {
       // The tint is one layer (vendor_contract) painted onto another
       // (agency_jurisdiction) — Documented vendor contracts and the green
@@ -1679,10 +1661,6 @@ export class MapController {
         0.42,
       ] as unknown as maplibregl.ExpressionSpecification;
     }
-    // Just enough to read as "an area" and give hover/click something to
-    // land on — low enough that it never competes with the dots drawn over
-    // it, which is where this layer's actual signal lives.
-    if (layer.dotDensity) return 0.1;
     return 0.42;
   }
 
@@ -1729,14 +1707,12 @@ export class MapController {
     for (const layer of this.layers) {
       if (this.map.getLayer(`${layer.id}-fill`)) {
         // categoryColors swatches are fixed hex values from the registry,
-        // not derived from basemapDark, so a layer using them normally needs
-        // no repaint here at all. `dotDensity` is the one exception: it
-        // overrides polygonFillColor's categoryColors branch with the
-        // basemap-dependent neutral fill (see that function's own comment),
-        // so such a layer keeps `categoryColors` for filtering but still
-        // needs its fill re-keyed on every basemap toggle like any other
-        // plain-colour polygon layer.
-        if (!layer.categoryColors || layer.dotDensity) {
+        // not derived from basemapDark, so a layer using them needs no
+        // repaint here at all — including a `timeSeries` layer mid-scrub:
+        // skipping it is what keeps a basemap toggle from clobbering
+        // whichever year the slider currently has painted back to the
+        // latest-year default.
+        if (!layer.categoryColors) {
           const fill = this.polygonFillColor(layer);
           this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', fill);
           // The outline shares the fill's expression for every polygon kind
@@ -1751,11 +1727,6 @@ export class MapController {
         }
         if (this.map.getLayer(`${layer.id}-labels`)) {
           this.map.setPaintProperty(`${layer.id}-labels`, 'text-halo-color', this.basemapColor);
-        }
-        // The dots' own colour is layerColor(layer) — color/colorLight by
-        // basemap, same split as every point layer's circle-color.
-        if (this.map.getLayer(`${layer.id}-dots`)) {
-          this.map.setPaintProperty(`${layer.id}-dots`, 'circle-color', this.layerColor(layer));
         }
       }
 
@@ -2452,45 +2423,42 @@ export class MapController {
     };
   }
 
-  private dotsSourceId = (layerId: string) => `src-${layerId}-dots`;
-
   /**
-   * A `dotDensity` layer's scattered points, derived from whichever polygons
-   * the active filters leave standing — same reasoning as blockFeatures
-   * above: a filtered-out polygon takes its dots with it.
+   * A `timeSeries` layer's fill-colour expression for one specific year,
+   * bucketing that year's raw `total{year}` value through `timeSeries.stops`
+   * into the same colours `categoryColors.colors` already declares — so a
+   * scrubbed year and the layer's own default (latest-year) band read as
+   * the identical colour scale, just evaluated against a different column.
    *
-   * These points are never added to `this.data`, never carry an `id`, and
-   * never pass through `flatten()` — they are not records. See
-   * `dotDensity`'s own comment in layers/types.ts for why.
+   * A plain `['get', key]`, not the nested `['get', key, ['get',
+   * 'attributes']]` form CompareView.astro and the old dot code used —
+   * those read the *raw* GeoJSON file directly, where attributes really is
+   * nested. This expression is evaluated against `flatten()`'s output
+   * instead (the source `addLayer` actually draws), which spreads every
+   * attribute to the top level of `properties` and drops the nested object
+   * entirely — see that method's own comment. Getting this wrong doesn't
+   * throw; it silently reads null for every feature and the whole layer
+   * renders as one flat fallback grey, which is exactly what shipped here
+   * first and was caught by comparing the paint property's live value
+   * against the real per-neighbourhood totals, not by trusting the
+   * expression compiled.
+   *
+   * A `case` guards the null/withheld case ahead of `step`, which demands a
+   * number: a withheld cell reads as `categoryColors.fallback`, the same
+   * grey every other unmatched or missing value on this map already uses,
+   * never guessed into a band.
    */
-  private dotFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
-    if (!layer.dotDensity) return EMPTY_FC;
-    // A `timeSeries` layer with a year selected reads that year's
-    // `total{year}` attribute instead of the registry's default key —
-    // everything else about placing the dots (perUnit, seeding, suppression)
-    // is unchanged, because the series and the latest-year value share the
-    // exact same shape: a number or null, never anything to reinterpret.
-    const key =
-      layer.timeSeries && this.selectedYear !== null && layer.timeSeries.years.includes(this.selectedYear)
-        ? `total${this.selectedYear}`
-        : layer.dotDensity.key;
-    const { perUnit } = layer.dotDensity;
-    const out: Feature[] = [];
-    for (const f of features) {
-      if (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon') continue;
-      const raw = f.properties.attributes[key];
-      const value = typeof raw === 'number' ? raw : null;
-      // A withheld/suppressed cell (raw is null) gets zero dots — never an
-      // estimate. Guessing a density for a cell the source deliberately
-      // declined to publish would defeat the reason it was withheld.
-      if (value === null) continue;
-      const count = Math.round(value / perUnit);
-      const seed = seedFromId(f.properties.id);
-      for (const [lng, lat] of scatterInPolygon(f.geometry, count, seed)) {
-        out.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} });
-      }
-    }
-    return { type: 'FeatureCollection', features: out };
+  private timeSeriesFillColor(layer: ClientLayer, year: number): maplibregl.ExpressionSpecification {
+    const { stops } = layer.timeSeries!;
+    const colors = layer.categoryColors!.colors.map((c) => c.color);
+    const fallback = layer.categoryColors!.fallback;
+    const value = ['get', `total${year}`];
+    return [
+      'case',
+      ['==', value, null],
+      fallback,
+      ['step', value, colors[0], ...stops.flatMap((stop, i) => [stop, colors[i + 1]])],
+    ] as unknown as maplibregl.ExpressionSpecification;
   }
 
   /**
@@ -2716,7 +2684,15 @@ export class MapController {
       // `polygonClick: 'highlight'` layer's *outline*: see
       // polygonOutlineColor's own comment for why that one pops to a fixed
       // near-white/near-black instead of sharing polygonColor.
-      const polygonColor = this.polygonFillColor(layer);
+      //
+      // A `timeSeries` layer checked for the first time while the slider is
+      // already scrubbed away from the latest year draws at that scrubbed
+      // year immediately, not the default, so the map and the slider's own
+      // label never briefly disagree about which year is on screen.
+      const polygonColor =
+        layer.timeSeries && this.selectedYear !== null && layer.timeSeries.years.includes(this.selectedYear)
+          ? this.timeSeriesFillColor(layer, this.selectedYear)
+          : this.polygonFillColor(layer);
       const outlineColor = highlightMode ? this.polygonOutlineColor() : polygonColor;
 
       // The grid stands under the parcels and fades out exactly as they fade
@@ -2827,29 +2803,6 @@ export class MapController {
         },
         under,
       );
-      if (layer.dotDensity) {
-        // Density is the whole encoding here, so the dots draw at full
-        // strength in the layer's own colour — unlike the fill above, which
-        // is deliberately faint. Inserted at `under`, same as every other
-        // polygon layer, so a point layer like ALPR still draws over these:
-        // the apparatus stays visually on top of context layers, the same
-        // rule the compare view's now-removed crime overlay followed.
-        const dotsSrc = this.dotsSourceId(layer.id);
-        this.map.addSource(dotsSrc, { type: 'geojson', data: this.dotFeatures(layer, features) });
-        this.map.addLayer(
-          {
-            id: `${layer.id}-dots`,
-            type: 'circle',
-            source: dotsSrc,
-            paint: {
-              'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 1, 16, 2.6] as unknown as maplibregl.ExpressionSpecification,
-              'circle-color': this.layerColor(layer),
-              'circle-opacity': 0.85,
-            },
-          },
-          under,
-        );
-      }
       if (layer.tintWhenRelated) void this.applyRelatedTint(layer);
       if (layer.labelBy) {
         // The identifier the source printed on the area, in the area's own
@@ -3865,27 +3818,38 @@ export class MapController {
     }
   }
 
-  /** Features of a layer that pass its current filters. */
   /**
    * Move the shared crime time slider — `year` a value from some visible
    * `timeSeries` layer's own `years`, or `null` to return every `timeSeries`
    * layer to its own latest full year (the default, and the only state
    * before this is ever called).
    *
-   * Repaints every currently-checked `timeSeries` layer's dots at once, from
-   * whichever features `filteredFeatures` already has standing for it — a
-   * band filter stays in effect exactly as it was; only which year's count
-   * the dots are drawn from changes. Layers with no `timeSeries` (the eight
-   * single-offense layers, for now — see that field's own comment) are
-   * untouched: they have no `total{year}` series to read, so they keep
-   * showing their one stored year regardless of where the slider sits.
+   * Recolours every currently-checked `timeSeries` layer's fill (and outline,
+   * where the outline shares the fill's expression — same rule addLayer and
+   * repaintThemedLayers already follow) from that year's `total{year}`
+   * value, via `timeSeriesFillColor`. Filters are untouched: `filteredFeatures`
+   * never runs here, because scrubbing the year changes which column a
+   * feature's colour comes from, not which features are on the map — see
+   * `timeSeries`'s own comment on why the band *filter* itself still reflects
+   * only the latest year. Layers with no `timeSeries` (the eight
+   * single-offense layers, for now) are untouched entirely.
    */
   setSelectedYear(year: number | null) {
     this.selectedYear = year;
     for (const layer of this.layers) {
-      if (!layer.timeSeries || !layer.dotDensity || !this.visible.has(layer.id)) continue;
-      const dots = this.map.getSource(this.dotsSourceId(layer.id)) as GeoJSONSource | undefined;
-      dots?.setData(this.dotFeatures(layer, this.filteredFeatures(layer.id)));
+      if (!layer.timeSeries || !this.visible.has(layer.id)) continue;
+      const fillId = `${layer.id}-fill`;
+      if (!this.map.getLayer(fillId)) continue;
+      const fill =
+        year !== null && layer.timeSeries.years.includes(year)
+          ? this.timeSeriesFillColor(layer, year)
+          : this.polygonFillColor(layer);
+      this.map.setPaintProperty(fillId, 'fill-color', fill);
+      const outlineId = `${layer.id}-outline`;
+      if (this.map.getLayer(outlineId)) {
+        const outline = layer.polygonClick === 'highlight' ? this.polygonOutlineColor() : fill;
+        this.map.setPaintProperty(outlineId, 'line-color', outline);
+      }
     }
   }
 
@@ -3917,11 +3881,6 @@ export class MapController {
     // no longer shows.
     const blocks = this.map.getSource(this.blockSourceId(layerId)) as GeoJSONSource | undefined;
     blocks?.setData(this.blockFeatures(layer, visible));
-    // A dotDensity layer's dots regenerate from the same surviving features,
-    // same reasoning as blocks above — a filtered-out polygon takes its dots
-    // with it rather than leaving them scattered with nothing under them.
-    const dots = this.map.getSource(this.dotsSourceId(layerId)) as GeoJSONSource | undefined;
-    dots?.setData(this.dotFeatures(layer, visible));
     this.emitCounts();
   }
 

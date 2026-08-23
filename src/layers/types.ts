@@ -973,39 +973,12 @@ export interface LayerDefinition {
     detailFrom: number;
   };
   /**
-   * Paint a polygon layer as scattered dots rather than a graduated fill —
-   * dot-density, the technique census and crime maps use so a reader sees
-   * texture that varies within a small area, not one flat shade over the
-   * whole thing.
-   *
-   * Every dot's position is computed in the browser by random placement
-   * inside its polygon (src/lib/geo.mjs's `scatterInPolygon`) and means
-   * nothing on its own — a dot is not a record, it is one unit of `perUnit`
-   * folded into a texture. For that reason a dot is never a record of its
-   * own: not clickable, not searchable, not in the accessible list, and
-   * never counted as a "feature" anywhere search or "near me" look. The
-   * polygon underneath stays the actual record, faintly painted so it is
-   * still the thing hover and click land on and the detail panel opens for.
-   *
-   * A layer choosing this MUST say so in its own copy — `whatThisMeans` or a
-   * `limitations` entry — stating plainly that dot positions are randomized
-   * and are never real locations. This field does not write that caveat for
-   * you; a dot-density layer with no such sentence is a defect, not a style
-   * choice, since a reader has no other way to know a dot isn't an address.
-   */
-  dotDensity?: {
-    /** How many of the mapped value one dot represents, e.g. 5 offenses per dot. */
-    perUnit: number;
-    /** The value each dot is drawn from — same key `categoryColors` or a filter reads. */
-    key: string;
-    /** Accessible label for the on-map key, e.g. "1 dot ≈ 5 reported offenses". */
-    keyLabel: I18nString;
-  };
-  /**
    * This layer carries a full year-by-year series, one attribute per year
    * (`total2018`, `total2019`, ...), not just the latest full year's value —
-   * and can be scrubbed with the shared crime time slider (mapController.ts's
-   * `setSelectedYear`) rather than always drawing `dotDensity.key`.
+   * and can be scrubbed with the shared crime time slider
+   * (mapController.ts's `setSelectedYear`), which recolours the polygon fill
+   * from that year's value using `stops` below rather than the precomputed
+   * `categoryColors` band, which only ever exists for the latest year.
    *
    * Deliberately not on every crime layer: the eight single-offense layers
    * only ever stored the latest year's count per offense, so they are not
@@ -1024,12 +997,21 @@ export interface LayerDefinition {
    * Filters are unaffected by the selected year: `reportedTotalBand` (and
    * any filter built on it) stays computed from the latest full year only,
    * because a per-year band was never precomputed. Scrubbing to an older
-   * year can therefore show dot counts for a year the current band filter
-   * was not evaluated against — a real, disclosed limitation, not a bug.
+   * year can therefore show a fill colour for a year the current band
+   * filter was not evaluated against — a real, disclosed limitation, not a
+   * bug.
    */
   timeSeries?: {
     /** Every year this layer carries a `total{year}` attribute for, ascending. */
     years: number[];
+    /**
+     * The same numeric band thresholds `categoryColors.colors` was built
+     * from (crimeBands.mjs's `bandFor`), so the slider can bucket any
+     * year's raw value into the identical colours without a precomputed
+     * per-year band attribute. Length must be `categoryColors.colors.length
+     * - 1` — one fewer stop than there are bands.
+     */
+    stops: number[];
   };
   /**
    * How strongly a line layer is painted, 0–1. Omit for the standard weight.

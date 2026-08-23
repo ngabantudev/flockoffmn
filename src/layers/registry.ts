@@ -204,10 +204,6 @@ const CRIME_SUBGROUP_SMALL_AREAS = {
  */
 const CRIME_LIMITATIONS = [
   {
-    en: 'Each area is drawn as a scatter of small dots rather than a shaded fill. A dot’s position inside its neighborhood is chosen at random by this site when the map draws it. No dot marks a real address, an actual report, or any specific place — only the count and the neighborhood boundary come from the source data.',
-    es: 'Cada área se dibuja como una dispersión de pequeños puntos en lugar de un relleno sombreado. La posición de un punto dentro de su barrio la elige al azar este sitio al dibujar el mapa. Ningún punto marca una dirección real, una denuncia concreta ni un lugar específico: solo el recuento y el límite del barrio provienen de los datos de origen.',
-  },
-  {
     en: 'A count of offenses reported to and recorded by police. It is a record of what was reported and what police chose to record, which is not the same as a record of what happened. Reporting rates differ by offense and by neighborhood, and a change in a count can reflect a change in reporting or recording practice rather than a change in events.',
     es: 'Un recuento de delitos denunciados a la policía y registrados por ella. Es un registro de lo que se denunció y de lo que la policía decidió registrar, que no es lo mismo que un registro de lo que ocurrió. Las tasas de denuncia difieren según el delito y el barrio, y un cambio en un recuento puede reflejar un cambio en la práctica de denuncia o de registro más que un cambio en los hechos.',
   },
@@ -216,8 +212,8 @@ const CRIME_LIMITATIONS = [
     es: 'Recuentos, no tasas. Un barrio más grande o más concurrido mostrará un recuento mayor sin que eso signifique más por residente. Esta capa no publica ninguna tasa por residente, porque la Ciudad no publica una población por barrio con la que dividir, y repartir la población de las secciones censales entre los límites de los barrios sería una cifra inventada por este proyecto y no una que ninguna fuente declare.',
   },
   {
-    en: 'Each offense is drawn at its own dot ratio, because these counts span two orders of magnitude — a neighborhood-year runs 0 to 9 for homicide and 0 to nearly 2,000 for larceny. The same number of dots on the homicide map and the larceny map does not mean the same number of reports, and each layer’s on-map key says what one dot stands for.',
-    es: 'Cada delito se dibuja con su propia proporción de puntos, porque estos recuentos abarcan dos órdenes de magnitud: un barrio-año va de 0 a 9 en homicidios y de 0 a casi 2000 en hurtos. El mismo número de puntos en el mapa de homicidios y en el de hurtos no significa el mismo número de denuncias, y la clave de cada capa en el mapa indica qué representa un punto.',
+    en: 'Each offense is shaded on its own scale, because these counts span two orders of magnitude — a neighborhood-year runs 0 to 9 for homicide and 0 to nearly 2,000 for larceny. The darkest band on the homicide map and the darkest band on the larceny map do not mean the same number, and the band labels beside each layer are what say so.',
+    es: 'Cada delito se sombrea en su propia escala, porque estos recuentos abarcan dos órdenes de magnitud: un barrio-año va de 0 a 9 en homicidios y de 0 a casi 2000 en hurtos. La banda más oscura del mapa de homicidios y la del mapa de hurtos no significan el mismo número, y las etiquetas de banda junto a cada capa son las que lo indican.',
   },
   {
     en: 'The published series begins in 2018. The upstream dataset’s first year, 2017, holds August through December only, and is left out rather than shown as a full year that would read as a collapse in reported crime that did not happen. The current calendar year is likewise incomplete, and is shown only as a separately labeled partial-year total.',
@@ -275,81 +271,6 @@ const CRIME_DETAIL_FIELDS = [
   { key: 'partialYearLabel', label: { en: 'Current year so far', es: 'Año en curso hasta ahora' } },
   { key: 'partialYearTotal', label: { en: 'Reported Part I offenses, current year so far', es: 'Delitos de Parte I denunciados, año en curso hasta ahora' } },
 ];
-
-/**
- * One dot colour per offense, fixed to the same Part I order OFFENCES already
- * uses everywhere else — assigned once, never cycled or reassigned, per the
- * categorical-colour rule (dataviz skill, color-formula.md): identity lives in
- * a fixed slot, not a colour picked fresh per render.
- *
- * Computed in OKLCH, not eyeballed, and checked with the skill's own
- * validator (`node scripts/validate_palette.js "<8 hex>" --mode light|dark`)
- * rather than assumed. What that run found, and why it shapes this table:
- *
- * A map where any subset of these eight can be toggled on together is what
- * the skill calls an "all-pairs" form (same category as scatter, bubble,
- * choropleth) — any two dots can end up adjacent anywhere, not just next to
- * their neighbours in a fixed list. The skill's own reference palette proves
- * eight free-form categorical hues cannot clear its colour-vision-deficiency
- * (CVD) floor under `--pairs all`, in any order — three is the most that
- * validates all-pairs in both modes. Confirmed the same result here: this
- * exact table FAILS `--pairs all` (worst CVD ΔE 2–4 with all eight on at
- * once) but PASSES every hard gate — CVD separation and the normal-vision
- * floor — on the realistic case, adjacent pairs in the fixed order below, in
- * both light and dark mode. That is the honest ceiling for eight simultaneous
- * free-form map colours, not a shortcut taken here; see the shared
- * `OFFENCE_CVD_LIMITATION` below, appended to every one of these layers, for
- * the plain-language version of this same finding.
- *
- * `color` is the dark-basemap value (OKLCH L ≈ 0.50–0.63, the skill's dark
- * band); `colorLight` is the light-basemap value (L ≈ 0.50–0.74, the light
- * band) — same dual-hex convention every other layer in this file already
- * uses, keyed the same way `layerColor()` reads it in mapController.ts.
- */
-const OFFENCE_DOT_COLORS: Record<string, { color: string; colorLight: string }> = {
-  homicide: { color: '#d81e70', colorLight: '#ff6f84' },
-  rape: { color: '#ab4200', colorLight: '#c65400' },
-  robbery: { color: '#978e00', colorLight: '#beaf00' },
-  aggravatedAssault: { color: '#007d0a', colorLight: '#009733' },
-  burglary: { color: '#00a499', colorLight: '#00cdd0' },
-  larceny: { color: '#0070c1', colorLight: '#0082dd' },
-  autoTheft: { color: '#8f6af5', colorLight: '#a195ff' },
-  arson: { color: '#a0268b', colorLight: '#b545ae' },
-};
-
-/**
- * How many reported offenses one dot stands for, per offense — not one flat
- * ratio for all eight, for the same reason the choropleth bands were never
- * shared: homicide tops out at 9 a year per neighbourhood, larceny at nearly
- * 2,000. Picked from the real 2018–2025 distribution so the single busiest
- * neighbourhood-year in each category lands around 30 dots — enough to read
- * as texture, never a blob. Homicide and arson are rare enough that 1 dot = 1
- * report is the honest ratio; anything coarser would erase them almost
- * everywhere.
- */
-const OFFENCE_DOTS_PER_UNIT: Record<string, number> = {
-  homicide: 1,
-  rape: 2,
-  robbery: 7,
-  aggravatedAssault: 6,
-  burglary: 7,
-  larceny: 66,
-  autoTheft: 18,
-  arson: 1,
-};
-
-/**
- * Appended only to the eight single-offense layers, not the combined total —
- * the combined layer is always one colour, so it never has this problem.
- * Required reading alongside OFFENCE_DOT_COLORS' own comment above: stated
- * here in plain language because a limitations entry is what a reader
- * actually sees, where the colour table's comment is only for whoever edits
- * this file next.
- */
-const OFFENCE_CVD_LIMITATION = {
-  en: 'Each offense type has its own dot colour, fixed the same way every time. Two or three types shown together are chosen to stay clearly distinguishable, including for colourblind readers. Turning on many at once pushes past what colour alone can reliably tell apart, for any reader — the exact figures for every offense are always in an area’s detail panel regardless of which colours are on screen or how many.',
-  es: 'Cada tipo de delito tiene su propio color de punto, fijo siempre de la misma manera. Dos o tres tipos mostrados juntos se eligen para que sigan siendo claramente distinguibles, incluso para lectores daltónicos. Activar muchos a la vez supera lo que el color por sí solo puede distinguir de forma fiable, para cualquier lector — las cifras exactas de cada delito están siempre en el panel de detalle de un área, sin importar qué colores estén en pantalla ni cuántos sean.',
-};
 
 /**
  * Per-offense identity and copy. `id` and `slug` are written out rather than
@@ -464,18 +385,14 @@ const CRIME_OFFENCE_LAYERS: LayerDefinition[] = OFFENCES.map((offence: { key: st
       es: `${copy.gloss.es} Contado por barrio de Minneapolis, por año.`,
     },
     whatThisMeans: {
-      en: `One of the eight FBI Part I categories the City of Minneapolis publishes a neighborhood count for. ${copy.gloss.en} The map draws each report as one dot among a scatter inside its neighborhood, roughly ${OFFENCE_DOTS_PER_UNIT[offence.key]} reported ${OFFENCE_DOTS_PER_UNIT[offence.key] === 1 ? 'offense' : 'offenses'} per dot for the most recent complete calendar year, and the detail panel carries the other seven categories and the year-by-year series beside it. This is a count of reports, not of people, and holds no record of any person — the City aggregates the figures before publishing them, and nothing here resolves to an incident, an address, or an individual. Its dot ratio is its own: the same number of dots here does not mean the same number of reports as on another offense’s map. Each offense type keeps one fixed colour, chosen so that a few shown together stay distinguishable — see this layer’s limitations for what happens past a few. It computes no score or index against any other layer, only the counts themselves.`,
-      es: `Una de las ocho categorías de Parte I del FBI para las que la Ciudad de Minneapolis publica un recuento por barrio. ${copy.gloss.es} El mapa dibuja cada denuncia como un punto dentro de una dispersión en su barrio, aproximadamente ${OFFENCE_DOTS_PER_UNIT[offence.key]} ${OFFENCE_DOTS_PER_UNIT[offence.key] === 1 ? 'delito denunciado' : 'delitos denunciados'} por punto para el último año calendario completo, y el panel de detalle incluye junto a ello las otras siete categorías y la serie año por año. Es un recuento de denuncias, no de personas, y no contiene registro de ninguna persona: la Ciudad agrega las cifras antes de publicarlas, y nada aquí se resuelve a un incidente, una dirección o un individuo. Su proporción de puntos es propia: el mismo número de puntos aquí no significa el mismo número de denuncias que en el mapa de otro delito. Cada tipo de delito mantiene un color fijo, elegido para que unos pocos mostrados juntos sigan siendo distinguibles — ver las limitaciones de esta capa para lo que ocurre más allá de unos pocos. No calcula ningún puntaje ni índice frente a otra capa, solo los recuentos mismos.`,
+      en: `One of the eight FBI Part I categories the City of Minneapolis publishes a neighborhood count for. ${copy.gloss.en} The map shades each of the city’s 87 neighborhoods by how many were reported in the most recent complete calendar year, and the detail panel carries the other seven categories and the year-by-year series beside it. Its scale is its own: the darkest band here does not mean the same number as the darkest band on another offense’s map. It computes no score or index against any other layer, only the counts themselves.`,
+      es: `Una de las ocho categorías de Parte I del FBI para las que la Ciudad de Minneapolis publica un recuento por barrio. ${copy.gloss.es} El mapa sombrea cada uno de los 87 barrios de la ciudad según cuántos se denunciaron en el último año calendario completo, y el panel de detalle incluye junto a ello las otras siete categorías y la serie año por año. Su escala es propia: la banda más oscura aquí no significa el mismo número que la banda más oscura del mapa de otro delito. No calcula ningún puntaje ni índice frente a otra capa, solo los recuentos mismos.`,
     },
     geometryNote: CRIME_GEOMETRY_NOTE,
-    limitations: [...CRIME_LIMITATIONS, OFFENCE_CVD_LIMITATION],
+    limitations: CRIME_LIMITATIONS,
     geometry: 'polygon',
-    color: OFFENCE_DOT_COLORS[offence.key].color,
-    colorLight: OFFENCE_DOT_COLORS[offence.key].colorLight,
-    // Kept for the "Filters" control and the detail panel's band context —
-    // not used to paint the fill (see mapController.ts's polygonFillColor)
-    // and not shown as a swatch bar on the floating map key: dotDensity below
-    // replaces both, same pattern as crime_block_group.
+    color: '#a3e635',
+    colorLight: '#4d7c0f',
     categoryColors: {
       key: bandKey,
       label: {
@@ -484,15 +401,6 @@ const CRIME_OFFENCE_LAYERS: LayerDefinition[] = OFFENCES.map((offence: { key: st
       },
       colors: crimeBands(offence.stops),
       fallback: CRIME_FALLBACK,
-      showOnMapKey: false,
-    },
-    dotDensity: {
-      perUnit: OFFENCE_DOTS_PER_UNIT[offence.key],
-      key: offence.key,
-      keyLabel: {
-        en: `1 dot ≈ ${OFFENCE_DOTS_PER_UNIT[offence.key]} ${copy.label.en.toLowerCase()} reported, positions randomized`,
-        es: `1 punto ≈ ${OFFENCE_DOTS_PER_UNIT[offence.key]} ${copy.label.es.toLowerCase()} denunciado(s), posiciones aleatorias`,
-      },
     },
     hoverCard: { fields: [offence.key, 'statYear', 'reportedTotal'] },
     dataPath: '/data/crime-minneapolis.geojson',
@@ -2893,8 +2801,8 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Los ocho delitos de Parte I del FBI juntos, denunciados a la policía de Minneapolis en cada barrio cada año. Los ocho también se pueden mapear por separado.',
     },
     whatThisMeans: {
-      en: 'The City of Minneapolis publishes a count of reported offenses in each of its 87 neighborhoods, every month, in eight categories the FBI’s Uniform Crime Reporting program calls Part I offenses: homicide, rape, robbery, aggravated assault, burglary, larceny, auto theft, and arson. This layer draws all eight added together as a scatter of dots inside each neighborhood, roughly one dot per 74 reported offenses for the most recent complete calendar year, with each neighborhood’s year-by-year figures in its detail panel. Because larceny outnumbers every other category several times over, this combined total largely traces where larceny is reported — the eight single-offense layers beside it are where a different pattern shows up, and a homicide map and a larceny map look nothing alike. These are counts of reports, not of people, and this layer holds no record of any person — the City aggregates the figures before publishing them, and nothing here resolves to an incident, an address, or an individual. A reader may want to set these numbers beside where surveillance equipment sits, or beside the poverty and population layers on this map. That is a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the counts themselves.',
-      es: 'La Ciudad de Minneapolis publica un recuento de delitos denunciados en cada uno de sus 87 barrios, cada mes, en ocho categorías que el programa de Informes Uniformes de Delitos del FBI llama delitos de Parte I: homicidio, violación, robo con violencia, agresión con agravantes, robo con allanamiento, hurto, robo de vehículos e incendio provocado. Esta capa dibuja los ocho sumados como una dispersión de puntos dentro de cada barrio, aproximadamente un punto por cada 74 delitos denunciados para el último año calendario completo, con las cifras año por año de cada barrio en su panel de detalle. Como el hurto supera varias veces a todas las demás categorías, este total combinado traza en gran medida dónde se denuncia el hurto: las ocho capas de delito individual que la acompañan son donde aparece un patrón distinto, y un mapa de homicidios y uno de hurtos no se parecen en nada. Son recuentos de denuncias, no de personas, y esta capa no contiene registro de ninguna persona: la Ciudad agrega las cifras antes de publicarlas, y nada aquí se resuelve a un incidente, una dirección o un individuo. Quien lea puede querer poner estas cifras junto a dónde se ubican los equipos de vigilancia, o junto a las capas de pobreza y población de este mapa. Esa es una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo los recuentos mismos.',
+      en: 'The City of Minneapolis publishes a count of reported offenses in each of its 87 neighborhoods, every month, in eight categories the FBI’s Uniform Crime Reporting program calls Part I offenses: homicide, rape, robbery, aggravated assault, burglary, larceny, auto theft, and arson. This layer shows all eight added together, rolled up to full calendar years, with each neighborhood’s year-by-year figures in its detail panel. Because larceny outnumbers every other category several times over, this combined total largely traces where larceny is reported — the eight single-offense layers beside it are where a different pattern shows up, and a homicide map and a larceny map look nothing alike. These are counts of reports, not of people, and this layer holds no record of any person — the City aggregates the figures before publishing them, and nothing here resolves to an incident, an address, or an individual. A reader may want to set these numbers beside where surveillance equipment sits, or beside the poverty and population layers on this map. That is a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the counts themselves.',
+      es: 'La Ciudad de Minneapolis publica un recuento de delitos denunciados en cada uno de sus 87 barrios, cada mes, en ocho categorías que el programa de Informes Uniformes de Delitos del FBI llama delitos de Parte I: homicidio, violación, robo con violencia, agresión con agravantes, robo con allanamiento, hurto, robo de vehículos e incendio provocado. Esta capa muestra los ocho sumados, agrupados por años calendario completos, con las cifras año por año de cada barrio en su panel de detalle. Como el hurto supera varias veces a todas las demás categorías, este total combinado traza en gran medida dónde se denuncia el hurto: las ocho capas de delito individual que la acompañan son donde aparece un patrón distinto, y un mapa de homicidios y uno de hurtos no se parecen en nada. Son recuentos de denuncias, no de personas, y esta capa no contiene registro de ninguna persona: la Ciudad agrega las cifras antes de publicarlas, y nada aquí se resuelve a un incidente, una dirección o un individuo. Quien lea puede querer poner estas cifras junto a dónde se ubican los equipos de vigilancia, o junto a las capas de pobreza y población de este mapa. Esa es una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo los recuentos mismos.',
     },
     geometryNote: CRIME_GEOMETRY_NOTE,
     limitations: CRIME_LIMITATIONS,
@@ -2906,20 +2814,13 @@ export const LAYERS: LayerDefinition[] = [
       label: { en: 'Reported Part I offenses', es: 'Delitos de Parte I denunciados' },
       colors: crimeBands(TOTAL_STOPS),
       fallback: CRIME_FALLBACK,
-      showOnMapKey: false,
-    },
-    dotDensity: {
-      perUnit: 74,
-      key: 'reportedTotal',
-      keyLabel: {
-        en: '1 dot ≈ 74 reported Part I offenses, positions randomized',
-        es: '1 punto ≈ 74 delitos de Parte I denunciados, posiciones aleatorias',
-      },
     },
     // total2018..total2025 already exist on every feature — see the ingest's
     // YEAR_ROWS-driven detail fields. The eight single-offense layers below
     // do not have this yet (see timeSeries' own comment in layers/types.ts).
-    timeSeries: { years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025] },
+    // stops is the same TOTAL_STOPS the band above is built from, so a
+    // scrubbed year and the default read the identical colour scale.
+    timeSeries: { years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025], stops: TOTAL_STOPS },
     hoverCard: {
       fields: ['reportedTotal', 'statYear', 'violentTotal'],
     },
@@ -2952,18 +2853,14 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Las mismas denuncias contadas en áreas de aproximadamente una quinta parte de un barrio: de unos 600 a 3000 residentes cada una. Todos los delitos juntos; esta capa no publica desglose por tipo.',
     },
     whatThisMeans: {
-      en: 'Minneapolis has 87 neighborhoods, which is coarse enough that a busy corner and the quiet blocks around it read as one flat shade. This layer counts the same reported offenses inside census block groups instead — 394 areas rather than 87 — so concentration inside a neighborhood becomes visible. It is the only layer on this map built by aggregating records that are published one-by-one: the City’s incident feed carries a case number, an address and a time on every row, and this project reads none of those fields. The ingest requests the location and nothing else, so no case number, address, date or charge is ever downloaded, held, or written. What is published is one number for one area for one full year. There is deliberately no breakdown by offense type here and there will not be one: a single rape or homicide placed in one small area in one year can identify a person, where a count of all offenses together cannot. The breakdown lives at neighborhood scale in the layers beside this one, and the two are never crossed. Areas with fewer than five reported offenses in a year are withheld rather than published, and shown as withheld rather than as zero. Each area is drawn as a scatter of small dots rather than a shaded fill — roughly one dot per five reported offenses — so that density reads as texture instead of one flat colour per area. A dot’s position inside its area is chosen at random by this site when the map draws it. No dot marks a real address, an actual report, or any specific place — only the count and the area boundary come from the source data.',
-      es: 'Minneapolis tiene 87 barrios, lo bastante amplios como para que una esquina concurrida y las manzanas tranquilas a su alrededor se lean como un solo tono plano. Esta capa cuenta las mismas denuncias dentro de grupos de bloques censales: 394 áreas en lugar de 87, de modo que la concentración dentro de un barrio se hace visible. Es la única capa de este mapa construida agregando registros que se publican uno por uno: el flujo de incidentes de la Ciudad lleva un número de caso, una dirección y una hora en cada fila, y este proyecto no lee ninguno de esos campos. La ingesta solicita la ubicación y nada más, así que ningún número de caso, dirección, fecha ni cargo se descarga, se guarda ni se escribe. Lo que se publica es un número, para un área, para un año completo. Deliberadamente no hay desglose por tipo de delito aquí y no lo habrá: una sola violación u homicidio situado en un área pequeña en un año puede identificar a una persona, mientras que un recuento de todos los delitos juntos no. El desglose vive a escala de barrio en las capas contiguas, y ambas nunca se cruzan. Las áreas con menos de cinco delitos denunciados en un año se retienen en lugar de publicarse, y se muestran como retenidas, no como cero. Cada área se dibuja como una dispersión de pequeños puntos en lugar de un relleno sombreado —aproximadamente un punto por cada cinco delitos denunciados— para que la densidad se lea como textura en vez de un solo color plano por área. La posición de un punto dentro de su área la elige al azar este sitio al dibujar el mapa. Ningún punto marca una dirección real, una denuncia concreta ni un lugar específico: solo el recuento y el límite del área provienen de los datos de origen.',
+      en: 'Minneapolis has 87 neighborhoods, which is coarse enough that a busy corner and the quiet blocks around it read as one flat shade. This layer counts the same reported offenses inside census block groups instead — 394 areas rather than 87 — so concentration inside a neighborhood becomes visible. It is the only layer on this map built by aggregating records that are published one-by-one: the City’s incident feed carries a case number, an address and a time on every row, and this project reads none of those fields. The ingest requests the location and nothing else, so no case number, address, date or charge is ever downloaded, held, or written. What is published is one number for one area for one full year. There is deliberately no breakdown by offense type here and there will not be one: a single rape or homicide placed in one small area in one year can identify a person, where a count of all offenses together cannot. The breakdown lives at neighborhood scale in the layers beside this one, and the two are never crossed. Areas with fewer than five reported offenses in a year are withheld rather than published, and shown as withheld rather than as zero.',
+      es: 'Minneapolis tiene 87 barrios, lo bastante amplios como para que una esquina concurrida y las manzanas tranquilas a su alrededor se lean como un solo tono plano. Esta capa cuenta las mismas denuncias dentro de grupos de bloques censales: 394 áreas en lugar de 87, de modo que la concentración dentro de un barrio se hace visible. Es la única capa de este mapa construida agregando registros que se publican uno por uno: el flujo de incidentes de la Ciudad lleva un número de caso, una dirección y una hora en cada fila, y este proyecto no lee ninguno de esos campos. La ingesta solicita la ubicación y nada más, así que ningún número de caso, dirección, fecha ni cargo se descarga, se guarda ni se escribe. Lo que se publica es un número, para un área, para un año completo. Deliberadamente no hay desglose por tipo de delito aquí y no lo habrá: una sola violación u homicidio situado en un área pequeña en un año puede identificar a una persona, mientras que un recuento de todos los delitos juntos no. El desglose vive a escala de barrio en las capas contiguas, y ambas nunca se cruzan. Las áreas con menos de cinco delitos denunciados en un año se retienen en lugar de publicarse, y se muestran como retenidas, no como cero.',
     },
     geometryNote: {
       en: 'A census block group is a U.S. Census Bureau reporting area of roughly 600–3,000 residents — the smallest area the Bureau publishes most statistics for. It is not a neighborhood and has no name anyone uses.',
       es: 'Un grupo de bloques censales es un área de informe de la Oficina del Censo de EE. UU. de unos 600 a 3000 residentes: la menor área para la que la Oficina publica la mayoría de sus estadísticas. No es un barrio y no tiene un nombre que nadie use.',
     },
     limitations: [
-      {
-        en: 'Each dot’s position inside its area is chosen at random, and carries no information of its own — a cluster of dots means a busier area, not that anything happened at any of those exact spots. Nothing on this map places a dot at a real address or ties one to a real report.',
-        es: 'La posición de cada punto dentro de su área se elige al azar y no aporta información por sí sola: un grupo de puntos indica un área más activa, no que algo haya ocurrido en esos lugares exactos. Nada en este mapa coloca un punto en una dirección real ni lo vincula a una denuncia concreta.',
-      },
       {
         en: 'A count of offenses reported to and recorded by police. It is a record of what was reported and what police chose to record, which is not the same as a record of what happened.',
         es: 'Un recuento de delitos denunciados a la policía y registrados por ella. Es un registro de lo que se denunció y de lo que la policía decidió registrar, que no es lo mismo que un registro de lo que ocurrió.',
@@ -2996,11 +2893,6 @@ export const LAYERS: LayerDefinition[] = [
     geometry: 'polygon',
     color: '#a3e635',
     colorLight: '#4d7c0f',
-    // Kept for the "Filters" control — hiding a band still hides that band's
-    // areas and their dots (see mapController.ts's refresh()) — but not used
-    // to paint the fill itself, and not shown as a swatch bar on the floating
-    // map key: dotDensity below replaces both of those (see its own comment
-    // in layers/types.ts and refreshMapKeys in MapView.astro).
     categoryColors: {
       key: 'reportedTotalBand',
       label: { en: 'Reported offenses', es: 'Delitos denunciados' },
@@ -3012,22 +2904,10 @@ export const LAYERS: LayerDefinition[] = [
         { value: '115+', color: '#365314' },
       ],
       fallback: '#6b7280',
-      showOnMapKey: false,
     },
-    // 1:5 chosen against the real 2018-2025 distribution: even the single
-    // busiest block group (443 offenses/year, ~0.36km2) scatters to about 80m
-    // average spacing between dots at that ratio — legible texture, not a
-    // solid blob. ~4,400 dots citywide for the mapped year, well inside what
-    // this map already draws for the real ALPR point layer (1,430 features).
-    dotDensity: {
-      perUnit: 5,
-      key: 'reportedTotal',
-      keyLabel: {
-        en: '1 dot ≈ 5 reported offenses, positions randomized',
-        es: '1 punto ≈ 5 delitos denunciados, posiciones aleatorias',
-      },
-    },
-    timeSeries: { years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025] },
+    // stops matches the band edges above (0-24/25-44/45-74/75-114/115+), so
+    // a scrubbed year buckets into the identical five colours.
+    timeSeries: { years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025], stops: [25, 45, 75, 115] },
     hoverCard: {
       fields: ['reportedTotal', 'statYear', 'suppressed'],
     },
