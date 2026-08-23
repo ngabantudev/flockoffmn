@@ -553,17 +553,40 @@ const DUPLICATE_WINDOW_DAYS = 7;
 export function collapseDuplicates(items) {
   const kept = [];
 
+  // `items` arrives newest-first (the caller sorts before calling), so once a
+  // kept item's gap to the current item exceeds the window, every item still
+  // to come is even older and the gap can only grow — that kept item can
+  // never match again. `window` tracks just the recently-kept items still
+  // close enough in time to be worth comparing against, so a run doesn't
+  // rescan the full retained archive (up to RETENTION_DAYS) for every item.
+  // The explicit date check stays in the match predicate below as a
+  // correctness backstop: a later same-cluster swap can shift a kept entry's
+  // `at` earlier without moving its position in `window`, so eviction from
+  // the front is a performance trim, not the only thing keeping a stale
+  // entry from matching something it no longer should.
+  const window = [];
+
   for (const item of items) {
     const words = contentWords(item.title);
     const at = new Date(item.published).getTime();
-    const twin = kept.find(
+
+    while (
+      window.length &&
+      window[0].at - at > DUPLICATE_WINDOW_DAYS * 86_400_000
+    ) {
+      window.shift();
+    }
+
+    const twin = window.find(
       (k) =>
         Math.abs(at - k.at) <= DUPLICATE_WINDOW_DAYS * 86_400_000 &&
         overlap(words, k.words) >= DUPLICATE_OVERLAP,
     );
 
     if (!twin) {
-      kept.push({ item, words, at });
+      const entry = { item, words, at };
+      kept.push(entry);
+      window.push(entry);
       continue;
     }
 
