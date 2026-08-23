@@ -184,7 +184,14 @@ const strings = {
       does not fit a phone. It is hidden with the layer it explains, so it
       costs nothing when crime is off (which is the default).
     */}
-    <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-col items-center gap-1.5 px-2">
+    {/*
+      pr-12 below `sm` keeps the row clear of mapA's zoom +/- buttons, which
+      sit in the same top-right corner: with two controls instead of one the
+      right-hand pill reached x=339 on a 375px screen against a control
+      starting around 338. Above `sm` there is room and the padding goes back
+      to symmetric.
+    */}
+    <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-col items-center gap-1.5 px-2 pr-12 sm:pr-2">
       <div class="flex flex-wrap items-center justify-center gap-1.5">
         <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 text-[11px] font-medium text-ink-100 shadow sm:text-xs">
           <input type="checkbox" id="compare-show-alpr" checked style={`accent-color:${alprConfig.color}`} />
@@ -449,8 +456,46 @@ const strings = {
    * the right of the divider, so a circle added to one map alone would either
    * vanish as the divider crossed it or never appear on the other side.
    */
+  /**
+   * One point per neighbourhood, built from the centroid attributes the
+   * ingest ships.
+   *
+   * This transform is not optional: a MapLibre `circle` layer pointed at
+   * polygon geometry draws a circle at every *vertex* of every ring, so
+   * feeding it crime-minneapolis.geojson directly produced several hundred
+   * circles tracing the neighbourhood outlines rather than 87 sitting at
+   * their centres. Fetched once and shared by both maps — same file the main
+   * map already caches, and neither map does the polygon maths itself.
+   */
+  let crimePoints: Promise<GeoJSON.FeatureCollection> | null = null;
+  function loadCrimePoints(dataPath: string) {
+    crimePoints ??= fetch(dataPath)
+      .then((r) => r.json())
+      .then((collection) => ({
+        type: 'FeatureCollection' as const,
+        features: collection.features
+          .filter((f: any) => f.properties?.attributes?.centroidLon != null)
+          .map((f: any) => ({
+            type: 'Feature' as const,
+            geometry: {
+              type: 'Point' as const,
+              coordinates: [f.properties.attributes.centroidLon, f.properties.attributes.centroidLat],
+            },
+            properties: f.properties,
+          })),
+      }));
+    return crimePoints;
+  }
+
   function addCrime(map: maplibregl.Map, crime: PointConfig) {
-    map.addSource('crime', { type: 'geojson', data: crime.dataPath });
+    // Source and layer go in empty and synchronously, then the points are
+    // pushed in when the fetch lands: awaiting here would let addAlpr run
+    // first and put the cameras *under* the circles, inverting the z-order
+    // this view depends on.
+    map.addSource('crime', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    loadCrimePoints(crime.dataPath).then((data) => {
+      (map.getSource('crime') as maplibregl.GeoJSONSource | undefined)?.setData(data);
+    });
     map.addLayer({
       id: 'crime-circles',
       type: 'circle',
