@@ -42,6 +42,14 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
     },
   },
   {
+    id: 'crime',
+    label: { en: 'Reported Crime', es: 'Delitos denunciados' },
+    summary: {
+      en: 'What Minneapolis residents reported to police, by neighborhood and by year — the counts themselves, on their own, drawing no conclusion about anything else on this map.',
+      es: 'Lo que los residentes de Minneapolis denunciaron a la policía, por barrio y por año: los recuentos en sí, por su cuenta, sin sacar conclusiones sobre nada más en este mapa.',
+    },
+  },
+  {
     id: 'infrastructure',
     label: { en: 'Infrastructure', es: 'Infraestructura' },
     summary: {
@@ -330,7 +338,7 @@ const CRIME_OFFENCE_LAYERS: LayerDefinition[] = OFFENCES.map((offence: { key: st
   return {
     id: copy.id,
     slug: copy.slug,
-    category: 'environment',
+    category: 'crime',
     label: {
       en: `${copy.label.en} reported, Minneapolis`,
       es: `${copy.label.es} denunciado, Minneapolis`,
@@ -2745,7 +2753,7 @@ export const LAYERS: LayerDefinition[] = [
   {
     id: 'crime_minneapolis',
     slug: 'crime-minneapolis',
-    category: 'environment',
+    category: 'crime',
     label: {
       en: 'Reported crime, Minneapolis neighborhoods',
       es: 'Delitos denunciados, barrios de Minneapolis',

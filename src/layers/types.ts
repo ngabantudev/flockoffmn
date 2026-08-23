@@ -422,6 +422,12 @@ export type LayerCategoryId =
   | 'environment'
   | 'infrastructure'
   | 'surveillance'
+  // Reported crime sits beside the environmental and demographic layers, not
+  // beside Enforcement. That is deliberate: filing it under Enforcement would
+  // put crime and the apparatus in the same drawer and imply the adjacency
+  // §1c forbids this site from asserting. It is context about a place, read
+  // the same way pollution burden or poverty rate is.
+  | 'crime'
   | 'enforcement';
 
 export interface LayerCategory {
