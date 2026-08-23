@@ -1,6 +1,6 @@
 # Proposal: stop shipping the news rail to phones that never render it
 
-Status: **draft, awaiting review**
+Status: **accepted and implemented** — Option B, commit `b22f480`
 Author: prepared for review by @ngabantudev
 Date: 2026-08-22
 Scope: `src/components/news/NewsFeed.astro`, `scripts/ingest/mn/news.mjs`, `dist/_headers`
@@ -182,11 +182,39 @@ Consider raising `/data/*` to `max-age=21600` — the cron writes once a day, so
 
 ---
 
-## 8. Decisions needed
+## 8. Outcome
 
-1. **Option A, B, C, or D?**
-2. If B: reuse `news.json` (26 KB, no drift) or emit a trimmed `news-rail.json`
-   (15 KB, second artifact to keep in sync)?
-3. Accept that no-JS desktop loses rail headlines, keeping an archive link?
-4. File the Google-URL resolution block as a `knownGaps` entry?
-5. Scope the 521 KB filter sidebar as separate work?
+**Option B, reusing `/data/news.json`.** Measured on the built document:
+
+| | Before | After |
+|---|---:|---:|
+| Map page HTML | 70,915 B gz | **54,313 B gz** (−23%) |
+| Phone: story rows downloaded | 61 | **0** |
+| Phone: requests for the dataset | 0 (inlined) | **0** |
+| `/news` archive | 106 rows, server-rendered | unchanged |
+
+Row markup stayed in `NewsItemRow`; the rail clones one blank instance from an
+inert `<template>` rather than rebuilding class lists in JavaScript. The fetch
+is gated on `matchMedia('(min-width: 80rem)')`, on `requestIdleCallback`, and on
+same-origin. On failure the fallback and its archive link stay and the controls
+stay hidden. `RAIL_LIMIT` is deleted.
+
+### The one part of this proposal that could not be delivered
+
+§7 recommended raising `/data/*` to `max-age=21600`. **It cannot be set from
+this repo.** Every other directive in `_headers` lands on `/data/*.json`
+responses — verified on the deployed preview — but `Cache-Control` does not: an
+exact-path rule at 21600 placed both before and after the wildcard changed
+nothing, and setting the wildcard itself to 3601 still served 3600. Something
+above the file fixes browser TTL at one hour.
+
+This is pre-existing: the `/data/*` `Cache-Control` line has never taken effect.
+It does not affect the rail, which gets an hour of browser cache plus a day of
+`stale-while-revalidate` regardless. Raising it needs a Cloudflare dashboard
+change, not a commit.
+
+## 9. Still open
+
+1. File the Google-URL resolution block (§3) as a `knownGaps` entry.
+2. Scope the 521 KB filter sidebar (§6) as separate work.
+3. Decide whether to chase the dashboard-level cache TTL at all.
