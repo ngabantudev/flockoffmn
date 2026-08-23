@@ -68,5 +68,5 @@
 # hotlink and script against, so they are cacheable and explicitly CORS-open —
 # reuse is the point (see LICENSE-DATA.md for the terms that still apply).
 /data/*
-  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+  Cache-Control: public, max-age=3601, stale-while-revalidate=86400
   Access-Control-Allow-Origin: *
