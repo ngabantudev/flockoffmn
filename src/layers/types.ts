@@ -88,7 +88,16 @@ export type LayerId =
   | 'crime_burglary'
   | 'crime_larceny'
   | 'crime_auto_theft'
-  | 'crime_arson';
+  | 'crime_arson'
+  // The one layer in this project built from a person-level upstream source:
+  // reported crime aggregated by us to census block groups, roughly five times
+  // finer than the neighbourhood table the layers above read. Permitted by §1d
+  // ("ingest the systemic attributes and drop the rest") and fenced by four
+  // rules written at the top of scripts/ingest/mn/crime-blockgroups.mjs — the
+  // load-bearing one being that there is no offence breakdown at this grain
+  // and never will be, since the re-identification risk in small-area crime
+  // data comes from crossing a small area with a rare offence.
+  | 'crime_block_group';
 
 export type Locale = 'en' | 'es';
 

@@ -131,6 +131,22 @@ const YEAR_ROWS = Array.from(
 }));
 
 /**
+ * The same per-year rows for the block-group layer, whose totals are all
+ * offenses together rather than the Part I split — so the wording differs even
+ * though the years are the same.
+ */
+const BLOCK_GROUP_YEAR_ROWS = Array.from(
+  { length: CRIME_LAST_FULL_YEAR - CRIME_FIRST_FULL_YEAR + 1 },
+  (_, i) => CRIME_FIRST_FULL_YEAR + i,
+).map((year) => ({
+  key: `total${year}`,
+  label: {
+    en: `Reported offenses, ${year}`,
+    es: `Delitos denunciados, ${year}`,
+  },
+}));
+
+/**
  * The lime ramp every reported-crime layer shares, lowest band first.
  *
  * One ramp across all nine rather than nine colours: these are one
@@ -2794,4 +2810,108 @@ export const LAYERS: LayerDefinition[] = [
   },
 
   ...CRIME_OFFENCE_LAYERS,
+
+  {
+    id: 'crime_block_group',
+    slug: 'crime-block-groups',
+    category: 'crime',
+    label: {
+      en: 'Reported crime, small areas',
+      es: 'Delitos denunciados, áreas pequeñas',
+    },
+    summary: {
+      en: 'The same reports counted in areas about a fifth the size of a neighborhood — roughly 600 to 3,000 residents each. All offenses together; this layer publishes no breakdown by type.',
+      es: 'Las mismas denuncias contadas en áreas de aproximadamente una quinta parte de un barrio: de unos 600 a 3000 residentes cada una. Todos los delitos juntos; esta capa no publica desglose por tipo.',
+    },
+    whatThisMeans: {
+      en: 'Minneapolis has 87 neighborhoods, which is coarse enough that a busy corner and the quiet blocks around it read as one flat shade. This layer counts the same reported offenses inside census block groups instead — 412 areas rather than 87 — so concentration inside a neighborhood becomes visible. It is the only layer on this map built by aggregating records that are published one-by-one: the City’s incident feed carries a case number, an address and a time on every row, and this project reads none of those fields. The ingest requests the location and nothing else, so no case number, address, date or charge is ever downloaded, held, or written. What is published is one number for one area for one full year. There is deliberately no breakdown by offense type here and there will not be one: a single rape or homicide placed in one small area in one year can identify a person, where a count of all offenses together cannot. The breakdown lives at neighborhood scale in the layers beside this one, and the two are never crossed. Areas with fewer than five reported offenses in a year are withheld rather than published, and shown as withheld rather than as zero.',
+      es: 'Minneapolis tiene 87 barrios, lo bastante amplios como para que una esquina concurrida y las manzanas tranquilas a su alrededor se lean como un solo tono plano. Esta capa cuenta las mismas denuncias dentro de grupos de bloques censales: 412 áreas en lugar de 87, de modo que la concentración dentro de un barrio se hace visible. Es la única capa de este mapa construida agregando registros que se publican uno por uno: el flujo de incidentes de la Ciudad lleva un número de caso, una dirección y una hora en cada fila, y este proyecto no lee ninguno de esos campos. La ingesta solicita la ubicación y nada más, así que ningún número de caso, dirección, fecha ni cargo se descarga, se guarda ni se escribe. Lo que se publica es un número, para un área, para un año completo. Deliberadamente no hay desglose por tipo de delito aquí y no lo habrá: una sola violación u homicidio situado en un área pequeña en un año puede identificar a una persona, mientras que un recuento de todos los delitos juntos no. El desglose vive a escala de barrio en las capas contiguas, y ambas nunca se cruzan. Las áreas con menos de cinco delitos denunciados en un año se retienen en lugar de publicarse, y se muestran como retenidas, no como cero.',
+    },
+    geometryNote: {
+      en: 'A census block group is a U.S. Census Bureau reporting area of roughly 600–3,000 residents — the smallest area the Bureau publishes most statistics for. It is not a neighborhood and has no name anyone uses.',
+      es: 'Un grupo de bloques censales es un área de informe de la Oficina del Censo de EE. UU. de unos 600 a 3000 residentes: la menor área para la que la Oficina publica la mayoría de sus estadísticas. No es un barrio y no tiene un nombre que nadie use.',
+    },
+    limitations: [
+      {
+        en: 'A count of offenses reported to and recorded by police. It is a record of what was reported and what police chose to record, which is not the same as a record of what happened.',
+        es: 'Un recuento de delitos denunciados a la policía y registrados por ella. Es un registro de lo que se denunció y de lo que la policía decidió registrar, que no es lo mismo que un registro de lo que ocurrió.',
+      },
+      {
+        en: 'No breakdown by offense type, by design and permanently. Crossing a small area with a rare offense is what makes small-area crime data able to identify a person, so this layer publishes all offenses added together and nothing else. For the breakdown, use the neighborhood-scale layers beside this one.',
+        es: 'Sin desglose por tipo de delito, por diseño y de forma permanente. Cruzar un área pequeña con un delito poco frecuente es lo que permite que los datos de delincuencia de áreas pequeñas identifiquen a una persona, así que esta capa publica todos los delitos sumados y nada más. Para el desglose, usa las capas a escala de barrio contiguas a esta.',
+      },
+      {
+        en: 'Areas with fewer than five reported offenses in a year are withheld, not published. A withheld area is shown as withheld and never as zero — that something was withheld is itself worth publishing.',
+        es: 'Las áreas con menos de cinco delitos denunciados en un año se retienen, no se publican. Un área retenida se muestra como retenida y nunca como cero: que algo se haya retenido merece publicarse por sí mismo.',
+      },
+      {
+        en: 'An incident is placed at the address the report was filed against, which is not always where anything happened. A report taken at a police building, a hospital or a shelter is counted there, which can make that area look busier than the blocks around it.',
+        es: 'Un incidente se sitúa en la dirección contra la que se presentó la denuncia, que no siempre es donde ocurrió algo. Una denuncia tomada en una comisaría, un hospital o un albergue se cuenta allí, lo que puede hacer que esa área parezca más concurrida que las manzanas de alrededor.',
+      },
+      {
+        en: 'Counts, not rates. Block groups are drawn to hold roughly similar populations, which makes them more comparable to each other than neighborhoods are — but a block group covering a downtown block with few residents and many visitors still shows a high count without that meaning more per resident.',
+        es: 'Recuentos, no tasas. Los grupos de bloques se trazan para contener poblaciones aproximadamente similares, lo que los hace más comparables entre sí que los barrios; pero un grupo que cubre una manzana del centro con pocos residentes y muchos visitantes seguirá mostrando un recuento alto sin que eso signifique más por residente.',
+      },
+      {
+        en: 'The City changed police records systems in February 2019. 2018 is assembled from the two extracts that straddle that change, and its figures are not strictly comparable to later years.',
+        es: 'La Ciudad cambió de sistema de registros policiales en febrero de 2019. 2018 se compone de los dos extractos que abarcan ese cambio, y sus cifras no son estrictamente comparables con los años posteriores.',
+      },
+      {
+        en: 'Minneapolis only, and only what Minneapolis police recorded. This is one city of more than 850 in Minnesota, and no comparable small-area figures exist statewide.',
+        es: 'Solo Minneapolis, y solo lo que registró la policía de Minneapolis. Esta es una ciudad de más de 850 en Minnesota, y no existen cifras comparables de áreas pequeñas en todo el estado.',
+      },
+    ],
+    geometry: 'polygon',
+    color: '#a3e635',
+    colorLight: '#4d7c0f',
+    categoryColors: {
+      key: 'reportedTotalBand',
+      label: { en: 'Reported offenses', es: 'Delitos denunciados' },
+      // The same lime family as the neighborhood-scale crime layers, on its own
+      // stops: a block group is about a fifth of a neighborhood, so the numbers
+      // are correspondingly smaller and a shared legend would be wrong.
+      colors: [
+        { value: '0–24', color: '#f7fee7' },
+        { value: '25–44', color: '#d9f99d' },
+        { value: '45–74', color: '#a3e635' },
+        { value: '75–114', color: '#65a30d' },
+        { value: '115+', color: '#365314' },
+      ],
+      fallback: '#6b7280',
+    },
+    hoverCard: {
+      fields: ['reportedTotal', 'statYear', 'suppressed'],
+    },
+    dataPath: '/data/crime-blockgroups.geojson',
+    csvPath: null,
+    provenance: {
+      source:
+        'City of Minneapolis Open Data, Police Incidents (aggregated to block groups by this project); U.S. Census Bureau TIGERweb 2020 block groups',
+      sourceUrl:
+        'https://opendata.minneapolismn.gov/search?groupIds=79606f50581f4a33b14a19e61c4891f7&q=incidents',
+      license:
+        'CC0 1.0 Universal (public domain dedication); block group boundaries public domain (U.S. federal work)',
+      licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+      attribution: 'City of Minneapolis Open Data; U.S. Census Bureau',
+      sourceDate: null,
+      lastUpdated: null,
+      refresh: 'periodic',
+    },
+    filters: [
+      {
+        key: 'reportedTotalBand',
+        kind: 'enum',
+        label: { en: 'Reported offenses', es: 'Delitos denunciados' },
+      },
+    ],
+    detailFields: [
+      { key: 'reportedTotal', label: { en: 'Reported offenses, latest full year', es: 'Delitos denunciados, último año completo' } },
+      { key: 'statYear', label: { en: 'Latest full year', es: 'Último año completo' } },
+      { key: 'suppressed', label: { en: 'Withheld — fewer than five reported offenses', es: 'Retenido: menos de cinco delitos denunciados' } },
+      ...BLOCK_GROUP_YEAR_ROWS,
+      { key: 'tract', label: { en: 'Census tract', es: 'Sección censal' } },
+      { key: 'blockGroup', label: { en: 'Block group within the tract', es: 'Grupo de bloques dentro de la sección' } },
+      { key: 'geoid', label: { en: 'Census GEOID', es: 'GEOID censal' } },
+    ],
+  },
 ];

@@ -97,6 +97,10 @@ const STEPS = [
   // any other layer. The polygons ride inside its own output rather than
   // getting a layer of their own — see its header.
   { name: 'crime-minneapolis', script: 'mn/crime-minneapolis.mjs' },
+  // Reads ~190,000 incident points to produce ~410 block-group counts, so
+  // it is by far the longest-running ingest here. Self-contained: fetches
+  // both the incident feed and its own census boundaries.
+  { name: 'crime-blockgroups', script: 'mn/crime-blockgroups.mjs' },
 ];
 
 function run(script) {
