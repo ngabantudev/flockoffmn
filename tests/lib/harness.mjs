@@ -121,6 +121,28 @@ export const COLOR_HELPERS = `
     let acc = [255, 255, 255]; for (const c of stack.reverse()) acc = solid(c, acc); return acc; };
 `;
 
+/**
+ * Wait until the news rail has hydrated, rather than guessing a duration.
+ *
+ * The rail's rows and its topic chips arrive from /data/news.json at idle, and
+ * its controls stay `hidden` until they do — so any suite that measures a chip
+ * has to wait for this or it measures a 0x0 hidden button. A fixed sleep won a
+ * fast local machine and lost on CI, where the suites failed with "24H 0x0"
+ * while passing locally, which is the least useful shape a test failure can
+ * have.
+ *
+ * Resolves either way: a page with no rail (the archive) or an empty window is
+ * a legitimate state, and the caller's own assertions say what should be true
+ * there.
+ */
+export const railReady = (page) =>
+  page.waitForFunction(() => {
+    const d = document.getElementById('news-dock');
+    if (!d) return true;
+    const controls = d.querySelector('[data-news-controls]');
+    return !!controls && !controls.hidden;
+  }, null, { timeout: 15_000 }).catch(() => {});
+
 /** Wait for an element's width to stop changing, rather than guessing a duration. */
 export const settle = (page, selector) =>
   page.evaluate((sel) => new Promise((res) => {

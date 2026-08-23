@@ -1,4 +1,4 @@
-import { chromium, serveDist, COLOR_HELPERS } from './lib/harness.mjs';
+import { chromium, serveDist, COLOR_HELPERS, railReady } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 const b=await chromium.launch();
 
@@ -29,7 +29,10 @@ for (const [label,url,sel] of [['map rail',`${BASE}/`,'#news-dock'],
     // oklab() and alpha — see COLOR_HELPERS. Injected before navigation so it
     // is defined by the time AUDIT runs.
     await page.addInitScript({ content: COLOR_HELPERS });
-    await page.goto(url,{waitUntil:'domcontentloaded'}); await page.waitForTimeout(500);
+    await page.goto(url,{waitUntil:'domcontentloaded'});
+    // The rail's rows are text nodes this audit is meant to cover; without the
+    // wait it silently audits a panel with no stories in it and still passes.
+    await railReady(page);
     const rows=await page.evaluate(AUDIT, sel);
     const seen=new Set(); const bad=[];
     for(const r of rows){const k=r.txt+r.fg;if(seen.has(k))continue;seen.add(k);if(r.r<r.need)bad.push(r)}

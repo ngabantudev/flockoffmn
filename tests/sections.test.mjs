@@ -1,10 +1,11 @@
-import { chromium, serveDist, reporter } from './lib/harness.mjs';
+import { chromium, serveDist, reporter, railReady } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 const b=await chromium.launch(); const { check: ck, report } = reporter('section checks');
 
 for (const scheme of ['light','dark']) {
   const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:scheme});
-  await page.goto(`${BASE}/`,{waitUntil:'domcontentloaded'}); await page.waitForTimeout(500);
+  await page.goto(`${BASE}/`,{waitUntil:'domcontentloaded'});
+  await railReady(page);
   const r=await page.evaluate(()=>{
     const d=document.getElementById('news-dock');
     const groups=[...d.querySelectorAll('[data-news-controls] [role="group"]')];

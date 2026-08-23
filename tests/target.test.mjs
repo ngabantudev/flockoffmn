@@ -1,11 +1,12 @@
-import { chromium, serveDist, reporter } from './lib/harness.mjs';
+import { chromium, serveDist, reporter, railReady } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 const b=await chromium.launch(); const { check: ck, report } = reporter('target-size checks');
 
 for (const [label,url,sel] of [['rail',`${BASE}/`,'#news-dock'],
                                ['archive',`${BASE}/news/`,'#news-archive']]) {
   const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:'light'});
-  await page.goto(url,{waitUntil:'domcontentloaded'}); await page.waitForTimeout(500);
+  await page.goto(url,{waitUntil:'domcontentloaded'});
+  await railReady(page);
   const r=await page.evaluate((sel)=>{
     const root=document.querySelector(sel);
     const box=(el)=>{const b=el.getBoundingClientRect();return {w:+b.width.toFixed(1),h:+b.height.toFixed(1),top:b.top,bottom:b.bottom,left:b.left,right:b.right}};

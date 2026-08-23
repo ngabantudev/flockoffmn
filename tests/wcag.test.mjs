@@ -1,11 +1,11 @@
-import { chromium, serveDist, reporter } from './lib/harness.mjs';
+import { chromium, serveDist, reporter, railReady } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 const b=await chromium.launch();
 const { check: ck, report } = reporter('WCAG checks');
 
 const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:'light'});
 await page.goto(`${BASE}/`,{waitUntil:'domcontentloaded'});
-await page.waitForTimeout(600);
+await railReady(page);
 
 // 2.5.8 Target Size (Minimum) — 24x24 CSS px, AA in WCAG 2.2
 const targets = await page.evaluate(() => {
