@@ -6,14 +6,24 @@
  * demographics.geojson the toggleable layers on the main map already use
  * (scripts/ingest/national/demographics.mjs).
  *
- * Deliberately a separate page from the main map (src/pages/compare.astro),
- * not a mode bolted onto MapController — that class is already the load-
+ * Deliberately a standalone component rather than a mode bolted onto
+ * MapController — that class is already the load-
  * bearing 3000-line surface every other layer depends on, and a two-map-
  * instance compare view is a genuinely different rendering model (two WebGL
  * contexts, a synced viewport, a clipped container) that has nothing to gain
  * from sharing its code. Keeping it standalone means this experiment can be
  * deleted or rebuilt without touching the layer registry, filters, hover
  * cards, or the search and detail-panel surface every other layer relies on.
+ * It is mounted as a full-screen overlay inside MapView.astro, opened by that
+ * file's `#open-compare` button — not a page of its own.
+ *
+ * The cost of that choice, made explicit: because this view is not
+ * registry-driven, it hardcodes the layer IDs it draws, so adding a layer here
+ * is a UI-component edit that CLAUDE.md Part 1 §2 otherwise forbids. `alpr` is
+ * the one layer that exception has been spent on. A reported-crime overlay was
+ * built here and then removed: graduated circles over a choropleth make the
+ * eye compare two encodings at once, and mostly just occlude the bands this
+ * view exists to show.
  *
  * Accessibility (CLAUDE.md §4/Part 0 §0.7): a pixel-swipe has no non-visual
  * reading — nothing here pretends otherwise. The divider is a real

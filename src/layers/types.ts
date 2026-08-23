@@ -67,7 +67,37 @@ export type LayerId =
   // in full under public/data/docs/, starting with the first: University of
   // Minnesota PD's Flock Safety contract, released via a MuckRock MGDPA
   // request. See scripts/ingest/mn/vendor-contracts.mjs.
-  | 'vendor_contract';
+  | 'vendor_contract'
+  // Offences reported to Minneapolis police, by neighbourhood, by year. The
+  // City aggregates these before publishing them, which is the only reason
+  // they can appear here at all: the incident-level feeds carry case numbers
+  // and block addresses and are out of scope under §1b permanently. The
+  // neighbourhood polygons ride inside this layer's own file rather than
+  // getting an entry of their own. See scripts/ingest/mn/crime-minneapolis.mjs.
+  | 'crime_minneapolis'
+  // The same file, split by FBI Part I category, one layer each. Separate
+  // entries rather than a control that reshades one layer, because that is
+  // how the three demographic_* layers already work — and because each
+  // offence is shaded on its own scale (src/lib/crimeBands.mjs): homicide
+  // runs 0-9 per neighbourhood-year where larceny runs to nearly 2,000, so
+  // they cannot share a legend.
+  | 'crime_homicide'
+  | 'crime_rape'
+  | 'crime_robbery'
+  | 'crime_aggravated_assault'
+  | 'crime_burglary'
+  | 'crime_larceny'
+  | 'crime_auto_theft'
+  | 'crime_arson'
+  // The one layer in this project built from a person-level upstream source:
+  // reported crime aggregated by us to census block groups, roughly five times
+  // finer than the neighbourhood table the layers above read. Permitted by §1d
+  // ("ingest the systemic attributes and drop the rest") and fenced by four
+  // rules written at the top of scripts/ingest/mn/crime-blockgroups.mjs — the
+  // load-bearing one being that there is no offence breakdown at this grain
+  // and never will be, since the re-identification risk in small-area crime
+  // data comes from crossing a small area with a rare offence.
+  | 'crime_block_group';
 
 export type Locale = 'en' | 'es';
 
@@ -401,6 +431,12 @@ export type LayerCategoryId =
   | 'environment'
   | 'infrastructure'
   | 'surveillance'
+  // Reported crime sits beside the environmental and demographic layers, not
+  // beside Enforcement. That is deliberate: filing it under Enforcement would
+  // put crime and the apparatus in the same drawer and imply the adjacency
+  // §1c forbids this site from asserting. It is context about a place, read
+  // the same way pollution burden or poverty rate is.
+  | 'crime'
   | 'enforcement';
 
 export interface LayerCategory {
@@ -416,6 +452,28 @@ export interface LayerDefinition {
   slug: string;
   /** Which section of the layer panel this belongs under. */
   category: LayerCategoryId;
+  /**
+   * A second, optional level of grouping inside one category's panel
+   * section — for the one case so far where a single category holds two
+   * genuinely different kinds of the same subject (Reported Crime: nine
+   * layers reading one neighbourhood-scale file, one reading a second
+   * block-group-scale file). Omit it and a layer renders as a flat row in
+   * its category, exactly as every layer did before this field existed.
+   *
+   * Two layers sharing a `subgroup.id` render inside one shared nested
+   * `<details>`; the `id` is what groups them; `label` is only read off
+   * the first layer encountered for a given id, so it only needs to be
+   * correct once per subgroup, not repeated identically on every member.
+   *
+   * This does not change what a layer *is* — it is still its own
+   * independently toggleable record, with its own filters, detail panel,
+   * and accessible-list entry. It only changes where its row sits inside
+   * the panel; see LayerRow.astro, which renders identically either way.
+   */
+  subgroup?: {
+    id: string;
+    label: I18nString;
+  };
   /**
    * Draw this layer on first load, without the reader ticking anything.
    *
@@ -913,6 +971,47 @@ export interface LayerDefinition {
     blocksUntil: number;
     /** Zoom at/above which parcels are fully opaque and the grid is gone. */
     detailFrom: number;
+  };
+  /**
+   * This layer carries a full year-by-year series, one attribute per year
+   * (`total2018`, `total2019`, ...), not just the latest full year's value —
+   * and can be scrubbed with the shared crime time slider
+   * (mapController.ts's `setSelectedYear`), which recolours the polygon fill
+   * from that year's value using `stops` below rather than the precomputed
+   * `categoryColors` band, which only ever exists for the latest year.
+   *
+   * Deliberately not on every crime layer: the eight single-offense layers
+   * only ever stored the latest year's count per offense, so they are not
+   * sliderable yet — see crime-minneapolis.mjs for what a future ingest
+   * change would need to add before that changes. Shipping the slider now
+   * for the two layers that already carry the series, rather than waiting
+   * to build it for all ten at once, is a deliberate choice: real value
+   * sooner, not a corner cut.
+   *
+   * The slider itself is one shared control for the whole Reported Crime
+   * section, not per layer — comparing two layers only makes sense if both
+   * show the same year, so it drives every currently-checked layer that
+   * declares this field, together, rather than each layer scrubbing on its
+   * own and silently drifting out of sync with the others.
+   *
+   * Filters are unaffected by the selected year: `reportedTotalBand` (and
+   * any filter built on it) stays computed from the latest full year only,
+   * because a per-year band was never precomputed. Scrubbing to an older
+   * year can therefore show a fill colour for a year the current band
+   * filter was not evaluated against — a real, disclosed limitation, not a
+   * bug.
+   */
+  timeSeries?: {
+    /** Every year this layer carries a `total{year}` attribute for, ascending. */
+    years: number[];
+    /**
+     * The same numeric band thresholds `categoryColors.colors` was built
+     * from (crimeBands.mjs's `bandFor`), so the slider can bucket any
+     * year's raw value into the identical colours without a precomputed
+     * per-year band attribute. Length must be `categoryColors.colors.length
+     * - 1` — one fewer stop than there are bands.
+     */
+    stops: number[];
   };
   /**
    * How strongly a line layer is painted, 0–1. Omit for the standard weight.

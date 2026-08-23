@@ -92,6 +92,15 @@ const STEPS = [
   // agreement check it measures every run, and ej-cumulative.geojson for the
   // 2020 tract boundaries each block resolves against. See its own header.
   { name: 'holc-detail', script: 'mn/holc-detail.mjs' },
+  // Self-contained: fetches both the City's aggregated crime table and the
+  // neighbourhood polygons it joins to, so it has no ordering dependency on
+  // any other layer. The polygons ride inside its own output rather than
+  // getting a layer of their own — see its header.
+  { name: 'crime-minneapolis', script: 'mn/crime-minneapolis.mjs' },
+  // Reads ~190,000 incident points to produce ~410 block-group counts, so
+  // it is by far the longest-running ingest here. Self-contained: fetches
+  // both the incident feed and its own census boundaries.
+  { name: 'crime-blockgroups', script: 'mn/crime-blockgroups.mjs' },
 ];
 
 function run(script) {

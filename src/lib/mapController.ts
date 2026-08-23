@@ -43,6 +43,8 @@ export interface ClientLayer {
   id: LayerId;
   category: LayerCategoryId;
   /** See LayerDefinition's own comment in layers/types.ts. */
+  subgroup?: Localised<NonNullable<LayerDefinition['subgroup']>>;
+  /** See LayerDefinition's own comment in layers/types.ts. */
   defaultOn?: boolean;
   label: string;
   summary: string;
@@ -105,6 +107,8 @@ export interface ClientLayer {
   scale?: LayerDefinition['scale'];
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
   blockAggregate?: LayerDefinition['blockAggregate'];
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  timeSeries?: LayerDefinition['timeSeries'];
   /** Colour records by a category once they are drawn individually. */
   categoryColors?: Localised<NonNullable<LayerDefinition['categoryColors']>>;
   /** Write an attribute's value on each polygon, the way the source document did. */
@@ -754,6 +758,15 @@ export class MapController {
   private data = new Map<string, LoadedFeature[]>();
   private visible = new Set<string>();
   private filters = new Map<string, FilterState>();
+  /**
+   * The shared crime time slider's current year, or null for "every
+   * `timeSeries` layer draws its own latest full year" — the default, and
+   * exactly today's behaviour for a reader who never touches the slider.
+   * One value for every `timeSeries` layer at once (see that field's own
+   * comment on why this is shared rather than per layer), applied by
+   * `setSelectedYear()`.
+   */
+  private selectedYear: number | null = null;
   /**
    * In-flight `loadLayer` calls, keyed by layer. A second caller — a rapid
    * toggle-off-then-on-again while the first load is still fetching, drawing,
@@ -1693,6 +1706,12 @@ export class MapController {
   private repaintThemedLayers(): void {
     for (const layer of this.layers) {
       if (this.map.getLayer(`${layer.id}-fill`)) {
+        // categoryColors swatches are fixed hex values from the registry,
+        // not derived from basemapDark, so a layer using them needs no
+        // repaint here at all — including a `timeSeries` layer mid-scrub:
+        // skipping it is what keeps a basemap toggle from clobbering
+        // whichever year the slider currently has painted back to the
+        // latest-year default.
         if (!layer.categoryColors) {
           const fill = this.polygonFillColor(layer);
           this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', fill);
@@ -2405,6 +2424,44 @@ export class MapController {
   }
 
   /**
+   * A `timeSeries` layer's fill-colour expression for one specific year,
+   * bucketing that year's raw `total{year}` value through `timeSeries.stops`
+   * into the same colours `categoryColors.colors` already declares — so a
+   * scrubbed year and the layer's own default (latest-year) band read as
+   * the identical colour scale, just evaluated against a different column.
+   *
+   * A plain `['get', key]`, not the nested `['get', key, ['get',
+   * 'attributes']]` form CompareView.astro and the old dot code used —
+   * those read the *raw* GeoJSON file directly, where attributes really is
+   * nested. This expression is evaluated against `flatten()`'s output
+   * instead (the source `addLayer` actually draws), which spreads every
+   * attribute to the top level of `properties` and drops the nested object
+   * entirely — see that method's own comment. Getting this wrong doesn't
+   * throw; it silently reads null for every feature and the whole layer
+   * renders as one flat fallback grey, which is exactly what shipped here
+   * first and was caught by comparing the paint property's live value
+   * against the real per-neighbourhood totals, not by trusting the
+   * expression compiled.
+   *
+   * A `case` guards the null/withheld case ahead of `step`, which demands a
+   * number: a withheld cell reads as `categoryColors.fallback`, the same
+   * grey every other unmatched or missing value on this map already uses,
+   * never guessed into a band.
+   */
+  private timeSeriesFillColor(layer: ClientLayer, year: number): maplibregl.ExpressionSpecification {
+    const { stops } = layer.timeSeries!;
+    const colors = layer.categoryColors!.colors.map((c) => c.color);
+    const fallback = layer.categoryColors!.fallback;
+    const value = ['get', `total${year}`];
+    return [
+      'case',
+      ['==', value, null],
+      fallback,
+      ['step', value, colors[0], ...stops.flatMap((stop, i) => [stop, colors[i + 1]])],
+    ] as unknown as maplibregl.ExpressionSpecification;
+  }
+
+  /**
    * Fetch a layer's records into `this.data` without drawing it as a map
    * layer or touching `this.visible` — for a cross-layer lookup
    * (relation) that needs a record from a layer the reader may never
@@ -2627,7 +2684,15 @@ export class MapController {
       // `polygonClick: 'highlight'` layer's *outline*: see
       // polygonOutlineColor's own comment for why that one pops to a fixed
       // near-white/near-black instead of sharing polygonColor.
-      const polygonColor = this.polygonFillColor(layer);
+      //
+      // A `timeSeries` layer checked for the first time while the slider is
+      // already scrubbed away from the latest year draws at that scrubbed
+      // year immediately, not the default, so the map and the slider's own
+      // label never briefly disagree about which year is on screen.
+      const polygonColor =
+        layer.timeSeries && this.selectedYear !== null && layer.timeSeries.years.includes(this.selectedYear)
+          ? this.timeSeriesFillColor(layer, this.selectedYear)
+          : this.polygonFillColor(layer);
       const outlineColor = highlightMode ? this.polygonOutlineColor() : polygonColor;
 
       // The grid stands under the parcels and fades out exactly as they fade
@@ -3753,7 +3818,41 @@ export class MapController {
     }
   }
 
-  /** Features of a layer that pass its current filters. */
+  /**
+   * Move the shared crime time slider — `year` a value from some visible
+   * `timeSeries` layer's own `years`, or `null` to return every `timeSeries`
+   * layer to its own latest full year (the default, and the only state
+   * before this is ever called).
+   *
+   * Recolours every currently-checked `timeSeries` layer's fill (and outline,
+   * where the outline shares the fill's expression — same rule addLayer and
+   * repaintThemedLayers already follow) from that year's `total{year}`
+   * value, via `timeSeriesFillColor`. Filters are untouched: `filteredFeatures`
+   * never runs here, because scrubbing the year changes which column a
+   * feature's colour comes from, not which features are on the map — see
+   * `timeSeries`'s own comment on why the band *filter* itself still reflects
+   * only the latest year. Layers with no `timeSeries` (the eight
+   * single-offense layers, for now) are untouched entirely.
+   */
+  setSelectedYear(year: number | null) {
+    this.selectedYear = year;
+    for (const layer of this.layers) {
+      if (!layer.timeSeries || !this.visible.has(layer.id)) continue;
+      const fillId = `${layer.id}-fill`;
+      if (!this.map.getLayer(fillId)) continue;
+      const fill =
+        year !== null && layer.timeSeries.years.includes(year)
+          ? this.timeSeriesFillColor(layer, year)
+          : this.polygonFillColor(layer);
+      this.map.setPaintProperty(fillId, 'fill-color', fill);
+      const outlineId = `${layer.id}-outline`;
+      if (this.map.getLayer(outlineId)) {
+        const outline = layer.polygonClick === 'highlight' ? this.polygonOutlineColor() : fill;
+        this.map.setPaintProperty(outlineId, 'line-color', outline);
+      }
+    }
+  }
+
   filteredFeatures(layerId: string): LoadedFeature[] {
     const all = this.data.get(layerId) ?? [];
     const state = this.filters.get(layerId);
