@@ -44,7 +44,10 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Raised from 10 when the browser suites moved in here: they add a Chromium
+    # download plus about a minute of real page-driving on top of install and
+    # build. The ceiling is a runaway guard, not a budget.
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -63,3 +66,22 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # After the build, because the suites drive the built site in dist/ over a
+      # local static server rather than a dev server — see tests/lib/harness.mjs.
+      #
+      # Chromium only, and no --with-deps: ubuntu-latest already carries the
+      # shared libraries Playwright needs, and pulling them costs about a minute
+      # per run to install what is already there. If a future runner image drops
+      # them this step fails loudly on a missing .so, which is the right way to
+      # find out.
+      - name: Install Chromium for the browser suites
+        run: npx playwright install chromium
+
+      # These are the checks that catch what a typecheck cannot: a chip that
+      # outran its data, a contrast ratio, a nav label clipped at 320px, a panel
+      # left inert with no visible control to undo it, the rail fetching on a
+      # phone that will never show it. They existed and did not run here, which
+      # meant a change could break the rail and still go green.
+      - name: Browser suites
+        run: npm test

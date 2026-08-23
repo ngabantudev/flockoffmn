@@ -469,6 +469,16 @@ async function main() {
         ? 'The previous archive file could not be read on the most recent run, so this file was rebuilt from that run alone and earlier history is missing. Restore it from version control rather than accepting this as the record.'
         : null,
       'Hmong-language and Spanish-language Minnesota outlets are not indexed as sources by Google News, so this feed structurally cannot see their reporting — the communities carrying most of this enforcement are covered here only when an English-language outlet also files the story. Adding those outlets to the source list would not fix it; the upstream has no items to return.',
+      // §2's prescribed response when a source cannot be fetched politely: a
+      // knownGaps entry and a manual workflow, not a workaround. Three routes
+      // to the publisher's own URL were tested on 2026-08-22 and all three are
+      // closed. Decoding the token locally: 0 of 106 decodable, Google having
+      // moved to server-side mapping. Following the link with a plain GET: no
+      // redirect, just a 581 KB JavaScript interstitial with no Location and no
+      // meta refresh. Reading it from the feed: `<source url>` carries the
+      // publisher's homepage only, never the article. What remains is Google's
+      // undocumented batchexecute endpoint, which §2 forbids.
+      'Every link here points at Google News rather than at the newspaper, because Google no longer publishes the article address and the only way to obtain it would break this project\'s own rule against scraping private interfaces. Links resolve today; they are outside our control and may not resolve in a few years. The outlet, headline and date beside each link are the durable citation — a story can be found from those even when the link dies.',
     ].filter(Boolean),
     topicCounts: perTopic,
     items: screened,
