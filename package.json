@@ -39,7 +39,9 @@
     "data:news": "node scripts/ingest/mn/news.mjs",
     "tiles:build": "node scripts/tiles/build-basemap.mjs",
     "tiles:publish": "node scripts/tiles/build-basemap.mjs --upload",
-    "tiles:styles": "node scripts/tiles/mirror-basemap-styles.mjs"
+    "tiles:styles": "node scripts/tiles/mirror-basemap-styles.mjs",
+    "test": "node tests/run.mjs",
+    "test:install": "playwright install chromium"
   },
   "dependencies": {
     "astro": "^7.1.6",
@@ -53,6 +55,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^26.1.2",
+    "playwright": "^1.62.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "wrangler": "^4.116.0"
