@@ -46,27 +46,25 @@
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
 
-# The news archive, which the map page's rail now fetches instead of inlining.
-#
-# Written once a day by the 06:00 UTC cron and by nothing else, so a one-hour
-# TTL revalidated ~24x more often than the file changes. Six hours plus a day
-# of stale-while-revalidate means a reader who returns within the day gets the
-# rail instantly and off the network, and never waits on a revalidation: the
-# stale copy paints, the fresh one lands in the background for next time.
-#
-# The ceiling on staleness is a day-old headline list next to a link to the
-# archive, which is the same document.
-# Listed BEFORE /data/* deliberately: for a given header name the first
-# matching rule wins, so a more specific rule placed after the wildcard is
-# silently ignored — which is exactly what happened on the first attempt. The
-# CORS header is restated here for the same reason.
-/data/news.json
-  Cache-Control: public, max-age=21600, stale-while-revalidate=86400
-  Access-Control-Allow-Origin: *
-
 # Published open datasets. These are the largest assets and the ones people
 # hotlink and script against, so they are cacheable and explicitly CORS-open —
 # reuse is the point (see LICENSE-DATA.md for the terms that still apply).
+#
+# CAUTION: the Cache-Control line below does not do anything. Measured against
+# the deployed preview, every other directive in this file lands (Referrer-
+# Policy, X-Frame-Options, X-Content-Type-Options, Permissions-Policy all appear
+# on /data/*.json responses) but Cache-Control does not: setting this value to
+# max-age=3601 and deploying still served max-age=3600, as did an exact-path
+# /data/news.json rule at max-age=21600, tried both before and after this
+# wildcard. Something above this file — Cloudflare's own asset handling or a
+# dashboard cache rule — is fixing browser TTL at one hour.
+#
+# Left in place because one hour is a fine value and because it documents the
+# intent, but changing it here will not change what is served. The rail's
+# fetch (see NewsFeed.astro) is unaffected: an hour of browser cache plus a day
+# of stale-while-revalidate already covers repeat views, and the news file is
+# only rewritten once a day. Raising it to six hours needs a dashboard change,
+# not a commit.
 /data/*
-  Cache-Control: public, max-age=3601, stale-while-revalidate=86400
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
   Access-Control-Allow-Origin: *
