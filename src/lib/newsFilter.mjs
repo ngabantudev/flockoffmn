@@ -47,7 +47,7 @@
  */
 export const TOPIC_QUERIES = [
   '"license plate reader" OR "license plate readers" OR ALPR',
-  '"Flock Safety" OR "surveillance camera" OR "facial recognition"',
+  '"Flock Safety" OR "flock camera" OR "flock cameras" OR "surveillance camera" OR "facial recognition"',
   '"287(g)" OR "immigration enforcement" OR "ICE detainer"',
   '"immigration detention" OR "detention facility" OR "ICE contract"',
 ];
