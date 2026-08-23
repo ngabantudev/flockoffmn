@@ -9,7 +9,15 @@ import {
   METRO_BOUNDS,
   METRO_CENTER,
 } from './mapStyle';
-import { bboxOf, representativePoint, haversineMeters, bearingDeg, destinationPoint } from './geo.mjs';
+import {
+  bboxOf,
+  representativePoint,
+  haversineMeters,
+  bearingDeg,
+  destinationPoint,
+  scatterInPolygon,
+  seedFromId,
+} from './geo.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
@@ -105,6 +113,8 @@ export interface ClientLayer {
   scale?: LayerDefinition['scale'];
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
   blockAggregate?: LayerDefinition['blockAggregate'];
+  /** Paint this polygon layer as scattered dots instead of a graduated fill. See LayerDefinition's own comment. */
+  dotDensity?: Localised<NonNullable<LayerDefinition['dotDensity']>>;
   /** Colour records by a category once they are drawn individually. */
   categoryColors?: Localised<NonNullable<LayerDefinition['categoryColors']>>;
   /** Write an attribute's value on each polygon, the way the source document did. */
@@ -1509,6 +1519,14 @@ export class MapController {
    * the first basemap toggle onward.
    */
   private polygonFillColor(layer: ClientLayer): maplibregl.ExpressionSpecification {
+    // A dotDensity layer's fill is a faint, flat hit-region for hover/click —
+    // never category-coloured, because the dots themselves are the encoding
+    // now, and a banded fill underneath would be the same "two encodings
+    // fighting for one set of pixels" problem the compare view's crime
+    // circles ran into.
+    if (layer.dotDensity) {
+      return (this.basemapDark ? NEUTRAL_POLYGON_DARK : NEUTRAL_POLYGON_LIGHT) as unknown as maplibregl.ExpressionSpecification;
+    }
     if (layer.polygonClick === 'highlight') {
       // The tint is one layer (vendor_contract) painted onto another
       // (agency_jurisdiction) — Documented vendor contracts and the green
@@ -1648,6 +1666,10 @@ export class MapController {
         0.42,
       ] as unknown as maplibregl.ExpressionSpecification;
     }
+    // Just enough to read as "an area" and give hover/click something to
+    // land on — low enough that it never competes with the dots drawn over
+    // it, which is where this layer's actual signal lives.
+    if (layer.dotDensity) return 0.1;
     return 0.42;
   }
 
@@ -1693,7 +1715,15 @@ export class MapController {
   private repaintThemedLayers(): void {
     for (const layer of this.layers) {
       if (this.map.getLayer(`${layer.id}-fill`)) {
-        if (!layer.categoryColors) {
+        // categoryColors swatches are fixed hex values from the registry,
+        // not derived from basemapDark, so a layer using them normally needs
+        // no repaint here at all. `dotDensity` is the one exception: it
+        // overrides polygonFillColor's categoryColors branch with the
+        // basemap-dependent neutral fill (see that function's own comment),
+        // so such a layer keeps `categoryColors` for filtering but still
+        // needs its fill re-keyed on every basemap toggle like any other
+        // plain-colour polygon layer.
+        if (!layer.categoryColors || layer.dotDensity) {
           const fill = this.polygonFillColor(layer);
           this.map.setPaintProperty(`${layer.id}-fill`, 'fill-color', fill);
           // The outline shares the fill's expression for every polygon kind
@@ -1708,6 +1738,11 @@ export class MapController {
         }
         if (this.map.getLayer(`${layer.id}-labels`)) {
           this.map.setPaintProperty(`${layer.id}-labels`, 'text-halo-color', this.basemapColor);
+        }
+        // The dots' own colour is layerColor(layer) — color/colorLight by
+        // basemap, same split as every point layer's circle-color.
+        if (this.map.getLayer(`${layer.id}-dots`)) {
+          this.map.setPaintProperty(`${layer.id}-dots`, 'circle-color', this.layerColor(layer));
         }
       }
 
@@ -2404,6 +2439,38 @@ export class MapController {
     };
   }
 
+  private dotsSourceId = (layerId: string) => `src-${layerId}-dots`;
+
+  /**
+   * A `dotDensity` layer's scattered points, derived from whichever polygons
+   * the active filters leave standing — same reasoning as blockFeatures
+   * above: a filtered-out polygon takes its dots with it.
+   *
+   * These points are never added to `this.data`, never carry an `id`, and
+   * never pass through `flatten()` — they are not records. See
+   * `dotDensity`'s own comment in layers/types.ts for why.
+   */
+  private dotFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
+    if (!layer.dotDensity) return EMPTY_FC;
+    const { key, perUnit } = layer.dotDensity;
+    const out: Feature[] = [];
+    for (const f of features) {
+      if (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon') continue;
+      const raw = f.properties.attributes[key];
+      const value = typeof raw === 'number' ? raw : null;
+      // A withheld/suppressed cell (raw is null) gets zero dots — never an
+      // estimate. Guessing a density for a cell the source deliberately
+      // declined to publish would defeat the reason it was withheld.
+      if (value === null) continue;
+      const count = Math.round(value / perUnit);
+      const seed = seedFromId(f.properties.id);
+      for (const [lng, lat] of scatterInPolygon(f.geometry, count, seed)) {
+        out.push({ type: 'Feature', geometry: { type: 'Point', coordinates: [lng, lat] }, properties: {} });
+      }
+    }
+    return { type: 'FeatureCollection', features: out };
+  }
+
   /**
    * Fetch a layer's records into `this.data` without drawing it as a map
    * layer or touching `this.visible` — for a cross-layer lookup
@@ -2738,6 +2805,29 @@ export class MapController {
         },
         under,
       );
+      if (layer.dotDensity) {
+        // Density is the whole encoding here, so the dots draw at full
+        // strength in the layer's own colour — unlike the fill above, which
+        // is deliberately faint. Inserted at `under`, same as every other
+        // polygon layer, so a point layer like ALPR still draws over these:
+        // the apparatus stays visually on top of context layers, the same
+        // rule the compare view's now-removed crime overlay followed.
+        const dotsSrc = this.dotsSourceId(layer.id);
+        this.map.addSource(dotsSrc, { type: 'geojson', data: this.dotFeatures(layer, features) });
+        this.map.addLayer(
+          {
+            id: `${layer.id}-dots`,
+            type: 'circle',
+            source: dotsSrc,
+            paint: {
+              'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 1, 16, 2.6] as unknown as maplibregl.ExpressionSpecification,
+              'circle-color': this.layerColor(layer),
+              'circle-opacity': 0.85,
+            },
+          },
+          under,
+        );
+      }
       if (layer.tintWhenRelated) void this.applyRelatedTint(layer);
       if (layer.labelBy) {
         // The identifier the source printed on the area, in the area's own
@@ -3782,6 +3872,11 @@ export class MapController {
     // no longer shows.
     const blocks = this.map.getSource(this.blockSourceId(layerId)) as GeoJSONSource | undefined;
     blocks?.setData(this.blockFeatures(layer, visible));
+    // A dotDensity layer's dots regenerate from the same surviving features,
+    // same reasoning as blocks above — a filtered-out polygon takes its dots
+    // with it rather than leaving them scattered with nothing under them.
+    const dots = this.map.getSource(this.dotsSourceId(layerId)) as GeoJSONSource | undefined;
+    dots?.setData(this.dotFeatures(layer, visible));
     this.emitCounts();
   }
 

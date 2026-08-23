@@ -72,6 +72,13 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   bearingKey: d.bearingKey,
   scale: d.scale,
   blockAggregate: d.blockAggregate,
+  dotDensity: d.dotDensity
+    ? {
+        perUnit: d.dotDensity.perUnit,
+        key: d.dotDensity.key,
+        keyLabel: pick(d.dotDensity.keyLabel, locale),
+      }
+    : undefined,
   categoryColors: d.categoryColors
     ? {
         key: d.categoryColors.key,
@@ -2017,10 +2024,33 @@ const strings = {
     if (!mapKeysEl) return;
     mapKeysEl.replaceChildren();
     for (const layer of layers) {
-      const cc = layer.categoryColors;
-      if (!cc || cc.showOnMapKey === false) continue;
       const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${layer.id}"]`);
       if (!input?.checked) continue;
+
+      // A dot-density layer's key is one line — "1 dot ≈ N reported
+      // offenses" — not the five-swatch band bar every other polygon layer
+      // gets, because that bar would describe bands this layer no longer
+      // paints (its fill is a flat, uncoloured hit-region; see
+      // mapController.ts's polygonFillColor). categoryColors stays on the
+      // registry entry for filtering, so it is skipped here rather than
+      // removed from the layer definition.
+      if (layer.dotDensity) {
+        const card = document.createElement('div');
+        card.className = 'rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm';
+        const row = document.createElement('p');
+        row.className = 'flex items-center gap-1.5 text-[10px] leading-tight text-ink-300';
+        const dot = document.createElement('span');
+        dot.className = 'inline-block h-1.5 w-1.5 shrink-0 rounded-full';
+        dot.style.background = layer.color;
+        dot.setAttribute('aria-hidden', 'true');
+        row.append(dot, document.createTextNode(layer.dotDensity.keyLabel));
+        card.appendChild(row);
+        mapKeysEl.appendChild(card);
+        continue;
+      }
+
+      const cc = layer.categoryColors;
+      if (!cc || cc.showOnMapKey === false) continue;
 
       const card = document.createElement('div');
       card.className = 'rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm';

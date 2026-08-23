@@ -2824,14 +2824,18 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Las mismas denuncias contadas en áreas de aproximadamente una quinta parte de un barrio: de unos 600 a 3000 residentes cada una. Todos los delitos juntos; esta capa no publica desglose por tipo.',
     },
     whatThisMeans: {
-      en: 'Minneapolis has 87 neighborhoods, which is coarse enough that a busy corner and the quiet blocks around it read as one flat shade. This layer counts the same reported offenses inside census block groups instead — 412 areas rather than 87 — so concentration inside a neighborhood becomes visible. It is the only layer on this map built by aggregating records that are published one-by-one: the City’s incident feed carries a case number, an address and a time on every row, and this project reads none of those fields. The ingest requests the location and nothing else, so no case number, address, date or charge is ever downloaded, held, or written. What is published is one number for one area for one full year. There is deliberately no breakdown by offense type here and there will not be one: a single rape or homicide placed in one small area in one year can identify a person, where a count of all offenses together cannot. The breakdown lives at neighborhood scale in the layers beside this one, and the two are never crossed. Areas with fewer than five reported offenses in a year are withheld rather than published, and shown as withheld rather than as zero.',
-      es: 'Minneapolis tiene 87 barrios, lo bastante amplios como para que una esquina concurrida y las manzanas tranquilas a su alrededor se lean como un solo tono plano. Esta capa cuenta las mismas denuncias dentro de grupos de bloques censales: 412 áreas en lugar de 87, de modo que la concentración dentro de un barrio se hace visible. Es la única capa de este mapa construida agregando registros que se publican uno por uno: el flujo de incidentes de la Ciudad lleva un número de caso, una dirección y una hora en cada fila, y este proyecto no lee ninguno de esos campos. La ingesta solicita la ubicación y nada más, así que ningún número de caso, dirección, fecha ni cargo se descarga, se guarda ni se escribe. Lo que se publica es un número, para un área, para un año completo. Deliberadamente no hay desglose por tipo de delito aquí y no lo habrá: una sola violación u homicidio situado en un área pequeña en un año puede identificar a una persona, mientras que un recuento de todos los delitos juntos no. El desglose vive a escala de barrio en las capas contiguas, y ambas nunca se cruzan. Las áreas con menos de cinco delitos denunciados en un año se retienen en lugar de publicarse, y se muestran como retenidas, no como cero.',
+      en: 'Minneapolis has 87 neighborhoods, which is coarse enough that a busy corner and the quiet blocks around it read as one flat shade. This layer counts the same reported offenses inside census block groups instead — 394 areas rather than 87 — so concentration inside a neighborhood becomes visible. It is the only layer on this map built by aggregating records that are published one-by-one: the City’s incident feed carries a case number, an address and a time on every row, and this project reads none of those fields. The ingest requests the location and nothing else, so no case number, address, date or charge is ever downloaded, held, or written. What is published is one number for one area for one full year. There is deliberately no breakdown by offense type here and there will not be one: a single rape or homicide placed in one small area in one year can identify a person, where a count of all offenses together cannot. The breakdown lives at neighborhood scale in the layers beside this one, and the two are never crossed. Areas with fewer than five reported offenses in a year are withheld rather than published, and shown as withheld rather than as zero. Each area is drawn as a scatter of small dots rather than a shaded fill — roughly one dot per five reported offenses — so that density reads as texture instead of one flat colour per area. A dot’s position inside its area is chosen at random by this site when the map draws it. No dot marks a real address, an actual report, or any specific place — only the count and the area boundary come from the source data.',
+      es: 'Minneapolis tiene 87 barrios, lo bastante amplios como para que una esquina concurrida y las manzanas tranquilas a su alrededor se lean como un solo tono plano. Esta capa cuenta las mismas denuncias dentro de grupos de bloques censales: 394 áreas en lugar de 87, de modo que la concentración dentro de un barrio se hace visible. Es la única capa de este mapa construida agregando registros que se publican uno por uno: el flujo de incidentes de la Ciudad lleva un número de caso, una dirección y una hora en cada fila, y este proyecto no lee ninguno de esos campos. La ingesta solicita la ubicación y nada más, así que ningún número de caso, dirección, fecha ni cargo se descarga, se guarda ni se escribe. Lo que se publica es un número, para un área, para un año completo. Deliberadamente no hay desglose por tipo de delito aquí y no lo habrá: una sola violación u homicidio situado en un área pequeña en un año puede identificar a una persona, mientras que un recuento de todos los delitos juntos no. El desglose vive a escala de barrio en las capas contiguas, y ambas nunca se cruzan. Las áreas con menos de cinco delitos denunciados en un año se retienen en lugar de publicarse, y se muestran como retenidas, no como cero. Cada área se dibuja como una dispersión de pequeños puntos en lugar de un relleno sombreado —aproximadamente un punto por cada cinco delitos denunciados— para que la densidad se lea como textura en vez de un solo color plano por área. La posición de un punto dentro de su área la elige al azar este sitio al dibujar el mapa. Ningún punto marca una dirección real, una denuncia concreta ni un lugar específico: solo el recuento y el límite del área provienen de los datos de origen.',
     },
     geometryNote: {
       en: 'A census block group is a U.S. Census Bureau reporting area of roughly 600–3,000 residents — the smallest area the Bureau publishes most statistics for. It is not a neighborhood and has no name anyone uses.',
       es: 'Un grupo de bloques censales es un área de informe de la Oficina del Censo de EE. UU. de unos 600 a 3000 residentes: la menor área para la que la Oficina publica la mayoría de sus estadísticas. No es un barrio y no tiene un nombre que nadie use.',
     },
     limitations: [
+      {
+        en: 'Each dot’s position inside its area is chosen at random, and carries no information of its own — a cluster of dots means a busier area, not that anything happened at any of those exact spots. Nothing on this map places a dot at a real address or ties one to a real report.',
+        es: 'La posición de cada punto dentro de su área se elige al azar y no aporta información por sí sola: un grupo de puntos indica un área más activa, no que algo haya ocurrido en esos lugares exactos. Nada en este mapa coloca un punto en una dirección real ni lo vincula a una denuncia concreta.',
+      },
       {
         en: 'A count of offenses reported to and recorded by police. It is a record of what was reported and what police chose to record, which is not the same as a record of what happened.',
         es: 'Un recuento de delitos denunciados a la policía y registrados por ella. Es un registro de lo que se denunció y de lo que la policía decidió registrar, que no es lo mismo que un registro de lo que ocurrió.',
@@ -2864,12 +2868,14 @@ export const LAYERS: LayerDefinition[] = [
     geometry: 'polygon',
     color: '#a3e635',
     colorLight: '#4d7c0f',
+    // Kept for the "Filters" control — hiding a band still hides that band's
+    // areas and their dots (see mapController.ts's refresh()) — but not used
+    // to paint the fill itself, and not shown as a swatch bar on the floating
+    // map key: dotDensity below replaces both of those (see its own comment
+    // in layers/types.ts and refreshMapKeys in MapView.astro).
     categoryColors: {
       key: 'reportedTotalBand',
       label: { en: 'Reported offenses', es: 'Delitos denunciados' },
-      // The same lime family as the neighborhood-scale crime layers, on its own
-      // stops: a block group is about a fifth of a neighborhood, so the numbers
-      // are correspondingly smaller and a shared legend would be wrong.
       colors: [
         { value: '0–24', color: '#f7fee7' },
         { value: '25–44', color: '#d9f99d' },
@@ -2878,6 +2884,20 @@ export const LAYERS: LayerDefinition[] = [
         { value: '115+', color: '#365314' },
       ],
       fallback: '#6b7280',
+      showOnMapKey: false,
+    },
+    // 1:5 chosen against the real 2018-2025 distribution: even the single
+    // busiest block group (443 offenses/year, ~0.36km2) scatters to about 80m
+    // average spacing between dots at that ratio — legible texture, not a
+    // solid blob. ~4,400 dots citywide for the mapped year, well inside what
+    // this map already draws for the real ALPR point layer (1,430 features).
+    dotDensity: {
+      perUnit: 5,
+      key: 'reportedTotal',
+      keyLabel: {
+        en: '1 dot ≈ 5 reported offenses, positions randomized',
+        es: '1 punto ≈ 5 delitos denunciados, posiciones aleatorias',
+      },
     },
     hoverCard: {
       fields: ['reportedTotal', 'statYear', 'suppressed'],

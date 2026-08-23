@@ -279,3 +279,77 @@ export function compassLabel(degrees) {
   if (!Number.isFinite(n)) return null;
   return COMPASS[Math.round(((n % 360) + 360) % 360 / 45) % 8];
 }
+
+/* ------------------------------------------------------------------ *
+ * Dot-density scatter
+ *
+ * Placing texture inside a polygon for a `dotDensity` layer
+ * (src/layers/types.ts). No dot placed here is or claims to be a real
+ * location — see that field's own doc comment for the constraint this
+ * exists under.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A small deterministic PRNG (mulberry32), not Math.random(). The same
+ * geometry and seed must always scatter the same way, so that panning,
+ * re-filtering, or a theme repaint that rebuilds the layer does not make the
+ * dots visibly jump around between one render and the next.
+ */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** A stable 32-bit seed from any id string (FNV-1a), so a feature's own id doubles as its scatter seed. */
+export function seedFromId(id) {
+  let h = 2166136261;
+  const s = String(id);
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
+ * Scatter `count` points at random inside a polygon.
+ *
+ * Rejection sampling against the bounding box — for the shapes this project
+ * draws (neighbourhoods, block groups; nothing needle-thin) almost every
+ * bbox sample lands inside on the first or second try. `maxAttemptsPerPoint`
+ * caps the pathological case (a thin or crescent-shaped polygon) so this
+ * cannot spin forever; a polygon that hits the cap simply gets fewer points
+ * than asked for rather than hanging. There is no other honest way to end —
+ * padding out with points outside the shape would misplace them, and
+ * retrying without bound would freeze the map.
+ *
+ * @param {object} geometry Polygon or MultiPolygon
+ * @param {number} count how many points to place
+ * @param {number} seed from seedFromId(), so the same feature scatters the same way every time
+ * @returns {[number, number][]} lng/lat pairs, fewer than `count` only if the polygon was too thin to fill it
+ */
+export function scatterInPolygon(geometry, count, seed, maxAttemptsPerPoint = 200) {
+  if (!geometry || count <= 0) return [];
+  const [minLng, minLat, maxLng, maxLat] = bboxOf(geometry);
+  const rand = mulberry32(seed);
+  const points = [];
+  for (let i = 0; i < count; i += 1) {
+    let placed = false;
+    for (let attempt = 0; attempt < maxAttemptsPerPoint; attempt += 1) {
+      const lng = minLng + rand() * (maxLng - minLng);
+      const lat = minLat + rand() * (maxLat - minLat);
+      if (pointInGeometry([lng, lat], geometry)) {
+        points.push([lng, lat]);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) break;
+  }
+  return points;
+}

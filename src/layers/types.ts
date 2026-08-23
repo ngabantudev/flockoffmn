@@ -951,6 +951,35 @@ export interface LayerDefinition {
     detailFrom: number;
   };
   /**
+   * Paint a polygon layer as scattered dots rather than a graduated fill —
+   * dot-density, the technique census and crime maps use so a reader sees
+   * texture that varies within a small area, not one flat shade over the
+   * whole thing.
+   *
+   * Every dot's position is computed in the browser by random placement
+   * inside its polygon (src/lib/geo.mjs's `scatterInPolygon`) and means
+   * nothing on its own — a dot is not a record, it is one unit of `perUnit`
+   * folded into a texture. For that reason a dot is never a record of its
+   * own: not clickable, not searchable, not in the accessible list, and
+   * never counted as a "feature" anywhere search or "near me" look. The
+   * polygon underneath stays the actual record, faintly painted so it is
+   * still the thing hover and click land on and the detail panel opens for.
+   *
+   * A layer choosing this MUST say so in its own copy — `whatThisMeans` or a
+   * `limitations` entry — stating plainly that dot positions are randomized
+   * and are never real locations. This field does not write that caveat for
+   * you; a dot-density layer with no such sentence is a defect, not a style
+   * choice, since a reader has no other way to know a dot isn't an address.
+   */
+  dotDensity?: {
+    /** How many of the mapped value one dot represents, e.g. 5 offenses per dot. */
+    perUnit: number;
+    /** The value each dot is drawn from — same key `categoryColors` or a filter reads. */
+    key: string;
+    /** Accessible label for the on-map key, e.g. "1 dot ≈ 5 reported offenses". */
+    keyLabel: I18nString;
+  };
+  /**
    * How strongly a line layer is painted, 0–1. Omit for the standard weight.
    *
    * A layer that is context rather than subject has to be legible without
