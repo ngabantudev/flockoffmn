@@ -67,7 +67,14 @@ export type LayerId =
   // in full under public/data/docs/, starting with the first: University of
   // Minnesota PD's Flock Safety contract, released via a MuckRock MGDPA
   // request. See scripts/ingest/mn/vendor-contracts.mjs.
-  | 'vendor_contract';
+  | 'vendor_contract'
+  // Offences reported to Minneapolis police, by neighbourhood, by year. The
+  // City aggregates these before publishing them, which is the only reason
+  // they can appear here at all: the incident-level feeds carry case numbers
+  // and block addresses and are out of scope under §1b permanently. The
+  // neighbourhood polygons ride inside this layer's own file rather than
+  // getting an entry of their own. See scripts/ingest/mn/crime-minneapolis.mjs.
+  | 'crime_minneapolis';
 
 export type Locale = 'en' | 'es';
 
