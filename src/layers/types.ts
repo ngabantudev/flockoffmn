@@ -453,6 +453,28 @@ export interface LayerDefinition {
   /** Which section of the layer panel this belongs under. */
   category: LayerCategoryId;
   /**
+   * A second, optional level of grouping inside one category's panel
+   * section — for the one case so far where a single category holds two
+   * genuinely different kinds of the same subject (Reported Crime: nine
+   * layers reading one neighbourhood-scale file, one reading a second
+   * block-group-scale file). Omit it and a layer renders as a flat row in
+   * its category, exactly as every layer did before this field existed.
+   *
+   * Two layers sharing a `subgroup.id` render inside one shared nested
+   * `<details>`; the `id` is what groups them; `label` is only read off
+   * the first layer encountered for a given id, so it only needs to be
+   * correct once per subgroup, not repeated identically on every member.
+   *
+   * This does not change what a layer *is* — it is still its own
+   * independently toggleable record, with its own filters, detail panel,
+   * and accessible-list entry. It only changes where its row sits inside
+   * the panel; see LayerRow.astro, which renders identically either way.
+   */
+  subgroup?: {
+    id: string;
+    label: I18nString;
+  };
+  /**
    * Draw this layer on first load, without the reader ticking anything.
    *
    * The map used to switch on whatever sat in the `surveillance` category,

@@ -5,6 +5,7 @@ import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { labelForDetailField } from '~/lib/detailFields';
 import CompareView from '~/components/map/CompareView.astro';
+import LayerRow from '~/components/map/LayerRow.astro';
 import NewsFeed from '~/components/news/NewsFeed.astro';
 import type { ClientLayer } from '~/lib/mapController';
 
@@ -72,6 +73,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   bearingKey: d.bearingKey,
   scale: d.scale,
   blockAggregate: d.blockAggregate,
+  subgroup: d.subgroup ? { id: d.subgroup.id, label: pick(d.subgroup.label, locale) } : undefined,
   dotDensity: d.dotDensity
     ? {
         perUnit: d.dotDensity.perUnit,
@@ -223,12 +225,33 @@ if (orphan) {
   );
 }
 
-const layerGroups = LAYER_CATEGORIES.map((category) => ({
-  id: category.id,
-  label: pick(category.label, locale),
-  summary: pick(category.summary, locale),
-  layers: clientLayers.filter((l) => l.category === category.id),
-})).filter((group) => group.layers.length > 0);
+/*
+ * A category's own header (the dot row, the "0/N" count) always counts
+ * every layer inside it, subgrouped or not — `layers` stays the full flat
+ * list for exactly that reason, unchanged from before this field existed.
+ * `directLayers` is what renders straight into the category's own `<ul>`;
+ * `subgroups` is only non-empty for a category that actually uses the
+ * field (today, only Reported Crime) — every other category's
+ * `directLayers` is just `layers` again and nothing about its markup
+ * changes.
+ */
+const layerGroups = LAYER_CATEGORIES.map((category) => {
+  const layers = clientLayers.filter((l) => l.category === category.id);
+  const directLayers = layers.filter((l) => !l.subgroup);
+  const subgroupIds = [...new Set(layers.filter((l) => l.subgroup).map((l) => l.subgroup!.id))];
+  const subgroups = subgroupIds.map((id) => {
+    const members = layers.filter((l) => l.subgroup?.id === id);
+    return { id, label: members[0].subgroup!.label, layers: members };
+  });
+  return {
+    id: category.id,
+    label: pick(category.label, locale),
+    summary: pick(category.summary, locale),
+    layers,
+    directLayers,
+    subgroups,
+  };
+}).filter((group) => group.layers.length > 0);
 
 const strings = {
   loading: t('loading'),
@@ -242,7 +265,6 @@ const strings = {
   confidenceConfirmed: t('confidenceConfirmed'),
   confidenceReported: t('confidenceReported'),
   confidenceProbabilistic: t('confidenceProbabilistic'),
-  ofTotal: t('ofTotal'),
   actionAddressed: t('actionAddressed'),
   actionUnknownOperator: t('actionUnknownOperator'),
   actionPickBody: t('actionPickBody'),
@@ -250,7 +272,6 @@ const strings = {
   resetView: t('resetView'),
   recordSelected: t('recordSelected'),
   crossListedCorner: t('crossListedCorner'),
-  crossListedNearMissLegend: t('crossListedNearMissLegend'),
   crossSourceJumpToMatch: t('crossSourceJumpToMatch'),
   mapNearMe: t('mapNearMe'),
   mapNearMeFound: t('mapNearMeFound'),
@@ -455,133 +476,40 @@ const strings = {
                 <div class="border-t border-ink-800 p-2.5">
                   <p class="mb-2 text-[11px] leading-snug text-ink-400">{group.summary}</p>
                   <ul class="space-y-2">
-                    {group.layers.map((layer) => (
-                        <li class="rounded-lg border border-ink-800 bg-ink-850">
-                          <div class="flex items-start gap-2.5 p-2.5">
-                            <input
-                              type="checkbox"
-                              id={`layer-${layer.id}`}
-                              data-layer-toggle={layer.id}
-                              checked={layer.defaultOn}
-                              class="mt-0.5 h-4 w-4 shrink-0 accent-current"
-                              style={`color:var(--layer-color-${layer.id})`}
-                            />
-                            <div class="min-w-0 flex-1">
-                              <label
-                                for={`layer-${layer.id}`}
-                                class="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink-100"
-                              >
-                                <span
-                                  class="h-2.5 w-2.5 shrink-0 rounded-full"
-                                  style={`background:var(--layer-color-${layer.id})`}
-                                  aria-hidden="true"
-                                />
-                                <span class="min-w-0">{layer.label}</span>
-                              </label>
-                              <p class="mt-1 text-xs leading-snug text-ink-400">{layer.summary}</p>
-                              <p class="mt-1 font-mono text-[11px] text-ink-400">
-                                <span data-count={layer.id}>0</span>
-                                <span> {strings.ofTotal} </span>
-                                <span>{layer.featureCount}</span>
-                              </p>
-                            </div>
-                          </div>
-
-                          {/*
-                            "Cross-listed corner" static legend row (§4 of
-                            the spec this shipped from). Not a FilterDefinition
-                            — nothing here is checkable or wired into the
-                            filter system, it only explains what the brass
-                            ring on some of this layer's points means. Real
-                            DOM text, not an aria-hidden canvas decoration, so
-                            it's reachable by a screen reader on its own.
-                          */}
-                          {layer.crossSource && (
-                            <div class="flex items-start gap-2 border-t border-ink-800 px-2.5 py-2">
-                              <span
-                                class="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border-2 border-cross-source-ring bg-ink-700"
-                                aria-hidden="true"
-                              />
-                              <p class="text-[11px] leading-snug text-ink-400">{layer.crossSource.legend}</p>
-                            </div>
-                          )}
-
-                          {/*
-                            "Near miss" static legend row — a second,
-                            subordinate swatch, thinner ring at half opacity,
-                            same brass hue as the match ring above rather
-                            than a new colour. Only rendered where the
-                            registry names copy for it (today, alpr_reported
-                            only — see LayerDefinition.crossSource.nearMiss's
-                            own comment on why the OSM side has no use for
-                            this key).
-                          */}
-                          {layer.crossSource?.nearMiss && (
-                            <div class="flex items-start gap-2 border-t border-ink-800 px-2.5 py-2">
-                              <span
-                                class="mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full border border-cross-source-ring bg-ink-700 opacity-55"
-                                aria-hidden="true"
-                              />
-                              <p class="text-[11px] leading-snug text-ink-400">
-                                {strings.crossListedNearMissLegend}
-                              </p>
-                            </div>
-                          )}
-
-                          {layer.filters.length > 0 && (
-                            <details class="border-t border-ink-800">
-                              <summary class="cursor-pointer px-2.5 py-1.5 text-xs text-ink-400 hover:text-ink-100">
-                                {t('filters')}
-                              </summary>
-                              <div class="space-y-2.5 px-2.5 pb-2.5">
-                                {layer.filters.map((filter) => (
-                                  <fieldset>
-                                    <legend class="mb-1 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
-                                      {filter.label}
-                                    </legend>
-                                    <div class="space-y-1">
-                                      {filter.values.map((value) => (
-                                        <label class="flex cursor-pointer items-start gap-2 text-xs text-ink-200">
-                                          <input
-                                            type="checkbox"
-                                            data-filter-layer={layer.id}
-                                            data-filter-key={filter.key}
-                                            value={value}
-                                            checked={!filter.defaultExcluded!.includes(value)}
-                                            class="mt-0.5 h-3.5 w-3.5 shrink-0"
-                                          />
-                                          {/*
-                                            Where this filter is the same attribute the map colours
-                                            by, each value carries its ground colour, so the toggle
-                                            and the fill read as one system.
-                                          */}
-                                          {layer.categoryColors?.key === filter.key && (
-                                            <span
-                                              class="mt-1 h-2 w-2 shrink-0 rounded-sm"
-                                              style={`background:${
-                                                layer.categoryColors.colors.find((c) => c.value === value)
-                                                  ?.color ?? layer.categoryColors.fallback
-                                              }`}
-                                              aria-hidden="true"
-                                            />
-                                          )}
-                                          <span class="min-w-0">
-                                            {value}
-                                            {filter.valueDescriptions?.[value] && (
-                                              <span class="block text-[10px] leading-snug text-ink-400">
-                                                {filter.valueDescriptions[value]}
-                                              </span>
-                                            )}
-                                          </span>
-                                        </label>
-                                      ))}
-                                    </div>
-                                  </fieldset>
-                                ))}
-                              </div>
-                            </details>
-                          )}
-                        </li>
+                    {group.directLayers.map((layer) => (
+                      <LayerRow layer={layer} locale={locale} />
+                    ))}
+                    {/*
+                      A subgroup nests one level deeper than a category, for
+                      the one case so far where a single category holds two
+                      genuinely different kinds of the same subject (see
+                      LayerDefinition.subgroup's own comment). Deliberately
+                      plainer than the category's own <summary> above — text
+                      and a count, no coloured dot row — so it reads as one
+                      step down, not a second copy of the same pattern.
+                      LayerRow is what actually renders each member; nothing
+                      here needs to know that a subgrouped layer differs from
+                      a direct one in any way beyond where its <li> sits.
+                    */}
+                    {group.subgroups.map((subgroup) => (
+                      <li>
+                        <details class="rounded-lg border border-ink-800/70" data-layer-subgroup={subgroup.id}>
+                          <summary class="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] font-semibold tracking-wide text-ink-300 uppercase hover:bg-ink-850">
+                            <svg class="h-2.5 w-2.5 shrink-0 text-ink-500" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <span class="min-w-0">{subgroup.label}</span>
+                            <span class="ml-auto font-mono text-[10px] font-normal tracking-normal text-ink-500 normal-case">
+                              {subgroup.layers.length}
+                            </span>
+                          </summary>
+                          <ul class="space-y-2 p-2 pt-0">
+                            {subgroup.layers.map((layer) => (
+                              <LayerRow layer={layer} locale={locale} />
+                            ))}
+                          </ul>
+                        </details>
+                      </li>
                     ))}
                   </ul>
                 </div>

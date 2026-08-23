@@ -178,6 +178,22 @@ const CRIME_GEOMETRY_NOTE = {
 };
 
 /**
+ * The Reported Crime category's two subgroups (see LayerDefinition.subgroup's
+ * own comment): the combined total and the eight Part I types all read the
+ * neighbourhood-scale file, the small-areas layer reads a different one at a
+ * different grain — genuinely two kinds of the same subject, which is the
+ * one case this field exists for.
+ */
+const CRIME_SUBGROUP_BY_TYPE = {
+  id: 'crime-by-type',
+  label: { en: 'By offense type, Minneapolis neighborhoods', es: 'Por tipo de delito, barrios de Minneapolis' },
+};
+const CRIME_SUBGROUP_SMALL_AREAS = {
+  id: 'crime-small-areas',
+  label: { en: 'Small areas', es: 'Áreas pequeñas' },
+};
+
+/**
  * Shared by all nine reported-crime layers: they are nine views of one file,
  * so a caveat that is true of one is true of all of them, and one copy is one
  * thing to keep correct instead of nine that can drift apart.
@@ -434,6 +450,7 @@ const CRIME_OFFENCE_LAYERS: LayerDefinition[] = OFFENCES.map((offence: { key: st
     id: copy.id,
     slug: copy.slug,
     category: 'crime',
+    subgroup: CRIME_SUBGROUP_BY_TYPE,
     label: {
       en: `${copy.label.en} reported, Minneapolis`,
       es: `${copy.label.es} denunciado, Minneapolis`,
@@ -2862,6 +2879,7 @@ export const LAYERS: LayerDefinition[] = [
     id: 'crime_minneapolis',
     slug: 'crime-minneapolis',
     category: 'crime',
+    subgroup: CRIME_SUBGROUP_BY_TYPE,
     label: {
       en: 'Reported crime, Minneapolis neighborhoods',
       es: 'Delitos denunciados, barrios de Minneapolis',
@@ -2916,6 +2934,7 @@ export const LAYERS: LayerDefinition[] = [
     id: 'crime_block_group',
     slug: 'crime-block-groups',
     category: 'crime',
+    subgroup: CRIME_SUBGROUP_SMALL_AREAS,
     label: {
       en: 'Reported crime, small areas',
       es: 'Delitos denunciados, áreas pequeñas',

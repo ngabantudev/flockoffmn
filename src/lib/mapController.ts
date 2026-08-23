@@ -51,6 +51,8 @@ export interface ClientLayer {
   id: LayerId;
   category: LayerCategoryId;
   /** See LayerDefinition's own comment in layers/types.ts. */
+  subgroup?: Localised<NonNullable<LayerDefinition['subgroup']>>;
+  /** See LayerDefinition's own comment in layers/types.ts. */
   defaultOn?: boolean;
   label: string;
   summary: string;
