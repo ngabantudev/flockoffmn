@@ -143,11 +143,41 @@ const TOPIC_LABELS: Record<NewsTopic, string> = {
   other: t('newsTopicOther'),
 };
 
+/**
+ * A topic's display label, or the raw topic if this map has not caught up.
+ *
+ * `topic` is a compile-time claim about a JSON file on disk, not a guarantee
+ * about it. An item carrying a value outside the union — a hand edit, or an
+ * ingest that grew a topic before this map did — used to dereference
+ * `undefined` here and fail the whole build with a TypeError.
+ *
+ * Every read of TOPIC_LABELS goes through this, and the browser renderer
+ * applies the same rule to the labels it is handed, so the degraded case is one
+ * chip reading `sheriff` rather than a broken build or a blank pill.
+ */
+function topicLabel(topic: string): string {
+  return TOPIC_LABELS[topic as NewsTopic] ?? topic;
+}
+
 // Only offer a topic chip for a topic that actually has stories behind it. An
 // empty facet is a dead control, and a dead control reads as a broken page.
-const presentTopics = [...new Set(items.map((i) => i.topic))].sort(
-  (a, b) => TOPIC_LABELS[a].localeCompare(TOPIC_LABELS[b]),
+const presentTopics = [...new Set(items.map((i) => i.topic))].sort((a, b) =>
+  topicLabel(a).localeCompare(topicLabel(b)),
 );
+
+/*
+ * The archive offers a chip per topic it holds; the rail offers one per topic
+ * that EXISTS and lets the hydration block prune what its rows do not use.
+ *
+ * That asymmetry is forced by the rows moving to the client: the rail's chrome
+ * is derived from the build-time slice while its rows are fetched fresh, so the
+ * two drift as a deployed page ages. A topic that arrived after the last build
+ * had rows in the rail and no chip to isolate them, and where the build-time
+ * slice held a single topic there was no facet at all above a list spanning
+ * three.
+ */
+const topicChips = rail ? (Object.keys(TOPIC_LABELS) as NewsTopic[]) : presentTopics;
+const showTopicGroup = rail || presentTopics.length > 1;
 
 /*
  * The curve. §0.5's whole argument in one element.
@@ -399,8 +429,9 @@ const screened = archive ? screenedTotal(archive) : 0;
     </div>
 
     {
-      presentTopics.length > 1 && (
+      showTopicGroup && (
         <div
+          data-news-topic-group
           role="group"
           aria-label={t('newsTopicLabel')}
           class:list={[
@@ -417,7 +448,7 @@ const screened = archive ? screenedTotal(archive) : 0;
           >
             {t('newsTopicAll')}
           </button>
-          {presentTopics.map((topic) => (
+          {topicChips.map((topic) => (
             <button
               type="button"
               data-news-topic
@@ -425,7 +456,7 @@ const screened = archive ? screenedTotal(archive) : 0;
               aria-pressed="false"
               class="inline-flex min-h-6 items-center rounded-full border border-ink-700 px-2.5 py-1 text-[9px] font-medium tracking-wide text-ink-400 transition-colors hover:text-ink-100"
             >
-              {TOPIC_LABELS[topic]}
+              {topicLabel(topic)}
             </button>
           ))}
         </div>
@@ -488,7 +519,7 @@ const screened = archive ? screenedTotal(archive) : 0;
           {series.map((point, i) => (
             <rect
               x={i * (barW + barGap)}
-              y={SPARK_H - (point.count / peak) * SPARK_H}
+              y={SPARK_H - barHeight(point.count)}
               width={barW}
               height={barHeight(point.count)}
               class="fill-accent/70"
@@ -557,7 +588,7 @@ const screened = archive ? screenedTotal(archive) : 0;
     */}
     {
       rail && archive && items.length === 0 && (
-        <p class="py-6 text-center text-xs leading-relaxed text-ink-400">
+        <p data-news-none-recent class="py-6 text-center text-xs leading-relaxed text-ink-400">
           {t('newsNoneRecent')}
         </p>
       )
@@ -619,7 +650,7 @@ const screened = archive ? screenedTotal(archive) : 0;
               {group.items.map((item) => (
                 <NewsItemRow
                   item={item}
-                  topicLabel={TOPIC_LABELS[item.topic]}
+                  topicLabel={topicLabel(item.topic)}
                   dateLabel={dateLabel(item.published)}
                   compact={false}
                 />
@@ -788,6 +819,7 @@ const screened = archive ? screenedTotal(archive) : 0;
     const thisYear = new Date().getUTCFullYear();
 
     const frag = document.createDocumentFragment();
+    const topicsSeen = new Set<string>();
     for (const story of stories) {
       const at = new Date(story.published);
       const ms = at.getTime();
@@ -807,15 +839,81 @@ const screened = archive ? screenedTotal(archive) : 0;
       time.dateTime = story.published;
       time.textContent = (at.getUTCFullYear() === thisYear ? fmt.bare : fmt.withYear).format(at);
 
+      topicsSeen.add(story.topic);
       frag.append(row);
     }
 
-    // Nothing in the window is a real state — a quiet month empties the rail —
-    // and it is not a failure, so the fallback's "loads in your browser" would
-    // be a lie. `data-news-none` is the element that already says this, and
-    // `apply()` below reveals it on a count of zero.
+    /*
+     * Nothing in the window is a real state — a quiet month empties the rail,
+     * and so does a deployed page whose build-time slice has aged past its own
+     * window — and it is not a failure, so the fallback's "loads in your
+     * browser" would be a lie.
+     *
+     * This used to say `apply()` reveals `data-news-none` on a count of zero.
+     * It cannot: `initFeed` returns before that on `items.length === 0`, so the
+     * fallback was removed, the controls stayed `hidden`, and the rail was left
+     * as a masthead and a curve over blank space with no account of itself.
+     * Said here instead, where the count is actually known.
+     */
     list.append(frag);
     fallback?.remove();
+
+    if (topicsSeen.size === 0) {
+      // The server already renders its own empty state when the build-time
+      // slice was empty. Preferred when present, so the panel never stacks two
+      // paragraphs saying the same thing.
+      const recent = root.querySelector<HTMLElement>('[data-news-none-recent]');
+      const none = root.querySelector<HTMLElement>('[data-news-none]');
+      if (recent) recent.hidden = false;
+      else if (none) none.hidden = false;
+      return false;
+    }
+
+    /*
+     * Make the facet describe the rows on screen: drop the chips nothing uses,
+     * and add one for anything the rows carry that the build did not know
+     * about.
+     *
+     * Pruning alone was half the job. The server can only render chips for
+     * topics in TOPIC_LABELS, so a story classified under a topic added to the
+     * ingest after this page was built — the cron rewrites news.json daily, the
+     * site rebuilds on merge — appeared in the list with no chip anywhere to
+     * isolate it. That is the drift this whole arrangement exists to close, so
+     * it has to close in both directions.
+     *
+     * The added chip is a clone of a server-rendered one rather than markup
+     * built here, for the same reason the rows are: one definition of what a
+     * chip looks like. `initFeed` normalises pressed state across all of them
+     * immediately after, so a clone of the pressed "all" chip is safe.
+     */
+    const group = root.querySelector<HTMLElement>('[data-news-topic-group]');
+    if (group) {
+      const chips = new Map<string, HTMLElement>();
+      for (const btn of group.querySelectorAll<HTMLElement>('[data-news-topic]')) {
+        chips.set(btn.dataset.topic ?? 'all', btn);
+      }
+      const model = chips.get('all') ?? [...chips.values()][0];
+
+      for (const [topic, btn] of chips) {
+        if (topic !== 'all' && !topicsSeen.has(topic)) {
+          btn.remove();
+          chips.delete(topic);
+        }
+      }
+      if (model) {
+        for (const topic of topicsSeen) {
+          if (chips.has(topic)) continue;
+          const chip = model.cloneNode(true) as HTMLElement;
+          chip.dataset.topic = topic;
+          chip.textContent = labels[topic] ?? topic;
+          group.append(chip);
+        }
+      }
+
+      // A group left with one topic is a control with nothing to contrast.
+      if (topicsSeen.size < 2) group.remove();
+    }
+
     return true;
   }
 

@@ -133,6 +133,84 @@ const check = (name, ok, detail='') => {
   await page.close();
 }
 
+// ---------------- rail hydration edge cases ----------------
+{
+  // Three states the rail can only reach at runtime, because its chrome is
+  // built from the build-time slice and its rows are fetched fresh. All three
+  // were broken when the fetch first landed.
+  const stub = (items) => (route) =>
+    route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items }) });
+  const now = () => new Date().toISOString();
+  const story = (topic, n) => ({
+    title: `Story ${n}`, url: `https://example.test/${n}`,
+    source: 'Test Outlet', published: now(), topic,
+  });
+
+  const read = async (items) => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.route('**/data/news.json', stub(items));
+    await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+    await page.waitForFunction(
+      () => !document.querySelector('#news-dock [data-news-fallback]'),
+      { timeout: 10_000 },
+    ).catch(() => {});
+    const out = await page.evaluate(() => {
+      const d = document.getElementById('news-dock');
+      const shown = (el) => !!el && !el.hidden && getComputedStyle(el).display !== 'none';
+      return {
+        rows: d.querySelectorAll('[data-news-item]').length,
+        topics: [...d.querySelectorAll('[data-news-topic]')].map((x) => x.dataset.topic),
+        controlsHidden: d.querySelector('[data-news-controls]')?.hidden,
+        emptyState:
+          shown(d.querySelector('[data-news-none-recent]')) ||
+          shown(d.querySelector('[data-news-none]')),
+      };
+    });
+    return { page, errors, ...out };
+  };
+
+  // An empty window is a real state, not a failure. It used to remove the
+  // "loads in your browser" fallback, leave the controls hidden, and say
+  // nothing at all — a masthead and a curve over blank space.
+  {
+    const r = await read([]);
+    check('rail/empty: says so rather than going blank', r.emptyState);
+    check('rail/empty: renders no rows', r.rows === 0, `${r.rows}`);
+    check('rail/empty: no dead controls', r.controlsHidden === true);
+    check('rail/empty: no page errors', r.errors.length === 0, r.errors.join('; '));
+    await r.page.close();
+  }
+
+  // A topic the build did not know about — the ingest can grow one between a
+  // cron run and a rebuild. Pruning alone left its rows on screen with no chip
+  // able to isolate them.
+  {
+    const r = await read([story('sheriff', 1), story('alpr', 2)]);
+    check('rail/unknown topic: renders both rows', r.rows === 2, `${r.rows}`);
+    check('rail/unknown topic: gains a chip for it',
+          r.topics.includes('sheriff'), r.topics.join(','));
+    await r.page.locator('#news-dock [data-news-topic][data-topic="sheriff"]').click();
+    const visible = await r.page.evaluate(
+      () => [...document.querySelectorAll('#news-dock [data-news-item]')].filter((x) => !x.hidden).length,
+    );
+    check('rail/unknown topic: the added chip actually filters',
+          visible === 1, `${visible} visible`);
+    check('rail/unknown topic: no page errors', r.errors.length === 0, r.errors.join('; '));
+    await r.page.close();
+  }
+
+  // One topic is a facet with nothing to contrast against.
+  {
+    const r = await read([story('alpr', 1)]);
+    check('rail/one topic: drops the facet entirely',
+          r.topics.length === 0, r.topics.join(','));
+    check('rail/one topic: still renders the row', r.rows === 1, `${r.rows}`);
+    await r.page.close();
+  }
+}
+
 // ---------------- the rail costs a phone nothing ----------------
 {
   // The entire point of Option B. A viewport that cannot display the rail must
