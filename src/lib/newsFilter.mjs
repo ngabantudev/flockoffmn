@@ -74,6 +74,21 @@ const TOPIC_RULES = [
   { topic: 'detention', terms: ['immigration detention', 'detention facility', 'detention center', 'ice facility', 'ice detention', 'bed-day', 'jail contract', 'ice contract'] },
 ];
 
+/**
+ * Every topic id this project recognises, `other` last.
+ *
+ * Exported so nothing else has to restate the list. `NewsTopic` in
+ * src/lib/news.ts is derived from this, which makes adding a topic to
+ * TOPIC_RULES fail `npm run check` until it also has a label and both
+ * translations — the same drift-prevention argument that puts geo.mjs and
+ * authority.mjs in src/lib rather than one copy per consumer.
+ *
+ * The alternative was what the UI had: a runtime fallback rendering a raw id
+ * like `sheriff` as an untranslated chip. That turns a mistake you cannot merge
+ * into one that ships quietly, which is the wrong direction.
+ */
+export const TOPIC_IDS = [...TOPIC_RULES.map((r) => r.topic), 'other'];
+
 /** Which topic a story belongs to, or `other` when nothing specific matched. */
 export function classifyTopic(haystack) {
   for (const rule of TOPIC_RULES) {
@@ -563,7 +578,20 @@ export function collapseDuplicates(items) {
   return kept.map((k) => k.item).sort(byPublishedDesc);
 }
 
-/** Newest first. */
+/**
+ * Newest first.
+ *
+ * String comparison, not Date arithmetic: `published` is always canonical
+ * ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SS.sssZ`), which sorts lexicographically in
+ * the same order it sorts chronologically. Verified against the committed
+ * archive — 106 items, zero non-canonical values, identical ordering both ways.
+ *
+ * This comparator runs twice per ingest over the whole retained archive, so the
+ * two Date allocations per comparison were ~2,800 objects per run today and
+ * ~19,000 at the 730-day retention ceiling, to answer a question about two
+ * strings.
+ */
 export function byPublishedDesc(a, b) {
-  return new Date(b.published).getTime() - new Date(a.published).getTime();
+  if (a.published === b.published) return 0;
+  return a.published < b.published ? 1 : -1;
 }

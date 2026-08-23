@@ -62,22 +62,21 @@ const RAIL_WINDOW_DAYS = 30;
  * Slicing by window inverts that: the rail holds precisely what its longest
  * chip claims, so a chip cannot outrun its data however busy the feed gets.
  */
-const windowCutoff = Date.now() - RAIL_WINDOW_DAYS * 86_400_000;
-const railItems = all.filter((i) => new Date(i.published).getTime() >= windowCutoff);
-
 /*
- * What the rail DERIVES at build time, versus what it RENDERS.
+ * Nothing about the rail is derived from the archive at build time any more.
  *
- * Everything downstream still reads the real 30-day slice — which chips to
- * offer, which topic facets have stories behind them, whether the window is
- * empty. That is a handful of bytes and it keeps the panel's chrome server-
- * rendered and correct on first paint, with no flash of empty controls.
+ * Its rows, its topic chips and its empty state are all facts about the file
+ * the browser fetched, so all three are settled there. What the server renders
+ * for the rail is chrome that needs no data to be correct: the masthead, the
+ * range chips (a statement about RAIL_WINDOW_DAYS, not about any story), the
+ * curve, and one blank instance each of a row and a chip for hydration to
+ * clone.
  *
- * Only the story rows move to the client, because only the story rows are
- * heavy: the archive still renders all of them into /news, and the rail renders
- * none.
+ * The empty state is rendered `hidden` rather than conditionally: it used to be
+ * printed only when the build-time window was empty and printed *visible*,
+ * which meant a no-JS reader on an empty week saw it stacked underneath the
+ * "headlines load in your browser" fallback, both true and reading as a bug.
  */
-const items = rail ? railItems : all;
 
 /*
  * The archive groups by month; the rail does not.
@@ -93,11 +92,9 @@ const items = rail ? railItems : all;
  * column are noise — so the rail prints the year on the row instead, via
  * NewsItemRow's `showYear`.
  */
-// Grouped once and used twice. `items === all` on the archive, so computing
-// this separately for the headings and for the curve below read as if the two
-// might describe different sets — they cannot, but only via that aliasing.
+// Grouped once and used twice — for the archive's headings and for the curve
+// below — so that the two cannot describe different sets.
 const byMonth = groupByMonth(all);
-const monthGroups = rail ? [] : byMonth;
 
 /*
  * Range options, matching the source project's chips.
@@ -131,9 +128,13 @@ const RANGE_OPTIONS = rail
 /*
  * Must be a range the chips actually offer, or the initial pressed state
  * matches no button and the rail opens with every chip unpressed while showing
- * a filter the reader cannot see or undo.
+ * a filter the reader cannot see or undo. RANGE_OPTIONS keeps every chip up to
+ * and including RAIL_WINDOW_DAYS, so the window itself is always on offer.
+ *
+ * This is also the rail's fetch cutoff — see `data-default-days` below. One
+ * number, written once.
  */
-const DEFAULT_DAYS = rail ? (RANGE_OPTIONS[RANGE_OPTIONS.length - 1]?.days ?? 1) : 0;
+const DEFAULT_DAYS = rail ? RAIL_WINDOW_DAYS : 0;
 
 const TOPIC_LABELS: Record<NewsTopic, string> = {
   alpr: t('newsTopicAlpr'),
@@ -161,22 +162,27 @@ function topicLabel(topic: string): string {
 
 // Only offer a topic chip for a topic that actually has stories behind it. An
 // empty facet is a dead control, and a dead control reads as a broken page.
-const presentTopics = [...new Set(items.map((i) => i.topic))].sort((a, b) =>
+const presentTopics = [...new Set(all.map((i) => i.topic))].sort((a, b) =>
   topicLabel(a).localeCompare(topicLabel(b)),
 );
 
 /*
- * The archive offers a chip per topic it holds; the rail offers one per topic
- * that EXISTS and lets the hydration block prune what its rows do not use.
+ * The archive derives its chips from what it holds. The rail derives none:
+ * hydration builds them from the rows it fetched.
  *
- * That asymmetry is forced by the rows moving to the client: the rail's chrome
- * is derived from the build-time slice while its rows are fetched fresh, so the
- * two drift as a deployed page ages. A topic that arrived after the last build
- * had rows in the rail and no chip to isolate them, and where the build-time
- * slice held a single topic there was no facet at all above a list spanning
- * three.
+ * Both halves of that are forced by the rows moving to the client. Deriving the
+ * rail's chips from the build-time slice made the facet describe a different
+ * set from the list under it, and the first fix — render every known topic,
+ * then delete the unused ones — traded that for five chips appearing and two
+ * or three vanishing on every single load, to cover a case that occurs on
+ * almost none. Building them from the fetched rows is the version with one
+ * source of truth and no repair step.
+ *
+ * The rail still server-renders the "All topics" chip: it needs no data to be
+ * correct, and it is the model hydration clones, so a chip's markup stays
+ * defined once.
  */
-const topicChips = rail ? (Object.keys(TOPIC_LABELS) as NewsTopic[]) : presentTopics;
+const topicChips = rail ? [] : presentTopics;
 const showTopicGroup = rail || presentTopics.length > 1;
 
 /*
@@ -316,7 +322,6 @@ const screened = archive ? screenedTotal(archive) : 0;
          * serialising this into the module would mean one bundle per locale.
          */
         'data-news-src': '/data/news.json',
-        'data-news-window': String(RAIL_WINDOW_DAYS),
         'data-news-locale': locale,
         'data-news-topic-labels': JSON.stringify(TOPIC_LABELS),
       }
@@ -587,8 +592,12 @@ const screened = archive ? screenedTotal(archive) : 0;
       group above blank space.
     */}
     {
-      rail && archive && items.length === 0 && (
-        <p data-news-none-recent class="py-6 text-center text-xs leading-relaxed text-ink-400">
+      rail && archive && (
+        <p
+          data-news-none-recent
+          hidden
+          class="py-6 text-center text-xs leading-relaxed text-ink-400"
+        >
           {t('newsNoneRecent')}
         </p>
       )
@@ -641,7 +650,7 @@ const screened = archive ? screenedTotal(archive) : 0;
           </p>
         </>
       ) : (
-        monthGroups.map((group) => (
+        byMonth.map((group) => (
           <section data-news-month class="mt-8 first:mt-0">
             <h2 class="border-b border-ink-800 pb-1.5 text-lg font-semibold text-ink-100">
               {monthLabel(group.key)}
@@ -748,10 +757,11 @@ const screened = archive ? screenedTotal(archive) : 0;
    *
    * Three conditions, all of them deliberate:
    *
-   *   viewport  — `matchMedia` matches the same `80rem` breakpoint the rail's
-   *               CSS uses, so a phone fetches nothing at all. Re-checked on
-   *               change, because a reader who rotates a tablet or drags a
-   *               window wider should get the panel they can now see.
+   *   viewport  — the fetch waits until CSS is actually displaying the panel,
+   *               so a phone fetches nothing at all. Asked of the layout rather
+   *               than by restating the breakpoint; re-checked on resize, so a
+   *               reader who rotates a tablet or drags a window wider gets the
+   *               panel they can now see.
    *   idle      — the map is the page; headlines must never compete with tiles
    *               for the connection. `requestIdleCallback` waits for the main
    *               thread to be free, with a timeout so a permanently busy page
@@ -760,13 +770,18 @@ const screened = archive ? screenedTotal(archive) : 0;
    *               anyone read this page, which is §0.7's whole point, and
    *               `connect-src 'self'` in _headers permits nothing else.
    */
-  type RailStory = {
-    title: string;
-    url: string;
-    source: string;
-    published: string;
-    topic: string;
-  };
+  /*
+   * The shape of a row in /data/news.json, taken from the module that defines
+   * it rather than restated here — a field renamed in NewsItem would otherwise
+   * type-check on both sides while the rail silently ignored it.
+   *
+   * `import type` is erased before this reaches the browser, so news.ts's
+   * `node:fs/promises` import never ships; MapView's own script imports types
+   * from ~/lib the same way. `topic` is deliberately widened back to `string`:
+   * the JSON is not type-checked, and the renderer's whole job in that case is
+   * to degrade to the raw id rather than assume the union holds.
+   */
+  type RailStory = Omit<import('~/lib/news').NewsItem, 'topic' | 'tier'> & { topic: string };
 
   function whenIdle(run: () => void): void {
     const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
@@ -796,8 +811,11 @@ const screened = archive ? screenedTotal(archive) : 0;
       return false;
     }
 
-    const windowDays = Number(root.dataset.newsWindow ?? 30);
-    const cutoff = Date.now() - windowDays * 86_400_000;
+    // The same number the widest chip carries — see DEFAULT_DAYS. Reading it
+    // from `data-default-days` rather than a second attribute means the window
+    // cannot be stated twice and drift.
+    const windowDays = Number(root.dataset.defaultDays ?? 0);
+    const cutoff = windowDays > 0 ? Date.now() - windowDays * 86_400_000 : -Infinity;
     const labels = JSON.parse(root.dataset.newsTopicLabels ?? '{}') as Record<string, string>;
     const locale = root.dataset.newsLocale || undefined;
 
@@ -858,60 +876,46 @@ const screened = archive ? screenedTotal(archive) : 0;
     list.append(frag);
     fallback?.remove();
 
+    // A quiet month is a real state, not a failure, so the fallback's "loads in
+    // your browser" would be a lie — but the controls have nothing to filter, so
+    // `initFeed` must not run and reveal them. Said here, where the count is
+    // known, and returning false to keep them hidden.
     if (topicsSeen.size === 0) {
-      // The server already renders its own empty state when the build-time
-      // slice was empty. Preferred when present, so the panel never stacks two
-      // paragraphs saying the same thing.
       const recent = root.querySelector<HTMLElement>('[data-news-none-recent]');
-      const none = root.querySelector<HTMLElement>('[data-news-none]');
       if (recent) recent.hidden = false;
-      else if (none) none.hidden = false;
       return false;
     }
 
     /*
-     * Make the facet describe the rows on screen: drop the chips nothing uses,
-     * and add one for anything the rows carry that the build did not know
-     * about.
+     * Build the facet from the rows on screen.
      *
-     * Pruning alone was half the job. The server can only render chips for
-     * topics in TOPIC_LABELS, so a story classified under a topic added to the
-     * ingest after this page was built — the cron rewrites news.json daily, the
-     * site rebuilds on merge — appeared in the list with no chip anywhere to
-     * isolate it. That is the drift this whole arrangement exists to close, so
-     * it has to close in both directions.
+     * The server rendered only the "All topics" chip, so there is nothing to
+     * reconcile and nothing to remove — a chip exists if and only if a row
+     * behind it does. That also means a topic this build never heard of, which
+     * `topicLabel` only degrades gracefully, gets a working chip rather than
+     * rows no control can isolate.
      *
-     * The added chip is a clone of a server-rendered one rather than markup
-     * built here, for the same reason the rows are: one definition of what a
-     * chip looks like. `initFeed` normalises pressed state across all of them
-     * immediately after, so a clone of the pressed "all" chip is safe.
+     * Cloned from the server's chip rather than built here, for the same
+     * reason the rows are cloned: one definition of what a chip looks like.
+     * `initFeed` normalises pressed state across all of them immediately
+     * after, so cloning the pressed "all" chip is safe.
      */
     const group = root.querySelector<HTMLElement>('[data-news-topic-group]');
-    if (group) {
-      const chips = new Map<string, HTMLElement>();
-      for (const btn of group.querySelectorAll<HTMLElement>('[data-news-topic]')) {
-        chips.set(btn.dataset.topic ?? 'all', btn);
-      }
-      const model = chips.get('all') ?? [...chips.values()][0];
-
-      for (const [topic, btn] of chips) {
-        if (topic !== 'all' && !topicsSeen.has(topic)) {
-          btn.remove();
-          chips.delete(topic);
-        }
-      }
-      if (model) {
-        for (const topic of topicsSeen) {
-          if (chips.has(topic)) continue;
+    const model = group?.querySelector<HTMLElement>('[data-news-topic]');
+    if (group && model) {
+      // A facet listing one topic is a control with nothing to contrast.
+      if (topicsSeen.size < 2) {
+        group.remove();
+      } else {
+        for (const topic of [...topicsSeen].sort((a, b) =>
+          (labels[a] ?? a).localeCompare(labels[b] ?? b),
+        )) {
           const chip = model.cloneNode(true) as HTMLElement;
           chip.dataset.topic = topic;
           chip.textContent = labels[topic] ?? topic;
           group.append(chip);
         }
       }
-
-      // A group left with one topic is a control with nothing to contrast.
-      if (topicsSeen.size < 2) group.remove();
     }
 
     return true;
@@ -932,41 +936,66 @@ const screened = archive ? screenedTotal(archive) : 0;
     let days = Number(root.dataset.defaultDays ?? 0);
     let topic = 'all';
 
+    /*
+     * Everything `apply()` needs that never changes, read once.
+     *
+     * `published` and `topic` are fixed the moment a row exists, and the month
+     * a row belongs to is fixed with it — so re-reading the attributes,
+     * re-parsing the dates, and re-querying each section's rows on every chip
+     * press was recomputing constants. At today's 106 archive rows that is 106
+     * Date allocations plus a second full DOM walk per click; the retention
+     * ceiling is 730 days, which at recent volume is an order of magnitude
+     * more.
+     */
+    const at = items.map((el) => Date.parse(el.dataset.published ?? ''));
+    const itemTopic = items.map((el) => el.dataset.topic ?? '');
+    const sectionOf = items.map((el) => months.indexOf(el.closest('[data-news-month]') as HTMLElement));
+
+    // The two rows carrying position classes, so clearing them touches two
+    // elements rather than every row. `first:`/`last:` are compile-time
+    // positions and know nothing about `hidden`, so after a filter the first
+    // visible row kept its top padding and the last kept its bottom rule — a
+    // stray divider under the final story.
+    let firstShown: HTMLElement | undefined;
+    let lastShown: HTMLElement | undefined;
+
     const apply = () => {
       // Computed once per apply rather than per item — 700 `Date.now()` calls
       // to answer one question is the kind of thing that shows up on the phone
       // this page is built for.
       const cutoff = days > 0 ? Date.now() - days * 86_400_000 : -Infinity;
+      const monthHasRow = new Array<boolean>(months.length).fill(false);
+      let shown = 0;
+      let first: HTMLElement | undefined;
+      let last: HTMLElement | undefined;
 
-      for (const item of items) {
-        const at = new Date(item.dataset.published ?? '').getTime();
-        const inRange = !Number.isFinite(at) || at >= cutoff;
-        const inTopic = topic === 'all' || item.dataset.topic === topic;
-        const visible = inRange && inTopic;
-        item.hidden = !visible;
+      for (let i = 0; i < items.length; i += 1) {
+        const inRange = !Number.isFinite(at[i]) || at[i] >= cutoff;
+        const visible = inRange && (topic === 'all' || itemTopic[i] === topic);
+        items[i].hidden = !visible;
+        if (!visible) continue;
+
+        shown += 1;
+        first ??= items[i];
+        last = items[i];
+        // A month heading with every row beneath it filtered away is a heading
+        // for nothing, and on the archive that reads as a gap in the record
+        // rather than as a filter doing its job.
+        if (sectionOf[i] >= 0) monthHasRow[sectionOf[i]] = true;
       }
 
-      // A month heading with every row beneath it filtered away is a heading
-      // for nothing, and on the archive that reads as a gap in the record
-      // rather than as a filter doing its job.
-      for (const section of months) {
-        const anyVisible = [...section.querySelectorAll<HTMLElement>('[data-news-item]')].some(
-          (item) => !item.hidden,
-        );
-        section.hidden = !anyVisible;
-      }
+      for (let m = 0; m < months.length; m += 1) months[m].hidden = !monthHasRow[m];
 
-      /*
-       * `first:`/`last:` are compile-time positions and know nothing about
-       * `hidden`, so after a filter the first visible row kept its top padding
-       * and the last kept its bottom rule — a stray divider under the final
-       * story. Applied here instead, against what is actually on screen.
-       */
-      const visible = items.filter((item) => !item.hidden);
-      const shown = visible.length;
-      for (const item of items) item.classList.remove('pt-0', 'border-b-0');
-      visible[0]?.classList.add('pt-0');
-      visible[visible.length - 1]?.classList.add('border-b-0');
+      if (firstShown !== first) {
+        firstShown?.classList.remove('pt-0');
+        first?.classList.add('pt-0');
+        firstShown = first;
+      }
+      if (lastShown !== last) {
+        lastShown?.classList.remove('border-b-0');
+        last?.classList.add('border-b-0');
+        lastShown = last;
+      }
 
       if (none) none.hidden = shown > 0;
       // Announced politely rather than silently, because the list it describes
@@ -1012,11 +1041,31 @@ const screened = archive ? screenedTotal(archive) : 0;
       continue;
     }
 
-    // The rail: nothing to wire until there are rows to wire it to.
-    const wide = window.matchMedia('(min-width: 80rem)');
+    /*
+     * The rail: nothing to wire until there are rows to wire it to, and nothing
+     * to fetch unless CSS is actually showing the panel.
+     *
+     * `offsetParent === null` is that question asked of CSS rather than
+     * answered independently. It used to be `matchMedia('(min-width: 80rem)')`,
+     * which is the same answer only for as long as nobody moves the dock: the
+     * breakpoint is written in global.css three times, in the dock's own
+     * `hidden xl:flex`, and again in MapView's own matchMedia, with nothing
+     * tying them together. Move the dock to `lg:` and that literal makes every
+     * 64-80rem reader stare at "headlines load in your browser" over an empty
+     * panel; move it the other way and phones fetch a file they will never
+     * display, which is the entire cost this arrangement exists to remove.
+     * Neither failure shows up in a build.
+     *
+     * offsetParent is null exactly when the element or an ancestor is
+     * `display: none` — measured across 390/1100/1440px against the built page
+     * — and it is universally supported, which `checkVisibility()` is not on
+     * the older phones §0.7 is about. It stays non-null when the dock is merely
+     * collapsed, so a collapsed rail still fetches and is populated the instant
+     * the reader opens it.
+     */
     let started = false;
     const start = () => {
-      if (started || !wide.matches) return;
+      if (started || root.offsetParent === null) return;
       started = true;
       whenIdle(() => {
         void hydrateRail(root).then((ok) => {
@@ -1024,7 +1073,13 @@ const screened = archive ? screenedTotal(archive) : 0;
         });
       });
     };
-    wide.addEventListener('change', start);
+    // Cheap: a bounced resize listener that removes itself the moment the rail
+    // is on screen, so a phone that never widens keeps nothing alive.
+    const onResize = () => {
+      start();
+      if (started) window.removeEventListener('resize', onResize);
+    };
+    window.addEventListener('resize', onResize);
     start();
   }
 </script>

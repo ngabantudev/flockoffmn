@@ -2,7 +2,7 @@
  * Shared harness for the browser suites in this directory.
  *
  * Every suite used to carry its own copy of the static file server, its own
- * `chromium.launch()`, its own pass/fail counter and its own hardcoded port —
+ * hardcoded port, its own pass/fail counter and its own colour maths —
  * ten copies of about thirty lines, which is how they drifted: one suite's
  * server handled `.pmtiles` and the rest 404'd it, and each picked a port by
  * hand. All of that lives here now.
@@ -91,22 +91,32 @@ export function reporter(label) {
  * Parsing `getComputedStyle().color` as a string returned nonsense for
  * Tailwind v4's oklab output — a notice measured at a fictional 18.73:1 while
  * being invisible on screen.
+ *
+ * Inject with `page.addInitScript({ content: COLOR_HELPERS })` before
+ * navigating, then call `solid`/`lum`/`ratio`/`bgOf` from inside
+ * `page.evaluate`.
+ *
+ * Assigned onto `window` rather than declared with `const`, which is the whole
+ * reason this export sat unused while a suite kept its own copy: a top-level
+ * `const` in an init script lands in a lexical scope `page.evaluate` cannot
+ * see, so the helpers were silently undefined at the call site. Measured —
+ * `typeof bgOf` came back `'undefined'`. Properties of `window` resolve.
  */
 export const COLOR_HELPERS = `
   const __cv = document.createElement('canvas'); __cv.width = __cv.height = 1;
   const __ctx = __cv.getContext('2d', { willReadFrequently: true });
-  const solid = (color, over) => {
+  window.solid = (color, over) => {
     __ctx.clearRect(0, 0, 1, 1);
     __ctx.fillStyle = 'rgb(' + over.join(',') + ')'; __ctx.fillRect(0, 0, 1, 1);
     __ctx.fillStyle = color; __ctx.fillRect(0, 0, 1, 1);
     const d = __ctx.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]];
   };
-  const lum = ([r, g, b]) => { const f = (v) => { v /= 255;
+  window.lum = ([r, g, b]) => { const f = (v) => { v /= 255;
     return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
-  const ratio = (fg, bg) => { const a = lum(fg), c = lum(bg);
+  window.ratio = (fg, bg) => { const a = lum(fg), c = lum(bg);
     const [hi, lo] = a > c ? [a, c] : [c, a]; return (hi + 0.05) / (lo + 0.05); };
-  const bgOf = (el) => { const stack = []; let n = el;
+  window.bgOf = (el) => { const stack = []; let n = el;
     while (n && n !== document.documentElement) { stack.push(getComputedStyle(n).backgroundColor); n = n.parentElement; }
     let acc = [255, 255, 255]; for (const c of stack.reverse()) acc = solid(c, acc); return acc; };
 `;

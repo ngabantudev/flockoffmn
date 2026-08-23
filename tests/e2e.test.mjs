@@ -1,13 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { chromium, serveDist } from './lib/harness.mjs';
+import { chromium, serveDist, reporter } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 
 const browser = await chromium.launch();
-let failures = 0;
-const check = (name, ok, detail='') => {
-  if (!ok) failures++;
-  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`);
-};
+const { check, report } = reporter('end-to-end checks');
 
 // ---------------- archive page: chips actually filter ----------------
 {
@@ -268,5 +264,4 @@ for (const width of [320, 360, 390, 414, 768]) {
 
 await browser.close();
 closeServer();
-console.log(failures ? `\n  ${failures} FAILURE(S)` : '\n  all checks passed');
-process.exit(failures ? 1 : 0);
+process.exit(report());

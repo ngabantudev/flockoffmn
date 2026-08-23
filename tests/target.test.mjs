@@ -1,7 +1,6 @@
-import { chromium, serveDist } from './lib/harness.mjs';
+import { chromium, serveDist, reporter } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
-const b=await chromium.launch(); let fail=0;
-const ck=(n,ok,d='')=>{if(!ok)fail++;console.log(`  ${ok?'PASS':'FAIL'}  ${n}${d?'  — '+d:''}`)};
+const b=await chromium.launch(); const { check: ck, report } = reporter('target-size checks');
 
 for (const [label,url,sel] of [['rail',`${BASE}/`,'#news-dock'],
                                ['archive',`${BASE}/news/`,'#news-archive']]) {
@@ -32,5 +31,4 @@ for (const [label,url,sel] of [['rail',`${BASE}/`,'#news-dock'],
   await page.close();
 }
 await b.close(); closeServer();
-console.log(fail?`\n  ${fail} FAILURE(S)`:'\n  target-size checks passed');
-process.exit(fail?1:0);
+process.exit(report());

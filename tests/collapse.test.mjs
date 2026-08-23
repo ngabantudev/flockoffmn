@@ -1,26 +1,16 @@
-import { chromium, serveDist } from './lib/harness.mjs';
+import { chromium, serveDist, reporter, settle } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
-const b=await chromium.launch(); let fail=0;
-const ck=(n,ok,d='')=>{if(!ok)fail++;console.log(`  ${ok?'PASS':'FAIL'}  ${n}${d?'  — '+d:''}`)};
+const b=await chromium.launch(); const { check: ck, report } = reporter('collapse checks');
 const ctx=await b.newContext({viewport:{width:1440,height:900}});
 const page=await ctx.newPage();
 await page.goto(`${BASE}/`,{waitUntil:'domcontentloaded'});
 await page.waitForTimeout(700);
 
-// Wait for the width animation to actually finish instead of guessing at a
-// duration. A fixed sleep passes alone and fails when suites run back to back,
-// which reads as a regression and is not one.
-const settle = (pg) => pg.evaluate(() => new Promise(res => {
-  const d = document.getElementById('news-dock');
-  let last = -1, still = 0;
-  const tick = () => {
-    const w = Math.round(d.getBoundingClientRect().width);
-    still = (w === last) ? still + 1 : 0; last = w;
-    if (still >= 5) return res(w);
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}));
+// Width animation settled rather than slept through: a fixed sleep passes
+// alone and fails when suites run back to back, which reads as a regression and
+// is not one. `settle` is the harness's, parameterised by selector.
+const settleDock = () => settle(page, '#news-dock');
+
 const state=()=> page.evaluate(()=>{
   const d=document.getElementById('news-dock'), t=document.getElementById('news-tab');
   const cs=d?getComputedStyle(d):null;
@@ -36,7 +26,7 @@ ck('starts expanded', s0.collapsed===false && s0.width>300, `w=${s0.width}`);
 ck('aria-expanded true', s0.expanded==='true');
 ck('data-ready set (transitions on)', s0.ready);
 
-await page.click('#news-tab'); await settle(page);
+await page.click('#news-tab'); await settleDock();
 let s1=await state();
 console.log('  after click:', JSON.stringify(s1));
 ck('collapses to zero width', s1.collapsed===true && s1.width===0, `w=${s1.width}`);
@@ -56,7 +46,7 @@ const s2=await page2.evaluate(()=>{
 ck('persists across reload', s2.collapsed===true && s2.width===0, JSON.stringify(s2));
 await page2.close();
 
-await page.click('#news-tab'); await settle(page);
+await page.click('#news-tab'); await settleDock();
 const s3=await state();
 ck('reopens', s3.collapsed===false && s3.width>300 && s3.inert===false, `w=${s3.width}`);
 ck('cleared in storage', s3.ls==='0', String(s3.ls));
@@ -76,10 +66,9 @@ const s5=await page.evaluate(()=>getComputedStyle(document.getElementById('news-
 ck('news tab returns when the record closes', s5!=='none', s5);
 
 // map regains the width when collapsed
-await page.click('#news-tab'); await settle(page);
+await page.click('#news-tab'); await settleDock();
 const mapW=await page.evaluate(()=>Math.round(document.getElementById('map').getBoundingClientRect().width));
 ck('map reclaims the column when collapsed', mapW>900, `${mapW}px`);
 
 await ctx.close(); await b.close(); closeServer();
-console.log(fail?`\n  ${fail} FAILURE(S)`:'\n  collapse checks passed');
-process.exit(fail?1:0);
+process.exit(report());

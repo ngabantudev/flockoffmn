@@ -1,7 +1,7 @@
-import { chromium, serveDist } from './lib/harness.mjs';
+import { chromium, serveDist, reporter } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 const b=await chromium.launch();
-let fail=0; const ck=(n,ok,d='')=>{if(!ok)fail++;console.log(`  ${ok?'PASS':'FAIL'}  ${n}${d?'  — '+d:''}`)};
+const { check: ck, report } = reporter('WCAG checks');
 
 const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:'light'});
 await page.goto(`${BASE}/`,{waitUntil:'domcontentloaded'});
@@ -96,5 +96,4 @@ ck('1.4.12 survives text-spacing override without clipping', !spacing.hScroll);
 await p3.close();
 
 await b.close(); closeServer();
-console.log(fail?`\n  ${fail} WCAG FAILURE(S)`:'\n  WCAG checks passed');
-process.exit(fail?1:0);
+process.exit(report());

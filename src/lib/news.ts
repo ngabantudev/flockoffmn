@@ -25,12 +25,55 @@ import path from 'node:path';
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
 const NEWS_PATH = 'data/news.json';
 
+/**
+ * The topics the UI can label, in the order newsFilter classifies them.
+ *
+ * Deliberately hand-written rather than derived from newsFilter's TOPIC_IDS.
+ * Deriving it was tried and is worse than it looks: TOPIC_IDS comes from a
+ * `.mjs` module — the ingest runs it under plain Node, so it cannot be
+ * TypeScript and cannot say `as const` — which means it infers as `string[]`
+ * and `(typeof TOPIC_IDS)[number]` collapses to `string`. That silently
+ * widened this union until `Record<NewsTopic, string>` accepted anything,
+ * removing the compile-time check on TOPIC_LABELS that already existed.
+ * Verified by adding an unlabelled topic: `npm run check` stayed at 0 errors.
+ *
+ * So the list is stated twice, and `assertKnownTopics` below is what keeps the
+ * two honest, at build time, out loud.
+ */
 export type NewsTopic =
   | 'alpr'
   | 'surveillance'
   | 'immigration-enforcement'
   | 'detention'
   | 'other';
+
+const KNOWN_TOPICS: readonly NewsTopic[] = [
+  'alpr',
+  'surveillance',
+  'immigration-enforcement',
+  'detention',
+  'other',
+];
+
+/**
+ * Warn at build time about a topic this UI cannot label.
+ *
+ * Warn, not throw. §0.8 assumes no maintainer: the news cron opens a PR on its
+ * own, and a build that refuses a story carrying an unrecognised topic would
+ * stop the site updating at all rather than render one chip in English. The
+ * browser renderer degrades to the raw id, which is ugly and visible — which is
+ * the point — while this line puts the same fact in the build log where the
+ * person who added the topic will see it.
+ */
+function assertKnownTopics(topics: Iterable<string>): void {
+  const unknown = [...new Set(topics)].filter((t) => !KNOWN_TOPICS.includes(t as NewsTopic));
+  if (unknown.length === 0) return;
+  console.warn(
+    `[news] ${unknown.length} topic(s) with no label or translation: ${unknown.join(', ')}. ` +
+      `Add them to NewsTopic and TOPIC_LABELS in src/lib/news.ts and NewsFeed.astro, ` +
+      `and to newsTopic* in src/i18n/{en,es}.ts. Rendering the raw id meanwhile.`,
+  );
+}
 
 export interface NewsItem {
   title: string;
@@ -92,6 +135,8 @@ export async function loadNews(): Promise<NewsArchive | null> {
   try {
     const raw = await readFile(path.join(PUBLIC_DIR, NEWS_PATH), 'utf8');
     cache = JSON.parse(raw) as NewsArchive;
+    // Cached, so this runs once per build rather than once per page.
+    assertKnownTopics(cache.items.map((i) => i.topic));
   } catch {
     cache = null;
   }

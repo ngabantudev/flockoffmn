@@ -1,17 +1,9 @@
-import { chromium, serveDist } from './lib/harness.mjs';
+import { chromium, serveDist, COLOR_HELPERS } from './lib/harness.mjs';
 const { base: BASE, close: closeServer } = await serveDist();
 const b=await chromium.launch();
 
 const AUDIT = (rootSel) => {
-  const cv=document.createElement('canvas'); cv.width=cv.height=1;
-  const ctx=cv.getContext('2d',{willReadFrequently:true});
-  const solid=(color,over)=>{ctx.clearRect(0,0,1,1);ctx.fillStyle=`rgb(${over.join(',')})`;ctx.fillRect(0,0,1,1);
-    ctx.fillStyle=color;ctx.fillRect(0,0,1,1);const d=ctx.getImageData(0,0,1,1).data;return[d[0],d[1],d[2]]};
-  const lum=([r,g,bb])=>{const f=(v)=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)};
-    return .2126*f(r)+.7152*f(g)+.0722*f(bb)};
-  const ratio=(fg,bg)=>{const a=lum(fg),c=lum(bg);const[hi,lo]=a>c?[a,c]:[c,a];return (hi+.05)/(lo+.05)};
-  const bgOf=(el)=>{const st=[];let n=el;while(n&&n!==document.documentElement){st.push(getComputedStyle(n).backgroundColor);n=n.parentElement}
-    let acc=[255,255,255];for(const c of st.reverse())acc=solid(c,acc);return acc};
+  // solid/lum/ratio/bgOf come from COLOR_HELPERS, injected below.
   const root=document.querySelector(rootSel); if(!root) return [];
   const out=[];
   for(const el of root.querySelectorAll('h1,h2,h3,p,span,a,button,time,figcaption,strong,li')){
@@ -33,6 +25,10 @@ for (const [label,url,sel] of [['map rail',`${BASE}/`,'#news-dock'],
                                ['archive es',`${BASE}/es/news/`,'#news-archive']]) {
   for (const scheme of ['light','dark']) {
     const page=await b.newPage({viewport:{width:1440,height:900},colorScheme:scheme});
+    // The colour maths runs in the page because only the browser can resolve
+    // oklab() and alpha — see COLOR_HELPERS. Injected before navigation so it
+    // is defined by the time AUDIT runs.
+    await page.addInitScript({ content: COLOR_HELPERS });
     await page.goto(url,{waitUntil:'domcontentloaded'}); await page.waitForTimeout(500);
     const rows=await page.evaluate(AUDIT, sel);
     const seen=new Set(); const bad=[];

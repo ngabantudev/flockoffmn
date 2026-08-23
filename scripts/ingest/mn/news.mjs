@@ -52,6 +52,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   PUBLIC_DATA,
+  loadPublicJson,
   log,
   fetchWithRetry,
   decodeXml,
@@ -81,20 +82,19 @@ import { screenForPeople, PERSON_RULE_NAMES } from '../../../src/lib/personScree
  * yet, and a missing agency list should cost recall, not fail the run.
  */
 async function loadAgencyTerms() {
-  try {
-    const raw = await readFile(
-      path.join(PUBLIC_DATA, 'reference/bca-alpr-agencies.json'),
-      'utf8',
-    );
-    const parsed = JSON.parse(raw);
-    return (parsed.agencies ?? [])
-      .map((a) => (typeof a === 'string' ? a : a?.name))
-      .filter(Boolean)
-      .map((n) => n.toLowerCase());
-  } catch {
+  // agency-jurisdictions.mjs and alpr-reported.mjs read this same file this
+  // same way; the private copy of the optional-read contract was the only
+  // reason this had a private copy of that logic. (loadArchive below stays
+  // hand-rolled on purpose: it distinguishes absent from corrupt.)
+  const parsed = await loadPublicJson('reference/bca-alpr-agencies.json', { optional: true });
+  if (!parsed) {
     log(SCOPE, 'bca-alpr-agencies.json not readable — agency names will not count as a Minnesota signal');
     return [];
   }
+  return (parsed.agencies ?? [])
+    .map((a) => (typeof a === 'string' ? a : a?.name))
+    .filter(Boolean)
+    .map((n) => n.toLowerCase());
 }
 
 const SCOPE = 'news';
@@ -369,26 +369,40 @@ async function main() {
    * no description, so re-deriving from the title alone could only ever be a
    * worse answer than the one already recorded.
    */
+  /*
+   * One pass, one haystack per item.
+   *
+   * Re-classification and the retro-§1b screen were two loops over `merged`,
+   * each calling buildHaystack on the same title — so every archived item paid
+   * for the lowercase and the regex replace twice. Reclassify first, then
+   * screen the string that was already built: the order matters only in that
+   * an item removed by the screen never needed its topic recomputed, and the
+   * screen is the cheaper of the two to reach.
+   */
   let reclassified = 0;
-  for (const item of merged) {
-    if (item.topic !== 'other') continue;
-    const topic = classifyTopic(buildHaystack(item.title, ''));
-    if (topic !== 'other') {
-      item.topic = topic;
-      reclassified += 1;
+  const retroRemoved = {};
+  const screened = merged.filter((item) => {
+    const haystack = buildHaystack(item.title, '');
+
+    const verdict = screenForPeople(haystack);
+    if (!verdict.ok) {
+      retroRemoved[verdict.rule] = (retroRemoved[verdict.rule] ?? 0) + 1;
+      return false;
     }
-  }
+
+    if (item.topic === 'other') {
+      const topic = classifyTopic(haystack);
+      if (topic !== 'other') {
+        item.topic = topic;
+        reclassified += 1;
+      }
+    }
+    return true;
+  });
+
   if (reclassified > 0) {
     log(SCOPE, `re-classified ${reclassified} archived item(s) a widened topic rule now recognises`);
   }
-
-  const retroRemoved = {};
-  const screened = merged.filter((item) => {
-    const verdict = screenForPeople(buildHaystack(item.title, ''));
-    if (verdict.ok) return true;
-    retroRemoved[verdict.rule] = (retroRemoved[verdict.rule] ?? 0) + 1;
-    return false;
-  });
   const retroTotal = Object.values(retroRemoved).reduce((a, b) => a + b, 0);
   if (retroTotal > 0) {
     log(SCOPE, `removed ${retroTotal} archived item(s) that a newer §1b rule now catches`);

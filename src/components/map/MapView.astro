@@ -1159,45 +1159,41 @@ const strings = {
     detailTabEl.hidden = !open;
   }
 
-  // #controls only ever collapses (visually, via CSS) at >=1024px — see the
-  // `@media (width >= 64rem)` block in global.css. `inert` has no such
-  // built-in breakpoint awareness, so it has to be kept in sync by hand: a
-  // reader who collapses #controls on a desktop-width window and then
-  // narrows past 1024px (or loads the persisted flag on a phone) would
-  // otherwise get a search box and layers button that are unfocusable and
-  // invisible to a screen reader, with no visible tab below `lg` to undo it
-  // (#layers-tab is itself `hidden lg:flex`).
-  // One MediaQueryList, not a fresh one per call — matchMedia() allocates,
-  // and syncControlsInert runs on every dock/undock as well as at startup.
+  /*
+   * `inert` has no breakpoint awareness, so it has to be kept in sync by hand.
+   *
+   * Each of these panels only ever collapses (visually, via CSS) above its own
+   * breakpoint — #controls at >=1024px, #detail-panel and #news-dock at
+   * >=1280px, matching the `@media (width >= 64rem)` and `(width >= 80rem)`
+   * blocks in global.css. Without this, a reader who collapses a panel on a
+   * desktop-width window and then narrows past that breakpoint (or loads the
+   * persisted flag on a phone) gets a panel that CSS renders again but that is
+   * still `inert` — unfocusable and invisible to a screen reader, with no
+   * visible tab to undo it, since each tab is itself gated on the same
+   * breakpoint.
+   *
+   * One function rather than three copies of the predicate: it was written out
+   * per panel, and the third copy arrived with the news dock. Three
+   * implementations of one invariant is three places for it to stop agreeing,
+   * and only the dock's is covered by a test.
+   *
+   * One MediaQueryList per breakpoint, not a fresh one per call — matchMedia()
+   * allocates, and these run on every dock/undock as well as at startup.
+   */
   const controlsDockMql = window.matchMedia('(width >= 64rem)');
-  function syncControlsInert() {
-    controlsEl.inert = controlsEl.hasAttribute('data-collapsed') && controlsDockMql.matches;
-  }
-  controlsDockMql.addEventListener('change', syncControlsInert);
-
-  // #detail-panel only ever collapses (visually, via CSS) at >=1280px — see
-  // the `@media (width >= 80rem)` block in global.css. Same breakpoint gap
-  // as #controls above: collapse the panel at >=1280px, then narrow below
-  // 1280px, and without this the panel renders visibly again (CSS no
-  // longer hides it) but stays `inert` — unfocusable and invisible to a
-  // screen reader, with no tab below `xl` to undo it (#detail-tab is
-  // itself `hidden xl:flex`).
   const detailDockMql = window.matchMedia('(width >= 80rem)');
-  function syncDetailInert() {
-    detailEl.inert = detailEl.hasAttribute('data-collapsed') && detailDockMql.matches;
-  }
-  detailDockMql.addEventListener('change', syncDetailInert);
 
-  // Same breakpoint gap as the two above, and the same failure it prevents: the
-  // dock is `hidden xl:flex`, so below 1280px it is already not rendered and a
-  // lingering `inert` would be invisible and unfixable — #news-tab is itself
-  // `hidden xl:flex`, so there would be no control on screen to undo it.
-  function syncNewsInert() {
-    if (newsDockEl) {
-      newsDockEl.inert = newsDockEl.hasAttribute('data-collapsed') && detailDockMql.matches;
-    }
+  function inertSync(el: HTMLElement | null, mql: MediaQueryList): () => void {
+    const sync = () => {
+      if (el) el.inert = el.hasAttribute('data-collapsed') && mql.matches;
+    };
+    mql.addEventListener('change', sync);
+    return sync;
   }
-  detailDockMql.addEventListener('change', syncNewsInert);
+
+  const syncControlsInert = inertSync(controlsEl, controlsDockMql);
+  const syncDetailInert = inertSync(detailEl, detailDockMql);
+  const syncNewsInert = inertSync(newsDockEl, detailDockMql);
 
   // Sync the tabs' chrome to whatever /panels-init.js already stamped on
   // #controls pre-paint (or to the untouched default, if it stamped
