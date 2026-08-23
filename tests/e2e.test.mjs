@@ -62,60 +62,91 @@ const check = (name, ok, detail='') => {
   await page.close();
 }
 
-// ---------------- map rail ----------------
+// ---------------- map rail (hydrated) ----------------
 {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  let newsFetches = 0;
+  page.on('request', (r) => { if (r.url().includes('/data/news.json')) newsFetches++; });
   await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(400);
-  const railVisible = await page.locator('#news-dock').isVisible();
-  check('rail: visible at 1440px', railVisible);
-  // Derived, not hardcoded: the contract is that every chip can be backed by
-  // the rendered slice, and that the widest chip is actually reachable. A fixed
-  // list broke the moment RAIL_WINDOW_DAYS changed, which is a stale test
-  // rather than a regression.
-  const chipInfo = await page.evaluate(() => {
+  check('rail: visible at 1440px', await page.locator('#news-dock').isVisible());
+
+  // The rail's rows arrive from /data/news.json at idle, so everything below
+  // has to wait for them rather than read the document. Polled, not slept —
+  // a fixed timeout here is how this suite got flaky before.
+  await page.waitForFunction(
+    () => document.querySelectorAll('#news-dock [data-news-item]').length > 0,
+    { timeout: 10_000 },
+  ).catch(() => {});
+
+  const railWindow = Number(
+    /const RAIL_WINDOW_DAYS = (\d+);/.exec(
+      readFileSync(new URL('../src/components/news/NewsFeed.astro', import.meta.url), 'utf8'),
+    )[1],
+  );
+  const archive = JSON.parse(
+    readFileSync(new URL('../public/data/news.json', import.meta.url), 'utf8'),
+  );
+  const expected = archive.items.filter(
+    (i) => Date.now() - new Date(i.published).getTime() <= railWindow * 86400000,
+  ).length;
+
+  const info = await page.evaluate(() => {
     const d = document.getElementById('news-dock');
-    const days = [...d.querySelectorAll('[data-news-range]')].map(x => Number(x.dataset.days));
-    const pubs = [...d.querySelectorAll('[data-news-item]')].map(x => new Date(x.dataset.published).getTime());
-    const spanDays = pubs.length ? Math.floor((Date.now() - Math.min(...pubs)) / 86400000) : 0;
-    return { days, spanDays, count: pubs.length };
+    const rows = [...d.querySelectorAll('[data-news-item]')];
+    const pubs = rows.map((x) => new Date(x.dataset.published).getTime());
+    return {
+      days: [...d.querySelectorAll('[data-news-range]')].map((x) => Number(x.dataset.days)),
+      count: rows.length,
+      spanDays: pubs.length ? Math.floor((Date.now() - Math.min(...pubs)) / 86400000) : 0,
+      fallback: !!d.querySelector('[data-news-fallback]'),
+      // Every row must be a real link. The tempting 12 KB saving was to drop
+      // the href and resolve on click; this is the assertion that rejects it.
+      hrefs: rows.filter((x) => (x.querySelector('[data-news-link]')?.getAttribute('href') || '').startsWith('http')).length,
+      labelled: rows.filter((x) => (x.querySelector('[data-news-topic-label]')?.textContent || '').trim()).length,
+      dated: rows.filter((x) => (x.querySelector('[data-news-date]')?.textContent || '').trim()).length,
+    };
   });
-  const widest = Math.max(...chipInfo.days);
+  const widest = Math.max(...info.days);
+
+  check('rail: hydrates every story in the window',
+        info.count === expected, `${info.count} rendered vs ${expected} in ${railWindow}d`);
+  check('rail: fetches the shared dataset exactly once',
+        newsFetches === 1, `${newsFetches} requests`);
+  check('rail: fallback is removed once rows arrive', !info.fallback);
+  check('rail: every row is a real href',
+        info.hrefs === info.count, `${info.hrefs}/${info.count}`);
+  check('rail: every row carries a topic label and a date',
+        info.labelled === info.count && info.dated === info.count,
+        `${info.labelled} labelled, ${info.dated} dated, of ${info.count}`);
+
   // NOT "every chip <= the data span". That invariant is wrong: a 7D chip over
   // a week that happened to produce stories on only five days is not
   // overclaiming, it is reporting a quiet couple of days. The real invariants
-  // are that no rendered story falls outside the widest chip, and that no chip
-  // claims more than the window the rail actually slices.
-  check('rail: no chip claims more than the 30-day window',
-        widest <= 30, `widest ${widest}d`);
-  check('rail: at least one chip is offered', chipInfo.days.length >= 1);
-  // The invariant the 30D disappearance slipped through. `widest <= 30` alone
-  // is satisfied by a rail that has silently fallen back to 7 days because the
-  // payload guard bit — which is what happened when the 30-day window grew to
-  // 61 stories against a RAIL_LIMIT of 60.
-  //
-  // Phrased as "only check this when the guard has headroom" it would skip
-  // itself in exactly the broken state, so it is phrased the other way: the
-  // guard is a runaway ceiling and is required to stay above working volume.
-  // If this feed ever genuinely outgrows it, the correct response is to raise
-  // the constant deliberately — not to let the rail quietly drop three weeks of
-  // coverage to save one row.
-  const src = readFileSync(new URL('../src/components/news/NewsFeed.astro', import.meta.url), 'utf8');
-  const railLimit = Number(/const RAIL_LIMIT = (\d+);/.exec(src)[1]);
-  const railWindow = Number(/const RAIL_WINDOW_DAYS = (\d+);/.exec(src)[1]);
-  const archive = JSON.parse(readFileSync(new URL('../public/data/news.json', import.meta.url), 'utf8'));
-  const inWindow = archive.items.filter(
-    (i) => Date.now() - new Date(i.published).getTime() <= railWindow * 86400000,
-  ).length;
-  check('rail: payload guard sits above working volume',
-        inWindow * 1.5 <= railLimit,
-        `${inWindow} stories in ${railWindow}d against a ${railLimit} guard`);
+  // are that no rendered story falls outside the widest chip, and that the
+  // widest chip is the window itself — which is what silently stopped being
+  // true when a payload ceiling of 60 met a 61-story month.
   check('rail: widest chip is the full window',
-        widest === railWindow,
-        `widest chip ${widest}d, window ${railWindow}d`);
+        widest === railWindow, `widest chip ${widest}d, window ${railWindow}d`);
   check('rail: no rendered story sits outside the widest chip',
-        chipInfo.spanDays <= widest + 1,
-        `${chipInfo.count} stories spanning ${chipInfo.spanDays}d, widest chip ${widest}d`);
+        info.spanDays <= widest + 1,
+        `${info.count} stories spanning ${info.spanDays}d, widest chip ${widest}d`);
+  await page.close();
+}
+
+// ---------------- the rail costs a phone nothing ----------------
+{
+  // The entire point of Option B. A viewport that cannot display the rail must
+  // not download its stories — not in the document, and not over the wire.
+  const page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+  let newsFetches = 0;
+  page.on('request', (r) => { if (r.url().includes('/data/news.json')) newsFetches++; });
+  await page.goto(`${BASE}/`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(800);
+  check('phone: never requests the news dataset', newsFetches === 0, `${newsFetches} requests`);
+  check('phone: no story rows in the document',
+        (await page.locator('#news-dock [data-news-item]').count()) === 0);
+  check('phone: the archive link stands in for them',
+        (await page.locator('#news-dock [data-news-fallback] a').count()) === 1);
   await page.close();
 }
 

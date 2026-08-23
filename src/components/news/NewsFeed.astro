@@ -24,27 +24,6 @@ const rail = density === 'rail';
 const archive = await loadNews();
 const all = archive?.items ?? [];
 
-/*
- * The rail renders a bounded slice; the archive renders everything.
- *
- * RAIL_LIMIT is a runaway guard, not the shape of the slice — the window logic
- * below decides that. It exists so a source that suddenly floods the feed can't
- * push an unbounded payload to phones that never render the rail.
- *
- * It was 60, which was too close to the working volume to be a guard. The
- * 30-day window held 61 stories on 2026-08-22, the cap bit by exactly one row,
- * `railSpanDays` floored to 26, and the 30D chip disappeared — the rail fell
- * back to a 7-day window and three weeks of coverage vanished to save one
- * headline. The degradation was designed and it fired correctly; the number was
- * simply set below the thing it was guarding.
- *
- * 200 is a real ceiling: roughly three times the current 30-day volume, and
- * measured at ~230 B gzipped per row, a full 200-row rail costs about 46 KB
- * against the map page's ~889 KB transfer. If it ever does bite, the same
- * honest fallback still happens — chips narrow to what the slice backs.
- */
-const RAIL_LIMIT = 200;
-
 /**
  * The longest window the rail offers.
  *
@@ -52,58 +31,53 @@ const RAIL_LIMIT = 200;
  * denominator, and the correction is worth writing down because the reasoning
  * looked rigorous while being wrong.
  *
- * The rail is `xl`-only, so everything it renders ships to phones that never
- * display it, and that cost is real: measured gzipped on the map page, a
- * 30-day window is 9,755 B against 3,829 B for seven days. The mistake was
- * comparing that against the HTML document alone (~52 KB) and concluding a
- * 30-day rail added "roughly a fifth" to what a phone downloads.
+ * The rail is `xl`-only, and for most of this component's life every headline
+ * it rendered still shipped to phones that never displayed one. Measured on the
+ * built document, those rows were 65 KB raw / 17 KB gzipped — 24% of the map
+ * page's entire HTML. A payload ceiling (`RAIL_LIMIT`) held that down, and it
+ * governed coverage as a side effect: at 61 stories against a ceiling of 60 it
+ * silently dropped the 30D chip and fell back to a week.
  *
- * It does not. Measured on a 390px viewport against the deployed site, the map
- * page transfers about 889 KB — 466 KB of JavaScript and 375 KB of map data
- * before a single headline. The extra six kilobytes is 0.7% of that. §0.7 asks
- * that the reader on an old phone comes first, and it still does; it does not
- * ask for a 0.7% saving paid for by cutting three weeks of coverage out of the
- * panel.
+ * The rail now fetches its rows instead — see the hydration block in the script
+ * below — so its window is a reading decision again rather than a byte budget,
+ * and the ceiling is gone. Thirty days is what the panel is for: recent
+ * coverage, with the archive one click away for everything older.
  *
- * The window still has to land on a chip boundary — the chips below are
- * filtered to what the slice can actually back, so a 14-day window would render
- * a second week that no control could reach. Thirty is a boundary; fourteen is
- * not.
+ * The window still has to land on a chip boundary, since the chips are filtered
+ * to it — a 14-day window would hold a second week no control could reach.
+ * Thirty is a boundary; fourteen is not.
  */
 const RAIL_WINDOW_DAYS = 30;
 
 /*
- * The rail slices by WINDOW, then caps for payload. It used to slice by count,
- * and that was wrong in a way that would only have shown up later.
+ * The rail slices by WINDOW, not by count.
  *
  * A count-based slice makes every range chip a claim the slice cannot back: the
  * rail took the sixty most recent stories *regardless of date*, then offered a
  * "30D" chip that filtered those sixty and presented the result as a month. At
- * this feed's current volume the two coincide — sixty stories currently span
- * 245 days — which is exactly what makes it dangerous. At three stories a day
- * sixty items span twenty days, and "30D" silently starts showing two thirds of
- * what it promises, with nothing in the UI changing to say so.
+ * low volume the two coincide, which is exactly what made it dangerous — at
+ * three stories a day sixty items span twenty days, and "30D" quietly shows two
+ * thirds of what it promises with nothing in the UI saying so.
  *
- * Slicing by window inverts that: the rail holds what the longest chip claims,
- * and the cap can only ever remove the *oldest* of those. `railSpanDays` then
- * reports what is genuinely covered, and the chips below are filtered to it, so
- * a chip can never outrun its data even if this feed becomes ten times busier.
+ * Slicing by window inverts that: the rail holds precisely what its longest
+ * chip claims, so a chip cannot outrun its data however busy the feed gets.
  */
 const windowCutoff = Date.now() - RAIL_WINDOW_DAYS * 86_400_000;
-const inWindow = all.filter((i) => new Date(i.published).getTime() >= windowCutoff);
-const cappedItems = inWindow.slice(0, RAIL_LIMIT);
-const railCapped = inWindow.length > RAIL_LIMIT;
+const railItems = all.filter((i) => new Date(i.published).getTime() >= windowCutoff);
 
-/**
- * Days the rail's rendered slice actually covers.
+/*
+ * What the rail DERIVES at build time, versus what it RENDERS.
  *
- * The full window when the cap did not bite. When it did, the age of the oldest
- * story that survived it — which is the only period the rail can honestly
- * answer questions about.
+ * Everything downstream still reads the real 30-day slice — which chips to
+ * offer, which topic facets have stories behind them, whether the window is
+ * empty. That is a handful of bytes and it keeps the panel's chrome server-
+ * rendered and correct on first paint, with no flash of empty controls.
+ *
+ * Only the story rows move to the client, because only the story rows are
+ * heavy: the archive still renders all of them into /news, and the rail renders
+ * none.
  */
-const railSpanDays = railCapped && cappedItems.length > 0
-  ? Math.floor((Date.now() - new Date(cappedItems[cappedItems.length - 1].published).getTime()) / 86_400_000)
-  : RAIL_WINDOW_DAYS;
+const items = rail ? railItems : all;
 
 /*
  * The archive groups by month; the rail does not.
@@ -124,7 +98,6 @@ const railSpanDays = railCapped && cappedItems.length > 0
 // might describe different sets — they cannot, but only via that aliasing.
 const byMonth = groupByMonth(all);
 const monthGroups = rail ? [] : byMonth;
-const currentYear = new Date().getUTCFullYear();
 
 /*
  * Range options, matching the source project's chips.
@@ -143,18 +116,16 @@ const ALL_RANGES = [
 ];
 
 /*
- * The rail offers only the chips its rendered slice can actually back.
+ * The rail offers only the chips its window can back.
  *
- * Derived from `railSpanDays` rather than from a constant, so this stays true
- * without anyone remembering to revisit it: if the feed gets busy enough that
- * the payload cap starts biting into the 30-day window, the "30D" chip
- * disappears on its own rather than quietly under-reporting. The 24H chip is
- * always kept — with fewer than a day of stories the rail is nearly empty
- * anyway, and a control group with nothing in it is worse than one that says
- * zero.
+ * This used to be derived from a measured `railSpanDays`, because the payload
+ * ceiling could trim the window out from under the chips. With the ceiling gone
+ * the rail holds exactly `RAIL_WINDOW_DAYS`, so the filter is now a plain
+ * statement of that: no chip may claim more than the window, and 1Y/All belong
+ * to the archive, which has them.
  */
 const RANGE_OPTIONS = rail
-  ? ALL_RANGES.filter((o) => o.days === 1 || (o.days > 0 && o.days <= railSpanDays))
+  ? ALL_RANGES.filter((o) => o.days > 0 && o.days <= RAIL_WINDOW_DAYS)
   : ALL_RANGES;
 
 /*
@@ -163,25 +134,6 @@ const RANGE_OPTIONS = rail
  * a filter the reader cannot see or undo.
  */
 const DEFAULT_DAYS = rail ? (RANGE_OPTIONS[RANGE_OPTIONS.length - 1]?.days ?? 1) : 0;
-
-/*
- * The rendered slice is trimmed to the widest chip on offer, not just to the
- * payload cap.
- *
- * Filtering the chips to `railSpanDays` on its own left a gap the whole
- * arrangement exists to close. With more than RAIL_LIMIT stories in the window
- * and an oldest survivor 3.5 days old, `railSpanDays` floors to 3, no chip
- * above 24H qualifies, and two and a half days of rows are rendered, shipped,
- * and unreachable by any control — the count-based slice's failure with an
- * extra step in front of it.
- *
- * Trimming here makes the invariant hold in both directions: every rendered row
- * is reachable from some chip, and every chip is backed by rendered rows.
- */
-const railCutoff = DEFAULT_DAYS > 0 ? Date.now() - DEFAULT_DAYS * 86_400_000 : -Infinity;
-const railItems = cappedItems.filter((i) => new Date(i.published).getTime() >= railCutoff);
-
-const items = rail ? railItems : all;
 
 const TOPIC_LABELS: Record<NewsTopic, string> = {
   alpr: t('newsTopicAlpr'),
@@ -262,31 +214,28 @@ const monthFormatter = new Intl.DateTimeFormat(locale, {
   timeZone: 'UTC',
 });
 /*
- * Two row formatters, built once for the whole page.
+ * The row formatter, built once for the whole page.
  *
  * NewsItemRow used to construct an Intl.DateTimeFormat in its own frontmatter,
  * which runs per rendered row. Measured: constructing and formatting is ~125x
  * the cost of formatting on a reused instance, so a full archive build was
- * paying for hundreds of constructions to produce two distinct formats.
+ * paying for hundreds of constructions.
  *
- * `withYear` exists because the rail has no month headings to carry the year,
- * so a row from a previous year has to say so — see the `showYear` reasoning
- * that moved here with it.
+ * There used to be a second, year-bearing formatter here, because the rail has
+ * no month headings to carry the year and a row from a previous year has to say
+ * so on the row itself. That variant now lives in the hydration block below,
+ * having moved there with the rows it formats. Only the archive renders rows
+ * here, and its month headings carry the year.
  */
-const rowDate = {
-  bare: new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-  withYear: new Intl.DateTimeFormat(locale, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }),
-};
+const rowDate = new Intl.DateTimeFormat(locale, {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+});
 
-/** Row date label: the archive's month headings carry the year, the rail's rows do not. */
-function dateLabel(published: string, showYear: boolean): string {
-  const at = new Date(published);
-  return (showYear ? rowDate.withYear : rowDate.bare).format(at);
+/** Row date label. The archive's month headings carry the year, so rows do not. */
+function dateLabel(published: string): string {
+  return rowDate.format(new Date(published));
 }
 
 function monthLabel(key: string): string {
@@ -329,6 +278,19 @@ const screened = archive ? screenedTotal(archive) : 0;
   id={rail ? 'news-rail' : 'news-archive'}
   data-news-feed
   data-default-days={DEFAULT_DAYS}
+  {...(rail
+    ? {
+        /*
+         * The hydration contract, as data attributes rather than an inline
+         * script: `script-src 'self'` in _headers forbids inline script, and
+         * serialising this into the module would mean one bundle per locale.
+         */
+        'data-news-src': '/data/news.json',
+        'data-news-window': String(RAIL_WINDOW_DAYS),
+        'data-news-locale': locale,
+        'data-news-topic-labels': JSON.stringify(TOPIC_LABELS),
+      }
+    : {})}
   aria-label={t('newsTitle')}
   class:list={[
     'flex min-h-0 flex-col',
@@ -603,16 +565,50 @@ const screened = archive ? screenedTotal(archive) : 0;
 
     {
       rail ? (
-        <ol class="space-y-0">
-          {items.map((item) => (
+        <>
+          {/*
+            Empty on purpose. Filled by the hydration block in the script below,
+            from the same `/data/news.json` the archive and the downloads page
+            already publish — see RAIL_WINDOW_DAYS for why the rows are not
+            here.
+          */}
+          <ol data-news-list class="space-y-0" />
+
+          {/*
+            One blank row, parked in a `<template>` so it is inert: not parsed
+            into the document, not laid out, not painted, and invisible to
+            screen readers until cloned. This is the rail's row markup, and the
+            only copy of it — the script fills the `data-news-*` hooks rather
+            than rebuilding these class lists in JavaScript, where they would
+            drift from NewsItemRow the first time either was touched.
+          */}
+          <template data-news-row-template>
             <NewsItemRow
-              item={item}
-                          topicLabel={TOPIC_LABELS[item.topic]}
-              dateLabel={dateLabel(item.published, new Date(item.published).getUTCFullYear() !== currentYear)}
+              item={{ title: '', url: '', source: '', published: '', topic: 'other', tier: 4 }}
+              topicLabel=""
+              dateLabel=""
               compact={true}
             />
-          ))}
-        </ol>
+          </template>
+
+          {/*
+            Shown until rows arrive, and left standing if they never do — no
+            JavaScript, a failed fetch, an offline reader. The map page needs JS
+            for MapLibre before it can draw anything at all, so the rail is not
+            losing robustness it had; what it must not do is sit there as a
+            titled, chipped, empty panel with no account of itself. The archive
+            is a plain document and always works.
+          */}
+          <p data-news-fallback class="py-6 text-center text-xs leading-relaxed text-ink-400">
+            {t('newsRailFallback')}{' '}
+            <a
+              class="text-accent underline underline-offset-2"
+              href={localePath(locale, '/news')}
+            >
+              {t('newsOpenArchive')}
+            </a>
+          </p>
+        </>
       ) : (
         monthGroups.map((group) => (
           <section data-news-month class="mt-8 first:mt-0">
@@ -623,8 +619,8 @@ const screened = archive ? screenedTotal(archive) : 0;
               {group.items.map((item) => (
                 <NewsItemRow
                   item={item}
-                                  topicLabel={TOPIC_LABELS[item.topic]}
-                  dateLabel={dateLabel(item.published, false)}
+                  topicLabel={TOPIC_LABELS[item.topic]}
+                  dateLabel={dateLabel(item.published)}
                   compact={false}
                 />
               ))}
@@ -642,19 +638,6 @@ const screened = archive ? screenedTotal(archive) : 0;
       {t('newsNoneInRange')}
     </p>
   </div>
-
-  {/*
-    §3 coverage honesty at the rail's own scale: when the payload cap trims the
-    window, the rail is showing less than its longest chip claims and has to say
-    so rather than let the reader assume they have seen the month.
-  */}
-  {
-    rail && railCapped && (
-      <p class="shrink-0 border-t border-ink-800 px-4 py-2 text-[9px] leading-snug text-ink-400">
-        {t('newsRailCapped')}
-      </p>
-    )
-  }
 
   {
     rail && (
@@ -720,13 +703,129 @@ const screened = archive ? screenedTotal(archive) : 0;
     btn.classList.remove(...(on ? PILL_OFF : PILL_ON));
   }
 
-  for (const root of document.querySelectorAll<HTMLElement>('[data-news-feed]')) {
+  /* ---------------------------- Rail hydration ----------------------------
+   *
+   * The archive above needs none of this: its rows are in the document and
+   * always were. This block exists for the rail, and only for the rail.
+   *
+   * The rail is `xl`-only, so its rows used to be downloaded and parsed by
+   * every phone that loaded the map and displayed by none of them — 65 KB raw,
+   * 17 KB gzipped, 24% of the document. They now come from `/data/news.json`,
+   * which this site already publishes, already serves `Access-Control-Allow-
+   * Origin: *`, and already caches for hours; the map page just used to inline
+   * a second, uncacheable copy of it into every build.
+   *
+   * Three conditions, all of them deliberate:
+   *
+   *   viewport  — `matchMedia` matches the same `80rem` breakpoint the rail's
+   *               CSS uses, so a phone fetches nothing at all. Re-checked on
+   *               change, because a reader who rotates a tablet or drags a
+   *               window wider should get the panel they can now see.
+   *   idle      — the map is the page; headlines must never compete with tiles
+   *               for the connection. `requestIdleCallback` waits for the main
+   *               thread to be free, with a timeout so a permanently busy page
+   *               still gets them.
+   *   same-origin — a static asset from this origin. No third party learns that
+   *               anyone read this page, which is §0.7's whole point, and
+   *               `connect-src 'self'` in _headers permits nothing else.
+   */
+  type RailStory = {
+    title: string;
+    url: string;
+    source: string;
+    published: string;
+    topic: string;
+  };
+
+  function whenIdle(run: () => void): void {
+    const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
+      .requestIdleCallback;
+    if (ric) ric(run, { timeout: 2000 });
+    else setTimeout(run, 200);
+  }
+
+  async function hydrateRail(root: HTMLElement): Promise<boolean> {
+    const list = root.querySelector<HTMLElement>('[data-news-list]');
+    const tpl = root.querySelector<HTMLTemplateElement>('[data-news-row-template]');
+    const fallback = root.querySelector<HTMLElement>('[data-news-fallback]');
+    const src = root.dataset.newsSrc;
+    if (!list || !tpl || !src) return false;
+
+    let stories: RailStory[];
+    try {
+      const res = await fetch(src, { credentials: 'omit' });
+      if (!res.ok) throw new Error(String(res.status));
+      stories = ((await res.json()) as { items?: RailStory[] }).items ?? [];
+    } catch {
+      // The fallback paragraph is already on screen and already links to the
+      // archive, so the failure state is the state the reader starts in. Left
+      // exactly as it is rather than swapped for an error: a reader who cannot
+      // reach a JSON file on this origin cannot reach a retry either, and the
+      // archive link is the useful thing on the panel either way.
+      return false;
+    }
+
+    const windowDays = Number(root.dataset.newsWindow ?? 30);
+    const cutoff = Date.now() - windowDays * 86_400_000;
+    const labels = JSON.parse(root.dataset.newsTopicLabels ?? '{}') as Record<string, string>;
+    const locale = root.dataset.newsLocale || undefined;
+
+    /*
+     * Two formatters, built once — the same reasoning as the server's `rowDate`.
+     * `withYear` is here rather than there because the rail has no month
+     * headings to carry the year, so a row from a previous year has to say so
+     * on the row itself.
+     */
+    const fmt = {
+      bare: new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+      withYear: new Intl.DateTimeFormat(locale, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }),
+    };
+    const thisYear = new Date().getUTCFullYear();
+
+    const frag = document.createDocumentFragment();
+    for (const story of stories) {
+      const at = new Date(story.published);
+      const ms = at.getTime();
+      if (!Number.isFinite(ms) || ms < cutoff) continue;
+
+      const row = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      row.dataset.published = story.published;
+      row.dataset.topic = story.topic;
+
+      const link = row.querySelector<HTMLAnchorElement>('[data-news-link]')!;
+      link.href = story.url;
+      link.textContent = story.title;
+      row.querySelector('[data-news-source]')!.textContent = story.source;
+      row.querySelector('[data-news-topic-label]')!.textContent = labels[story.topic] ?? story.topic;
+
+      const time = row.querySelector<HTMLTimeElement>('[data-news-date]')!;
+      time.dateTime = story.published;
+      time.textContent = (at.getUTCFullYear() === thisYear ? fmt.bare : fmt.withYear).format(at);
+
+      frag.append(row);
+    }
+
+    // Nothing in the window is a real state — a quiet month empties the rail —
+    // and it is not a failure, so the fallback's "loads in your browser" would
+    // be a lie. `data-news-none` is the element that already says this, and
+    // `apply()` below reveals it on a count of zero.
+    list.append(frag);
+    fallback?.remove();
+    return true;
+  }
+
+  function initFeed(root: HTMLElement): void {
     const controls = root.querySelector<HTMLElement>('[data-news-controls]');
     const status = root.querySelector<HTMLElement>('[data-news-status]');
     const none = root.querySelector<HTMLElement>('[data-news-none]');
     const items = [...root.querySelectorAll<HTMLElement>('[data-news-item]')];
     const months = [...root.querySelectorAll<HTMLElement>('[data-news-month]')];
-    if (!controls || items.length === 0) continue;
+    if (!controls || items.length === 0) return;
 
     // Revealed only now: before this line the controls are `hidden`, so a
     // reader with no JavaScript never sees a chip that would not respond.
@@ -806,5 +905,28 @@ const screened = archive ? screenedTotal(archive) : 0;
       setPressed(btn, (btn.dataset.topic ?? 'all') === topic);
     }
     apply();
+  }
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-news-feed]')) {
+    // The archive: rows are in the document, so wire it up now.
+    if (!root.dataset.newsSrc) {
+      initFeed(root);
+      continue;
+    }
+
+    // The rail: nothing to wire until there are rows to wire it to.
+    const wide = window.matchMedia('(min-width: 80rem)');
+    let started = false;
+    const start = () => {
+      if (started || !wide.matches) return;
+      started = true;
+      whenIdle(() => {
+        void hydrateRail(root).then((ok) => {
+          if (ok) initFeed(root);
+        });
+      });
+    };
+    wide.addEventListener('change', start);
+    start();
   }
 </script>

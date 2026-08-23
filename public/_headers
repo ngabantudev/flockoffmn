@@ -52,3 +52,16 @@
 /data/*
   Cache-Control: public, max-age=3600, stale-while-revalidate=86400
   Access-Control-Allow-Origin: *
+
+# The news archive, which the map page's rail now fetches instead of inlining.
+#
+# Written once a day by the 06:00 UTC cron and by nothing else, so a one-hour
+# TTL revalidated ~24x more often than the file changes. Six hours plus a day
+# of stale-while-revalidate means a reader who returns within the day gets the
+# rail instantly and off the network, and never waits on a revalidation: the
+# stale copy paints, the fresh one lands in the background for next time.
+#
+# The ceiling on staleness is a day-old headline list next to a link to the
+# archive, which is the same document.
+/data/news.json
+  Cache-Control: public, max-age=21600, stale-while-revalidate=86400

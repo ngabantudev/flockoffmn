@@ -222,5 +222,5 @@ export const es: Record<string, string> = {
   newsCurveAlt: 'Noticias publicadas por mes:',
   newsShownSuffix: 'mostradas',
   newsNoneRecent: 'Sin cobertura en este periodo. El archivo tiene el registro completo.',
-  newsRailCapped: 'Recortado a las noticias más recientes — abra el archivo para ver el mes completo.',
+  newsRailFallback: 'Los titulares recientes se cargan en su navegador.',
 };
