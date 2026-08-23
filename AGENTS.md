@@ -193,12 +193,37 @@ map, legend, filters, detail panels, sources page, downloads, and "near me" view
   UI counts and dates never drift from generated JSON.
 * **Versioned Snapshots:** Per §0.5, every ingest writes a dated snapshot and a diff
   against the prior run. Snapshots are append-only; layers are never silently overwritten.
-* **Good-Citizen Fetcher:** Scheduled fetchers identify themselves with a descriptive
-  User-Agent and contact address, respect robots.txt and rate limits, and back off on
-  error. No ToS-questionable techniques: no internal or private API scraping, no
-  residential-proxy block evasion, no credentialed-portal automation. If a source cannot
-  be fetched politely, it gets a `knownGaps` entry and a manual workflow, not a
-  workaround.
+* **Chaotic-Good Citizen Fetcher:** Scheduled fetchers identify themselves with a
+  descriptive User-Agent and contact address, respect rate limits, and back off on
+  error. No ToS-questionable techniques, ever, regardless of exception: no internal or
+  private API scraping, no residential-proxy block evasion, no credentialed-portal
+  automation, no auth or paywall bypass, no collection or retention of personal data.
+  robots.txt is the default rule and the first thing checked for any new source — but
+  it is not an unconditional stop sign. A source that fails a robots.txt check may
+  still be used under a **documented exception** if, and only if, all of the following
+  hold:
+  - it does not bypass authentication or a paywall,
+  - it does not collect or retain personal data (PII),
+  - request volume stays low and is capped by a specific, stated interval (not
+    best-effort or "whenever the cron runs"),
+  - the exception, its rationale, and the interval are recorded in this file, next to
+    the source it covers, so a future maintainer sees the tradeoff was made
+    deliberately, not missed.
+
+  The ends do not always justify the means — this exception exists for cases where the
+  harm is minimal (a polite, capped, no-PII fetch against a path a robots.txt happens to
+  disallow), not for cases where it's significant (anything above, or anything illegal).
+  A source that can't clear this bar gets a `knownGaps` entry and a manual workflow, not
+  a workaround.
+
+  **Documented exception — Google News RSS** (`scripts/ingest/mn/news.mjs`): Google's
+  robots.txt disallows `/rss/` for all crawlers. This project fetches
+  `news.google.com/rss/search` anyway, capped at once per hour per query, across 8
+  queries/run. Rationale: no auth/paywall bypass, no personal data collected, and an
+  hourly-per-query cap is well below anything that reads as abuse — this clears the
+  minimal-harm bar above. Revisit this exception immediately if Google asks the project
+  to stop, blocks the fetcher's IP, or the query/volume pattern changes materially from
+  what's described here.
 
 ### 3. Data Provenance & Citation Rules
 
