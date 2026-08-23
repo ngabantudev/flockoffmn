@@ -117,6 +117,8 @@ export interface ClientLayer {
   blockAggregate?: LayerDefinition['blockAggregate'];
   /** Paint this polygon layer as scattered dots instead of a graduated fill. See LayerDefinition's own comment. */
   dotDensity?: Localised<NonNullable<LayerDefinition['dotDensity']>>;
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  timeSeries?: LayerDefinition['timeSeries'];
   /** Colour records by a category once they are drawn individually. */
   categoryColors?: Localised<NonNullable<LayerDefinition['categoryColors']>>;
   /** Write an attribute's value on each polygon, the way the source document did. */
@@ -766,6 +768,15 @@ export class MapController {
   private data = new Map<string, LoadedFeature[]>();
   private visible = new Set<string>();
   private filters = new Map<string, FilterState>();
+  /**
+   * The shared crime time slider's current year, or null for "every
+   * `timeSeries` layer draws its own latest full year" — the default, and
+   * exactly today's behaviour for a reader who never touches the slider.
+   * One value for every `timeSeries` layer at once (see that field's own
+   * comment on why this is shared rather than per layer), read by
+   * `dotFeatures()` below and applied by `setSelectedYear()`.
+   */
+  private selectedYear: number | null = null;
   /**
    * In-flight `loadLayer` calls, keyed by layer. A second caller — a rapid
    * toggle-off-then-on-again while the first load is still fetching, drawing,
@@ -2454,7 +2465,16 @@ export class MapController {
    */
   private dotFeatures(layer: ClientLayer, features: LoadedFeature[]): FeatureCollection {
     if (!layer.dotDensity) return EMPTY_FC;
-    const { key, perUnit } = layer.dotDensity;
+    // A `timeSeries` layer with a year selected reads that year's
+    // `total{year}` attribute instead of the registry's default key —
+    // everything else about placing the dots (perUnit, seeding, suppression)
+    // is unchanged, because the series and the latest-year value share the
+    // exact same shape: a number or null, never anything to reinterpret.
+    const key =
+      layer.timeSeries && this.selectedYear !== null && layer.timeSeries.years.includes(this.selectedYear)
+        ? `total${this.selectedYear}`
+        : layer.dotDensity.key;
+    const { perUnit } = layer.dotDensity;
     const out: Feature[] = [];
     for (const f of features) {
       if (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon') continue;
@@ -3846,6 +3866,29 @@ export class MapController {
   }
 
   /** Features of a layer that pass its current filters. */
+  /**
+   * Move the shared crime time slider — `year` a value from some visible
+   * `timeSeries` layer's own `years`, or `null` to return every `timeSeries`
+   * layer to its own latest full year (the default, and the only state
+   * before this is ever called).
+   *
+   * Repaints every currently-checked `timeSeries` layer's dots at once, from
+   * whichever features `filteredFeatures` already has standing for it — a
+   * band filter stays in effect exactly as it was; only which year's count
+   * the dots are drawn from changes. Layers with no `timeSeries` (the eight
+   * single-offense layers, for now — see that field's own comment) are
+   * untouched: they have no `total{year}` series to read, so they keep
+   * showing their one stored year regardless of where the slider sits.
+   */
+  setSelectedYear(year: number | null) {
+    this.selectedYear = year;
+    for (const layer of this.layers) {
+      if (!layer.timeSeries || !layer.dotDensity || !this.visible.has(layer.id)) continue;
+      const dots = this.map.getSource(this.dotsSourceId(layer.id)) as GeoJSONSource | undefined;
+      dots?.setData(this.dotFeatures(layer, this.filteredFeatures(layer.id)));
+    }
+  }
+
   filteredFeatures(layerId: string): LoadedFeature[] {
     const all = this.data.get(layerId) ?? [];
     const state = this.filters.get(layerId);

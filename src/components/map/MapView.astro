@@ -1,7 +1,7 @@
 ---
 import type { Locale } from '~/layers/types';
 import { loadAllLayers, distinctValues } from '~/layers/data';
-import { LAYER_CATEGORIES } from '~/layers/registry';
+import { LAYER_CATEGORIES, CRIME_FIRST_FULL_YEAR, CRIME_LAST_FULL_YEAR } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { labelForDetailField } from '~/lib/detailFields';
 import CompareView from '~/components/map/CompareView.astro';
@@ -81,6 +81,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
         keyLabel: pick(d.dotDensity.keyLabel, locale),
       }
     : undefined,
+  timeSeries: d.timeSeries,
   categoryColors: d.categoryColors
     ? {
         key: d.categoryColors.key,
@@ -702,6 +703,44 @@ const strings = {
         class="pointer-events-none absolute left-2 z-10 flex w-56 max-w-[70vw] flex-col gap-1.5 motion-safe:transition-[bottom]"
         aria-hidden="true"
       >
+      </div>
+
+      {/*
+        The shared Reported Crime time slider — one control for every
+        currently-checked `timeSeries` layer (see that field's own comment:
+        comparing two layers only makes sense if both show the same year).
+        Hidden until at least one such layer is checked, and reset to the
+        latest year the moment none are (refreshTimeSlider() below), so a
+        layer re-checked later never silently inherits a scrub position the
+        reader can no longer see.
+
+        A real <input type="range">, not a custom drag surface — for the
+        same reason CompareView's divider is one: keyboard-operable and its
+        value announced, for free. Unlike #map-keys above this is a real
+        control, not a glanceable duplicate of something accessible
+        elsewhere, so it is never aria-hidden.
+      */}
+      <div
+        id="crime-year-slider"
+        hidden
+        style="bottom: calc(2rem + var(--map-sheet-h, 0px))"
+        class="pointer-events-auto absolute inset-x-2 z-10 flex items-center gap-2.5 rounded-lg border border-ink-800 bg-ink-900/90 px-3 py-2 text-xs text-ink-200 shadow backdrop-blur-sm motion-safe:transition-[bottom] sm:inset-x-auto sm:left-1/2 sm:w-80 sm:-translate-x-1/2"
+      >
+        <span class="shrink-0 whitespace-nowrap">{t('crimeYearSliderCaption')}</span>
+        <span id="crime-year-slider-value" class="shrink-0 font-mono font-semibold tabular-nums text-ink-100">
+          {CRIME_LAST_FULL_YEAR}
+        </span>
+        <input
+          type="range"
+          id="crime-year-slider-input"
+          min={CRIME_FIRST_FULL_YEAR}
+          max={CRIME_LAST_FULL_YEAR}
+          step="1"
+          value={CRIME_LAST_FULL_YEAR}
+          class="h-4 min-w-0 flex-1 accent-current"
+          style={`color:var(--layer-color-crime_minneapolis)`}
+          aria-label={t('crimeYearSliderLabel')}
+        />
       </div>
     </div>
 
@@ -2017,6 +2056,36 @@ const strings = {
     }
   }
 
+  /*
+    Shown for as long as at least one `timeSeries` layer is checked; reset
+    to the latest year and hidden the moment none are, so a layer checked
+    again later never silently inherits an old scrub position. Reads the
+    same parsed `layers` array + live checkbox states refreshMapKeys already
+    reads above, rather than a second source of truth for "which layers are
+    on".
+  */
+  const yearSliderEl = document.getElementById('crime-year-slider');
+  const yearSliderInput = document.getElementById('crime-year-slider-input') as HTMLInputElement | null;
+  const yearSliderValueEl = document.getElementById('crime-year-slider-value');
+  function refreshTimeSlider() {
+    if (!yearSliderEl || !yearSliderInput || !yearSliderValueEl) return;
+    const anyChecked = layers.some((l) => {
+      if (!l.timeSeries) return false;
+      const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${l.id}"]`);
+      return input?.checked ?? false;
+    });
+    yearSliderEl.hidden = !anyChecked;
+    if (!anyChecked && yearSliderInput.value !== yearSliderInput.max) {
+      yearSliderInput.value = yearSliderInput.max;
+      yearSliderValueEl.textContent = yearSliderInput.max;
+      controller.setSelectedYear(null);
+    }
+  }
+  yearSliderInput?.addEventListener('input', () => {
+    if (yearSliderValueEl) yearSliderValueEl.textContent = yearSliderInput!.value;
+    controller.setSelectedYear(Number(yearSliderInput!.value));
+  });
+
   function refreshGroups() {
     groupEls.forEach((group) => {
       const toggles = [...group.querySelectorAll<HTMLInputElement>('[data-layer-toggle]')];
@@ -2028,6 +2097,7 @@ const strings = {
       }
     });
     refreshMapKeys();
+    refreshTimeSlider();
   }
 
   document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {

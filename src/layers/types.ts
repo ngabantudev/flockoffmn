@@ -1002,6 +1002,36 @@ export interface LayerDefinition {
     keyLabel: I18nString;
   };
   /**
+   * This layer carries a full year-by-year series, one attribute per year
+   * (`total2018`, `total2019`, ...), not just the latest full year's value —
+   * and can be scrubbed with the shared crime time slider (mapController.ts's
+   * `setSelectedYear`) rather than always drawing `dotDensity.key`.
+   *
+   * Deliberately not on every crime layer: the eight single-offense layers
+   * only ever stored the latest year's count per offense, so they are not
+   * sliderable yet — see crime-minneapolis.mjs for what a future ingest
+   * change would need to add before that changes. Shipping the slider now
+   * for the two layers that already carry the series, rather than waiting
+   * to build it for all ten at once, is a deliberate choice: real value
+   * sooner, not a corner cut.
+   *
+   * The slider itself is one shared control for the whole Reported Crime
+   * section, not per layer — comparing two layers only makes sense if both
+   * show the same year, so it drives every currently-checked layer that
+   * declares this field, together, rather than each layer scrubbing on its
+   * own and silently drifting out of sync with the others.
+   *
+   * Filters are unaffected by the selected year: `reportedTotalBand` (and
+   * any filter built on it) stays computed from the latest full year only,
+   * because a per-year band was never precomputed. Scrubbing to an older
+   * year can therefore show dot counts for a year the current band filter
+   * was not evaluated against — a real, disclosed limitation, not a bug.
+   */
+  timeSeries?: {
+    /** Every year this layer carries a `total{year}` attribute for, ascending. */
+    years: number[];
+  };
+  /**
    * How strongly a line layer is painted, 0–1. Omit for the standard weight.
    *
    * A layer that is context rather than subject has to be legible without

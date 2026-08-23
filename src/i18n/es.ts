@@ -54,6 +54,8 @@ export const es: Record<string, string> = {
   clearFilters: 'Borrar filtros',
   filtersCleared: 'Filtros borrados',
   ofTotal: 'de',
+  crimeYearSliderCaption: 'Delitos denunciados, año',
+  crimeYearSliderLabel: 'Año mostrado para las capas de delitos denunciados',
   loading: 'Cargando datos del mapa…',
   mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
   resetView: 'Volver a Minnesota',

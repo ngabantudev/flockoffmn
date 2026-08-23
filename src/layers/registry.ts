@@ -117,8 +117,12 @@ const CENSUS_TRACT_NOTE = {
  * so the two can never disagree destructively; the worst case is a year of
  * data present in the download but missing from the panel.
  */
-const CRIME_FIRST_FULL_YEAR = 2018;
-const CRIME_LAST_FULL_YEAR = 2025;
+// Exported so MapView.astro's shared crime year slider reads its min/max off
+// the same two numbers the detail-field rows and the timeSeries layers'
+// `years` arrays already come from, rather than a second hardcoded copy that
+// could drift the day one of these is bumped and the other is not.
+export const CRIME_FIRST_FULL_YEAR = 2018;
+export const CRIME_LAST_FULL_YEAR = 2025;
 const YEAR_ROWS = Array.from(
   { length: CRIME_LAST_FULL_YEAR - CRIME_FIRST_FULL_YEAR + 1 },
   (_, i) => CRIME_FIRST_FULL_YEAR + i,
@@ -2912,6 +2916,10 @@ export const LAYERS: LayerDefinition[] = [
         es: '1 punto ≈ 74 delitos de Parte I denunciados, posiciones aleatorias',
       },
     },
+    // total2018..total2025 already exist on every feature — see the ingest's
+    // YEAR_ROWS-driven detail fields. The eight single-offense layers below
+    // do not have this yet (see timeSeries' own comment in layers/types.ts).
+    timeSeries: { years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025] },
     hoverCard: {
       fields: ['reportedTotal', 'statYear', 'violentTotal'],
     },
@@ -3019,6 +3027,7 @@ export const LAYERS: LayerDefinition[] = [
         es: '1 punto ≈ 5 delitos denunciados, posiciones aleatorias',
       },
     },
+    timeSeries: { years: [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025] },
     hoverCard: {
       fields: ['reportedTotal', 'statYear', 'suppressed'],
     },
