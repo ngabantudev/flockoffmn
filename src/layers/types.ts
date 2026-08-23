@@ -74,7 +74,21 @@ export type LayerId =
   // and block addresses and are out of scope under §1b permanently. The
   // neighbourhood polygons ride inside this layer's own file rather than
   // getting an entry of their own. See scripts/ingest/mn/crime-minneapolis.mjs.
-  | 'crime_minneapolis';
+  | 'crime_minneapolis'
+  // The same file, split by FBI Part I category, one layer each. Separate
+  // entries rather than a control that reshades one layer, because that is
+  // how the three demographic_* layers already work — and because each
+  // offence is shaded on its own scale (src/lib/crimeBands.mjs): homicide
+  // runs 0-9 per neighbourhood-year where larceny runs to nearly 2,000, so
+  // they cannot share a legend.
+  | 'crime_homicide'
+  | 'crime_rape'
+  | 'crime_robbery'
+  | 'crime_aggravated_assault'
+  | 'crime_burglary'
+  | 'crime_larceny'
+  | 'crime_auto_theft'
+  | 'crime_arson';
 
 export type Locale = 'en' | 'es';
 

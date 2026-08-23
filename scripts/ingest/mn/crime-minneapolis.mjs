@@ -103,6 +103,7 @@ import {
   thinGeometry,
   writeLayer,
 } from '../lib/util.mjs';
+import { OFFENCES, TOTAL_STOPS, bandFor, bandLabels } from '../../../src/lib/crimeBands.mjs';
 
 const SCOPE = 'crime-minneapolis';
 
@@ -113,23 +114,6 @@ const BOUNDARY_SERVICE =
 
 const PORTAL_URL =
   'https://opendata.minneapolismn.gov/datasets/97ce8f1a93084479929be2750b25187f_0/about';
-
-/**
- * The City's eight published categories, mapped to the attribute keys this
- * layer emits, and split violent/property on the FBI's own standard division.
- * An unrecognised category throws rather than being dropped, so a ninth one
- * appearing upstream is noticed rather than quietly excluded from the total.
- */
-const OFFENCES = {
-  Homicide: { key: 'homicide', group: 'violent' },
-  Rape: { key: 'rape', group: 'violent' },
-  Robbery: { key: 'robbery', group: 'violent' },
-  'Aggravated Assault': { key: 'aggravatedAssault', group: 'violent' },
-  Burglary: { key: 'burglary', group: 'property' },
-  Larceny: { key: 'larceny', group: 'property' },
-  'Auto Theft': { key: 'autoTheft', group: 'property' },
-  Arson: { key: 'arson', group: 'property' },
-};
 
 /**
  * Renames the City made mid-series, keyed by normalised name. Case and
@@ -143,23 +127,8 @@ const NAME_ALIASES = {
   CARAG: 'SOUTH UPTOWN',
 };
 
-/**
- * Fixed absolute band stops on the annual all-category total, not data-driven
- * quantiles: a quantile scheme silently redraws what "high" means on every
- * ingest, so a neighbourhood could change colour in a year its own count never
- * moved. Chosen against the real 2018-2025 distribution (87 neighbourhoods x
- * 8 years): these put roughly 4/20/31/27/18 per cent of neighbourhood-years in
- * each band and stay stable year to year. The City's own published stops
- * (50/150/350/750) were tried first and bunched 38% of neighbourhoods into one
- * band while leaving 4% in the top.
- */
-const BANDS = [
-  { max: 40, value: '0–39' },
-  { max: 100, value: '40–99' },
-  { max: 200, value: '100–199' },
-  { max: 450, value: '200–449' },
-  { max: Infinity, value: '450+' },
-];
+/** ucrDescription -> the offence entry, for the row fold below. */
+const BY_UCR = new Map(OFFENCES.map((o) => [o.ucr, o]));
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -173,45 +142,6 @@ function normalise(name) {
     .replace(/[^A-Z0-9]+/g, ' ')
     .trim();
   return NAME_ALIASES[n] ?? n;
-}
-
-function bandFor(total) {
-  return BANDS.find((b) => total < b.max).value;
-}
-
-/**
- * Area centroid of the largest ring, computed here so the compare view can
- * place a circle without doing polygon maths in the browser — and so both of
- * that view's two map instances put the circle in the identical spot.
- */
-function centroidOf(geometry) {
-  const rings =
-    geometry.type === 'MultiPolygon'
-      ? geometry.coordinates.map((poly) => poly[0])
-      : [geometry.coordinates[0]];
-
-  let best = null;
-  for (const ring of rings) {
-    let twiceArea = 0;
-    let x = 0;
-    let y = 0;
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
-      const cross = ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
-      twiceArea += cross;
-      x += (ring[j][0] + ring[i][0]) * cross;
-      y += (ring[j][1] + ring[i][1]) * cross;
-    }
-    if (twiceArea === 0) continue;
-    const area = Math.abs(twiceArea / 2);
-    if (!best || area > best.area) {
-      best = { area, lon: x / (3 * twiceArea), lat: y / (3 * twiceArea) };
-    }
-  }
-  if (!best) throw new Error('degenerate neighbourhood polygon with no area');
-  return {
-    centroidLon: Math.round(best.lon * 1e5) / 1e5,
-    centroidLat: Math.round(best.lat * 1e5) / 1e5,
-  };
 }
 
 async function main() {
@@ -276,7 +206,7 @@ async function main() {
   const rawNames = new Set();
 
   for (const { attributes: a } of statRows) {
-    const offence = OFFENCES[a.ucrDescription];
+    const offence = BY_UCR.get(a.ucrDescription);
     if (!offence) {
       throw new Error(
         `unrecognised ucrDescription "${a.ucrDescription}" — the City has added an ` +
@@ -353,20 +283,26 @@ async function main() {
         lastFullYear,
       };
 
-      for (const { key } of Object.values(OFFENCES)) {
-        attributes[key] = current?.[key] ?? null;
+      // Every offence carries both its count and its own band, because each
+      // one is separately mappable and they do not share a scale — see
+      // src/lib/crimeBands.mjs on why homicide and larceny cannot.
+      for (const { key, stops } of OFFENCES) {
+        const count = current?.[key] ?? null;
+        attributes[key] = count;
+        attributes[`${key}Band`] = current ? bandFor(stops, count ?? 0) : null;
       }
 
       const groupTotal = (group) => {
         if (!current) return null;
-        return Object.values(OFFENCES)
-          .filter((o) => o.group === group)
-          .reduce((sum, o) => sum + (current[o.key] ?? 0), 0);
+        return OFFENCES.filter((o) => o.group === group).reduce(
+          (sum, o) => sum + (current[o.key] ?? 0),
+          0,
+        );
       };
       attributes.violentTotal = groupTotal('violent');
       attributes.propertyTotal = groupTotal('property');
       attributes.reportedTotal = current?.total ?? null;
-      attributes.reportedTotalBand = current ? bandFor(current.total) : null;
+      attributes.reportedTotalBand = current ? bandFor(TOTAL_STOPS, current.total) : null;
 
       for (const year of fullYears) {
         attributes[`total${year}`] = byYear?.get(year)?.total ?? null;
@@ -380,8 +316,6 @@ async function main() {
       attributes.partialYearLabel = partialYearLabel;
       attributes.partialYearTotal =
         trailingYear === null ? null : (byYear?.get(trailingYear)?.total ?? null);
-
-      Object.assign(attributes, centroidOf(f.geometry));
 
       return {
         type: 'Feature',
@@ -419,6 +353,10 @@ async function main() {
       excludedPartialYears: partialYears,
       neighborhoodCount: features.length,
       unmatchedNeighborhoods: [...unmatchedStats, ...unmatchedBoundaries],
+      bandScales: Object.fromEntries([
+        ['reportedTotal', bandLabels(TOTAL_STOPS)],
+        ...OFFENCES.map((o) => [o.key, bandLabels(o.stops)]),
+      ]),
       nullCellsReadAsZero: nullCells,
       incidentsNotAssignedToNeighborhood: unassignedIncidents,
     },

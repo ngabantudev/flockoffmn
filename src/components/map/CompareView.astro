@@ -7,23 +7,23 @@
  * (scripts/ingest/national/demographics.mjs).
  *
  * Deliberately a standalone component rather than a mode bolted onto
- * MapController — that class is already the load-bearing 3000-line surface
- * every other layer depends on, and a two-map-instance compare view is a
- * genuinely different rendering model (two WebGL contexts, a synced viewport,
- * a clipped container) that has nothing to gain from sharing its code.
- * Keeping it standalone means this experiment can be deleted or rebuilt
- * without touching the layer registry, filters, hover cards, or the search
- * and detail-panel surface every other layer relies on. It is mounted as a
- * full-screen overlay inside MapView.astro, opened by that file's
- * `#open-compare` button — not a page of its own.
+ * MapController — that class is already the load-
+ * bearing 3000-line surface every other layer depends on, and a two-map-
+ * instance compare view is a genuinely different rendering model (two WebGL
+ * contexts, a synced viewport, a clipped container) that has nothing to gain
+ * from sharing its code. Keeping it standalone means this experiment can be
+ * deleted or rebuilt without touching the layer registry, filters, hover
+ * cards, or the search and detail-panel surface every other layer relies on.
+ * It is mounted as a full-screen overlay inside MapView.astro, opened by that
+ * file's `#open-compare` button — not a page of its own.
  *
- * THE COST OF THAT CHOICE, made explicit: because this view is not
- * registry-driven, it hardcodes the layer IDs it draws. Adding a layer here
- * is therefore a UI-component edit, which CLAUDE.md Part 1 §2 otherwise
- * forbids for layer additions. That exception has been taken deliberately
- * twice now — for `alpr` and for `crime_minneapolis` — and each one is a
- * reason to think about whether a third means this view should become
- * registry-driven instead.
+ * The cost of that choice, made explicit: because this view is not
+ * registry-driven, it hardcodes the layer IDs it draws, so adding a layer here
+ * is a UI-component edit that CLAUDE.md Part 1 §2 otherwise forbids. `alpr` is
+ * the one layer that exception has been spent on. A reported-crime overlay was
+ * built here and then removed: graduated circles over a choropleth make the
+ * eye compare two encodings at once, and mostly just occlude the bands this
+ * view exists to show.
  *
  * Accessibility (CLAUDE.md §4/Part 0 §0.7): a pixel-swipe has no non-visual
  * reading — nothing here pretends otherwise. The divider is a real
@@ -89,43 +89,12 @@ const alprConfig = {
   strokeColor: alprLayer.pointStrokeColor ?? '#ffffff',
 };
 
-/*
- * Crime is drawn as graduated circles at neighbourhood centroids, not as a
- * second polygon fill. The demographic choropleths under it are painted at
- * 0.82 opacity, and a second semi-transparent fill on top of that turns both
- * into mud — which would destroy the band reading the whole view exists for.
- * Measured: lime over the mid-teal poverty band is only 1.65:1, over the
- * mid-pink Black-share band 2.34:1. Those are separations a stroke has to
- * carry, not a fill, so the circles get a dark stroke and it is structural
- * rather than decorative. Same "position against the choropleth" reasoning
- * as the ALPR dots above, and it needs a compact size key instead of a third
- * band-legend card there is no room for.
- *
- * The centroid is computed in the ingest and shipped as an attribute so
- * neither map does polygon maths in the browser, and so both of them put the
- * circle in the identical spot.
- */
-const crimeLayer = LAYERS.find((l) => l.id === 'crime_minneapolis')!;
-const crimeLoaded = await loadLayer(crimeLayer);
-// Same "the file wins" rule as the ACS vintage above: statYear is only known
-// once the ingest has decided which years are complete, so it is read off the
-// generated file rather than duplicated into the registry. It is not part of
-// the declared Provenance shape, hence the indexed read.
-const crimeStatYear =
-  ((mergedProvenance(crimeLoaded) as Record<string, unknown>).statYear as number | undefined) ?? null;
-const crimeConfig = {
-  dataPath: crimeLayer.dataPath,
-  color: crimeLayer.color,
-  strokeColor: '#0a0c10',
-};
-
 const strings = {
   compareSliderLabel: t('compareSliderLabel'),
   comparePovertySide: t('comparePovertySide'),
   compareBlackSide: t('compareBlackSide'),
   loading: t('loading'),
   compareShowAlpr: t('compareShowAlpr'),
-  compareShowCrime: t('compareShowCrime'),
 };
 ---
 
@@ -172,53 +141,11 @@ const strings = {
       +/- buttons for the right-hand corner the old three-item row had to
       dodge with asymmetric padding.
     */}
-    {/*
-      Two controls now, so the row wraps rather than overflowing: at 375px the
-      two pills stack to two lines, and above `sm` they sit side by side. The
-      bar stays pointer-events-none with pointer-events-auto on the controls
-      themselves, as it did with one.
-
-      The size key is a chip directly beneath the row rather than a third
-      bottom-corner legend card — the two band legends already hold the
-      bottom-left and bottom-right corners at `bottom-14`, and a third card
-      does not fit a phone. It is hidden with the layer it explains, so it
-      costs nothing when crime is off (which is the default).
-    */}
-    {/*
-      pr-12 below `sm` keeps the row clear of mapA's zoom +/- buttons, which
-      sit in the same top-right corner: with two controls instead of one the
-      right-hand pill reached x=339 on a 375px screen against a control
-      starting around 338. Above `sm` there is room and the padding goes back
-      to symmetric.
-    */}
-    <div class="pointer-events-none absolute inset-x-0 top-3 flex flex-col items-center gap-1.5 px-2 pr-12 sm:pr-2">
-      <div class="flex flex-wrap items-center justify-center gap-1.5">
-        <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 text-[11px] font-medium text-ink-100 shadow sm:text-xs">
-          <input type="checkbox" id="compare-show-alpr" checked style={`accent-color:${alprConfig.color}`} />
-          {strings.compareShowAlpr}
-        </label>
-        <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 text-[11px] font-medium text-ink-100 shadow sm:text-xs">
-          <input type="checkbox" id="compare-show-crime" style={`accent-color:${crimeConfig.color}`} />
-          {strings.compareShowCrime}
-        </label>
-      </div>
-      <div
-        id="compare-crime-key"
-        hidden
-        class="pointer-events-none flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 text-[10px] text-ink-300 shadow"
-      >
-        <span>{t('compareCrimeKeyLow')}</span>
-        {[3, 5.5, 8].map((r) => (
-          <span
-            class="inline-block rounded-full border border-ink-950"
-            style={`width:${r * 2}px;height:${r * 2}px;background:${crimeConfig.color}`}
-          ></span>
-        ))}
-        <span>{t('compareCrimeKeyHigh')}</span>
-        <span class="ml-0.5 text-ink-400">
-          {t('compareCrimeKeyLabel')}{crimeStatYear ? `, ${crimeStatYear}` : ''}
-        </span>
-      </div>
+    <div class="pointer-events-none absolute inset-x-0 top-3 flex justify-center">
+      <label class="pointer-events-auto flex items-center gap-1.5 rounded bg-ink-900/85 px-2 py-1 text-[11px] font-medium text-ink-100 shadow sm:text-xs">
+        <input type="checkbox" id="compare-show-alpr" checked style={`accent-color:${alprConfig.color}`} />
+        {strings.compareShowAlpr}
+      </label>
     </div>
 
     {/*
@@ -333,7 +260,7 @@ const strings = {
   }
 </style>
 
-<script is:inline type="application/json" id="compare-config" set:html={JSON.stringify({ poverty: povertyConfig, black: blackConfig, alpr: alprConfig, crime: crimeConfig, strings })} />
+<script is:inline type="application/json" id="compare-config" set:html={JSON.stringify({ poverty: povertyConfig, black: blackConfig, alpr: alprConfig, strings })} />
 
 <script>
   import maplibregl from 'maplibre-gl';
@@ -354,13 +281,12 @@ const strings = {
     fallback: string;
   };
   type SideConfig = { dataPath: string; color: string; categoryColors: CategoryColors; label: string };
-  type PointConfig = { dataPath: string; color: string; strokeColor: string };
+  type AlprConfig = { dataPath: string; color: string; strokeColor: string };
 
   const config = JSON.parse(document.getElementById('compare-config')!.textContent!) as {
     poverty: SideConfig;
     black: SideConfig;
-    alpr: PointConfig;
-    crime: PointConfig;
+    alpr: AlprConfig;
   };
 
   const elA = document.getElementById('compare-map-a')!;
@@ -370,8 +296,6 @@ const strings = {
   const statusEl = document.getElementById('compare-status')!;
   const loadingEl = document.getElementById('compare-loading')!;
   const alprCheckbox = document.getElementById('compare-show-alpr') as HTMLInputElement;
-  const crimeCheckbox = document.getElementById('compare-show-crime') as HTMLInputElement;
-  const crimeKey = document.getElementById('compare-crime-key')!;
 
   function fillExpression(cc: CategoryColors): maplibregl.ExpressionSpecification {
     return [
@@ -422,7 +346,7 @@ const strings = {
    * "where are the cameras relative to these two layers", not a rebuild of
    * the ALPR record itself. `compareAccessibleNote` points to the real thing.
    */
-  function addAlpr(map: maplibregl.Map, alpr: PointConfig) {
+  function addAlpr(map: maplibregl.Map, alpr: AlprConfig) {
     map.addSource('alpr', { type: 'geojson', data: alpr.dataPath });
     map.addLayer({
       id: 'alpr-points',
@@ -433,93 +357,6 @@ const strings = {
         'circle-color': alpr.color,
         'circle-stroke-color': alpr.strokeColor,
         'circle-stroke-width': 1,
-      },
-    });
-  }
-
-  /**
-   * Reported crime, as one graduated circle per neighbourhood centroid.
-   *
-   * Radius follows the square root of the count, not the count itself, so a
-   * circle's *area* is what scales with the number — the reading people
-   * actually take off a proportional symbol. Scaling the radius linearly
-   * would make a neighbourhood with four times the offences look sixteen
-   * times worse.
-   *
-   * The stops are the registry's own five band edges (40/100/200/450), so a
-   * circle's size and the main map's shading mean the same thing rather than
-   * being two independent encodings of the same column. `coalesce` guards a
-   * neighbourhood with no counts: interpolate needs a number, and a null
-   * would throw rather than draw nothing.
-   *
-   * Added to BOTH maps by its caller, like the ALPR dots — mapB is clipped to
-   * the right of the divider, so a circle added to one map alone would either
-   * vanish as the divider crossed it or never appear on the other side.
-   */
-  /**
-   * One point per neighbourhood, built from the centroid attributes the
-   * ingest ships.
-   *
-   * This transform is not optional: a MapLibre `circle` layer pointed at
-   * polygon geometry draws a circle at every *vertex* of every ring, so
-   * feeding it crime-minneapolis.geojson directly produced several hundred
-   * circles tracing the neighbourhood outlines rather than 87 sitting at
-   * their centres. Fetched once and shared by both maps — same file the main
-   * map already caches, and neither map does the polygon maths itself.
-   */
-  let crimePoints: Promise<GeoJSON.FeatureCollection> | null = null;
-  function loadCrimePoints(dataPath: string) {
-    crimePoints ??= fetch(dataPath)
-      .then((r) => r.json())
-      .then((collection) => ({
-        type: 'FeatureCollection' as const,
-        features: collection.features
-          .filter((f: any) => f.properties?.attributes?.centroidLon != null)
-          .map((f: any) => ({
-            type: 'Feature' as const,
-            geometry: {
-              type: 'Point' as const,
-              coordinates: [f.properties.attributes.centroidLon, f.properties.attributes.centroidLat],
-            },
-            properties: f.properties,
-          })),
-      }));
-    return crimePoints;
-  }
-
-  function addCrime(map: maplibregl.Map, crime: PointConfig) {
-    // Source and layer go in empty and synchronously, then the points are
-    // pushed in when the fetch lands: awaiting here would let addAlpr run
-    // first and put the cameras *under* the circles, inverting the z-order
-    // this view depends on.
-    map.addSource('crime', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    loadCrimePoints(crime.dataPath).then((data) => {
-      (map.getSource('crime') as maplibregl.GeoJSONSource | undefined)?.setData(data);
-    });
-    map.addLayer({
-      id: 'crime-circles',
-      type: 'circle',
-      source: 'crime',
-      paint: {
-        'circle-radius': [
-          'interpolate',
-          ['linear'],
-          ['coalesce', ['get', 'reportedTotal', ['get', 'attributes']], 0],
-          0, 2.5,
-          40, 4,
-          100, 5.5,
-          200, 7.5,
-          450, 10.5,
-          1300, 16,
-        ] as unknown as maplibregl.ExpressionSpecification,
-        'circle-color': crime.color,
-        'circle-opacity': 0.55,
-        // Structural, not decorative: the lime fill is only 1.65:1 against
-        // the mid-teal poverty band, so the dark ring is what actually
-        // separates a circle from the choropleth under it.
-        'circle-stroke-color': crime.strokeColor,
-        'circle-stroke-width': 1,
-        'circle-stroke-opacity': 0.9,
       },
     });
   }
@@ -625,24 +462,13 @@ const strings = {
     slider.addEventListener('input', () => applySlider(Number(slider.value)));
     window.addEventListener('resize', layout);
 
-    function setLayerVisibility(id: string, visible: boolean) {
+    function setAlprVisibility(visible: boolean) {
       const v = visible ? 'visible' : 'none';
       for (const map of [mapA, mapB]) {
-        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v);
+        if (map.getLayer('alpr-points')) map.setLayoutProperty('alpr-points', 'visibility', v);
       }
     }
-    function setAlprVisibility(visible: boolean) {
-      setLayerVisibility('alpr-points', visible);
-    }
-    // The size key is only meaningful while the circles it explains are on
-    // screen, so it is hidden with them rather than sitting there explaining
-    // nothing — which is also why it costs no space in the default state.
-    function setCrimeVisibility(visible: boolean) {
-      setLayerVisibility('crime-circles', visible);
-      crimeKey.hidden = !visible;
-    }
     alprCheckbox.addEventListener('change', () => setAlprVisibility(alprCheckbox.checked));
-    crimeCheckbox.addEventListener('change', () => setCrimeVisibility(crimeCheckbox.checked));
 
     let loadedCount = 0;
     function onOneLoaded() {
@@ -653,22 +479,16 @@ const strings = {
         // last; setting this once here (rather than per-map, per-load) is
         // what makes it correct regardless of that ordering.
         setAlprVisibility(alprCheckbox.checked);
-        setCrimeVisibility(crimeCheckbox.checked);
       }
     }
 
-    // Order is the z-order: choropleth fill, then crime circles, then the
-    // cameras on top. ALPR stays topmost deliberately — the apparatus is this
-    // site's subject, and this view exists to show where it sits.
     mapA.on('load', () => {
       addChoropleth(mapA, config.poverty);
-      addCrime(mapA, config.crime);
       addAlpr(mapA, config.alpr);
       onOneLoaded();
     });
     mapB.on('load', () => {
       addChoropleth(mapB, config.black);
-      addCrime(mapB, config.crime);
       addAlpr(mapB, config.alpr);
       onOneLoaded();
     });

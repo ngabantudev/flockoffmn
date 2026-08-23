@@ -1,4 +1,8 @@
-import type { LayerCategory, LayerDefinition } from './types';
+import type { I18nString, LayerCategory, LayerDefinition, LayerId } from './types';
+// Band thresholds and offence list live in one module shared with the
+// ingest that writes these attributes (CLAUDE.md §2), so a band label
+// cannot drift between what is written and what is coloured by.
+import { OFFENCES, TOTAL_STOPS, bandLabels } from '~/lib/crimeBands.mjs';
 
 /**
  * The sections of the layer panel, in the order they are listed.
@@ -117,6 +121,259 @@ const YEAR_ROWS = Array.from(
     es: `Delitos de Parte I denunciados, ${year}`,
   },
 }));
+
+/**
+ * The lime ramp every reported-crime layer shares, lowest band first.
+ *
+ * One ramp across all nine rather than nine colours: these are one
+ * measurement — offenses reported in a year — cut eight ways, not nine
+ * different metrics. The three demographic layers each get their own hue
+ * because poverty, Black share and Latinx share are genuinely different
+ * things; splitting one column by category is the opposite case, and giving
+ * each split its own colour would imply a distinction that isn't there. What
+ * changes between them is the band *labels*, since each offense is cut on its
+ * own scale (src/lib/crimeBands.mjs).
+ *
+ * Lime because the sixteen colours already in this file leave exactly one
+ * large gap in OKLCH hue — 71° between yellow #facc15 and emerald #34d399 —
+ * and this ramp sits in it at a minimum distance of 0.123 from any of them.
+ * Red and orange are both taken and would carry an alarm valence this layer
+ * must not have.
+ */
+const CRIME_RAMP = ['#f7fee7', '#d9f99d', '#a3e635', '#65a30d', '#365314'];
+const CRIME_FALLBACK = '#6b7280';
+
+/** Band colours for one offense, zipped from its own stops. */
+function crimeBands(stops: number[]) {
+  return bandLabels(stops).map((value: string, i: number) => ({ value, color: CRIME_RAMP[i] }));
+}
+
+const CRIME_GEOMETRY_NOTE = {
+  en: 'A Minneapolis neighborhood, as the City draws them — 87 areas covering the city, of widely differing size and population.',
+  es: 'Un barrio de Minneapolis, según los traza la Ciudad: 87 áreas que cubren la ciudad, de tamaño y población muy dispares.',
+};
+
+/**
+ * Shared by all nine reported-crime layers: they are nine views of one file,
+ * so a caveat that is true of one is true of all of them, and one copy is one
+ * thing to keep correct instead of nine that can drift apart.
+ */
+const CRIME_LIMITATIONS = [
+  {
+    en: 'A count of offenses reported to and recorded by police. It is a record of what was reported and what police chose to record, which is not the same as a record of what happened. Reporting rates differ by offense and by neighborhood, and a change in a count can reflect a change in reporting or recording practice rather than a change in events.',
+    es: 'Un recuento de delitos denunciados a la policía y registrados por ella. Es un registro de lo que se denunció y de lo que la policía decidió registrar, que no es lo mismo que un registro de lo que ocurrió. Las tasas de denuncia difieren según el delito y el barrio, y un cambio en un recuento puede reflejar un cambio en la práctica de denuncia o de registro más que un cambio en los hechos.',
+  },
+  {
+    en: 'Counts, not rates. A larger or busier neighborhood will show a higher count without that meaning more per resident. This layer publishes no per-resident rate, because the City publishes no neighborhood population to divide by, and apportioning census-tract populations across neighborhood lines would be a number this project invented rather than one any source states.',
+    es: 'Recuentos, no tasas. Un barrio más grande o más concurrido mostrará un recuento mayor sin que eso signifique más por residente. Esta capa no publica ninguna tasa por residente, porque la Ciudad no publica una población por barrio con la que dividir, y repartir la población de las secciones censales entre los límites de los barrios sería una cifra inventada por este proyecto y no una que ninguna fuente declare.',
+  },
+  {
+    en: 'Each offense is shaded on its own scale, because these counts span two orders of magnitude — a neighborhood-year runs 0 to 9 for homicide and 0 to nearly 2,000 for larceny. The darkest band on the homicide map and the darkest band on the larceny map do not mean the same number, and the band labels beside each layer are what say so.',
+    es: 'Cada delito se sombrea en su propia escala, porque estos recuentos abarcan dos órdenes de magnitud: un barrio-año va de 0 a 9 en homicidios y de 0 a casi 2000 en hurtos. La banda más oscura del mapa de homicidios y la del mapa de hurtos no significan el mismo número, y las etiquetas de banda junto a cada capa son las que lo indican.',
+  },
+  {
+    en: 'The published series begins in 2018. The upstream dataset’s first year, 2017, holds August through December only, and is left out rather than shown as a full year that would read as a collapse in reported crime that did not happen. The current calendar year is likewise incomplete, and is shown only as a separately labeled partial-year total.',
+    es: 'La serie publicada comienza en 2018. El primer año del conjunto de datos original, 2017, contiene solo de agosto a diciembre, y se excluye en lugar de mostrarse como un año completo que se leería como una caída de la delincuencia denunciada que no ocurrió. El año calendario en curso también está incompleto y se muestra solo como un total parcial etiquetado por separado.',
+  },
+  {
+    en: 'The City changed how incidents are assigned to neighborhoods in February 2019, when it moved to a new police records system. Counts before that date were assigned under the previous system, so the earliest figures are not strictly comparable to later years.',
+    es: 'La Ciudad cambió la forma de asignar incidentes a los barrios en febrero de 2019, al pasar a un nuevo sistema de registros policiales. Los recuentos anteriores a esa fecha se asignaron con el sistema previo, por lo que las primeras cifras no son estrictamente comparables con los años posteriores.',
+  },
+  {
+    en: 'Eight offense categories only — the FBI’s Part I list. Offenses outside it are not counted here at all, and the City publishes no breakdown finer than these eight.',
+    es: 'Solo ocho categorías de delitos: la lista de Parte I del FBI. Los delitos fuera de ella no se cuentan aquí en absoluto, y la Ciudad no publica ningún desglose más fino que estas ocho.',
+  },
+  {
+    en: 'Minneapolis only. This is one city of more than 850 in Minnesota, and the rest of this map’s area has no crime layer, because no source publishes comparable neighborhood-level figures statewide.',
+    es: 'Solo Minneapolis. Esta es una ciudad de más de 850 en Minnesota, y el resto del área de este mapa no tiene capa de delincuencia, porque ninguna fuente publica cifras comparables a nivel de barrio en todo el estado.',
+  },
+];
+
+const CRIME_PROVENANCE = {
+  source: 'City of Minneapolis Open Data, NEIGHBORHOOD CRIME STATS and Minneapolis Neighborhoods',
+  sourceUrl: 'https://opendata.minneapolismn.gov/datasets/97ce8f1a93084479929be2750b25187f_0/about',
+  license: 'CC0 1.0 Universal (public domain dedication)',
+  licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+  attribution: 'City of Minneapolis Open Data',
+  sourceDate: null,
+  lastUpdated: null,
+  refresh: 'periodic' as const,
+};
+
+/**
+ * Every crime layer shows the same detail panel, because every one of them is
+ * a view of the same neighborhood record: a reader who opened the homicide map
+ * still wants the other seven counts and the year series in front of them.
+ */
+const CRIME_DETAIL_FIELDS = [
+  { key: 'reportedTotal', label: { en: 'Reported Part I offenses, latest full year', es: 'Delitos de Parte I denunciados, último año completo' } },
+  { key: 'statYear', label: { en: 'Latest full year', es: 'Último año completo' } },
+  { key: 'violentTotal', label: { en: 'Violent offenses (homicide, rape, robbery, aggravated assault)', es: 'Delitos violentos (homicidio, violación, robo con violencia, agresión con agravantes)' } },
+  { key: 'propertyTotal', label: { en: 'Property offenses (burglary, larceny, auto theft, arson)', es: 'Delitos contra la propiedad (robo con allanamiento, hurto, robo de vehículos, incendio provocado)' } },
+  { key: 'homicide', label: { en: 'Homicide', es: 'Homicidio' } },
+  { key: 'rape', label: { en: 'Rape', es: 'Violación' } },
+  { key: 'robbery', label: { en: 'Robbery', es: 'Robo con violencia' } },
+  { key: 'aggravatedAssault', label: { en: 'Aggravated assault', es: 'Agresión con agravantes' } },
+  { key: 'burglary', label: { en: 'Burglary', es: 'Robo con allanamiento' } },
+  { key: 'larceny', label: { en: 'Larceny', es: 'Hurto' } },
+  { key: 'autoTheft', label: { en: 'Auto theft', es: 'Robo de vehículos' } },
+  { key: 'arson', label: { en: 'Arson', es: 'Incendio provocado' } },
+  // One row per complete calendar year. The ingest decides which years are
+  // complete and emits a totalYYYY attribute for each; bump
+  // CRIME_LAST_FULL_YEAR when a new year closes and the row appears. A year
+  // with no attribute simply does not render.
+  ...YEAR_ROWS,
+  { key: 'changeSinceFirstFullYear', label: { en: 'Change in reported Part I offenses, first to latest full year', es: 'Cambio en delitos de Parte I denunciados, del primer al último año completo' } },
+  { key: 'partialYearLabel', label: { en: 'Current year so far', es: 'Año en curso hasta ahora' } },
+  { key: 'partialYearTotal', label: { en: 'Reported Part I offenses, current year so far', es: 'Delitos de Parte I denunciados, año en curso hasta ahora' } },
+];
+
+/**
+ * Per-offense identity and copy. `id` and `slug` are written out rather than
+ * built from the key so they stay greppable and so `id` satisfies LayerId.
+ *
+ * `gloss` is the plain-language definition §0.9 requires: "aggravated assault"
+ * and "larceny" are terms of art, and a reader who has to already know what
+ * they mean is looking at a wall rather than a door. Each one is the FBI's own
+ * Part I definition, said plainly.
+ */
+const OFFENCE_COPY: Record<
+  string,
+  { id: LayerId; slug: string; label: I18nString; gloss: I18nString }
+> = {
+  homicide: {
+    id: 'crime_homicide',
+    slug: 'crime-homicide',
+    label: { en: 'Homicide', es: 'Homicidio' },
+    gloss: {
+      en: 'A death caused by another person — murder and non-negligent manslaughter, as the FBI counts them.',
+      es: 'Una muerte causada por otra persona: asesinato y homicidio doloso, según los cuenta el FBI.',
+    },
+  },
+  rape: {
+    id: 'crime_rape',
+    slug: 'crime-rape',
+    label: { en: 'Rape', es: 'Violación' },
+    gloss: {
+      en: 'Penetration without consent, of any victim of any sex, under the FBI’s definition since 2013.',
+      es: 'Penetración sin consentimiento, de cualquier víctima de cualquier sexo, según la definición del FBI desde 2013.',
+    },
+  },
+  robbery: {
+    id: 'crime_robbery',
+    slug: 'crime-robbery',
+    label: { en: 'Robbery', es: 'Robo con violencia' },
+    gloss: {
+      en: 'Taking something from a person by force or by threat of force. Theft with no person present is larceny, not robbery.',
+      es: 'Tomar algo de una persona por la fuerza o bajo amenaza. El hurto sin nadie presente es hurto, no robo con violencia.',
+    },
+  },
+  aggravatedAssault: {
+    id: 'crime_aggravated_assault',
+    slug: 'crime-aggravated-assault',
+    label: { en: 'Aggravated assault', es: 'Agresión con agravantes' },
+    gloss: {
+      en: 'An attack intended to cause severe injury, usually involving a weapon. Lesser assaults are not Part I offenses and are not counted here.',
+      es: 'Un ataque destinado a causar lesiones graves, normalmente con un arma. Las agresiones menores no son delitos de Parte I y no se cuentan aquí.',
+    },
+  },
+  burglary: {
+    id: 'crime_burglary',
+    slug: 'crime-burglary',
+    label: { en: 'Burglary', es: 'Robo con allanamiento' },
+    gloss: {
+      en: 'Entering a building to commit a crime inside it. No force is required for it to count, and no one need be home.',
+      es: 'Entrar en un edificio para cometer un delito dentro. No hace falta forzar la entrada ni que haya alguien en casa.',
+    },
+  },
+  larceny: {
+    id: 'crime_larceny',
+    slug: 'crime-larceny',
+    label: { en: 'Larceny', es: 'Hurto' },
+    gloss: {
+      en: 'Theft of property with no force and no breaking in — shoplifting, theft from a vehicle, a package taken from a step. By far the most common Part I offense.',
+      es: 'Robo de bienes sin fuerza ni allanamiento: hurto en tiendas, robo desde un vehículo, un paquete tomado de la entrada. Con diferencia, el delito de Parte I más común.',
+    },
+  },
+  autoTheft: {
+    id: 'crime_auto_theft',
+    slug: 'crime-auto-theft',
+    label: { en: 'Auto theft', es: 'Robo de vehículos' },
+    gloss: {
+      en: 'Theft of a motor vehicle itself. Theft of something from inside a vehicle is larceny.',
+      es: 'Robo del vehículo en sí. El robo de algo del interior de un vehículo es hurto.',
+    },
+  },
+  arson: {
+    id: 'crime_arson',
+    slug: 'crime-arson',
+    label: { en: 'Arson', es: 'Incendio provocado' },
+    gloss: {
+      en: 'Deliberately setting fire to property.',
+      es: 'Prender fuego a la propiedad de forma deliberada.',
+    },
+  },
+};
+
+/**
+ * The eight single-offense layers, one per FBI Part I category, all reading
+ * the same file as the all-offenses layer and each shaded on its own scale.
+ *
+ * Generated from the shared offense table rather than written out eight times:
+ * the only things that differ between them are the label, the gloss and which
+ * band attribute they colour by, and eight near-identical 60-line entries is
+ * eight places for one of those caveats to fall out of sync.
+ */
+const CRIME_OFFENCE_LAYERS: LayerDefinition[] = OFFENCES.map((offence: { key: string; stops: number[] }) => {
+  const copy = OFFENCE_COPY[offence.key];
+  const bandKey = `${offence.key}Band`;
+  return {
+    id: copy.id,
+    slug: copy.slug,
+    category: 'environment',
+    label: {
+      en: `${copy.label.en} reported, Minneapolis`,
+      es: `${copy.label.es} denunciado, Minneapolis`,
+    },
+    summary: {
+      en: `${copy.gloss.en} Counted by Minneapolis neighborhood, per year.`,
+      es: `${copy.gloss.es} Contado por barrio de Minneapolis, por año.`,
+    },
+    whatThisMeans: {
+      en: `One of the eight FBI Part I categories the City of Minneapolis publishes a neighborhood count for. ${copy.gloss.en} The map shades each of the city’s 87 neighborhoods by how many were reported in the most recent complete calendar year, and the detail panel carries the other seven categories and the year-by-year series beside it. This is a count of reports, not of people, and holds no record of any person — the City aggregates the figures before publishing them, and nothing here resolves to an incident, an address, or an individual. Its scale is its own: the darkest band here does not mean the same number as the darkest band on another offense’s map. It computes no score or index against any other layer, only the counts themselves.`,
+      es: `Una de las ocho categorías de Parte I del FBI para las que la Ciudad de Minneapolis publica un recuento por barrio. ${copy.gloss.es} El mapa sombrea cada uno de los 87 barrios de la ciudad según cuántos se denunciaron en el último año calendario completo, y el panel de detalle incluye junto a ello las otras siete categorías y la serie año por año. Es un recuento de denuncias, no de personas, y no contiene registro de ninguna persona: la Ciudad agrega las cifras antes de publicarlas, y nada aquí se resuelve a un incidente, una dirección o un individuo. Su escala es propia: la banda más oscura aquí no significa el mismo número que la banda más oscura del mapa de otro delito. No calcula ningún puntaje ni índice frente a otra capa, solo los recuentos mismos.`,
+    },
+    geometryNote: CRIME_GEOMETRY_NOTE,
+    limitations: CRIME_LIMITATIONS,
+    geometry: 'polygon',
+    color: '#a3e635',
+    colorLight: '#4d7c0f',
+    categoryColors: {
+      key: bandKey,
+      label: {
+        en: `${copy.label.en} reported`,
+        es: `${copy.label.es} denunciado`,
+      },
+      colors: crimeBands(offence.stops),
+      fallback: CRIME_FALLBACK,
+    },
+    hoverCard: { fields: [offence.key, 'statYear', 'reportedTotal'] },
+    dataPath: '/data/crime-minneapolis.geojson',
+    csvPath: null,
+    provenance: CRIME_PROVENANCE,
+    filters: [
+      {
+        key: bandKey,
+        kind: 'enum',
+        label: {
+          en: `${copy.label.en} reported`,
+          es: `${copy.label.es} denunciado`,
+        },
+      },
+    ],
+    detailFields: CRIME_DETAIL_FIELDS,
+  };
+});
 
 /**
  * Plain-language label for each of CI-MAP's 26 stressor codes, for the
@@ -2494,76 +2751,30 @@ export const LAYERS: LayerDefinition[] = [
       es: 'Delitos denunciados, barrios de Minneapolis',
     },
     summary: {
-      en: 'Offenses reported to Minneapolis police in each neighborhood each year, as the City publishes them.',
-      es: 'Delitos denunciados a la policía de Minneapolis en cada barrio cada año, tal como los publica la Ciudad.',
+      en: 'All eight FBI Part I offenses together, reported to Minneapolis police in each neighborhood each year. The eight are also mappable one at a time.',
+      es: 'Los ocho delitos de Parte I del FBI juntos, denunciados a la policía de Minneapolis en cada barrio cada año. Los ocho también se pueden mapear por separado.',
     },
     whatThisMeans: {
-      en: 'The City of Minneapolis publishes a count of reported offenses in each of its 87 neighborhoods, every month, in eight categories the FBI’s Uniform Crime Reporting program calls Part I offenses: homicide, rape, robbery, aggravated assault, burglary, larceny, auto theft, and arson. This layer shows those counts rolled up to full calendar years, with each neighborhood’s year-by-year figures in its detail panel. These are counts of reports, not of people, and this layer holds no record of any person — the City aggregates the figures before publishing them, and nothing here resolves to an incident, an address, or an individual. A reader may want to set these numbers beside where surveillance equipment sits, or beside the poverty and population layers on this map. That is a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the counts themselves.',
-      es: 'La Ciudad de Minneapolis publica un recuento de delitos denunciados en cada uno de sus 87 barrios, cada mes, en ocho categorías que el programa de Informes Uniformes de Delitos del FBI llama delitos de Parte I: homicidio, violación, robo con violencia, agresión con agravantes, robo con allanamiento, hurto, robo de vehículos e incendio provocado. Esta capa muestra esos recuentos agrupados por años calendario completos, con las cifras año por año de cada barrio en su panel de detalle. Son recuentos de denuncias, no de personas, y esta capa no contiene registro de ninguna persona: la Ciudad agrega las cifras antes de publicarlas, y nada aquí se resuelve a un incidente, una dirección o un individuo. Quien lea puede querer poner estas cifras junto a dónde se ubican los equipos de vigilancia, o junto a las capas de pobreza y población de este mapa. Esa es una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo los recuentos mismos.',
+      en: 'The City of Minneapolis publishes a count of reported offenses in each of its 87 neighborhoods, every month, in eight categories the FBI’s Uniform Crime Reporting program calls Part I offenses: homicide, rape, robbery, aggravated assault, burglary, larceny, auto theft, and arson. This layer shows all eight added together, rolled up to full calendar years, with each neighborhood’s year-by-year figures in its detail panel. Because larceny outnumbers every other category several times over, this combined total largely traces where larceny is reported — the eight single-offense layers beside it are where a different pattern shows up, and a homicide map and a larceny map look nothing alike. These are counts of reports, not of people, and this layer holds no record of any person — the City aggregates the figures before publishing them, and nothing here resolves to an incident, an address, or an individual. A reader may want to set these numbers beside where surveillance equipment sits, or beside the poverty and population layers on this map. That is a question this layer states the numbers for and answers for no one: it computes no score or index against any other layer, only the counts themselves.',
+      es: 'La Ciudad de Minneapolis publica un recuento de delitos denunciados en cada uno de sus 87 barrios, cada mes, en ocho categorías que el programa de Informes Uniformes de Delitos del FBI llama delitos de Parte I: homicidio, violación, robo con violencia, agresión con agravantes, robo con allanamiento, hurto, robo de vehículos e incendio provocado. Esta capa muestra los ocho sumados, agrupados por años calendario completos, con las cifras año por año de cada barrio en su panel de detalle. Como el hurto supera varias veces a todas las demás categorías, este total combinado traza en gran medida dónde se denuncia el hurto: las ocho capas de delito individual que la acompañan son donde aparece un patrón distinto, y un mapa de homicidios y uno de hurtos no se parecen en nada. Son recuentos de denuncias, no de personas, y esta capa no contiene registro de ninguna persona: la Ciudad agrega las cifras antes de publicarlas, y nada aquí se resuelve a un incidente, una dirección o un individuo. Quien lea puede querer poner estas cifras junto a dónde se ubican los equipos de vigilancia, o junto a las capas de pobreza y población de este mapa. Esa es una pregunta para la que esta capa presenta las cifras y no responde por nadie: no calcula ningún puntaje ni índice frente a otra capa, solo los recuentos mismos.',
     },
-    geometryNote: {
-      en: 'A Minneapolis neighborhood, as the City draws them — 87 areas covering the city, of widely differing size and population.',
-      es: 'Un barrio de Minneapolis, según los traza la Ciudad: 87 áreas que cubren la ciudad, de tamaño y población muy dispares.',
-    },
-    limitations: [
-      {
-        en: 'A count of offenses reported to and recorded by police. It is a record of what was reported and what police chose to record, which is not the same as a record of what happened. Reporting rates differ by offense and by neighborhood, and a change in a count can reflect a change in reporting or recording practice rather than a change in events.',
-        es: 'Un recuento de delitos denunciados a la policía y registrados por ella. Es un registro de lo que se denunció y de lo que la policía decidió registrar, que no es lo mismo que un registro de lo que ocurrió. Las tasas de denuncia difieren según el delito y el barrio, y un cambio en un recuento puede reflejar un cambio en la práctica de denuncia o de registro más que un cambio en los hechos.',
-      },
-      {
-        en: 'Counts, not rates. A larger or busier neighborhood will show a higher count without that meaning more per resident. This layer publishes no per-resident rate, because the City publishes no neighborhood population to divide by, and apportioning census-tract populations across neighborhood lines would be a number this project invented rather than one any source states.',
-        es: 'Recuentos, no tasas. Un barrio más grande o más concurrido mostrará un recuento mayor sin que eso signifique más por residente. Esta capa no publica ninguna tasa por residente, porque la Ciudad no publica una población por barrio con la que dividir, y repartir la población de las secciones censales entre los límites de los barrios sería una cifra inventada por este proyecto y no una que ninguna fuente declare.',
-      },
-      {
-        en: 'The published series begins in 2018. The upstream dataset’s first year, 2017, holds August through December only, and is left out rather than shown as a full year that would read as a collapse in reported crime that did not happen. The current calendar year is likewise incomplete, and is shown only as a separately labeled partial-year total.',
-        es: 'La serie publicada comienza en 2018. El primer año del conjunto de datos original, 2017, contiene solo de agosto a diciembre, y se excluye en lugar de mostrarse como un año completo que se leería como una caída de la delincuencia denunciada que no ocurrió. El año calendario en curso también está incompleto y se muestra solo como un total parcial etiquetado por separado.',
-      },
-      {
-        en: 'The City changed how incidents are assigned to neighborhoods in February 2019, when it moved to a new police records system. Counts before that date were assigned under the previous system, so the earliest figures are not strictly comparable to later years.',
-        es: 'La Ciudad cambió la forma de asignar incidentes a los barrios en febrero de 2019, al pasar a un nuevo sistema de registros policiales. Los recuentos anteriores a esa fecha se asignaron con el sistema previo, por lo que las primeras cifras no son estrictamente comparables con los años posteriores.',
-      },
-      {
-        en: 'Eight offense categories only — the FBI’s Part I list. Offenses outside it are not counted here at all, and the City publishes no breakdown finer than these eight.',
-        es: 'Solo ocho categorías de delitos: la lista de Parte I del FBI. Los delitos fuera de ella no se cuentan aquí en absoluto, y la Ciudad no publica ningún desglose más fino que estas ocho.',
-      },
-      {
-        en: 'Minneapolis only. This is one city of more than 850 in Minnesota, and the rest of this map’s area has no crime layer, because no source publishes comparable neighborhood-level figures statewide.',
-        es: 'Solo Minneapolis. Esta es una ciudad de más de 850 en Minnesota, y el resto del área de este mapa no tiene capa de delincuencia, porque ninguna fuente publica cifras comparables a nivel de barrio en todo el estado.',
-      },
-    ],
+    geometryNote: CRIME_GEOMETRY_NOTE,
+    limitations: CRIME_LIMITATIONS,
     geometry: 'polygon',
     color: '#a3e635',
     colorLight: '#4d7c0f',
     categoryColors: {
       key: 'reportedTotalBand',
       label: { en: 'Reported Part I offenses', es: 'Delitos de Parte I denunciados' },
-      // Fixed absolute stops, not quantiles — see the ingest script's note on
-      // why a data-driven scheme would recolour a neighborhood in a year its
-      // own count never moved.
-      colors: [
-        { value: '0–39', color: '#f7fee7' },
-        { value: '40–99', color: '#d9f99d' },
-        { value: '100–199', color: '#a3e635' },
-        { value: '200–449', color: '#65a30d' },
-        { value: '450+', color: '#365314' },
-      ],
-      fallback: '#6b7280',
+      colors: crimeBands(TOTAL_STOPS),
+      fallback: CRIME_FALLBACK,
     },
     hoverCard: {
       fields: ['reportedTotal', 'statYear', 'violentTotal'],
     },
     dataPath: '/data/crime-minneapolis.geojson',
     csvPath: null,
-    provenance: {
-      source: 'City of Minneapolis Open Data, NEIGHBORHOOD CRIME STATS and Minneapolis Neighborhoods',
-      sourceUrl: 'https://opendata.minneapolismn.gov/datasets/97ce8f1a93084479929be2750b25187f_0/about',
-      license: 'CC0 1.0 Universal (public domain dedication)',
-      licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
-      attribution: 'City of Minneapolis Open Data',
-      sourceDate: null,
-      lastUpdated: null,
-      refresh: 'periodic',
-    },
+    provenance: CRIME_PROVENANCE,
     filters: [
       {
         key: 'reportedTotalBand',
@@ -2571,27 +2782,8 @@ export const LAYERS: LayerDefinition[] = [
         label: { en: 'Reported Part I offenses', es: 'Delitos de Parte I denunciados' },
       },
     ],
-    detailFields: [
-      { key: 'reportedTotal', label: { en: 'Reported Part I offenses, latest full year', es: 'Delitos de Parte I denunciados, último año completo' } },
-      { key: 'statYear', label: { en: 'Latest full year', es: 'Último año completo' } },
-      { key: 'violentTotal', label: { en: 'Violent offenses (homicide, rape, robbery, aggravated assault)', es: 'Delitos violentos (homicidio, violación, robo con violencia, agresión con agravantes)' } },
-      { key: 'propertyTotal', label: { en: 'Property offenses (burglary, larceny, auto theft, arson)', es: 'Delitos contra la propiedad (robo con allanamiento, hurto, robo de vehículos, incendio provocado)' } },
-      { key: 'homicide', label: { en: 'Homicide', es: 'Homicidio' } },
-      { key: 'rape', label: { en: 'Rape', es: 'Violación' } },
-      { key: 'robbery', label: { en: 'Robbery', es: 'Robo con violencia' } },
-      { key: 'aggravatedAssault', label: { en: 'Aggravated assault', es: 'Agresión con agravantes' } },
-      { key: 'burglary', label: { en: 'Burglary', es: 'Robo con allanamiento' } },
-      { key: 'larceny', label: { en: 'Larceny', es: 'Hurto' } },
-      { key: 'autoTheft', label: { en: 'Auto theft', es: 'Robo de vehículos' } },
-      { key: 'arson', label: { en: 'Arson', es: 'Incendio provocado' } },
-      // One row per complete calendar year. The ingest decides which years are
-      // complete and emits a totalYYYY attribute for each; bump LAST_FULL_YEAR
-      // when a new year closes and the row appears. A year with no attribute
-      // simply does not render.
-      ...YEAR_ROWS,
-      { key: 'changeSinceFirstFullYear', label: { en: 'Change in reported Part I offenses, first to latest full year', es: 'Cambio en delitos de Parte I denunciados, del primer al último año completo' } },
-      { key: 'partialYearLabel', label: { en: 'Current year so far', es: 'Año en curso hasta ahora' } },
-      { key: 'partialYearTotal', label: { en: 'Reported Part I offenses, current year so far', es: 'Delitos de Parte I denunciados, año en curso hasta ahora' } },
-    ],
+    detailFields: CRIME_DETAIL_FIELDS,
   },
+
+  ...CRIME_OFFENCE_LAYERS,
 ];
