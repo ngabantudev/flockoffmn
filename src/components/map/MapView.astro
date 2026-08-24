@@ -466,26 +466,32 @@ const strings = {
                   </svg>
 
                   {/*
-                    `min-w-0 flex-1` on this group + `truncate` on the label
-                    is what actually pins the switch to a fixed right-hand
-                    column: without it, a long category name pushes the row
-                    wider instead of yielding, so the switch lands at a
-                    different offset (or off-screen) per category instead of
-                    lining up down the list.
+                    `min-w-0 flex-1` on this group is what pins the switch to
+                    a fixed right-hand column: without it, a long category
+                    name pushes the row wider instead of yielding, so the
+                    switch lands at a different offset (or off-screen) per
+                    category instead of lining up down the list. This group
+                    is deliberately NOT itself a flex row — the name and
+                    count are plain inline text so they can wrap onto a
+                    second line together on a narrow phone instead of either
+                    forcing the row wider or truncating a name like
+                    "Surveillance Apparatus" into an unreadable fragment.
                   */}
-                  <span class="flex min-w-0 flex-1 items-center gap-2">
-                    <span data-category-label class="truncate text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
+                  <span class="min-w-0 flex-1">
+                    <span data-category-label class="text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
                       {group.label}
-                    </span>
+                    </span>{' '}
                     {/*
                       "(n/m)" sits right next to the category name it counts
                       — a plain-language sentence for a screen reader
                       instead, since a bare fraction in parentheses reads as
                       noise without the word "shown". tabular-nums keeps the
-                      digits from reflowing the row as the count changes.
+                      digits from reflowing as the count changes;
+                      whitespace-nowrap keeps the fraction itself from
+                      splitting across a wrap.
                     */}
                     <span
-                      class="shrink-0 font-mono text-[10px] whitespace-nowrap tabular-nums text-ink-400"
+                      class="font-mono text-[10px] whitespace-nowrap tabular-nums text-ink-400"
                       aria-hidden="true"
                     >
                       (<span data-group-on={group.id}>0</span>/<span>{group.layers.length}</span>)
@@ -512,8 +518,17 @@ const strings = {
                     position across every category, since the label group
                     above it now absorbs all the row's give.
                   */}
+                  {/*
+                    "None"/"All" are purely decorative (aria-hidden — the
+                    switch already carries its full meaning in aria-label),
+                    so they're the first thing to give up room. Hidden below
+                    `sm` where every pixel is fought over by the category
+                    name: without this, a name like "Environment & Health"
+                    or "Surveillance Apparatus" was truncating to
+                    unreadable fragments on an actual phone width.
+                  */}
                   <span class="flex shrink-0 items-center gap-1.5">
-                    <span class="text-[10px] text-ink-400" aria-hidden="true">
+                    <span class="hidden text-[10px] text-ink-400 sm:inline" aria-hidden="true">
                       {strings.filterNone}
                     </span>
                     <button
@@ -524,7 +539,7 @@ const strings = {
                       class="switch"
                       data-category-switch={group.id}
                     />
-                    <span class="text-[10px] text-ink-400" aria-hidden="true">
+                    <span class="hidden text-[10px] text-ink-400 sm:inline" aria-hidden="true">
                       {strings.filterAll}
                     </span>
                   </span>
