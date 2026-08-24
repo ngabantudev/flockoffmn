@@ -341,13 +341,30 @@ const screened = archive ? screenedTotal(archive) : 0;
       surface that makes this read as chrome rather than as content — the same
       job mndatacenter's `.band-sub` does between its navy header and its
       off-white list.
+
+      No `border-b` between this band and the topic band below it: the two
+      are still separate `role="group"`s on separate surfaces (WCAG and the
+      `sections` test both require that), but a hairline between two strips
+      that are each two rows tall read as two separate chrome zones stacked
+      above the first headline. Dropping just that rule reads as one two-row
+      control cluster instead — the group boundary is still there for
+      anyone using it, it just isn't drawn as a wall.
+
+      Padding is untouched on purpose, even though it looks like the more
+      complete version of this idea would also tighten it: doing that shrank
+      the space between the topic band and the first row enough to pull one
+      real headline's link (a genuinely short, one-line title — 328×15px)
+      inside 24px of the topic band's last chip, which fails 2.5.8's
+      spacing exemption for an undersized target. Caught by
+      tests/wcag.test.mjs against the live committed archive, not a
+      synthetic case — reverted rather than chasing the geometry further.
     */}
     <div
       role="group"
       aria-label={t('newsRangeLabel')}
       class:list={[
         'flex flex-wrap items-center gap-1.5',
-        rail ? 'news-band-sub border-b border-ink-800 bg-ink-950 px-4 py-2.5' : '',
+        rail ? 'news-band-sub bg-ink-950 px-4 py-2.5' : '',
       ]}
     >
       {
@@ -386,6 +403,10 @@ const screened = archive ? screenedTotal(archive) : 0;
           aria-label={t('newsTopicLabel')}
           class:list={[
             'flex flex-wrap items-center gap-1.5',
+            // The one border that still separates the whole two-row control
+            // cluster from the curve and list below it — see the range
+            // band's comment above for why there's no border between the
+            // two bands themselves.
             rail ? 'border-b border-ink-800 bg-ink-900 px-4 py-2.5' : 'mt-3',
           ]}
         >
@@ -466,13 +487,30 @@ const screened = archive ? screenedTotal(archive) : 0;
           role="img"
           aria-label={`${t('newsCurveAlt')} ${series.map((s) => `${monthLabel(s.key)}: ${s.count}`).join(', ')}`}
         >
+          {/*
+            One color of data (§1c — this is coverage volume, nothing else),
+            so the gradient is the accent token at two opacities rather than a
+            second hue: introducing a new color here would need its own
+            light/dark and en/es contrast pass, for a bar chart whose fill has
+            no contrast requirement in the first place (it carries no text).
+            Fading top-to-bottom gives the bars some depth without claiming a
+            second thing about the data. One id per density: rail and
+            archive never render on the same page today, but a shared id
+            would be a landmine for whoever changes that.
+          */}
+          <defs>
+            <linearGradient id={`news-curve-fill-${rail ? 'rail' : 'full'}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" class="[stop-color:var(--color-accent)]" stop-opacity="0.9" />
+              <stop offset="100%" class="[stop-color:var(--color-accent)]" stop-opacity="0.45" />
+            </linearGradient>
+          </defs>
           {series.map((point, i) => (
             <rect
               x={i * (barW + barGap)}
               y={SPARK_H - barHeight(point.count)}
               width={barW}
               height={barHeight(point.count)}
-              class="fill-accent/70"
+              fill={`url(#news-curve-fill-${rail ? 'rail' : 'full'})`}
             />
           ))}
         </svg>
