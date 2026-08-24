@@ -562,12 +562,20 @@ const strings = {
                     {group.layers.map((layer) => (
                         <li data-layer-row={layer.id} data-layer-name={layer.label.toLowerCase()}>
                           <div class="flex min-h-11 items-start gap-2.5 px-2.5 py-2.5 hover:bg-ink-850">
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={layer.defaultOn ? 'true' : 'false'}
+                            {/*
+                              Layer-level control (level 2) is a checkbox, not
+                              a switch — the switch language is reserved for
+                              the parent category's bulk control above. A
+                              plain checked/unchecked box reads as one item in
+                              a list rather than a device state, which fits a
+                              row that's one of many rather than the single
+                              bulk decision a category switch represents.
+                            */}
+                            <input
+                              type="checkbox"
+                              checked={layer.defaultOn}
                               aria-label={fillStatic(strings.filterLayerToggleLabel, { layer: layer.label })}
-                              class="switch mt-0.5"
+                              class="mt-1 h-4 w-4 shrink-0 accent-accent"
                               data-layer-switch={layer.id}
                             />
                             <div class="min-w-0 flex-1">
@@ -2260,12 +2268,21 @@ const strings = {
     });
   });
 
-  /** A `role="switch"` button's own boolean state. */
-  function isOn(btn: Element): boolean {
-    return btn.getAttribute('aria-checked') === 'true';
+  /**
+   * A control's own boolean state — works for both the category-level
+   * `role="switch"` button (state lives in `aria-checked`) and the
+   * layer-level checkbox (state lives in `.checked`).
+   */
+  function isOn(el: Element): boolean {
+    if (el instanceof HTMLInputElement) return el.checked;
+    return el.getAttribute('aria-checked') === 'true';
   }
-  function setOn(btn: Element, on: boolean) {
-    btn.setAttribute('aria-checked', String(on));
+  function setOn(el: Element, on: boolean) {
+    if (el instanceof HTMLInputElement) {
+      el.checked = on;
+      return;
+    }
+    el.setAttribute('aria-checked', String(on));
   }
 
   /**
@@ -2284,7 +2301,7 @@ const strings = {
     for (const layer of layers) {
       const cc = layer.categoryColors;
       if (!cc || cc.showOnMapKey === false) continue;
-      const btn = document.querySelector<HTMLButtonElement>(`[data-layer-switch="${layer.id}"]`);
+      const btn = document.querySelector<HTMLElement>(`[data-layer-switch="${layer.id}"]`);
       if (!btn || !isOn(btn)) continue;
 
       const card = document.createElement('div');
@@ -2334,7 +2351,7 @@ const strings = {
    */
   function refreshGroups() {
     groupEls.forEach((group) => {
-      const switches = [...group.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')];
+      const switches = [...group.querySelectorAll<HTMLElement>('[data-layer-switch]')];
       const onCount = switches.filter((s) => isOn(s)).length;
       const onBadge = group.querySelector('[data-group-on]');
       if (onBadge) onBadge.textContent = String(onCount);
@@ -2346,11 +2363,15 @@ const strings = {
     refreshMapKeys();
   }
 
-  document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+  document.querySelectorAll<HTMLElement>('[data-layer-switch]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const layer = layerById.get(btn.dataset.layerSwitch!);
-      const next = !isOn(btn);
-      setOn(btn, next);
+      // A checkbox's native click already flips `.checked` before this
+      // listener runs, so `isOn(btn)` already reads the new state; a
+      // `role="switch"` button has no such native behavior and still needs
+      // an explicit flip.
+      const next = btn instanceof HTMLInputElement ? btn.checked : !isOn(btn);
+      if (!(btn instanceof HTMLInputElement)) setOn(btn, next);
       if (layer) controller.setLayerVisible(layer, next);
       refreshGroups();
       syncFilterStateToUrl();
@@ -2360,7 +2381,7 @@ const strings = {
   // Layers the registry marks `defaultOn` ship pre-checked (aria-checked
   //="true") in the markup, but nothing has told the controller yet — that
   // happens here, once, on load.
-  document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+  document.querySelectorAll<HTMLElement>('[data-layer-switch]').forEach((btn) => {
     if (!isOn(btn)) return;
     const layer = layerById.get(btn.dataset.layerSwitch!);
     if (layer) controller.setLayerVisible(layer, true);
@@ -2384,7 +2405,7 @@ const strings = {
       const groupId = bulk.dataset.categorySwitch!;
       const group = document.querySelector<HTMLElement>(`[data-layer-group="${groupId}"]`);
       if (!group) return;
-      const switches = [...group.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')];
+      const switches = [...group.querySelectorAll<HTMLElement>('[data-layer-switch]')];
       const allOn = switches.length > 0 && switches.every((s) => isOn(s));
       const turnOn = !allOn;
       controller.runBatched(() => {
@@ -2418,7 +2439,7 @@ const strings = {
   let nearMePriorLayerState: Map<string, boolean> | null = null;
 
   function setNearMeLayerMode(active: boolean) {
-    const switches = [...document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')];
+    const switches = [...document.querySelectorAll<HTMLElement>('[data-layer-switch]')];
     controller.runBatched(() => {
       if (active) {
         if (!nearMePriorLayerState) {
@@ -2640,7 +2661,7 @@ const strings = {
         input.value = '';
       });
 
-      document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+      document.querySelectorAll<HTMLElement>('[data-layer-switch]').forEach((btn) => {
         setOn(btn, false);
         const layer = layerById.get(btn.dataset.layerSwitch!);
         if (layer) controller.setLayerVisible(layer, false);
@@ -2892,7 +2913,7 @@ const strings = {
     for (const key of [...url.searchParams.keys()]) {
       if (key === 'on' || key.startsWith('f.') || key.startsWith('fd.')) url.searchParams.delete(key);
     }
-    const onIds = [...document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')]
+    const onIds = [...document.querySelectorAll<HTMLElement>('[data-layer-switch]')]
       .filter((btn) => isOn(btn))
       .map((btn) => btn.dataset.layerSwitch!);
     if (onIds.length) url.searchParams.set('on', onIds.join(','));
@@ -2932,7 +2953,7 @@ const strings = {
       const onParam = params.get('on');
       if (onParam !== null) {
         const onSet = new Set(onParam.split(',').filter(Boolean));
-        document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+        document.querySelectorAll<HTMLElement>('[data-layer-switch]').forEach((btn) => {
           const shouldBeOn = onSet.has(btn.dataset.layerSwitch!);
           if (isOn(btn) === shouldBeOn) return;
           setOn(btn, shouldBeOn);
@@ -2997,7 +3018,7 @@ const strings = {
   status(S.loading, 0);
   controller.map.once('load', () => {
     for (const id of DEFAULT_ON) {
-      const btn = document.querySelector<HTMLButtonElement>(`[data-layer-switch="${id}"]`);
+      const btn = document.querySelector<HTMLElement>(`[data-layer-switch="${id}"]`);
       const layer = layerById.get(id);
       if (btn && layer) {
         setOn(btn, true);
