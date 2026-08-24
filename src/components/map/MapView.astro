@@ -614,7 +614,8 @@ const strings = {
                               type="checkbox"
                               checked={layer.defaultOn}
                               aria-label={fillStatic(strings.filterLayerToggleLabel, { layer: layer.label })}
-                              class="mt-1 h-4 w-4 shrink-0 accent-accent"
+                              class="mt-1 h-4 w-4 shrink-0 accent-current"
+                              style={`color:var(--layer-color-${layer.id})`}
                               data-layer-switch={layer.id}
                             />
                             <div class="min-w-0 flex-1">
@@ -2563,17 +2564,42 @@ const strings = {
    * reader sees always reflects whatever *other* filters are active on the
    * same layer, not a static build-time tally.
    */
+  /**
+   * Every value badge's count, recomputed. Grouped by (layerId, key) first
+   * rather than looping `controller.filteredFeatures(layerId)` once per
+   * badge: that used to mean a layer with V distinct filter values paid for
+   * V independent full scans of its own feature array on every single
+   * interaction anywhere in the panel — for `holc_appraisal_detail`
+   * (11,561 features), one checkbox tick elsewhere on the page re-scanned
+   * it once per value badge it has. Now each (layerId, key) pair scans its
+   * layer's filtered features exactly once and tallies every value in that
+   * one pass.
+   */
   function refreshFilterCounts() {
+    // layerId -> key -> that (layer, key) pair's badges.
+    const byLayer = new Map<string, Map<string, { value: string; el: HTMLElement }[]>>();
     document.querySelectorAll<HTMLElement>('[data-filter-value-count]').forEach((el) => {
       const [layerId, key, value] = el.dataset.filterValueCount!.split(':');
-      const matches = controller.filteredFeatures(layerId!);
-      let count = 0;
-      for (const f of matches) {
-        const raw = (f.properties.attributes as Record<string, unknown>)[key!];
-        if (raw != null && String(raw) === value) count++;
-      }
-      el.textContent = String(count);
+      if (!layerId || !key || value === undefined) return;
+      let byKey = byLayer.get(layerId);
+      if (!byKey) byLayer.set(layerId, (byKey = new Map()));
+      const badges = byKey.get(key);
+      if (badges) badges.push({ value, el });
+      else byKey.set(key, [{ value, el }]);
     });
+    for (const [layerId, byKey] of byLayer) {
+      const matches = controller.filteredFeatures(layerId);
+      for (const [key, badges] of byKey) {
+        const counts = new Map<string, number>();
+        for (const f of matches) {
+          const raw = (f.properties.attributes as Record<string, unknown>)[key];
+          if (raw == null) continue;
+          const v = String(raw);
+          counts.set(v, (counts.get(v) ?? 0) + 1);
+        }
+        for (const { value, el } of badges) el.textContent = String(counts.get(value) ?? 0);
+      }
+    }
   }
 
   document.querySelectorAll<HTMLInputElement>('[data-filter-key]').forEach((input) => {
@@ -3106,13 +3132,24 @@ const strings = {
   applyFilterStateFromUrl();
 
   status(S.loading, 0);
+  // A shared URL's `on=` param already decided which layers are on/off —
+  // applyFilterStateFromUrl() ran above and its comment says the URL wins.
+  // Checked again here, not just there: this runs later, inside `map.once
+  // ('load', …)`, so without this check a DEFAULT_ON layer explicitly left
+  // out of a shared link would sit correctly off for a moment and then get
+  // silently forced back on the instant the map finished loading. Inert
+  // today since DEFAULT_ON is empty, but the ordering bug ships regardless
+  // of that and would only surface once someone repopulates it.
+  const urlSpecifiedLayerState = new URLSearchParams(window.location.search).has('on');
   controller.map.once('load', () => {
-    for (const id of DEFAULT_ON) {
-      const btn = document.querySelector<HTMLElement>(`[data-layer-switch="${id}"]`);
-      const layer = layerById.get(id);
-      if (btn && layer) {
-        setOn(btn, true);
-        controller.setLayerVisible(layer, true);
+    if (!urlSpecifiedLayerState) {
+      for (const id of DEFAULT_ON) {
+        const btn = document.querySelector<HTMLElement>(`[data-layer-switch="${id}"]`);
+        const layer = layerById.get(id);
+        if (btn && layer) {
+          setOn(btn, true);
+          controller.setLayerVisible(layer, true);
+        }
       }
     }
     refreshGroups();

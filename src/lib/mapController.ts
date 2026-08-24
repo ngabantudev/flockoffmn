@@ -2777,9 +2777,19 @@ export class MapController {
         // A `levelOfDetail` layer switched on at a zoom below its
         // `fullDetailFromZoom` draws the coarser file from the start, not the
         // full-resolution one for one frame before swapping down — so the
-        // simplified fetch has to land before addLayer, not after it.
+        // simplified fetch has to land before addLayer, not after it. Its
+        // own try/catch, separate from this method's outer one: the
+        // simplified file is a rendering optimization, not the canonical
+        // data — `renderFeatures` already falls back to full resolution
+        // when `simplifiedData` has nothing for this layer, so a 404 or
+        // network blip on just that file shouldn't fail the whole layer
+        // load when the real data fetched fine.
         if (layer.levelOfDetail && this.map.getZoom() < layer.levelOfDetail.fullDetailFromZoom) {
-          await this.fetchSimplifiedFeatures(layer);
+          try {
+            await this.fetchSimplifiedFeatures(layer);
+          } catch {
+            // Fall through and draw at full resolution instead.
+          }
         }
         await this.ready();
         // Glyphs before the layer that references them: MapLibre would warn and
@@ -3683,7 +3693,7 @@ export class MapController {
   setLayerVisible(layer: ClientLayer, visible: boolean) {
     if (visible) {
       this.visible.add(layer.id);
-      void this.loadLayer(layer).then(() => {
+      const load = this.loadLayer(layer).then(() => {
         this.applyVisibility(layer);
         // The controls are on the page before the data is: a filter ticked
         // while this layer was still downloading (or still switched off) has
@@ -3691,6 +3701,12 @@ export class MapController {
         // filtered subset; the zoom the tick promised happens now.
         if ((this.filters.get(layer.id)?.size ?? 0) > 0) this.maybeZoomAfterFilterChange(layer.id);
       });
+      // See batchPendingLoads' own comment: an open batch has to wait for
+      // this before it can tell whether it owes one camera decision or
+      // none, since maybeZoomAfterFilterChange above only runs once `load`
+      // settles.
+      if (this.batchDepth > 0) this.batchPendingLoads.push(load);
+      else void load;
     } else {
       this.visible.delete(layer.id);
       // A selection outlives its own layer otherwise. The highlight is
@@ -3895,19 +3911,36 @@ export class MapController {
   private batchDepth = 0;
   private batchDirty = false;
   private lastBatchLayerId: string | null = null;
+  /**
+   * Layer-load promises kicked off by `setLayerVisible(layer, true)` while a
+   * batch is open. `maybeZoomAfterFilterChange`/`maybeEmitCounts` only run
+   * from inside that load's `.then()` — a microtask that resolves *after*
+   * `fn()` returns, by which point a naive `finally` block has already
+   * decremented `batchDepth` back to 0 and settled. Without waiting for
+   * these, a bulk switch turning on several not-yet-loaded, actively
+   * filtered layers fired one camera jump per layer as each load finished,
+   * instead of the single eased transition this method promises.
+   */
+  private batchPendingLoads: Promise<unknown>[] = [];
 
   /**
    * Run `fn`, deferring every `setLayerVisible`/`setFilter`/`clearFilters`
-   * camera move and count emission inside it to a single decision made once
-   * `fn` returns. Nestable — only the outermost call settles anything.
-   * Callers that need to announce the result (an aria-live region) should
-   * do so once, after this returns, not inside `fn`.
+   * camera move and count emission inside it — including ones that only
+   * resolve once a newly-visible layer finishes loading — to a single
+   * decision made once every load `fn` started has settled. Nestable — only
+   * the outermost call settles anything. Callers that need to announce the
+   * result (an aria-live region) should do so once, after this returns
+   * (or after awaiting it, if the announcement depends on the settled
+   * camera/count state), not inside `fn`.
    */
-  runBatched(fn: () => void) {
+  async runBatched(fn: () => void): Promise<void> {
     this.batchDepth++;
+    const startIdx = this.batchPendingLoads.length;
     try {
       fn();
     } finally {
+      const pending = this.batchPendingLoads.splice(startIdx);
+      if (pending.length > 0) await Promise.allSettled(pending);
       this.batchDepth--;
       if (this.batchDepth === 0 && this.batchDirty) {
         this.batchDirty = false;
