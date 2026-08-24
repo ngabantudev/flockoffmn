@@ -1251,13 +1251,18 @@ export const LAYERS: LayerDefinition[] = [
     id: 'redlining',
     slug: 'redlining',
     category: 'historical',
+    // Paired with holc_appraisal_detail's label below — same "Redlining
+    // (<resolution>)" pattern so the two read as one document traced at two
+    // scales, not as unrelated layers. HOLC itself is glossed in `summary`
+    // and the site glossary rather than repeated in the label now that both
+    // names carry it implicitly through "Redlining".
     label: {
-      en: 'Redlining zones (HOLC)',
-      es: 'Zonas de redlining (HOLC)',
+      en: 'Redlining (Neighborhood)',
+      es: 'Redlining (Barrio)',
     },
     summary: {
-      en: '1930s federal mortgage-risk grades that steered lending away from Black and immigrant neighbourhoods.',
-      es: 'Calificaciones federales de riesgo hipotecario de los años 30 que desviaron el crédito de barrios negros e inmigrantes.',
+      en: 'Mapping Inequality’s digitization of the original HOLC maps — 168 hand-drawn neighborhood areas across 8 Minnesota cities, each with a grade letter (A–D) and, where the sheet survives, the appraiser’s own written notes.',
+      es: 'Digitalización de Mapping Inequality de los mapas originales de HOLC — 168 áreas de barrio dibujadas a mano en 8 ciudades de Minnesota, cada una con una calificación (A–D) y, cuando se conserva la hoja, las notas escritas por el propio tasador.',
     },
     whatThisMeans: {
       en: 'In the 1930s the federal Home Owners’ Loan Corporation graded neighbourhoods A through D for mortgage risk, and the grade turned explicitly on the race, ethnicity and immigration status of the residents. Areas graded D were outlined in red — "redlined" — and starved of lending for decades. These lines are the historical substrate beneath much of the present-day geography of wealth, housing and policing. Where the appraiser’s survey sheet survives, this layer also shows what they wrote to justify the grade — in their own words, unedited. This layer shows a policy applied to an area, drawn from digitised historical maps.',
@@ -1454,13 +1459,16 @@ export const LAYERS: LayerDefinition[] = [
     id: 'holc_appraisal_detail',
     slug: 'holc-detail',
     category: 'historical',
+    // See redlining's own label comment — same "Redlining (<resolution>)"
+    // pairing, so this reads as the same document at higher resolution
+    // rather than an unrelated layer that happens to share a topic.
     label: {
-      en: 'HOLC appraisal, block by block',
-      es: 'Tasación HOLC, manzana por manzana',
+      en: 'Redlining (Block by block)',
+      es: 'Redlining (Manzana por manzana)',
     },
     summary: {
-      en: 'The same Twin Cities sheet the redlining layer draws, retraced by the Metropolitan Council at the scale the colour was actually applied.',
-      es: 'La misma lámina de las Ciudades Gemelas que dibuja la capa de redlining, retrazada por el Metropolitan Council a la escala en que se aplicó el color.',
+      en: 'The Metropolitan Council’s re-tracing of the same historical coloring, following the actual colour on the map sheet block by block instead of the neighbourhood outline — 11,561 polygons, just for Minneapolis–St. Paul.',
+      es: 'El retrazado del Metropolitan Council del mismo coloreado histórico, siguiendo el color real de la hoja manzana por manzana en vez del contorno del barrio — 11,561 polígonos, solo para Mineápolis y San Pablo.',
     },
     whatThisMeans: {
       en: 'HOLC’s appraisers coloured their Minneapolis and St. Paul map block by block. The redlining layer beside this one shows the neighbourhood areas they outlined; this shows where the colour itself stopped. It is the same document at about seventy times the resolution — and because it follows the shading rather than the outline, it leaves out the lakes, parks and undeveloped land that a neighbourhood boundary necessarily swallows. Roughly an eighth of the ground on this sheet turns out to be water or parkland that was never graded at all. What it cannot tell you is what the appraiser wrote: the Metropolitan Council’s file carries a class and nothing else, no area identifier for a survey sheet to attach to. Each block therefore records which of the other layer’s areas it sits inside, so the prose is one tap away.',
