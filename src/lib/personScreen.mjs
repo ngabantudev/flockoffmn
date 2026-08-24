@@ -56,9 +56,17 @@ const NARRATIVE =
  * this list and had to come out: in this feed they are place and facility names
  * rather than people, and "Sherburne County jail" was suppressing the whole
  * guard — measured, on a headline the rules should have caught.
+ *
+ * Plural forms included on every entry (optional trailing `s`, `attorneys?
+ * general` for the one irregular one). This list is the opposite failure mode
+ * from the person-content rules below it: those are deliberately blunt because
+ * missing a person leaks one, but missing a plural role here means a systemic
+ * story about a body of officials — "County commissioners defend their vote" —
+ * loses its guard and gets misread as person content. §1b's asymmetry doesn't
+ * apply to this list; there's no privacy cost to recognising more officials.
  */
 const OFFICIAL_ROLE =
-  /\b(sheriff|police chief|chief|mayor|council|councilmember|commissioner|county attorney|attorney general|governor|senator|representative|board|administrator|superintendent|spokesperson)\b/;
+  /\b(sheriffs?|police chiefs?|chiefs?|mayors?|councils?|councilmembers?|commissioners?|county attorneys?|attorneys? general|governors?|senators?|representatives?|boards?|administrators?|superintendents?|spokespeople|spokespersons?)\b/;
 
 /*
  * The three NARRATIVE-derived patterns, compiled once at module load.
@@ -70,10 +78,20 @@ const OFFICIAL_ROLE =
  * readable as the bare-regex rules beside them, which is what §1b's audit
  * requirement asks of this file.
  */
+/*
+ * Singular "they/them/their" included alongside he/she: increasingly common
+ * newsroom phrasing for an unnamed individual ("They waited 14 months for a
+ * hearing"), and this rule already means what it says — a pronoun doing
+ * subject work with no official role named nearby. The obvious worry is the
+ * plural reading, where "they" is a body of officials or a group of
+ * institutions rather than one unnamed person, but that's exactly what the
+ * OFFICIAL_ROLE guard (and its own now-widened plural forms) exists to stand
+ * down for, via guardedByOfficialRole below.
+ */
 const PRONOUN_SUBJECT = new RegExp(
-  `\\b(he|she|his|her|him|hers)\\b[^.]{0,40}\\b${NARRATIVE}\\b` +
-    `|\\b${NARRATIVE}\\b[^.]{0,25}\\b(he|she|his|her|him|hers)\\b` +
-    `|^\\s*(he|she)\\b`,
+  `\\b(he|she|his|her|him|hers|they|them|their)\\b[^.]{0,40}\\b${NARRATIVE}\\b` +
+    `|\\b${NARRATIVE}\\b[^.]{0,25}\\b(he|she|his|her|him|hers|they|them|their)\\b` +
+    `|^\\s*(he|she|they)\\b`,
 );
 
 const FAMILY_SUBJECT = new RegExp(
@@ -147,9 +165,14 @@ const PERSON_RULES = [
     // which "Charge: Sherburne man held" does not have, it has a space. The
     // alternative was written that way and could never fire on the headline
     // shape it was added for.
+    // `arrests`, `deports` and `detains` (present tense, alongside the
+    // existing past-tense `arrested`/`deported`/`detained`) added for the
+    // same-day breaking-news headline: "ICE detains three at courthouse" is
+    // the present-tense mirror of "ICE detained three at courthouse", not a
+    // different category of story.
     rule: 'enforcement-subject',
     pattern:
-      /\b(detained|detainee|detainees|arrested|arrest of|deported|deportation of|facing deportation|in custody|taken into custody|released from|charged with|pleads?|pleaded|convicted|sentenced|indicted|faces? charges|awaiting trial|removal proceedings|asylum seeker|asylum-seeker|undocumented (man|woman|immigrant|resident|student|worker|father|mother)|green card holder|visa holder|accused|accused of|felony|misdemeanor|booked into|jailed|returns? home from|criminal charges|from custody|out of custody|escapes?|escaped|remains in custody|remains in detention|remains in ice|still in custody|still detained)\b|\bcharge[sd]?:/,
+      /\b(detained|detainee|detainees|detains|arrested|arrests|arrest of|deported|deports|deportation of|facing deportation|in custody|taken into custody|released from|charged with|pleads?|pleaded|convicted|sentenced|indicted|faces? charges|awaiting trial|removal proceedings|asylum seeker|asylum-seeker|undocumented (man|woman|immigrant|resident|student|worker|father|mother)|green card holder|visa holder|accused|accused of|felony|misdemeanor|booked into|jailed|returns? home from|criminal charges|from custody|out of custody|escapes?|escaped|remains in custody|remains in detention|remains in ice|still in custody|still detained)\b|\bcharge[sd]?:/,
   },
   {
     // The person-shaped headline, added after the first live measurement.
@@ -160,9 +183,14 @@ const PERSON_RULES = [
     // The tell is not the verb — it is a bare common noun standing in for a
     // name, which is how a newsroom writes about an individual it is not
     // naming. An institution is never "a man".
+    // Plural nouns (men, women, children...) alongside the singular list:
+    // "Two men charged after..." is the same shape as "A man charged
+    // after...", and treating plural as invisible to this rule was a real
+    // gap — unlike OFFICIAL_ROLE above, missing a plural here can leak a
+    // person-level story about more than one named-by-description individual.
     rule: 'person-subject-headline',
     pattern:
-      /\b(man|woman|boy|girl|teen|teenager|child|toddler|father|mother|couple|grandmother|grandfather|driver|passenger|student|worker|resident)\b[^.]{0,40}\b(accused|charged|arrested|jailed|sentenced|convicted|faces|face|pleads|pleaded|returns|return|deported|detained|identified|held|freed|released|sues|sued|escapes|escaped|flees|fled|remains|remain|tried|sought|solicited|hired|describes|described|recounts|recounted|tells|told|shares|shared|recalls|recalled|waited|waits|waiting|spent|fears|feared|hopes|struggled|survived|endured)\b/,
+      /\b(man|men|woman|women|boy|boys|girl|girls|teen|teens|teenager|teenagers|child|children|toddler|toddlers|father|fathers|mother|mothers|couple|couples|grandmother|grandmothers|grandfather|grandfathers|driver|drivers|passenger|passengers|student|students|worker|workers|resident|residents)\b[^.]{0,40}\b(accused|charged|arrested|jailed|sentenced|convicted|faces|face|pleads|pleaded|returns|return|deported|detained|identified|held|freed|released|sues|sued|escapes|escaped|flees|fled|remains|remain|tried|sought|solicited|hired|describes|described|recounts|recounted|tells|told|shares|shared|recalls|recalled|waited|waits|waiting|spent|fears|feared|hopes|struggled|survived|endured)\b/,
   },
   {
     // §1b, second clause — rank-and-file officers, agents, corrections staff.
