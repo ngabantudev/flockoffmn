@@ -10,6 +10,7 @@ import {
   METRO_CENTER,
 } from './mapStyle';
 import { bboxOf, representativePoint, haversineMeters, bearingDeg, destinationPoint } from './geo.mjs';
+import { fillTemplate } from './template.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
@@ -152,6 +153,28 @@ export interface LoadedFeature {
   type: 'Feature';
   geometry: Geometry;
   properties: FeatureProperties;
+}
+
+/**
+ * The bounding box of several features at once, built on top of `bboxOf`
+ * (single-geometry) rather than a fresh min/max reducer. `null` for an empty
+ * list — callers decide what "nothing to frame" means for them, same as
+ * `bboxOf` leaves that to its own callers via `Number.isFinite` checks.
+ */
+function unionBbox(features: LoadedFeature[]): [number, number, number, number] | null {
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const f of features) {
+    const [w, s, e, n] = bboxOf(f.geometry);
+    if (w < minLng) minLng = w;
+    if (s < minLat) minLat = s;
+    if (e > maxLng) maxLng = e;
+    if (n > maxLat) maxLat = n;
+  }
+  if (!Number.isFinite(minLng)) return null;
+  return [minLng, minLat, maxLng, maxLat];
 }
 
 /**
@@ -1084,6 +1107,18 @@ export class MapController {
    */
   private levelOfDetailDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * The shared clearTimeout-then-setTimeout shape behind both timers above.
+   * Each call site still owns its own timer-id field (so `destroy()` below
+   * can clear either directly, same as before) and passes it in as
+   * `current`; this only does the "cancel whatever was pending, then
+   * (re)start the countdown" part once instead of twice.
+   */
+  private debounce(current: ReturnType<typeof setTimeout> | null, ms: number, fn: () => void) {
+    if (current != null) clearTimeout(current);
+    return setTimeout(fn, ms);
+  }
+
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
     this.events = events;
@@ -1246,11 +1281,10 @@ export class MapController {
     // so a burst of notifications during an animated collapse settles into
     // one resize instead of one per animation frame.
     const handleContainerResize = () => {
-      if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
-      this.resizeSettleTimer = setTimeout(() => {
+      this.resizeSettleTimer = this.debounce(this.resizeSettleTimer, 100, () => {
         this.resizeSettleTimer = null;
         this.resizeIfNeeded();
-      }, 100);
+      });
     };
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(handleContainerResize);
@@ -2549,6 +2583,39 @@ export class MapController {
   }
 
   /**
+   * The shared cache/in-flight-dedup dance behind both `fetchFeatures` and
+   * `fetchSimplifiedFeatures`: return an already-held result synchronously,
+   * join an already-running fetch for the same key, or start a fresh one and
+   * remember it in `inFlight` until it settles. `onFetched`, when given, runs
+   * once the fetch actually lands — it's how `fetchFeatures` builds `byId`
+   * alongside `data` without `fetchSimplifiedFeatures` (which has no use for
+   * that index — see that method's own comment) inheriting it too.
+   */
+  private memoizedFetch(
+    cache: Map<string, LoadedFeature[]>,
+    inFlight: Map<string, Promise<LoadedFeature[]>>,
+    key: string,
+    url: string,
+    onFetched?: (features: LoadedFeature[]) => void,
+  ): Promise<LoadedFeature[]> {
+    const held = cache.get(key);
+    if (held) return Promise.resolve(held);
+    const pending = inFlight.get(key);
+    if (pending) return pending;
+
+    const load = this.fetchAndParse(url)
+      .then((features) => {
+        cache.set(key, features);
+        onFetched?.(features);
+        return features;
+      })
+      .finally(() => inFlight.delete(key));
+
+    inFlight.set(key, load);
+    return load;
+  }
+
+  /**
    * The single fetch-and-store path for a layer's full-resolution records.
    * Both entry points — ensureDataLoaded for a cross-layer lookup and
    * loadLayer for drawing — go through here, so a layer is downloaded and
@@ -2559,23 +2626,11 @@ export class MapController {
    * `holc_appraisal_detail`'s 7.6 MB file.
    */
   private fetchFeatures(layer: ClientLayer): Promise<LoadedFeature[]> {
-    const held = this.data.get(layer.id);
-    if (held) return Promise.resolve(held);
-    const pending = this.inFlight.get(layer.id);
-    if (pending) return pending;
-
-    const load = this.fetchAndParse(layer.dataPath)
-      .then((features) => {
-        this.data.set(layer.id, features);
-        const ids = new Map<string, LoadedFeature>();
-        for (const f of features) ids.set(f.properties.id, f);
-        this.byId.set(layer.id, ids);
-        return features;
-      })
-      .finally(() => this.inFlight.delete(layer.id));
-
-    this.inFlight.set(layer.id, load);
-    return load;
+    return this.memoizedFetch(this.data, this.inFlight, layer.id, layer.dataPath, (features) => {
+      const ids = new Map<string, LoadedFeature>();
+      for (const f of features) ids.set(f.properties.id, f);
+      this.byId.set(layer.id, ids);
+    });
   }
 
   /**
@@ -2584,25 +2639,14 @@ export class MapController {
    * comment for why this is a second cache rather than a second key inside
    * `data`. Resolves to `[]` for a layer that declares no `levelOfDetail`
    * rather than throwing, since every call site already only reaches this
-   * because the layer has one.
+   * because the layer has one. No `byId` index built here — `fetchFeatures`
+   * is the only caller anything ever resolves ids against; see
+   * `memoizedFetch`'s own `onFetched` for where that split happens.
    */
   private fetchSimplifiedFeatures(layer: ClientLayer): Promise<LoadedFeature[]> {
     const lod = layer.levelOfDetail;
     if (!lod) return Promise.resolve([]);
-    const held = this.simplifiedData.get(layer.id);
-    if (held) return Promise.resolve(held);
-    const pending = this.simplifiedInFlight.get(layer.id);
-    if (pending) return pending;
-
-    const load = this.fetchAndParse(lod.simplifiedDataPath)
-      .then((features) => {
-        this.simplifiedData.set(layer.id, features);
-        return features;
-      })
-      .finally(() => this.simplifiedInFlight.delete(layer.id));
-
-    this.simplifiedInFlight.set(layer.id, load);
-    return load;
+    return this.memoizedFetch(this.simplifiedData, this.simplifiedInFlight, layer.id, lod.simplifiedDataPath);
   }
 
   /**
@@ -2632,13 +2676,12 @@ export class MapController {
 
   /** See `levelOfDetailDebounceTimer`'s own field comment for why this is debounced rather than run straight off `zoomend`. */
   private scheduleLevelOfDetailCheck(): void {
-    if (this.levelOfDetailDebounceTimer != null) clearTimeout(this.levelOfDetailDebounceTimer);
-    this.levelOfDetailDebounceTimer = setTimeout(() => {
+    this.levelOfDetailDebounceTimer = this.debounce(this.levelOfDetailDebounceTimer, 150, () => {
       this.levelOfDetailDebounceTimer = null;
       for (const layer of this.layers) {
         if (layer.levelOfDetail && this.visible.has(layer.id)) void this.swapLevelOfDetail(layer);
       }
-    }, 150);
+    });
   }
 
   /**
@@ -3553,7 +3596,7 @@ export class MapController {
         if (hidden > 0) {
           const more = document.createElement('p');
           more.className = 'hover-card-more';
-          more.textContent = rel.moreLabel.replace('{n}', String(hidden));
+          more.textContent = fillTemplate(rel.moreLabel, { n: hidden });
           root.append(more);
         }
         const href = rel.linkKey
@@ -3957,43 +4000,66 @@ export class MapController {
     }
   }
 
-  /** `emitCounts`, deferred to the end of the current batch if one is open. */
-  private maybeEmitCounts() {
+  /**
+   * The shared shape behind all three `maybe*` methods below: while a batch
+   * is open, mark it dirty and run only `onDefer` — some side effects (see
+   * `maybeZoomAfterFilterChange`) still have something to stash even on the
+   * deferred path, most don't. Outside a batch, `onDefer` never runs at all
+   * and the real work happens immediately via `onImmediate`.
+   */
+  private deferWhileBatching(onDefer: () => void, onImmediate: () => void) {
     if (this.batchDepth > 0) {
       this.batchDirty = true;
+      onDefer();
       return;
     }
-    this.emitCounts();
+    onImmediate();
+  }
+
+  /** `emitCounts`, deferred to the end of the current batch if one is open. */
+  private maybeEmitCounts() {
+    this.deferWhileBatching(
+      () => {},
+      () => this.emitCounts(),
+    );
   }
 
   /** `zoomAfterFilterChange`, deferred to the end of the current batch if one is open. */
   private maybeZoomAfterFilterChange(layerId: string) {
-    if (this.batchDepth > 0) {
-      this.batchDirty = true;
-      this.lastBatchLayerId = layerId;
-      return;
-    }
-    this.zoomAfterFilterChange(layerId);
+    this.deferWhileBatching(
+      () => {
+        this.lastBatchLayerId = layerId;
+      },
+      () => this.zoomAfterFilterChange(layerId),
+    );
   }
 
   /** The "filtering is a round trip" camera restore, deferred to the end of a batch if one is open. */
   private maybeRestorePreFilterCamera() {
-    if (this.batchDepth > 0) {
-      this.batchDirty = true;
-      return;
-    }
-    if (this.preFilterCamera) {
-      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
-      this.preFilterCamera = null;
-    }
+    this.deferWhileBatching(
+      () => {},
+      () => {
+        if (this.preFilterCamera) {
+          this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
+          this.preFilterCamera = null;
+        }
+      },
+    );
   }
 
-  setFilter(layerId: string, key: string, values: Set<string>) {
+  /**
+   * The shared body of `setFilter`/`setDateRangeFilter`: ensure this layer
+   * has a filter map, snapshot whether anything was active before, hand the
+   * map to `mutate` (the one thing the two callers actually differ on — a
+   * `Set` of ticked values for `setFilter`, a `DateRangeFilter` for
+   * `setDateRangeFilter`), then run the refresh and the same "filtering is a
+   * round trip" camera logic either way.
+   */
+  private applyFilterMutation(layerId: string, mutate: (state: FilterState) => void) {
     if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
     const state = this.filters.get(layerId)!;
     const activeBefore = this.anyActiveFilters();
-    if (values.size === 0) state.delete(key);
-    else state.set(key, values);
+    mutate(state);
     this.refresh(layerId);
     // Filtering is a round trip. The moment the first filter comes on, the
     // camera's position is saved and the view goes to the metro frame; every
@@ -4007,19 +4073,19 @@ export class MapController {
     }
   }
 
+  setFilter(layerId: string, key: string, values: Set<string>) {
+    this.applyFilterMutation(layerId, (state) => {
+      if (values.size === 0) state.delete(key);
+      else state.set(key, values);
+    });
+  }
+
   /** Same round trip as `setFilter`, for a `dateRange`-kind filter. Empty bounds clear the filter. */
   setDateRangeFilter(layerId: string, key: string, range: DateRangeFilter) {
-    if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
-    const state = this.filters.get(layerId)!;
-    const activeBefore = this.anyActiveFilters();
-    if (!range.from && !range.to) state.delete(key);
-    else state.set(key, { from: range.from, to: range.to });
-    this.refresh(layerId);
-    if (this.anyActiveFilters()) {
-      this.maybeZoomAfterFilterChange(layerId);
-    } else if (activeBefore) {
-      this.maybeRestorePreFilterCamera();
-    }
+    this.applyFilterMutation(layerId, (state) => {
+      if (!range.from && !range.to) state.delete(key);
+      else state.set(key, { from: range.from, to: range.to });
+    });
   }
 
   /**
@@ -4050,18 +4116,9 @@ export class MapController {
     if (!this.visible.has(layerId)) return;
     const matches = this.filteredFeatures(layerId);
     if (!matches.length) return;
-    let minLng = Infinity;
-    let minLat = Infinity;
-    let maxLng = -Infinity;
-    let maxLat = -Infinity;
-    for (const f of matches) {
-      const [w, s, e, n] = bboxOf(f.geometry);
-      if (w < minLng) minLng = w;
-      if (s < minLat) minLat = s;
-      if (e > maxLng) maxLng = e;
-      if (n > maxLat) maxLat = n;
-    }
-    if (!Number.isFinite(minLng)) return;
+    const union = unionBbox(matches);
+    if (!union) return;
+    const [minLng, minLat, maxLng, maxLat] = union;
     // The default destination is the metro, not the matches' own bbox: both
     // downtowns and the suburban ring, framed the same way every time, so
     // successive filters compare against a steady ground. Only when nothing

@@ -5,14 +5,10 @@ import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { labelForDetailField } from '~/lib/detailFields';
 import { FILTER_INPUT_THRESHOLD } from '~/lib/filterQuery.mjs';
+import { fillTemplate as fillStatic } from '~/lib/template.mjs';
 import CompareView from '~/components/map/CompareView.astro';
 import NewsFeed from '~/components/news/NewsFeed.astro';
 import type { ClientLayer } from '~/lib/mapController';
-
-/** Substitute {placeholders} in a dictionary string at build time. Same pattern as the client script's own `fill`. */
-function fillStatic(template: string, values: Record<string, string | number>) {
-  return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
-}
 
 interface Props {
   locale: Locale;
@@ -1145,6 +1141,7 @@ const strings = {
   import { displayName } from '~/lib/authority.mjs';
   import { metersToMiles, formatMiles, formatCoords, LOW_ACCURACY_MILES } from '~/lib/geo.mjs';
   import { matchesQuery } from '~/lib/filterQuery.mjs';
+  import { fillTemplate } from '~/lib/template.mjs';
 
   type Jurisdiction = {
     geoid: string;
@@ -1219,18 +1216,16 @@ const strings = {
     el.textContent = text ?? layerById.get(layerId)?.summary ?? '';
   }
 
-  // Declared here, ahead of `controller`, rather than down with the rest of
-  // the DOM-wiring helpers below: NearMeRadiusControl.onAdd calls
-  // formatNearMeRadiusValue synchronously (to set its initial
-  // aria-valuetext), and onAdd itself runs synchronously inside
-  // MapController's own constructor just below — so by the time `new
-  // MapController` executes, `fill` has to already be initialized, not
-  // just declared later in this same script. A closure that only *reads*
-  // fill when a later event fires would have been fine wherever it sat;
-  // this one doesn't get that grace period.
-  /** Substitute {placeholders} in a dictionary string. */
-  const fill = (template: string, values: Record<string, string | number>) =>
-    template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+  // Short alias for the shared substitution function (see template.mjs) —
+  // every call site below spells it `fill(...)`, and that stays true whether
+  // the underlying function lives here or in a shared module. An import is
+  // hoisted regardless of where the `import` statement sits in this script,
+  // so — unlike the old local `const fill = ...` this replaces — nothing
+  // about NearMeRadiusControl.onAdd calling formatNearMeRadiusValue
+  // synchronously inside MapController's own constructor just below requires
+  // this alias to be declared in any particular position; it's only here,
+  // this early, because that's a natural place to introduce it.
+  const fill = fillTemplate;
 
   const controller = new MapController(mapEl, layers, {
     resetViewLabel: S.resetView,
@@ -2377,6 +2372,22 @@ const strings = {
   }
 
   /**
+   * Apply a desired on/off state to one switch (category bulk switch or
+   * layer checkbox alike) and, if it actually changed anything, tell the
+   * controller. Shared by every place that drives a *set* of switches toward
+   * some target state — the category bulk switch, both branches of
+   * `setNearMeLayerMode`, and `applyFilterStateFromUrl`'s `on` param — each
+   * of which still builds and loops its own list of switches; only this
+   * per-switch body is common to all four.
+   */
+  function applySwitchState(sw: HTMLElement, target: boolean): void {
+    if (isOn(sw) === target) return;
+    setOn(sw, target);
+    const layer = layerById.get(sw.dataset.layerSwitch!);
+    if (layer) controller.setLayerVisible(layer, target);
+  }
+
+  /**
    * The on-map keys, rebuilt from the switches' current state.
    *
    * Generated from the same categoryColors table as the paint expression and
@@ -2500,12 +2511,7 @@ const strings = {
       const allOn = switches.length > 0 && switches.every((s) => isOn(s));
       const turnOn = !allOn;
       controller.runBatched(() => {
-        for (const sw of switches) {
-          if (isOn(sw) === turnOn) continue;
-          setOn(sw, turnOn);
-          const layer = layerById.get(sw.dataset.layerSwitch!);
-          if (layer) controller.setLayerVisible(layer, turnOn);
-        }
+        for (const sw of switches) applySwitchState(sw, turnOn);
       });
       refreshGroups();
       syncFilterStateToUrl();
@@ -2537,21 +2543,13 @@ const strings = {
           nearMePriorLayerState = new Map(switches.map((s) => [s.dataset.layerSwitch!, isOn(s)]));
         }
         for (const sw of switches) {
-          const shouldBeOn = nearMeOnlyLayerIds.has(sw.dataset.layerSwitch!);
-          if (isOn(sw) === shouldBeOn) continue;
-          setOn(sw, shouldBeOn);
-          const layer = layerById.get(sw.dataset.layerSwitch!);
-          if (layer) controller.setLayerVisible(layer, shouldBeOn);
+          applySwitchState(sw, nearMeOnlyLayerIds.has(sw.dataset.layerSwitch!));
         }
       } else if (nearMePriorLayerState) {
         const prior = nearMePriorLayerState;
         nearMePriorLayerState = null;
         for (const sw of switches) {
-          const wasOn = prior.get(sw.dataset.layerSwitch!) ?? false;
-          if (isOn(sw) === wasOn) continue;
-          setOn(sw, wasOn);
-          const layer = layerById.get(sw.dataset.layerSwitch!);
-          if (layer) controller.setLayerVisible(layer, wasOn);
+          applySwitchState(sw, prior.get(sw.dataset.layerSwitch!) ?? false);
         }
       }
     });
@@ -2625,6 +2623,26 @@ const strings = {
   });
 
   /**
+   * The from/to pair of date-bound inputs for one layer/filter-key. Shared by
+   * this section's own change listener, `syncFilterStateToUrl`, and
+   * `applyFilterStateFromUrl` below — all three otherwise hand-built the same
+   * two-selector pair independently.
+   */
+  function getDateBoundEls(
+    layerId: string,
+    key: string,
+  ): { fromEl: HTMLInputElement | null; toEl: HTMLInputElement | null } {
+    return {
+      fromEl: document.querySelector<HTMLInputElement>(
+        `[data-filter-layer="${layerId}"][data-filter-key="${key}"][data-date-bound="from"]`,
+      ),
+      toEl: document.querySelector<HTMLInputElement>(
+        `[data-filter-layer="${layerId}"][data-filter-key="${key}"][data-date-bound="to"]`,
+      ),
+    };
+  }
+
+  /**
    * `dateRange` filters (level 3, e.g. agency_287g's "Date signed") — a
    * plain from/to date control wired straight to
    * `controller.setDateRangeFilter`. Fixes the pre-existing bug where
@@ -2635,12 +2653,7 @@ const strings = {
     input.addEventListener('change', () => {
       const layerId = input.dataset.filterLayer!;
       const key = input.dataset.filterKey!;
-      const fromEl = document.querySelector<HTMLInputElement>(
-        `[data-filter-layer="${layerId}"][data-filter-key="${key}"][data-date-bound="from"]`,
-      );
-      const toEl = document.querySelector<HTMLInputElement>(
-        `[data-filter-layer="${layerId}"][data-filter-key="${key}"][data-date-bound="to"]`,
-      );
+      const { fromEl, toEl } = getDateBoundEls(layerId, key);
       controller.setDateRangeFilter(layerId, key, {
         from: fromEl?.value || undefined,
         to: toEl?.value || undefined,
@@ -2686,40 +2699,68 @@ const strings = {
    * group (via `.open = true`) is restored to whatever it was once the query
    * clears; a zero-match group is removed from view entirely rather than
    * left open and empty.
+   *
+   * One parameterized function behind both `wireValueSearch` and
+   * `wireLayerSearch` below — the two only ever differed in which rows they
+   * search, how to read a row's own text, where the empty-state message
+   * goes, and what it says. The one behavioral difference that isn't just a
+   * selector — value-search force-opens (and later restores) its enclosing
+   * `<details>` while layer-search leaves its group's own open/closed state
+   * alone — is `manageDetails`, opted into only by the caller that needs it.
    */
-  function wireValueSearch(input: HTMLInputElement) {
+  function wireSearch(
+    input: HTMLInputElement,
+    opts: {
+      list: HTMLElement | null;
+      rowSelector: string;
+      getRowText: (row: HTMLElement) => string;
+      empty: HTMLElement | null;
+      emptyText: (query: string) => string;
+      manageDetails?: boolean;
+    },
+  ) {
     input.hidden = false;
-    const layerId = input.dataset.filterValueSearch!;
-    const key = input.dataset.filterValueSearchKey!;
-    const list = document.querySelector<HTMLElement>(`[data-filter-value-list="${layerId}:${key}"]`);
-    const empty = document.querySelector<HTMLElement>(`[data-filter-value-empty="${layerId}:${key}"]`);
-    const layer = layerById.get(layerId);
-    const filter = layer?.filters.find((f) => f.key === key);
+    const { list, rowSelector, getRowText, empty, emptyText, manageDetails } = opts;
     if (!list) return;
-    const rows = [...list.querySelectorAll<HTMLElement>('[data-filter-value-row]')];
-    const details = input.closest('details');
+    const rows = [...list.querySelectorAll<HTMLElement>(rowSelector)];
+    const details = manageDetails ? input.closest('details') : null;
     let priorOpen: boolean | null = null;
     input.addEventListener('input', () => {
       const query = input.value;
-      if (query.trim() && details && priorOpen === null) priorOpen = details.open;
+      if (manageDetails && query.trim() && details && priorOpen === null) priorOpen = details.open;
       let anyVisible = false;
       for (const row of rows) {
-        const matches = matchesQuery(row.dataset.filterValueText ?? '', query);
+        const matches = matchesQuery(getRowText(row), query);
         row.hidden = !matches;
         if (matches) anyVisible = true;
       }
-      if (query.trim()) {
-        if (details) details.open = true;
-      } else if (details && priorOpen !== null) {
-        details.open = priorOpen;
-        priorOpen = null;
+      if (manageDetails) {
+        if (query.trim()) {
+          if (details) details.open = true;
+        } else if (details && priorOpen !== null) {
+          details.open = priorOpen;
+          priorOpen = null;
+        }
       }
       if (empty) {
         empty.hidden = anyVisible || !query.trim();
-        if (!anyVisible && query.trim()) {
-          empty.textContent = fill(S.filterSearchValuesEmpty, { query, filter: filter?.label ?? '' });
-        }
+        if (!anyVisible && query.trim()) empty.textContent = emptyText(query);
       }
+    });
+  }
+
+  function wireValueSearch(input: HTMLInputElement) {
+    const layerId = input.dataset.filterValueSearch!;
+    const key = input.dataset.filterValueSearchKey!;
+    const layer = layerById.get(layerId);
+    const filter = layer?.filters.find((f) => f.key === key);
+    wireSearch(input, {
+      list: document.querySelector<HTMLElement>(`[data-filter-value-list="${layerId}:${key}"]`),
+      rowSelector: '[data-filter-value-row]',
+      getRowText: (row) => row.dataset.filterValueText ?? '',
+      empty: document.querySelector<HTMLElement>(`[data-filter-value-empty="${layerId}:${key}"]`),
+      emptyText: (query) => fill(S.filterSearchValuesEmpty, { query, filter: filter?.label ?? '' }),
+      manageDetails: true,
     });
   }
   document
@@ -2727,28 +2768,15 @@ const strings = {
     .forEach((input) => wireValueSearch(input));
 
   function wireLayerSearch(input: HTMLInputElement) {
-    input.hidden = false;
     const groupId = input.dataset.layerSearch!;
     const groupEl = document.querySelector<HTMLElement>(`[data-layer-group="${groupId}"]`);
-    const list = document.querySelector<HTMLElement>(`[data-layer-list="${groupId}"]`);
-    const empty = document.querySelector<HTMLElement>(`[data-layer-search-empty="${groupId}"]`);
     const categoryLabel = groupEl?.querySelector('[data-category-label]')?.textContent ?? '';
-    if (!list) return;
-    const rows = [...list.querySelectorAll<HTMLElement>('[data-layer-row]')];
-    input.addEventListener('input', () => {
-      const query = input.value;
-      let anyVisible = false;
-      for (const row of rows) {
-        const matches = matchesQuery(row.dataset.layerName ?? '', query);
-        row.hidden = !matches;
-        if (matches) anyVisible = true;
-      }
-      if (empty) {
-        empty.hidden = anyVisible || !query.trim();
-        if (!anyVisible && query.trim()) {
-          empty.textContent = fill(S.filterSearchLayersEmpty, { query, category: categoryLabel });
-        }
-      }
+    wireSearch(input, {
+      list: document.querySelector<HTMLElement>(`[data-layer-list="${groupId}"]`),
+      rowSelector: '[data-layer-row]',
+      getRowText: (row) => row.dataset.layerName ?? '',
+      empty: document.querySelector<HTMLElement>(`[data-layer-search-empty="${groupId}"]`),
+      emptyText: (query) => fill(S.filterSearchLayersEmpty, { query, category: categoryLabel }),
     });
   }
   document.querySelectorAll<HTMLInputElement>('[data-layer-search]').forEach((input) => wireLayerSearch(input));
@@ -3036,12 +3064,7 @@ const strings = {
     for (const layer of layers) {
       for (const filter of layer.filters) {
         if (filter.kind === 'dateRange') {
-          const fromEl = document.querySelector<HTMLInputElement>(
-            `[data-filter-layer="${layer.id}"][data-filter-key="${filter.key}"][data-date-bound="from"]`,
-          );
-          const toEl = document.querySelector<HTMLInputElement>(
-            `[data-filter-layer="${layer.id}"][data-filter-key="${filter.key}"][data-date-bound="to"]`,
-          );
+          const { fromEl, toEl } = getDateBoundEls(layer.id, filter.key);
           if (fromEl?.value || toEl?.value) {
             url.searchParams.set(`fd.${layer.id}.${filter.key}`, `${fromEl?.value ?? ''},${toEl?.value ?? ''}`);
           }
@@ -3070,11 +3093,7 @@ const strings = {
       if (onParam !== null) {
         const onSet = new Set(onParam.split(',').filter(Boolean));
         document.querySelectorAll<HTMLElement>('[data-layer-switch]').forEach((btn) => {
-          const shouldBeOn = onSet.has(btn.dataset.layerSwitch!);
-          if (isOn(btn) === shouldBeOn) return;
-          setOn(btn, shouldBeOn);
-          const layer = layerById.get(btn.dataset.layerSwitch!);
-          if (layer) controller.setLayerVisible(layer, shouldBeOn);
+          applySwitchState(btn, onSet.has(btn.dataset.layerSwitch!));
         });
       }
       for (const [key, value] of params.entries()) {
@@ -3090,12 +3109,7 @@ const strings = {
           const [, layerId, filterKey] = key.split('.');
           if (!layerId || !filterKey) continue;
           const [from, to] = value.split(',');
-          const fromEl = document.querySelector<HTMLInputElement>(
-            `[data-filter-layer="${layerId}"][data-filter-key="${filterKey}"][data-date-bound="from"]`,
-          );
-          const toEl = document.querySelector<HTMLInputElement>(
-            `[data-filter-layer="${layerId}"][data-filter-key="${filterKey}"][data-date-bound="to"]`,
-          );
+          const { fromEl, toEl } = getDateBoundEls(layerId, filterKey);
           if (fromEl) fromEl.value = from ?? '';
           if (toEl) toEl.value = to ?? '';
           controller.setDateRangeFilter(layerId, filterKey, { from: from || undefined, to: to || undefined });
