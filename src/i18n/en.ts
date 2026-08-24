@@ -51,9 +51,35 @@ export const en: Record<string, string> = {
   layers: 'Layers',
   filters: 'Filters',
   layersOn: 'layers switched on',
-  clearFilters: 'Clear filters',
-  filtersCleared: 'Filters cleared',
+  // Relabelled from "Clear filters" — the button also switches off every
+  // layer toggle and clears the search box and jurisdiction boundary, so
+  // "filters" alone undersold what one click actually does.
+  clearFilters: 'Reset all layers & filters',
+  filtersCleared: 'All layers and filters cleared',
   ofTotal: 'of',
+  // Category bulk switch (level 1) — `{n} of {m} shown` sentence read by a
+  // screen reader beside the visual "(n/m)" badge. See MapView.astro's
+  // category-count markup.
+  categoryLayersShown: '{n} of {m} layers shown',
+  // "None"/"All" text flanking the category bulk switch. aria-hidden — the
+  // switch itself carries the real accessible name.
+  filterNone: 'None',
+  filterAll: 'All',
+  // aria-label for the category bulk switch and the per-layer toggle switch.
+  filterCategoryToggleLabel: 'Show all {category} layers',
+  filterLayerToggleLabel: 'Show {layer}',
+  // Value-level (level 3) filter group controls.
+  filterResetToDefault: 'Reset to default',
+  filterSearchValuesLabel: 'Search {filter} values',
+  filterSearchValuesPlaceholder: 'Search values',
+  filterSearchValuesEmpty: 'No values named "{query}" in {filter}. This list covers every value this layer records for that field.',
+  // Search-within-layer-names (level 2), same mechanism as the value search.
+  filterSearchLayersLabel: 'Search {category} layers',
+  filterSearchLayersPlaceholder: 'Search layers',
+  filterSearchLayersEmpty: 'No layers named "{query}" in {category}.',
+  // dateRange filter control (e.g. 287(g) agreement signed date).
+  filterDateFrom: 'From',
+  filterDateTo: 'To',
   loading: 'Loading map data…',
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',

@@ -4,9 +4,15 @@ import { loadAllLayers, distinctValues } from '~/layers/data';
 import { LAYER_CATEGORIES } from '~/layers/registry';
 import { useTranslations, pick, localePath } from '~/lib/i18n';
 import { labelForDetailField } from '~/lib/detailFields';
+import { FILTER_INPUT_THRESHOLD } from '~/lib/filterQuery.mjs';
 import CompareView from '~/components/map/CompareView.astro';
 import NewsFeed from '~/components/news/NewsFeed.astro';
 import type { ClientLayer } from '~/lib/mapController';
+
+/** Substitute {placeholders} in a dictionary string at build time. Same pattern as the client script's own `fill`. */
+function fillStatic(template: string, values: Record<string, string | number>) {
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ''));
+}
 
 interface Props {
   locale: Locale;
@@ -156,26 +162,36 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
     : undefined,
   opacity: d.opacity,
   dataPath: d.dataPath,
+  // `enum` renders as a checkbox group; `dateRange` renders as a from/to
+  // date control (see the `#layer-drawer` markup below). Both kinds were
+  // previously narrowed to `enum` right here, which silently dropped every
+  // `dateRange` filter the registry declared — agency_287g's `signed` date
+  // filter existed in the registry and was never rendered. `values` is
+  // reused for a `dateRange` filter too: `distinctValues` already returns
+  // the observed values sorted with `localeCompare`, which for ISO date
+  // strings is chronological order, so `values[0]`/`values[values.length -
+  // 1]` are exactly the min/max bounds the date control needs.
   filters: d.filters
-    .filter((f) => f.kind === 'enum')
-    .map((f) => ({
-      key: f.key,
-      label: pick(f.label, locale),
-      kind: f.kind,
-      values: distinctValues(collection, f.key),
-      valueDescriptions: f.valueDescriptions
-        ? Object.fromEntries(
-            Object.entries(f.valueDescriptions).map(([v, text]) => [v, pick(text, locale)]),
-          )
-        : undefined,
-      // Only the excluded values this layer actually has. A registry entry that
-      // names a value the data no longer contains must not leave the filter
-      // opening pre-ticked against nothing.
-      defaultExcluded: (f.defaultExcluded ?? []).filter((v) =>
-        distinctValues(collection, f.key).includes(v),
-      ),
-    }))
-    .filter((f) => f.values.length > 1),
+    .map((f) => {
+      const values = distinctValues(collection, f.key);
+      return {
+        key: f.key,
+        label: pick(f.label, locale),
+        kind: f.kind,
+        values,
+        valueDescriptions: f.valueDescriptions
+          ? Object.fromEntries(
+              Object.entries(f.valueDescriptions).map(([v, text]) => [v, pick(text, locale)]),
+            )
+          : undefined,
+        // Only the excluded values this layer actually has. A registry entry that
+        // names a value the data no longer contains must not leave the filter
+        // opening pre-ticked against nothing. `dateRange` filters have no
+        // concept of a default-excluded value.
+        defaultExcluded: (f.defaultExcluded ?? []).filter((v) => values.includes(v)),
+      };
+    })
+    .filter((f) => (f.kind === 'dateRange' ? f.values.length > 0 : f.values.length > 1)),
   detailFields: d.detailFields.map((f) => ({
     key: f.key,
     label: pick(f.label, locale),
@@ -239,8 +255,23 @@ const strings = {
   actionAddressed: t('actionAddressed'),
   actionUnknownOperator: t('actionUnknownOperator'),
   actionPickBody: t('actionPickBody'),
+  clearFilters: t('clearFilters'),
   filtersCleared: t('filtersCleared'),
   resetView: t('resetView'),
+  categoryLayersShown: t('categoryLayersShown'),
+  filterNone: t('filterNone'),
+  filterAll: t('filterAll'),
+  filterCategoryToggleLabel: t('filterCategoryToggleLabel'),
+  filterLayerToggleLabel: t('filterLayerToggleLabel'),
+  filterResetToDefault: t('filterResetToDefault'),
+  filterSearchValuesLabel: t('filterSearchValuesLabel'),
+  filterSearchValuesPlaceholder: t('filterSearchValuesPlaceholder'),
+  filterSearchValuesEmpty: t('filterSearchValuesEmpty'),
+  filterSearchLayersLabel: t('filterSearchLayersLabel'),
+  filterSearchLayersPlaceholder: t('filterSearchLayersPlaceholder'),
+  filterSearchLayersEmpty: t('filterSearchLayersEmpty'),
+  filterDateFrom: t('filterDateFrom'),
+  filterDateTo: t('filterDateTo'),
   recordSelected: t('recordSelected'),
   crossListedCorner: t('crossListedCorner'),
   crossListedNearMissLegend: t('crossListedNearMissLegend'),
@@ -380,12 +411,18 @@ const strings = {
     >
       <div class="mb-2 flex items-baseline justify-between">
         <h2 class="text-xs font-semibold tracking-wider text-ink-400 uppercase">{t('layers')}</h2>
+        {/*
+          Relabelled from "Clear filters": one click also switches off every
+          layer toggle, clears the search box, and drops the jurisdiction
+          boundary outline (see this button's own click handler below) — the
+          old label undersold what it does.
+        */}
         <button
           id="clear-filters"
           type="button"
           class="text-xs text-ink-400 underline underline-offset-2 hover:text-ink-100"
         >
-          {t('clearFilters')}
+          {strings.clearFilters}
         </button>
       </div>
 
@@ -425,7 +462,7 @@ const strings = {
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <span class="min-w-0 text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
+                  <span data-category-label class="min-w-0 text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
                     {group.label}
                   </span>
                   <span class="ml-auto flex shrink-0 items-center gap-2">
@@ -438,39 +475,121 @@ const strings = {
                         />
                       ))}
                     </span>
-                    <span class="font-mono text-[10px] text-ink-400">
-                      <span data-group-on={group.id}>0</span>/<span>{group.layers.length}</span>
-                      <span class="sr-only"> {t('layersOn')}</span>
+                    {/*
+                      "(n/m)" visually — a plain-language sentence for a
+                      screen reader instead, since a bare fraction in
+                      parentheses reads as noise without the word "shown".
+                      tabular-nums keeps the digits from reflowing the row as
+                      the count changes; whitespace-nowrap/shrink-0 keep the
+                      parens from wrapping away from their numbers.
+                    */}
+                    <span
+                      class="font-mono text-[10px] whitespace-nowrap tabular-nums text-ink-400"
+                      aria-hidden="true"
+                    >
+                      (<span data-group-on={group.id}>0</span>/<span>{group.layers.length}</span>)
+                    </span>
+                    <span class="sr-only" data-group-sr={group.id}>
+                      {fillStatic(strings.categoryLayersShown, { n: 0, m: group.layers.length })}
                     </span>
                   </span>
                 </summary>
 
-                <div class="border-t border-ink-800 p-2.5">
-                  <p class="mb-2 text-[11px] leading-snug text-ink-400">{group.summary}</p>
-                  <ul class="space-y-2">
+                <div class="border-t border-ink-800">
+                  <div class="p-2.5 pb-2">
+                    <p class="mb-2 text-[11px] leading-snug text-ink-400">{group.summary}</p>
+
+                    {/*
+                      Category-level bulk switch (level 1) — scoped to this
+                      one category's layers only. Never a control that turns
+                      on every layer in every category: each of these only
+                      ever touches `group.layers`. Mixed state (some on, some
+                      off) collapses to visually "off"; the script's own
+                      comment on data-category-switch explains the click
+                      semantics that follow from that.
+                    */}
+                    <div class="mb-2 flex items-center justify-between gap-2">
+                      <span class="text-[10px] font-semibold tracking-wide text-ink-400 uppercase">
+                        {t('layers')}
+                      </span>
+                      <span class="flex items-center gap-1.5">
+                        <span class="text-[10px] text-ink-400" aria-hidden="true">
+                          {strings.filterNone}
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked="false"
+                          aria-label={fillStatic(strings.filterCategoryToggleLabel, { category: group.label })}
+                          class="switch"
+                          data-category-switch={group.id}
+                        />
+                        <span class="text-[10px] text-ink-400" aria-hidden="true">
+                          {strings.filterAll}
+                        </span>
+                      </span>
+                    </div>
+
+                    {/*
+                      Search-within-layer-names (level 2) — same mechanism as
+                      the value search below, only above the cardinality
+                      threshold where a search box has something to do.
+                      Ships `hidden`: a no-JS visitor gets no dead control,
+                      the init script below removes `hidden` once it can
+                      actually wire the input up.
+                    */}
+                    {group.layers.length > FILTER_INPUT_THRESHOLD && (
+                      <div class="mb-2">
+                        <label class="sr-only" for={`layer-search-${group.id}`}>
+                          {fillStatic(strings.filterSearchLayersLabel, { category: group.label })}
+                        </label>
+                        <input
+                          hidden
+                          type="search"
+                          id={`layer-search-${group.id}`}
+                          data-layer-search={group.id}
+                          aria-label={fillStatic(strings.filterSearchLayersLabel, { category: group.label })}
+                          placeholder={strings.filterSearchLayersPlaceholder}
+                          class="w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-xs text-ink-100 placeholder:text-ink-400"
+                        />
+                      </div>
+                    )}
+                    <p
+                      hidden
+                      data-layer-search-empty={group.id}
+                      class="mb-2 text-[11px] leading-snug text-ink-400"
+                    />
+                  </div>
+
+                  {/*
+                    Flat divided list, not a card inside a card: `divide-y` +
+                    one leading `border-t` (the container's own convention,
+                    see the search results list in this file's script) rather
+                    than a `rounded-lg border` per row. Full-bleed hover reads
+                    off the row's own edges since the `<ul>` carries no
+                    horizontal padding — only each `<li>`'s inner div does.
+                  */}
+                  <ul class="divide-y divide-ink-800 border-t border-ink-800" data-layer-list={group.id}>
                     {group.layers.map((layer) => (
-                        <li class="rounded-lg border border-ink-800 bg-ink-850">
-                          <div class="flex items-start gap-2.5 p-2.5">
-                            <input
-                              type="checkbox"
-                              id={`layer-${layer.id}`}
-                              data-layer-toggle={layer.id}
-                              checked={layer.defaultOn}
-                              class="mt-0.5 h-4 w-4 shrink-0 accent-current"
-                              style={`color:var(--layer-color-${layer.id})`}
+                        <li data-layer-row={layer.id} data-layer-name={layer.label.toLowerCase()}>
+                          <div class="flex min-h-11 items-start gap-2.5 px-2.5 py-2.5 hover:bg-ink-850">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={layer.defaultOn ? 'true' : 'false'}
+                              aria-label={fillStatic(strings.filterLayerToggleLabel, { layer: layer.label })}
+                              class="switch mt-0.5"
+                              data-layer-switch={layer.id}
                             />
                             <div class="min-w-0 flex-1">
-                              <label
-                                for={`layer-${layer.id}`}
-                                class="flex cursor-pointer items-center gap-2 text-sm font-medium text-ink-100"
-                              >
+                              <p class="flex items-center gap-2 text-sm font-medium text-ink-100">
                                 <span
                                   class="h-2.5 w-2.5 shrink-0 rounded-full"
                                   style={`background:var(--layer-color-${layer.id})`}
                                   aria-hidden="true"
                                 />
                                 <span class="min-w-0">{layer.label}</span>
-                              </label>
+                              </p>
                               <p class="mt-1 text-xs leading-snug text-ink-400">{layer.summary}</p>
                               <p class="mt-1 font-mono text-[11px] text-ink-400">
                                 <span data-count={layer.id}>0</span>
@@ -527,50 +646,160 @@ const strings = {
                                 {t('filters')}
                               </summary>
                               <div class="space-y-2.5 px-2.5 pb-2.5">
-                                {layer.filters.map((filter) => (
-                                  <fieldset>
-                                    <legend class="mb-1 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
-                                      {filter.label}
-                                    </legend>
-                                    <div class="space-y-1">
-                                      {filter.values.map((value) => (
-                                        <label class="flex cursor-pointer items-start gap-2 text-xs text-ink-200">
+                                {layer.filters.map((filter) =>
+                                  filter.kind === 'dateRange' ? (
+                                    /*
+                                      dateRange (level 3, date-bounded rather
+                                      than value-bounded) — a plain from/to
+                                      date control. `min`/`max` come straight
+                                      off the observed values (already sorted
+                                      chronologically — see clientLayers'
+                                      own comment on why distinctValues'
+                                      localeCompare sort works for ISO
+                                      dates), so the control can never be
+                                      set outside what the data actually
+                                      covers.
+                                    */
+                                    <fieldset data-filter-daterange={layer.id} data-filter-key={filter.key}>
+                                      <legend class="mb-1 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
+                                        {filter.label}
+                                      </legend>
+                                      <div class="flex items-end gap-2">
+                                        <label class="flex flex-1 flex-col gap-0.5 text-[10px] text-ink-400">
+                                          {strings.filterDateFrom}
                                           <input
-                                            type="checkbox"
+                                            type="date"
                                             data-filter-layer={layer.id}
                                             data-filter-key={filter.key}
-                                            value={value}
-                                            checked={!filter.defaultExcluded!.includes(value)}
-                                            class="mt-0.5 h-3.5 w-3.5 shrink-0"
+                                            data-date-bound="from"
+                                            min={filter.values[0]}
+                                            max={filter.values[filter.values.length - 1]}
+                                            class="rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-xs text-ink-100"
                                           />
-                                          {/*
-                                            Where this filter is the same attribute the map colours
-                                            by, each value carries its ground colour, so the toggle
-                                            and the fill read as one system.
-                                          */}
-                                          {layer.categoryColors?.key === filter.key && (
-                                            <span
-                                              class="mt-1 h-2 w-2 shrink-0 rounded-sm"
-                                              style={`background:${
-                                                layer.categoryColors.colors.find((c) => c.value === value)
-                                                  ?.color ?? layer.categoryColors.fallback
-                                              }`}
-                                              aria-hidden="true"
-                                            />
-                                          )}
-                                          <span class="min-w-0">
-                                            {value}
-                                            {filter.valueDescriptions?.[value] && (
-                                              <span class="block text-[10px] leading-snug text-ink-400">
-                                                {filter.valueDescriptions[value]}
-                                              </span>
-                                            )}
-                                          </span>
                                         </label>
-                                      ))}
-                                    </div>
-                                  </fieldset>
-                                ))}
+                                        <label class="flex flex-1 flex-col gap-0.5 text-[10px] text-ink-400">
+                                          {strings.filterDateTo}
+                                          <input
+                                            type="date"
+                                            data-filter-layer={layer.id}
+                                            data-filter-key={filter.key}
+                                            data-date-bound="to"
+                                            min={filter.values[0]}
+                                            max={filter.values[filter.values.length - 1]}
+                                            class="rounded border border-ink-700 bg-ink-900 px-1.5 py-1 text-xs text-ink-100"
+                                          />
+                                        </label>
+                                      </div>
+                                    </fieldset>
+                                  ) : (
+                                    <fieldset>
+                                      <div class="mb-1 flex items-center justify-between gap-2">
+                                        <legend class="text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
+                                          {filter.label}
+                                        </legend>
+                                        {/*
+                                          Restores each value's own
+                                          `defaultExcluded`-driven default —
+                                          not a blanket "select all". See
+                                          this button's click handler.
+                                        */}
+                                        <button
+                                          type="button"
+                                          data-filter-reset={layer.id}
+                                          data-filter-reset-key={filter.key}
+                                          class="shrink-0 text-[10px] text-ink-400 underline underline-offset-2 hover:text-ink-100"
+                                        >
+                                          {strings.filterResetToDefault}
+                                        </button>
+                                      </div>
+                                      {filter.values.length > FILTER_INPUT_THRESHOLD && (
+                                        <div class="mb-1.5">
+                                          <label class="sr-only" for={`filter-search-${layer.id}-${filter.key}`}>
+                                            {fillStatic(strings.filterSearchValuesLabel, { filter: filter.label })}
+                                          </label>
+                                          <input
+                                            hidden
+                                            type="search"
+                                            id={`filter-search-${layer.id}-${filter.key}`}
+                                            data-filter-value-search={layer.id}
+                                            data-filter-value-search-key={filter.key}
+                                            aria-label={fillStatic(strings.filterSearchValuesLabel, {
+                                              filter: filter.label,
+                                            })}
+                                            placeholder={strings.filterSearchValuesPlaceholder}
+                                            class="w-full rounded border border-ink-700 bg-ink-900 px-2 py-1 text-xs text-ink-100 placeholder:text-ink-400"
+                                          />
+                                        </div>
+                                      )}
+                                      <p
+                                        hidden
+                                        data-filter-value-empty={`${layer.id}:${filter.key}`}
+                                        class="text-[11px] leading-snug text-ink-400"
+                                      />
+                                      <div
+                                        class="space-y-1"
+                                        data-filter-value-list={`${layer.id}:${filter.key}`}
+                                      >
+                                        {filter.values.map((value) => (
+                                          <label
+                                            class="flex cursor-pointer items-start gap-2 text-xs text-ink-200"
+                                            data-filter-value-row
+                                            data-filter-value-text={value.toLowerCase()}
+                                          >
+                                            <input
+                                              type="checkbox"
+                                              data-filter-layer={layer.id}
+                                              data-filter-key={filter.key}
+                                              value={value}
+                                              checked={!filter.defaultExcluded!.includes(value)}
+                                              class="mt-0.5 h-3.5 w-3.5 shrink-0"
+                                            />
+                                            {/*
+                                              Where this filter is the same attribute the map colours
+                                              by, each value carries its ground colour, so the toggle
+                                              and the fill read as one system.
+                                            */}
+                                            {layer.categoryColors?.key === filter.key && (
+                                              <span
+                                                class="mt-1 h-2 w-2 shrink-0 rounded-sm"
+                                                style={`background:${
+                                                  layer.categoryColors.colors.find((c) => c.value === value)
+                                                    ?.color ?? layer.categoryColors.fallback
+                                                }`}
+                                                aria-hidden="true"
+                                              />
+                                            )}
+                                            <span class="min-w-0 flex-1">
+                                              {value}
+                                              {filter.valueDescriptions?.[value] && (
+                                                <span class="block text-[10px] leading-snug text-ink-400">
+                                                  {filter.valueDescriptions[value]}
+                                                </span>
+                                              )}
+                                            </span>
+                                            {/*
+                                              Live count — recalculated from
+                                              MapController's own filtering
+                                              machinery on every filter
+                                              change (see refreshFilterCounts
+                                              in the module script), not
+                                              computed once at build time,
+                                              so it always reflects the
+                                              other filters currently active
+                                              on this same layer.
+                                            */}
+                                            <span
+                                              class="shrink-0 font-mono text-[10px] tabular-nums text-ink-400"
+                                              data-filter-value-count={`${layer.id}:${filter.key}:${value}`}
+                                            >
+                                              0
+                                            </span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </fieldset>
+                                  ),
+                                )}
                               </div>
                             </details>
                           )}
@@ -583,6 +812,15 @@ const strings = {
           ))
         }
       </ul>
+
+      {/*
+        Third inclusion of panels-init.js — see that file's own header
+        comment on why it runs more than once. This one stamps `open` on
+        whichever `[data-layer-group]` categories a reader previously left
+        open, and has to sit after the `<ul>` above so the parser has
+        actually created them by the time it runs.
+      */}
+      <script is:inline src="/panels-init.js"></script>
     </div>
   </aside>
 
@@ -869,6 +1107,7 @@ const strings = {
   import { formatValue, isUnattributedValue } from '~/lib/detailFields';
   import { displayName } from '~/lib/authority.mjs';
   import { metersToMiles, formatMiles, formatCoords, LOW_ACCURACY_MILES } from '~/lib/geo.mjs';
+  import { matchesQuery } from '~/lib/filterQuery.mjs';
 
   type Jurisdiction = {
     geoid: string;
@@ -1017,6 +1256,12 @@ const strings = {
         const el = document.querySelector(`[data-count="${id}"]`);
         if (el) el.textContent = String(shown);
       }
+      // The per-value counts beside each filter checkbox track the same
+      // underlying data this loop already reads — refreshed here so they
+      // stay live the moment a layer's data (or its filters) change,
+      // without a second event to wire up. `refreshFilterCounts` is a
+      // hoisted function declaration further down this same script.
+      refreshFilterCounts();
     },
     onLayerReady: (id) => status(`${layerById.get(id)?.label ?? id} ✓`),
     onError: (id, message) =>
@@ -1996,15 +2241,46 @@ const strings = {
   /**
    * What a closed section says about itself.
    *
-   * Read out of the checkboxes rather than tracked separately, so the summary
+   * Read out of the switches rather than tracked separately, so the summary
    * line cannot claim a layer is on after something else has switched it off —
-   * clearing the filters empties every toggle, and this is what makes the
+   * clearing the filters resets every switch, and this is what makes the
    * headings agree with the map afterwards.
    */
   const groupEls = document.querySelectorAll<HTMLDetailsElement>('[data-layer-group]');
 
   /**
-   * The on-map keys, rebuilt from the toggles' current state.
+   * Persist each category's open/closed state across reloads — extends the
+   * anti-flash pattern panels-init.js already runs for #controls/#news-dock
+   * (see that file's own comment on the third inclusion this reads back).
+   * Stored densely: only categories a reader actually opened get an entry.
+   */
+  const LAYER_GROUPS_OPEN_KEY = 'mapLayerGroupsOpen';
+  groupEls.forEach((group) => {
+    group.addEventListener('toggle', () => {
+      try {
+        const raw = window.localStorage.getItem(LAYER_GROUPS_OPEN_KEY);
+        const state: Record<string, boolean> = raw ? JSON.parse(raw) : {};
+        const id = group.dataset.layerGroup!;
+        if (group.open) state[id] = true;
+        else delete state[id];
+        window.localStorage.setItem(LAYER_GROUPS_OPEN_KEY, JSON.stringify(state));
+      } catch {
+        // Storage can throw (e.g. Safari private browsing) — the category
+        // just doesn't remember its state for the next page view.
+      }
+    });
+  });
+
+  /** A `role="switch"` button's own boolean state. */
+  function isOn(btn: Element): boolean {
+    return btn.getAttribute('aria-checked') === 'true';
+  }
+  function setOn(btn: Element, on: boolean) {
+    btn.setAttribute('aria-checked', String(on));
+  }
+
+  /**
+   * The on-map keys, rebuilt from the switches' current state.
    *
    * Generated from the same categoryColors table as the paint expression and
    * the panel swatches, so the three cannot disagree. Every value is labelled
@@ -2019,8 +2295,8 @@ const strings = {
     for (const layer of layers) {
       const cc = layer.categoryColors;
       if (!cc || cc.showOnMapKey === false) continue;
-      const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${layer.id}"]`);
-      if (!input?.checked) continue;
+      const btn = document.querySelector<HTMLButtonElement>(`[data-layer-switch="${layer.id}"]`);
+      if (!btn || !isOn(btn)) continue;
 
       const card = document.createElement('div');
       card.className = 'rounded-md border border-ink-800 bg-ink-900/85 px-2 py-1.5 backdrop-blur-sm';
@@ -2059,37 +2335,82 @@ const strings = {
     }
   }
 
+  /**
+   * Refresh every category's own count badge, sr-only sentence, dots, and
+   * bulk switch — and persist this drawer's open/closed `<details>` state.
+   * A category's bulk switch reads "on" only when every one of its layers is
+   * on; a mixed state (some on, some off) collapses to visually "off", per
+   * the spec this shipped from — clicking it from either off or mixed turns
+   * every layer in that one category on.
+   */
   function refreshGroups() {
     groupEls.forEach((group) => {
-      const toggles = [...group.querySelectorAll<HTMLInputElement>('[data-layer-toggle]')];
-      const on = group.querySelector('[data-group-on]');
-      if (on) on.textContent = String(toggles.filter((t) => t.checked).length);
-      for (const toggle of toggles) {
-        const dot = group.querySelector(`[data-group-dot="${toggle.dataset.layerToggle}"]`);
-        dot?.classList.toggle('opacity-25', !toggle.checked);
+      const switches = [...group.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')];
+      const onCount = switches.filter((s) => isOn(s)).length;
+      const onBadge = group.querySelector('[data-group-on]');
+      if (onBadge) onBadge.textContent = String(onCount);
+      const sr = group.querySelector('[data-group-sr]');
+      if (sr) sr.textContent = fill(S.categoryLayersShown, { n: onCount, m: switches.length });
+      for (const sw of switches) {
+        const dot = group.querySelector(`[data-group-dot="${sw.dataset.layerSwitch}"]`);
+        dot?.classList.toggle('opacity-25', !isOn(sw));
       }
+      const bulk = group.querySelector<HTMLButtonElement>('[data-category-switch]');
+      if (bulk) setOn(bulk, switches.length > 0 && onCount === switches.length);
     });
     refreshMapKeys();
   }
 
-  document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
-    input.addEventListener('change', () => {
-      const layer = layerById.get(input.dataset.layerToggle!);
-      if (layer) controller.setLayerVisible(layer, input.checked);
+  document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const layer = layerById.get(btn.dataset.layerSwitch!);
+      const next = !isOn(btn);
+      setOn(btn, next);
+      if (layer) controller.setLayerVisible(layer, next);
       refreshGroups();
+      syncFilterStateToUrl();
     });
   });
 
-  // Layers the registry marks `defaultOn` ship pre-checked in the markup —
-  // but a `change` event only fires on user interaction, never for a
-  // checkbox's initial `checked` attribute, so whatever starts checked has
-  // to be turned on here explicitly.
-  document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
-    if (!input.checked) return;
-    const layer = layerById.get(input.dataset.layerToggle!);
+  // Layers the registry marks `defaultOn` ship pre-checked (aria-checked
+  //="true") in the markup, but nothing has told the controller yet — that
+  // happens here, once, on load.
+  document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+    if (!isOn(btn)) return;
+    const layer = layerById.get(btn.dataset.layerSwitch!);
     if (layer) controller.setLayerVisible(layer, true);
   });
   refreshGroups();
+
+  /**
+   * Category bulk switch (level 1). Always scoped to the one category it
+   * lives in — `switches` below is queried from `group`, this category's own
+   * `<details>`, never from the whole document — so there is deliberately no
+   * control anywhere that can turn on every layer in every category at once.
+   * Batched: N layers toggled in one click produce exactly one camera
+   * decision and one status announcement, not N.
+   */
+  document.querySelectorAll<HTMLButtonElement>('[data-category-switch]').forEach((bulk) => {
+    bulk.addEventListener('click', () => {
+      const groupId = bulk.dataset.categorySwitch!;
+      const group = document.querySelector<HTMLElement>(`[data-layer-group="${groupId}"]`);
+      if (!group) return;
+      const switches = [...group.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')];
+      const allOn = switches.length > 0 && switches.every((s) => isOn(s));
+      const turnOn = !allOn;
+      controller.runBatched(() => {
+        for (const sw of switches) {
+          if (isOn(sw) === turnOn) continue;
+          setOn(sw, turnOn);
+          const layer = layerById.get(sw.dataset.layerSwitch!);
+          if (layer) controller.setLayerVisible(layer, turnOn);
+        }
+      });
+      refreshGroups();
+      syncFilterStateToUrl();
+      status(fill(S.categoryLayersShown, { n: turnOn ? switches.length : 0, m: switches.length }));
+    });
+  });
 
   // The layers "what's near me" itself searches — currently both ALPR
   // camera layers, but read from ClientLayer's own `nearMeRadiusMi` (see
@@ -2098,7 +2419,7 @@ const strings = {
   // these stay on while "near me" mode is active; everything else is
   // forced off for the duration.
   const nearMeOnlyLayerIds = new Set<string>(layers.filter((l) => l.nearMeRadiusMi).map((l) => l.id));
-  // Snapshot of every toggle's checked state from just before "near me"
+  // Snapshot of every switch's state from just before "near me"
   // forced its own set on — restored verbatim once the mode ends, so
   // leaving it doesn't cost the reader whatever they'd already switched on.
   // Null both before the first activation and again once restored, so a
@@ -2108,30 +2429,51 @@ const strings = {
   let nearMePriorLayerState: Map<string, boolean> | null = null;
 
   function setNearMeLayerMode(active: boolean) {
-    const toggles = [...document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]')];
-    if (active) {
-      if (!nearMePriorLayerState) {
-        nearMePriorLayerState = new Map(toggles.map((t) => [t.dataset.layerToggle!, t.checked]));
+    const switches = [...document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')];
+    controller.runBatched(() => {
+      if (active) {
+        if (!nearMePriorLayerState) {
+          nearMePriorLayerState = new Map(switches.map((s) => [s.dataset.layerSwitch!, isOn(s)]));
+        }
+        for (const sw of switches) {
+          const shouldBeOn = nearMeOnlyLayerIds.has(sw.dataset.layerSwitch!);
+          if (isOn(sw) === shouldBeOn) continue;
+          setOn(sw, shouldBeOn);
+          const layer = layerById.get(sw.dataset.layerSwitch!);
+          if (layer) controller.setLayerVisible(layer, shouldBeOn);
+        }
+      } else if (nearMePriorLayerState) {
+        const prior = nearMePriorLayerState;
+        nearMePriorLayerState = null;
+        for (const sw of switches) {
+          const wasOn = prior.get(sw.dataset.layerSwitch!) ?? false;
+          if (isOn(sw) === wasOn) continue;
+          setOn(sw, wasOn);
+          const layer = layerById.get(sw.dataset.layerSwitch!);
+          if (layer) controller.setLayerVisible(layer, wasOn);
+        }
       }
-      for (const input of toggles) {
-        const shouldBeOn = nearMeOnlyLayerIds.has(input.dataset.layerToggle!);
-        if (input.checked === shouldBeOn) continue;
-        input.checked = shouldBeOn;
-        const layer = layerById.get(input.dataset.layerToggle!);
-        if (layer) controller.setLayerVisible(layer, shouldBeOn);
-      }
-    } else if (nearMePriorLayerState) {
-      const prior = nearMePriorLayerState;
-      nearMePriorLayerState = null;
-      for (const input of toggles) {
-        const wasOn = prior.get(input.dataset.layerToggle!) ?? false;
-        if (input.checked === wasOn) continue;
-        input.checked = wasOn;
-        const layer = layerById.get(input.dataset.layerToggle!);
-        if (layer) controller.setLayerVisible(layer, wasOn);
-      }
-    }
+    });
     refreshGroups();
+  }
+
+  /**
+   * The count beside each value checkbox, recalculated from
+   * `controller.filteredFeatures` on every filter change — so the number a
+   * reader sees always reflects whatever *other* filters are active on the
+   * same layer, not a static build-time tally.
+   */
+  function refreshFilterCounts() {
+    document.querySelectorAll<HTMLElement>('[data-filter-value-count]').forEach((el) => {
+      const [layerId, key, value] = el.dataset.filterValueCount!.split(':');
+      const matches = controller.filteredFeatures(layerId!);
+      let count = 0;
+      for (const f of matches) {
+        const raw = (f.properties.attributes as Record<string, unknown>)[key!];
+        if (raw != null && String(raw) === value) count++;
+      }
+      el.textContent = String(count);
+    });
   }
 
   document.querySelectorAll<HTMLInputElement>('[data-filter-key]').forEach((input) => {
@@ -2151,8 +2493,139 @@ const strings = {
         key,
         new Set(checked.length === boxes.length ? [] : checked.map((c) => c.value)),
       );
+      refreshFilterCounts();
+      syncFilterStateToUrl();
     });
   });
+
+  /**
+   * `dateRange` filters (level 3, e.g. agency_287g's "Date signed") — a
+   * plain from/to date control wired straight to
+   * `controller.setDateRangeFilter`. Fixes the pre-existing bug where
+   * `dateRange`-kind filters were declared in the registry but silently
+   * dropped from the panel (see clientLayers' own `filters` comment above).
+   */
+  document.querySelectorAll<HTMLInputElement>('[data-date-bound]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const layerId = input.dataset.filterLayer!;
+      const key = input.dataset.filterKey!;
+      const fromEl = document.querySelector<HTMLInputElement>(
+        `[data-filter-layer="${layerId}"][data-filter-key="${key}"][data-date-bound="from"]`,
+      );
+      const toEl = document.querySelector<HTMLInputElement>(
+        `[data-filter-layer="${layerId}"][data-filter-key="${key}"][data-date-bound="to"]`,
+      );
+      controller.setDateRangeFilter(layerId, key, {
+        from: fromEl?.value || undefined,
+        to: toEl?.value || undefined,
+      });
+      refreshFilterCounts();
+      syncFilterStateToUrl();
+    });
+  });
+
+  /**
+   * "Reset to default" (level 3) — restores each value's own
+   * `defaultExcluded`-driven default state, not a blanket "select all".
+   * Batched for the same reason the category bulk switch is: one click can
+   * touch many checkboxes, but the round trip only happens once.
+   */
+  document.querySelectorAll<HTMLButtonElement>('[data-filter-reset]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const layerId = btn.dataset.filterReset!;
+      const key = btn.dataset.filterResetKey!;
+      const layer = layerById.get(layerId);
+      const filter = layer?.filters.find((f) => f.key === key);
+      if (!layer || !filter) return;
+      const boxes = document.querySelectorAll<HTMLInputElement>(
+        `[data-filter-layer="${layerId}"][data-filter-key="${key}"]`,
+      );
+      controller.runBatched(() => {
+        boxes.forEach((box) => {
+          box.checked = !filter.defaultExcluded?.includes(box.value);
+        });
+        const allowed = filter.values.filter((v) => !filter.defaultExcluded?.includes(v));
+        controller.setFilter(layerId, key, new Set(allowed.length === filter.values.length ? [] : allowed));
+      });
+      refreshFilterCounts();
+      syncFilterStateToUrl();
+      status(`${filter.label}: ${S.filterResetToDefault}`);
+    });
+  });
+
+  /**
+   * Search-within-values and search-within-layer-names (levels 3 and 2).
+   * Plain substring match via the shared filterQuery module — see that
+   * file's own header for why this is deliberately not fuzzy. A force-opened
+   * group (via `.open = true`) is restored to whatever it was once the query
+   * clears; a zero-match group is removed from view entirely rather than
+   * left open and empty.
+   */
+  function wireValueSearch(input: HTMLInputElement) {
+    input.hidden = false;
+    const layerId = input.dataset.filterValueSearch!;
+    const key = input.dataset.filterValueSearchKey!;
+    const list = document.querySelector<HTMLElement>(`[data-filter-value-list="${layerId}:${key}"]`);
+    const empty = document.querySelector<HTMLElement>(`[data-filter-value-empty="${layerId}:${key}"]`);
+    const layer = layerById.get(layerId);
+    const filter = layer?.filters.find((f) => f.key === key);
+    if (!list) return;
+    const rows = [...list.querySelectorAll<HTMLElement>('[data-filter-value-row]')];
+    const details = input.closest('details');
+    let priorOpen: boolean | null = null;
+    input.addEventListener('input', () => {
+      const query = input.value;
+      if (query.trim() && details && priorOpen === null) priorOpen = details.open;
+      let anyVisible = false;
+      for (const row of rows) {
+        const matches = matchesQuery(row.dataset.filterValueText ?? '', query);
+        row.hidden = !matches;
+        if (matches) anyVisible = true;
+      }
+      if (query.trim()) {
+        if (details) details.open = true;
+      } else if (details && priorOpen !== null) {
+        details.open = priorOpen;
+        priorOpen = null;
+      }
+      if (empty) {
+        empty.hidden = anyVisible || !query.trim();
+        if (!anyVisible && query.trim()) {
+          empty.textContent = fill(S.filterSearchValuesEmpty, { query, filter: filter?.label ?? '' });
+        }
+      }
+    });
+  }
+  document
+    .querySelectorAll<HTMLInputElement>('[data-filter-value-search]')
+    .forEach((input) => wireValueSearch(input));
+
+  function wireLayerSearch(input: HTMLInputElement) {
+    input.hidden = false;
+    const groupId = input.dataset.layerSearch!;
+    const groupEl = document.querySelector<HTMLElement>(`[data-layer-group="${groupId}"]`);
+    const list = document.querySelector<HTMLElement>(`[data-layer-list="${groupId}"]`);
+    const empty = document.querySelector<HTMLElement>(`[data-layer-search-empty="${groupId}"]`);
+    const categoryLabel = groupEl?.querySelector('[data-category-label]')?.textContent ?? '';
+    if (!list) return;
+    const rows = [...list.querySelectorAll<HTMLElement>('[data-layer-row]')];
+    input.addEventListener('input', () => {
+      const query = input.value;
+      let anyVisible = false;
+      for (const row of rows) {
+        const matches = matchesQuery(row.dataset.layerName ?? '', query);
+        row.hidden = !matches;
+        if (matches) anyVisible = true;
+      }
+      if (empty) {
+        empty.hidden = anyVisible || !query.trim();
+        if (!anyVisible && query.trim()) {
+          empty.textContent = fill(S.filterSearchLayersEmpty, { query, category: categoryLabel });
+        }
+      }
+    });
+  }
+  document.querySelectorAll<HTMLInputElement>('[data-layer-search]').forEach((input) => wireLayerSearch(input));
 
   /**
    * Everything the reader has narrowed the map by, put back to how it opened.
@@ -2167,15 +2640,22 @@ const strings = {
    * switch on what they came for.
    */
   document.getElementById('clear-filters')?.addEventListener('click', () => {
-    document
-      .querySelectorAll<HTMLInputElement>('[data-filter-key]')
-      .forEach((c) => (c.checked = false));
-    controller.clearFilters();
+    controller.runBatched(() => {
+      document
+        .querySelectorAll<HTMLInputElement>('[data-filter-key]')
+        .forEach((c) => (c.checked = false));
+      controller.clearFilters();
 
-    document.querySelectorAll<HTMLInputElement>('[data-layer-toggle]').forEach((input) => {
-      input.checked = false;
-      const layer = layerById.get(input.dataset.layerToggle!);
-      if (layer) controller.setLayerVisible(layer, false);
+      document.querySelectorAll<HTMLInputElement>('[data-date-bound]').forEach((input) => {
+        if (!input.value) return;
+        input.value = '';
+      });
+
+      document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+        setOn(btn, false);
+        const layer = layerById.get(btn.dataset.layerSwitch!);
+        if (layer) controller.setLayerVisible(layer, false);
+      });
     });
 
     // Emptying the box is not enough on its own — the results list stays open
@@ -2189,7 +2669,13 @@ const strings = {
     searchInput.value = '';
     runSearch('');
     controller.clearJurisdiction();
+    document.querySelectorAll<HTMLInputElement>('[data-filter-value-search], [data-layer-search]').forEach((input) => {
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+    });
     refreshGroups();
+    refreshFilterCounts();
+    syncFilterStateToUrl();
 
     status(S.filtersCleared);
   });
@@ -2398,6 +2884,102 @@ const strings = {
     if (!detailEl.hidden) closeSheet();
   });
 
+  /* ---------------------------- Shareable URL ---------------------------- */
+
+  /**
+   * Filter state as URL query params — layer toggles: `on=id,id`; enum
+   * filter values: `f.<layerId>.<key>=value,value`, written only when the
+   * filter is actively narrowing (some but not all values ticked), the same
+   * "empty set means no filter" rule `setFilter`'s own caller already
+   * follows; `dateRange` filters: `fd.<layerId>.<key>=from,to`, either side
+   * blank when unset. Purely client-side (§4: "near me" never round-trips a
+   * location, and this doesn't either) — `history.replaceState` only, no
+   * navigation and no server involved. Deliberately leaves `lat`/`lng`/
+   * `zoom` (the /near-me deep link, see above) and any other existing query
+   * param untouched, clearing only the keys this function itself owns.
+   */
+  function syncFilterStateToUrl() {
+    const url = new URL(window.location.href);
+    for (const key of [...url.searchParams.keys()]) {
+      if (key === 'on' || key.startsWith('f.') || key.startsWith('fd.')) url.searchParams.delete(key);
+    }
+    const onIds = [...document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]')]
+      .filter((btn) => isOn(btn))
+      .map((btn) => btn.dataset.layerSwitch!);
+    if (onIds.length) url.searchParams.set('on', onIds.join(','));
+    for (const layer of layers) {
+      for (const filter of layer.filters) {
+        if (filter.kind === 'dateRange') {
+          const fromEl = document.querySelector<HTMLInputElement>(
+            `[data-filter-layer="${layer.id}"][data-filter-key="${filter.key}"][data-date-bound="from"]`,
+          );
+          const toEl = document.querySelector<HTMLInputElement>(
+            `[data-filter-layer="${layer.id}"][data-filter-key="${filter.key}"][data-date-bound="to"]`,
+          );
+          if (fromEl?.value || toEl?.value) {
+            url.searchParams.set(`fd.${layer.id}.${filter.key}`, `${fromEl?.value ?? ''},${toEl?.value ?? ''}`);
+          }
+        } else {
+          const boxes = [
+            ...document.querySelectorAll<HTMLInputElement>(
+              `[data-filter-layer="${layer.id}"][data-filter-key="${filter.key}"]`,
+            ),
+          ];
+          const checked = boxes.filter((b) => b.checked);
+          if (checked.length > 0 && checked.length < boxes.length) {
+            url.searchParams.set(`f.${layer.id}.${filter.key}`, checked.map((b) => b.value).join(','));
+          }
+        }
+      }
+    }
+    history.replaceState(null, '', url);
+  }
+
+  /** The inverse of `syncFilterStateToUrl` — applies `?on=`/`?f.…=`/`?fd.…=` from the URL that loaded this page. */
+  function applyFilterStateFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    if (![...params.keys()].some((k) => k === 'on' || k.startsWith('f.') || k.startsWith('fd.'))) return;
+    controller.runBatched(() => {
+      const onParam = params.get('on');
+      if (onParam !== null) {
+        const onSet = new Set(onParam.split(',').filter(Boolean));
+        document.querySelectorAll<HTMLButtonElement>('[data-layer-switch]').forEach((btn) => {
+          const shouldBeOn = onSet.has(btn.dataset.layerSwitch!);
+          if (isOn(btn) === shouldBeOn) return;
+          setOn(btn, shouldBeOn);
+          const layer = layerById.get(btn.dataset.layerSwitch!);
+          if (layer) controller.setLayerVisible(layer, shouldBeOn);
+        });
+      }
+      for (const [key, value] of params.entries()) {
+        if (key.startsWith('f.')) {
+          const [, layerId, filterKey] = key.split('.');
+          if (!layerId || !filterKey) continue;
+          const values = new Set(value.split(',').filter(Boolean));
+          document
+            .querySelectorAll<HTMLInputElement>(`[data-filter-layer="${layerId}"][data-filter-key="${filterKey}"]`)
+            .forEach((box) => (box.checked = values.has(box.value)));
+          controller.setFilter(layerId, filterKey, values);
+        } else if (key.startsWith('fd.')) {
+          const [, layerId, filterKey] = key.split('.');
+          if (!layerId || !filterKey) continue;
+          const [from, to] = value.split(',');
+          const fromEl = document.querySelector<HTMLInputElement>(
+            `[data-filter-layer="${layerId}"][data-filter-key="${filterKey}"][data-date-bound="from"]`,
+          );
+          const toEl = document.querySelector<HTMLInputElement>(
+            `[data-filter-layer="${layerId}"][data-filter-key="${filterKey}"][data-date-bound="to"]`,
+          );
+          if (fromEl) fromEl.value = from ?? '';
+          if (toEl) toEl.value = to ?? '';
+          controller.setDateRangeFilter(layerId, filterKey, { from: from || undefined, to: to || undefined });
+        }
+      }
+    });
+    refreshGroups();
+    refreshFilterCounts();
+  }
+
   /* ------------------------------ Start-up ------------------------------ */
 
   // Nothing draws until the reader switches it on — the map opens on the
@@ -2417,13 +2999,19 @@ const strings = {
     }
   }
 
+  // A shared URL's filter state wins over both the registry defaults just
+  // applied above and the switches' own pre-checked markup — loading a link
+  // a reader shared should show exactly what they shared, not the site's
+  // own opening state.
+  applyFilterStateFromUrl();
+
   status(S.loading, 0);
   controller.map.once('load', () => {
     for (const id of DEFAULT_ON) {
-      const input = document.querySelector<HTMLInputElement>(`[data-layer-toggle="${id}"]`);
+      const btn = document.querySelector<HTMLButtonElement>(`[data-layer-switch="${id}"]`);
       const layer = layerById.get(id);
-      if (input && layer) {
-        input.checked = true;
+      if (btn && layer) {
+        setOn(btn, true);
         controller.setLayerVisible(layer, true);
       }
     }

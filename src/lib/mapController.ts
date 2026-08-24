@@ -167,7 +167,19 @@ export interface NearMeRecord {
   point: [number, number];
 }
 
-type FilterState = Map<string, Set<string>>;
+/** An active `dateRange`-kind filter — either bound may be omitted. */
+export interface DateRangeFilter {
+  from?: string;
+  to?: string;
+}
+
+/**
+ * A layer's active filters, keyed by attribute. `enum` filters store the set
+ * of ticked values; `dateRange` filters store a `DateRangeFilter`. Told apart
+ * at read time with `instanceof Set` rather than a tag field, since the two
+ * shapes are never ambiguous with each other.
+ */
+type FilterState = Map<string, Set<string> | DateRangeFilter>;
 
 export interface ControllerEvents {
   onSelect?: (feature: LoadedFeature | null, layer?: ClientLayer) => void;
@@ -3464,7 +3476,7 @@ export class MapController {
         // while this layer was still downloading (or still switched off) has
         // been waiting for this moment. The first paint already drew the
         // filtered subset; the zoom the tick promised happens now.
-        if ((this.filters.get(layer.id)?.size ?? 0) > 0) this.zoomAfterFilterChange(layer.id);
+        if ((this.filters.get(layer.id)?.size ?? 0) > 0) this.maybeZoomAfterFilterChange(layer.id);
       });
     } else {
       this.visible.delete(layer.id);
@@ -3507,7 +3519,7 @@ export class MapController {
       this.map.setLayoutProperty(styleId, 'visibility', visibility);
     }
     this.repaintTintDependents(layer.id);
-    this.emitCounts();
+    this.maybeEmitCounts();
   }
 
   /**
@@ -3655,6 +3667,81 @@ export class MapController {
     return false;
   }
 
+  /**
+   * How many nested `runBatched` calls are currently open. A bulk switch
+   * (category-level "on"/"off", or value-level "reset to default") calls
+   * `setLayerVisible`/`setFilter` once per layer or value inside
+   * `runBatched`, and each of those would otherwise fire its own camera
+   * round trip and `emitCounts` — N animations and N `fitBounds` calls for
+   * one bulk action. While `batchDepth > 0`, those two side effects are
+   * deferred instead of skipped: `batchDirty` remembers that something
+   * changed and `lastBatchLayerId` remembers which layer to frame, so
+   * `runBatched`'s own `finally` block can settle both exactly once when
+   * the outermost call returns.
+   */
+  private batchDepth = 0;
+  private batchDirty = false;
+  private lastBatchLayerId: string | null = null;
+
+  /**
+   * Run `fn`, deferring every `setLayerVisible`/`setFilter`/`clearFilters`
+   * camera move and count emission inside it to a single decision made once
+   * `fn` returns. Nestable — only the outermost call settles anything.
+   * Callers that need to announce the result (an aria-live region) should
+   * do so once, after this returns, not inside `fn`.
+   */
+  runBatched(fn: () => void) {
+    this.batchDepth++;
+    try {
+      fn();
+    } finally {
+      this.batchDepth--;
+      if (this.batchDepth === 0 && this.batchDirty) {
+        this.batchDirty = false;
+        const targetLayerId = this.lastBatchLayerId;
+        this.lastBatchLayerId = null;
+        this.emitCounts();
+        if (this.anyActiveFilters()) {
+          if (targetLayerId) this.zoomAfterFilterChange(targetLayerId);
+        } else if (this.preFilterCamera) {
+          this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
+          this.preFilterCamera = null;
+        }
+      }
+    }
+  }
+
+  /** `emitCounts`, deferred to the end of the current batch if one is open. */
+  private maybeEmitCounts() {
+    if (this.batchDepth > 0) {
+      this.batchDirty = true;
+      return;
+    }
+    this.emitCounts();
+  }
+
+  /** `zoomAfterFilterChange`, deferred to the end of the current batch if one is open. */
+  private maybeZoomAfterFilterChange(layerId: string) {
+    if (this.batchDepth > 0) {
+      this.batchDirty = true;
+      this.lastBatchLayerId = layerId;
+      return;
+    }
+    this.zoomAfterFilterChange(layerId);
+  }
+
+  /** The "filtering is a round trip" camera restore, deferred to the end of a batch if one is open. */
+  private maybeRestorePreFilterCamera() {
+    if (this.batchDepth > 0) {
+      this.batchDirty = true;
+      return;
+    }
+    if (this.preFilterCamera) {
+      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
+      this.preFilterCamera = null;
+    }
+  }
+
   setFilter(layerId: string, key: string, values: Set<string>) {
     if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
     const state = this.filters.get(layerId)!;
@@ -3668,10 +3755,24 @@ export class MapController {
     // comes off, the reader is put back exactly where they were standing
     // before the trip began.
     if (this.anyActiveFilters()) {
-      this.zoomAfterFilterChange(layerId);
-    } else if (activeBefore && this.preFilterCamera) {
-      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
-      this.preFilterCamera = null;
+      this.maybeZoomAfterFilterChange(layerId);
+    } else if (activeBefore) {
+      this.maybeRestorePreFilterCamera();
+    }
+  }
+
+  /** Same round trip as `setFilter`, for a `dateRange`-kind filter. Empty bounds clear the filter. */
+  setDateRangeFilter(layerId: string, key: string, range: DateRangeFilter) {
+    if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
+    const state = this.filters.get(layerId)!;
+    const activeBefore = this.anyActiveFilters();
+    if (!range.from && !range.to) state.delete(key);
+    else state.set(key, { from: range.from, to: range.to });
+    this.refresh(layerId);
+    if (this.anyActiveFilters()) {
+      this.maybeZoomAfterFilterChange(layerId);
+    } else if (activeBefore) {
+      this.maybeRestorePreFilterCamera();
     }
   }
 
@@ -3747,10 +3848,7 @@ export class MapController {
     for (const id of layerId ? [layerId] : this.data.keys()) this.refresh(id);
     // The same round trip as setFilter: clearing the last active filter puts
     // the reader back where they were before filtering moved them.
-    if (!this.anyActiveFilters() && this.preFilterCamera) {
-      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
-      this.preFilterCamera = null;
-    }
+    if (!this.anyActiveFilters()) this.maybeRestorePreFilterCamera();
   }
 
   /** Features of a layer that pass its current filters. */
@@ -3759,9 +3857,14 @@ export class MapController {
     const state = this.filters.get(layerId);
     if (!state || state.size === 0) return all;
     return all.filter((f) =>
-      [...state.entries()].every(([key, values]) => {
+      [...state.entries()].every(([key, value]) => {
         const raw = (f.properties.attributes as Record<string, unknown>)[key];
-        return raw != null && values.has(String(raw));
+        if (raw == null) return false;
+        if (value instanceof Set) return value.has(String(raw));
+        const d = String(raw);
+        if (value.from && d < value.from) return false;
+        if (value.to && d > value.to) return false;
+        return true;
       }),
     );
   }
@@ -3782,7 +3885,7 @@ export class MapController {
     // no longer shows.
     const blocks = this.map.getSource(this.blockSourceId(layerId)) as GeoJSONSource | undefined;
     blocks?.setData(this.blockFeatures(layer, visible));
-    this.emitCounts();
+    this.maybeEmitCounts();
   }
 
   private emitCounts() {
