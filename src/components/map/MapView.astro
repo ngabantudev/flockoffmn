@@ -78,6 +78,7 @@ const clientLayers = loaded.map(({ definition: d, collection }) => ({
   bearingKey: d.bearingKey,
   scale: d.scale,
   blockAggregate: d.blockAggregate,
+  levelOfDetail: d.levelOfDetail,
   categoryColors: d.categoryColors
     ? {
         key: d.categoryColors.key,
@@ -241,6 +242,7 @@ const layerGroups = LAYER_CATEGORIES.map((category) => ({
 
 const strings = {
   loading: t('loading'),
+  layerLoadError: t('layerLoadError'),
   noResults: t('noResults'),
   limitations: t('limitations'),
   source: t('source'),
@@ -600,7 +602,7 @@ const strings = {
                                 />
                                 <span class="min-w-0">{layer.label}</span>
                               </p>
-                              <p class="mt-1 text-xs leading-snug text-ink-400">{layer.summary}</p>
+                              <p class="mt-1 text-xs leading-snug text-ink-400" data-layer-summary={layer.id}>{layer.summary}</p>
                               <p class="mt-1 font-mono text-[11px] text-ink-400">
                                 <span data-count={layer.id}>0</span>
                                 <span> {strings.ofTotal} </span>
@@ -1163,6 +1165,35 @@ const strings = {
     if (holdMs) window.setTimeout(() => (statusEl.style.opacity = '0'), holdMs);
   }
 
+  /**
+   * Busy/error feedback on one layer row — see mapController.ts's
+   * `onLoadStart` and this file's own `onLoadStart`/`onLayerReady`/`onError`
+   * wiring below. `aria-busy` on the row itself (not just a visual change) so
+   * a screen reader on the row picks up the same "still loading" state a
+   * sighted reader gets from the summary line swapping to S.loading.
+   *
+   * The layer name and record-count line are untouched by any of this —
+   * only `[data-layer-summary]`, the one-line description under the name,
+   * ever changes text, so a busy or failed row never reflows the rest of
+   * the panel.
+   */
+  function setLayerRowBusy(layerId: string, busy: boolean) {
+    const row = document.querySelector<HTMLElement>(`[data-layer-row="${layerId}"]`);
+    if (!row) return;
+    // aria-busy is a tri-state ARIA attribute, not a boolean HTML one —
+    // `toggleAttribute` would leave a truthy `aria-busy=""` behind instead of
+    // removing it, so the value is set/removed explicitly.
+    if (busy) row.setAttribute('aria-busy', 'true');
+    else row.removeAttribute('aria-busy');
+  }
+
+  /** Swap a layer row's summary line to `text`, or back to the layer's own summary when `text` is null. */
+  function setLayerRowSummary(layerId: string, text: string | null) {
+    const el = document.querySelector<HTMLElement>(`[data-layer-summary="${layerId}"]`);
+    if (!el) return;
+    el.textContent = text ?? layerById.get(layerId)?.summary ?? '';
+  }
+
   // Declared here, ahead of `controller`, rather than down with the rest of
   // the DOM-wiring helpers below: NearMeRadiusControl.onAdd calls
   // formatNearMeRadiusValue synchronously (to set its initial
@@ -1273,9 +1304,31 @@ const strings = {
       // hoisted function declaration further down this same script.
       refreshFilterCounts();
     },
-    onLayerReady: (id) => status(`${layerById.get(id)?.label ?? id} ✓`),
-    onError: (id, message) =>
-      status(`${layerById.get(id)?.label ?? id}: ${message}`, 6000),
+    onLoadStart: (id) => {
+      setLayerRowBusy(id, true);
+      setLayerRowSummary(id, S.loading);
+    },
+    onLayerReady: (id) => {
+      setLayerRowBusy(id, false);
+      setLayerRowSummary(id, null);
+      status(`${layerById.get(id)?.label ?? id} ✓`);
+    },
+    onError: (id, message) => {
+      setLayerRowBusy(id, false);
+      setLayerRowSummary(id, fill(S.layerLoadError, { message }));
+      // The layer never actually loaded, so the checkbox showing it checked
+      // is a lie about what's on the map — see mapController.ts's own
+      // onError comment. Both halves of "off" happen here: the visible
+      // control (the checkbox) and the controller's own `visible` state
+      // (setLayerVisible), so a reader who re-checks it immediately after
+      // gets a real retry rather than loadLayer's "already loaded" early
+      // return doing nothing.
+      const box = document.querySelector<HTMLInputElement>(`[data-layer-switch="${id}"]`);
+      if (box) box.checked = false;
+      const layer = layerById.get(id);
+      if (layer) controller.setLayerVisible(layer, false);
+      status(`${layerById.get(id)?.label ?? id}: ${message}`, 6000);
+    },
   });
 
   // Below `lg` the detail panel is a sheet over the map rather than a sibling

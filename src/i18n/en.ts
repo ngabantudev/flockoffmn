@@ -81,6 +81,12 @@ export const en: Record<string, string> = {
   filterDateFrom: 'From',
   filterDateTo: 'To',
   loading: 'Loading map data…',
+  // Replaces a layer row's summary line while its checkbox is checked but its
+  // data failed to load (see MapView.astro's onError wiring) — {message} is
+  // the caught error's own text (an HTTP status, a network failure), not
+  // translated itself, the same way status()'s existing onError toast already
+  // shows it raw.
+  layerLoadError: "Couldn't load — {message}",
   mapLabel: 'Interactive map of surveillance, enforcement and housing-policy records',
   resetView: 'Reset to Minnesota',
   mapNearMe: 'ALPRs Near Me',

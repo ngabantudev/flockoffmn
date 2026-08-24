@@ -915,6 +915,28 @@ export interface LayerDefinition {
     detailFrom: number;
   };
   /**
+   * Serve a coarser rendering geometry below a zoom threshold, for a polygon
+   * layer too large to hand a phone at full resolution the instant it is
+   * switched on — `holc_appraisal_detail`'s 11,561 block-by-block polygons is
+   * the one that needed it: full precision it cannot tell apart from the
+   * coarser `redlining.geojson` areas already on screen at a metro-wide zoom,
+   * but the fetch and parse cost is paid regardless of whether a reader is
+   * zoomed in enough to see it.
+   *
+   * Unlike `blockAggregate` above, this is not a computed stand-in drawn from
+   * records already on the map — `simplifiedDataPath` is a second file the
+   * same ingest script writes, same features, same attributes, same ids,
+   * fewer vertices per polygon. It is a rendering optimisation only: never
+   * its own layer, never offered as a download, never a second claim about
+   * the data. See holc-detail.mjs's own comment on the file it writes.
+   */
+  levelOfDetail?: {
+    /** Served below fullDetailFromZoom; same schema, fewer vertices per polygon. */
+    simplifiedDataPath: string;
+    /** Map zoom at and above which the full-resolution dataPath is used instead. */
+    fullDetailFromZoom: number;
+  };
+  /**
    * How strongly a line layer is painted, 0–1. Omit for the standard weight.
    *
    * A layer that is context rather than subject has to be legible without

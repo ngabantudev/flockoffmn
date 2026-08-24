@@ -1533,6 +1533,16 @@ export const LAYERS: LayerDefinition[] = [
     // ("C3" on 682 of them), and below street zoom every one of those is a
     // collision candidate placed and then discarded.
     labelBy: { key: 'miArea', minzoom: 12 },
+    // The block outlines are indistinguishable from redlining.geojson's
+    // coarser graded areas below street zoom, so a reader who has only just
+    // switched this layer on at a metro-wide view is paying full 11,561-
+    // polygon resolution to see something that reads the same as the layer
+    // beside it. 14 sits between this layer's own labelBy.minzoom (12, where
+    // an area identifier is legible) and the racial-covenants layer's parcel
+    // blockAggregate.detailFrom (15, elsewhere in this file) — a block is
+    // coarser than a parcel, so it can afford to resolve one zoom step
+    // earlier.
+    levelOfDetail: { simplifiedDataPath: '/data/holc-detail-simplified.geojson', fullDetailFromZoom: 14 },
     // No `related` join here, deliberately. The tract's present-day burden
     // band is stamped on each block at ingest instead: fetching the whole
     // cumulative-stressor layer (3.6 MB, 683 KB gzipped) the moment a reader

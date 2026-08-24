@@ -92,6 +92,8 @@
  * as a list with coverage shares; see redlining.mjs.
  */
 
+import { writeFile, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import {
   arcgisCount,
   arcgisQueryAll,
@@ -102,8 +104,133 @@ import {
   without,
   log,
   slugId,
+  PUBLIC_DATA,
 } from '../lib/util.mjs';
 import { findContaining, representativePoint } from '../../../src/lib/geo.mjs';
+
+/**
+ * ---------------------------------------------------------------------------
+ * THE SIMPLIFIED RENDERING COMPANION
+ * ---------------------------------------------------------------------------
+ *
+ * 11,561 full-resolution block polygons is the right file to export and to
+ * draw once a reader is zoomed in far enough to actually see the difference
+ * from the coarser `redlining.geojson` areas — but it is the wrong file to
+ * hand a phone the instant the layer is switched on at a metro-wide zoom,
+ * where every one of those vertices is spent rendering something indistinguishable
+ * from the coarser layer already on screen. `holc-detail-simplified.geojson`
+ * below is a second, geometry-only file with the same features, attributes
+ * and ids as the canonical export, just fewer vertices per polygon — the map
+ * loads it below `fullDetailFromZoom` (see registry.ts's `levelOfDetail` on
+ * `holc_appraisal_detail`) and swaps to the file above once the reader has
+ * zoomed in past it. It is never registered as its own layer, never offered
+ * as a download, and never a claim about the data beyond the one the
+ * full-resolution file already makes — see writeLayer's call below for that
+ * one, which stays the canonical, exported, citable file.
+ *
+ * The reduction itself is Douglas–Peucker, implemented locally rather than
+ * pulled in as a dependency (see CLAUDE.md's "Dependency-Free ETL" rule) —
+ * it is a well-known, easily checked algorithm, not one worth a package for
+ * the few dozen lines it takes.
+ */
+
+/** Perpendicular distance from `point` to the line through `lineStart`/`lineEnd`, in degrees. */
+function perpendicularDistance(point, lineStart, lineEnd) {
+  const [x, y] = point;
+  const [x1, y1] = lineStart;
+  const [x2, y2] = lineEnd;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) return Math.hypot(x - x1, y - y1);
+  const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(x - projX, y - projY);
+}
+
+/**
+ * Classic recursive Douglas–Peucker over an open polyline: keeps a point only
+ * if it sits farther than `epsilon` from the straight line its neighbours
+ * would otherwise draw. `points` here is never long enough (block outlines
+ * run to a few dozen vertices, not thousands) for the recursion depth to be a
+ * concern.
+ */
+function douglasPeucker(points, epsilon) {
+  if (points.length < 3) return points;
+  let maxDist = 0;
+  let index = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const d = perpendicularDistance(points[i], points[0], points[points.length - 1]);
+    if (d > maxDist) {
+      maxDist = d;
+      index = i;
+    }
+  }
+  if (maxDist > epsilon) {
+    const left = douglasPeucker(points.slice(0, index + 1), epsilon);
+    const right = douglasPeucker(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+  return [points[0], points[points.length - 1]];
+}
+
+/**
+ * Douglas–Peucker adapted to a closed GeoJSON ring (first coordinate ===
+ * last). A straight run of the open algorithm from first-to-last degenerates
+ * on a closed ring — start and end are the same point, so there is no line to
+ * measure distance from. Splitting first at the vertex farthest from the
+ * start, the standard fix for a closed curve, gives the open algorithm two
+ * honest arcs to work on instead. Falls back to the original ring untouched
+ * if simplification would leave fewer than four coordinates — the minimum a
+ * closed polygon ring can have — rather than publish a degenerate shape.
+ */
+function simplifyRing(ring, epsilon) {
+  if (ring.length <= 4) return ring;
+  const first = ring[0];
+  let maxDist = 0;
+  let splitIndex = 1;
+  for (let i = 1; i < ring.length - 1; i++) {
+    const d = Math.hypot(ring[i][0] - first[0], ring[i][1] - first[1]);
+    if (d > maxDist) {
+      maxDist = d;
+      splitIndex = i;
+    }
+  }
+  const arc1 = douglasPeucker(ring.slice(0, splitIndex + 1), epsilon);
+  const arc2 = douglasPeucker(ring.slice(splitIndex), epsilon);
+  const simplified = arc1.slice(0, -1).concat(arc2);
+  if (simplified.length < 4) return ring;
+  const last = simplified[simplified.length - 1];
+  if (last[0] !== simplified[0][0] || last[1] !== simplified[0][1]) simplified.push(simplified[0]);
+  return simplified;
+}
+
+/** simplifyRing applied through a Polygon's or MultiPolygon's ring nesting. Other geometry types pass through untouched — this layer is polygons only. */
+function simplifyGeometry(geometry, epsilon) {
+  if (!geometry) return geometry;
+  const { type, coordinates } = geometry;
+  if (type === 'Polygon') {
+    return { ...geometry, coordinates: coordinates.map((ring) => simplifyRing(ring, epsilon)) };
+  }
+  if (type === 'MultiPolygon') {
+    return {
+      ...geometry,
+      coordinates: coordinates.map((poly) => poly.map((ring) => simplifyRing(ring, epsilon))),
+    };
+  }
+  return geometry;
+}
+
+/**
+ * ~30 m at the Twin Cities' latitude — a modest fraction of a city block
+ * (typically 100–200 m a side), enough to shed most of a block outline's
+ * vertices at the zoomed-out scale this file is drawn at without a shape a
+ * reader would notice had moved. (0.00015°, ~13 m, was tried first and left
+ * most vertices in place — these blocks were already digitised close to
+ * rectangular, so the tolerance needs to clear a bend's actual size, not
+ * just the ~1 m rounding noise thinGeometry already removes.)
+ */
+const SIMPLIFY_EPSILON_DEG = 0.0003;
 
 const SERVICE =
   'https://arcgis.metc.state.mn.us/data1/rest/services/planning/Other_Plan_Areas_Public/FeatureServer/0';
@@ -472,6 +599,36 @@ async function main() {
     ],
     features,
   });
+
+  // The simplified rendering companion — see the header comment above
+  // SIMPLIFY_EPSILON_DEG for what this file is and, as importantly, what it
+  // is not. Same features, attributes and ids as the file writeLayer just
+  // wrote; only the vertex count per polygon changes.
+  const simplifiedFeatures = features.map((f) => ({
+    ...f,
+    geometry: simplifyGeometry(f.geometry, SIMPLIFY_EPSILON_DEG),
+  }));
+  const simplifiedPath = path.join(PUBLIC_DATA, 'holc-detail-simplified.geojson');
+  const simplifiedBody = JSON.stringify({ type: 'FeatureCollection', features: simplifiedFeatures });
+  // Same "leave the file alone if nothing moved" reasoning as writeLayer's
+  // own unchanged-file guard (see its comment there) — this file carries no
+  // timestamp to strip first, so a plain byte comparison already does the
+  // job of keeping a no-op run's git diff quiet.
+  let previousSimplifiedBody = null;
+  try {
+    previousSimplifiedBody = await readFile(simplifiedPath, 'utf8');
+  } catch {
+    // No previous file. Write a fresh one.
+  }
+  if (previousSimplifiedBody === simplifiedBody) {
+    log('holc-detail', 'simplified geometry unchanged');
+  } else {
+    await writeFile(simplifiedPath, simplifiedBody);
+    log(
+      'holc-detail',
+      `wrote ${simplifiedFeatures.length} simplified features -> public/data/holc-detail-simplified.geojson`,
+    );
+  }
 }
 
 main().catch((err) => {

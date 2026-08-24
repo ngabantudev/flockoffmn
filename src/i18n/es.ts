@@ -69,6 +69,7 @@ export const es: Record<string, string> = {
   filterDateFrom: 'Desde',
   filterDateTo: 'Hasta',
   loading: 'Cargando datos del mapa…',
+  layerLoadError: 'No se pudo cargar — {message}',
   mapLabel: 'Mapa interactivo de registros de vigilancia, control migratorio y política de vivienda',
   resetView: 'Volver a Minnesota',
   mapNearMe: 'ALPR cerca de mí',
