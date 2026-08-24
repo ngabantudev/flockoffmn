@@ -84,6 +84,49 @@ const FIRST_PERSON_ACCOUNT = new RegExp(
   `\\bmy\\b[^.]{0,40}\\b${NARRATIVE}\\b|\\b${NARRATIVE}\\b[^.]{0,20}\\bmy\\b|\\bwhat it.s like\\b|\\bmy story\\b`,
 );
 
+/**
+ * Whether OFFICIAL_ROLE appears close enough to a narrative match to plausibly
+ * be its subject, rather than somewhere else in the same headline.
+ *
+ * The guard used to run OFFICIAL_ROLE.test() against the whole haystack, so
+ * any role word anywhere in the title+description — including one that names
+ * a completely different person, like "County board approves camera funding
+ * as father recalls his son's arrest by ICE" — stood down pronoun-subject,
+ * family-subject, and first-person-account for the entire item. Scoping the
+ * check to a window around the actual match keeps the guard's intent ("the
+ * sheriff defends his department's contract") without also suppressing the
+ * rule for role words that have nothing to do with the pronoun/family/first-
+ * person subject the rule is trying to catch.
+ *
+ * "Nearby" is bounded the same way every other proximity check in this file
+ * is: same sentence, via a period boundary, matching the `[^.]{0,N}` clauses
+ * used throughout PERSON_RULES rather than a raw character count. RADIUS is
+ * only a fallback cap for descriptions that run long without a period.
+ */
+const OFFICIAL_ROLE_RADIUS = 80;
+
+function officialRoleNearby(haystack, match) {
+  const from = Math.max(0, match.index - OFFICIAL_ROLE_RADIUS);
+  const to = Math.min(haystack.length, match.index + match[0].length + OFFICIAL_ROLE_RADIUS);
+  const priorPeriod = haystack.lastIndexOf('.', match.index);
+  const start = priorPeriod >= from ? priorPeriod + 1 : from;
+  const nextPeriod = haystack.indexOf('.', match.index + match[0].length);
+  const end = nextPeriod !== -1 && nextPeriod < to ? nextPeriod : to;
+  return OFFICIAL_ROLE.test(haystack.slice(start, end));
+}
+
+/**
+ * Build a `test` function for a rule that stands down near an official role.
+ * All three narrative rules below share this shape; factored out so a future
+ * fourth one is a call site rather than another copy-pasted closure.
+ */
+function guardedByOfficialRole(pattern) {
+  return (haystack) => {
+    const m = pattern.exec(haystack);
+    return m !== null && !officialRoleNearby(haystack, m);
+  };
+}
+
 const PERSON_RULES = [
   {
     // §1b, first clause — anyone subject to enforcement.
@@ -159,7 +202,7 @@ const PERSON_RULES = [
     // directions, because a headline puts the pronoun either side of its verb:
     // "he waited" and "describes her night" are the same shape.
     rule: 'pronoun-subject',
-    test: (haystack) => !OFFICIAL_ROLE.test(haystack) && PRONOUN_SUBJECT.test(haystack),
+    test: guardedByOfficialRole(PRONOUN_SUBJECT),
   },
   {
     // A family as the subject of an experience.
@@ -169,7 +212,7 @@ const PERSON_RULES = [
     // family is still waiting" is a household's private circumstances, which it
     // does not.
     rule: 'family-subject',
-    test: (haystack) => !OFFICIAL_ROLE.test(haystack) && FAMILY_SUBJECT.test(haystack),
+    test: guardedByOfficialRole(FAMILY_SUBJECT),
   },
   {
     // First-person account of someone's own experience.
@@ -179,7 +222,7 @@ const PERSON_RULES = [
     // rid of the rest of them" are both first-person and both systemic. Both
     // are in the committed archive, and a bare first-person rule dropped both.
     rule: 'first-person-account',
-    test: (haystack) => !OFFICIAL_ROLE.test(haystack) && FIRST_PERSON_ACCOUNT.test(haystack),
+    test: guardedByOfficialRole(FIRST_PERSON_ACCOUNT),
   },
 ];
 
