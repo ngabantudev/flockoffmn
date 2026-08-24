@@ -31,7 +31,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   },
   {
     id: 'environment',
-    label: { en: 'Environment & Health', es: 'Medio ambiente y salud' },
+    label: { en: 'Demographics', es: 'Demografía' },
     summary: {
       en: 'The present-day reading of the same ground: which places carry the most environmental and health burdens now, tract by tract.',
       es: 'La lectura actual del mismo terreno: qué lugares soportan hoy más cargas ambientales y de salud, sección por sección.',
