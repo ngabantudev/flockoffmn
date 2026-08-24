@@ -13,14 +13,16 @@
  * script before the <aside> tag would execute before the parser has even
  * created it.
  *
- * INCLUDED TWICE, and it has to be. #controls is parsed near the top of the
- * map shell and #news-dock near the bottom, so one copy cannot see both: run
- * only from #controls and the dock does not exist yet; run only from the dock
- * and #controls has already painted expanded. Each call stamps whichever
- * elements exist at that moment and skips the rest, which makes running it
- * twice idempotent rather than merely tolerable — setting an attribute that is
- * already set is a no-op, and the browser caches the file after the first
- * request.
+ * INCLUDED MULTIPLE TIMES, and it has to be. #controls is parsed near the
+ * top of the map shell, #news-dock near the bottom, and the per-category
+ * `[data-layer-group]` elements sit even further down inside #controls than
+ * its own opening tag — so no single copy can see all three. Run only from
+ * #controls' own top and the category groups and the dock don't exist yet;
+ * run only from the dock and #controls/the groups have already painted
+ * expanded. Each call stamps whichever elements exist at that moment and
+ * skips the rest, which makes running it more than once idempotent rather
+ * than merely tolerable — setting an attribute that is already set is a
+ * no-op, and the browser caches the file after the first request.
  *
  * #controls and #news-dock persist a collapsed state. #detail-panel does not: it is
  * hidden-until-selected, and every explicit selection force-expands it (see
@@ -42,8 +44,26 @@
       var news = document.getElementById('news-dock');
       if (news) news.setAttribute('data-collapsed', '');
     }
+    // Per-category open/closed state in the layer panel. Every category
+    // ships closed in the markup (see MapView.astro's own comment on why),
+    // so only the categories a reader previously opened need stamping —
+    // stored as a JSON object of `{ [categoryId]: true }`, written by
+    // MapView's own module script on every `toggle` event a `<details
+    // data-layer-group>` fires. Only categories actually present in the DOM
+    // at this call are touched, per the multi-inclusion note above.
+    var openGroupsRaw = window.localStorage.getItem('mapLayerGroupsOpen');
+    if (openGroupsRaw) {
+      var openGroups = JSON.parse(openGroupsRaw);
+      var groupEls = document.querySelectorAll('[data-layer-group]');
+      for (var i = 0; i < groupEls.length; i++) {
+        var groupEl = groupEls[i];
+        var groupId = groupEl.getAttribute('data-layer-group');
+        if (groupId && openGroups[groupId]) groupEl.setAttribute('open', '');
+      }
+    }
   } catch (err) {
-    // Storage can throw (e.g. Safari private browsing) — the panel just
-    // stays expanded for this page view.
+    // Storage can throw (e.g. Safari private browsing), or hold malformed
+    // JSON from a future/older version of this script — the groups just
+    // stay closed for this page view.
   }
 })();

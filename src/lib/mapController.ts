@@ -10,9 +10,11 @@ import {
   METRO_CENTER,
 } from './mapStyle';
 import { bboxOf, representativePoint, haversineMeters, bearingDeg, destinationPoint } from './geo.mjs';
+import { fillTemplate } from './template.mjs';
 import { createElement } from 'lucide';
 import { MARKER_ICONS } from './icons';
 import { formatValue } from './detailFields';
+import type { LayerDataRequest, LayerDataResponse } from './layerDataWorker';
 import { groupBlocks } from './blocks';
 import { MAP_STYLES, initialMapStyle, onMapStyleChange, type MapStyleId } from './theme';
 import { ThemeControl } from './themeControl';
@@ -105,6 +107,8 @@ export interface ClientLayer {
   scale?: LayerDefinition['scale'];
   /** The zooms across which a polygon layer coarsens into grid cells at distance. */
   blockAggregate?: LayerDefinition['blockAggregate'];
+  /** See LayerDefinition's own comment in layers/types.ts. */
+  levelOfDetail?: LayerDefinition['levelOfDetail'];
   /** Colour records by a category once they are drawn individually. */
   categoryColors?: Localised<NonNullable<LayerDefinition['categoryColors']>>;
   /** Write an attribute's value on each polygon, the way the source document did. */
@@ -152,6 +156,28 @@ export interface LoadedFeature {
 }
 
 /**
+ * The bounding box of several features at once, built on top of `bboxOf`
+ * (single-geometry) rather than a fresh min/max reducer. `null` for an empty
+ * list — callers decide what "nothing to frame" means for them, same as
+ * `bboxOf` leaves that to its own callers via `Number.isFinite` checks.
+ */
+function unionBbox(features: LoadedFeature[]): [number, number, number, number] | null {
+  let minLng = Infinity;
+  let minLat = Infinity;
+  let maxLng = -Infinity;
+  let maxLat = -Infinity;
+  for (const f of features) {
+    const [w, s, e, n] = bboxOf(f.geometry);
+    if (w < minLng) minLng = w;
+    if (s < minLat) minLat = s;
+    if (e > maxLng) maxLng = e;
+    if (n > maxLat) maxLat = n;
+  }
+  if (!Number.isFinite(minLng)) return null;
+  return [minLng, minLat, maxLng, maxLat];
+}
+
+/**
  * One "near me" candidate as handed to `onNearMeRecords` — enough for
  * MapView.astro to render a DOM row (layer + feature id resolve the entity
  * name and detail lines via the layer registry, the same way search results
@@ -167,13 +193,37 @@ export interface NearMeRecord {
   point: [number, number];
 }
 
-type FilterState = Map<string, Set<string>>;
+/** An active `dateRange`-kind filter — either bound may be omitted. */
+export interface DateRangeFilter {
+  from?: string;
+  to?: string;
+}
+
+/**
+ * A layer's active filters, keyed by attribute. `enum` filters store the set
+ * of ticked values; `dateRange` filters store a `DateRangeFilter`. Told apart
+ * at read time with `instanceof Set` rather than a tag field, since the two
+ * shapes are never ambiguous with each other.
+ */
+type FilterState = Map<string, Set<string> | DateRangeFilter>;
 
 export interface ControllerEvents {
   onSelect?: (feature: LoadedFeature | null, layer?: ClientLayer) => void;
   onCounts?: (counts: Record<string, { shown: number; total: number }>) => void;
   onLayerReady?: (layerId: string, features: LoadedFeature[]) => void;
   onError?: (layerId: string, message: string) => void;
+  /**
+   * A layer's `loadLayer()` has actually started fetching and drawing —
+   * fired once, before the fetch itself, and only on the path that will end
+   * in `onLayerReady` or `onError` for this call. Never fired on `loadLayer`'s
+   * early-return branch (the layer is already loaded and drawn — see its own
+   * comment), so a reader re-ticking an already-drawn layer never sees a
+   * "loading" flash for work that isn't happening. Lets MapView.astro mark
+   * the layer row busy for the seconds a large file like
+   * `holc_appraisal_detail`'s spends fetching and parsing, instead of the
+   * checkbox sitting there with no feedback at all.
+   */
+  onLoadStart?: (layerId: string) => void;
   /** Localized label for the corner "reset view" control — see ResetViewControl. */
   resetViewLabel?: string;
   /** Localized label for the corner "what's near me" control — see NearMeControl. */
@@ -776,6 +826,20 @@ export class MapController {
    */
   private inFlight = new Map<string, Promise<LoadedFeature[]>>();
   /**
+   * The coarser rendering geometry a `levelOfDetail` layer draws below its
+   * `fullDetailFromZoom` — keyed separately from `data` above rather than
+   * sharing its key, per Part 3's own reasoning: both resolutions of the same
+   * layer can be held at once, so crossing the zoom threshold back and forth
+   * never evicts and re-fetches the one just left. Only geometry ever differs
+   * between the two files (see holc-detail.mjs) — attributes, ids and
+   * everything `byId`/`joinIndexes`/the detail panel read stay sourced from
+   * `data`, the full-resolution set, always. `renderFeatures` is the one
+   * place the two are stitched together for drawing.
+   */
+  private simplifiedData = new Map<string, LoadedFeature[]>();
+  /** In-flight simplified fetches — same dedup reasoning as `inFlight` above, kept separate for the same reason `simplifiedData` is. */
+  private simplifiedInFlight = new Map<string, Promise<LoadedFeature[]>>();
+  /**
    * Per-layer lookup by record id, built in one pass when the features land.
    *
    * Read through featureById, which focusFeature — the funnel every map tap,
@@ -1015,6 +1079,46 @@ export class MapController {
    */
   private resizeSettleTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /**
+   * The off-main-thread fetch-and-parse worker (see layerDataWorker.ts's own
+   * comment for why this exists). Created lazily on the first call that needs
+   * it, not in the constructor — a reader who never toggles a layer never
+   * pays for a worker script load — and reused for every subsequent layer
+   * fetch rather than spun up per call, per Part 2's own reasoning: a worker
+   * costs a script load and a thread, and one instance easily serves every
+   * layer this app has, present or future.
+   */
+  private dataWorker: Worker | null = null;
+  /** Monotonic id for `fetchAndParse`'s requests, so a reply routes back to the caller that asked for it — see `dataWorkerPending`. */
+  private dataWorkerRequestId = 0;
+  /** Callers awaiting a reply from `dataWorker`, keyed by the request id the reply carries back. */
+  private dataWorkerPending = new Map<
+    number,
+    { resolve: (features: LoadedFeature[]) => void; reject: (err: Error) => void }
+  >();
+  /**
+   * Debounce for the zoom-crossing check `levelOfDetail` layers run on every
+   * `zoomend` — a reader scrubbing the zoom control or a trackpad pinch fires
+   * several `zoomend`s in quick succession, and each one re-checking every
+   * visible `levelOfDetail` layer against the map's current zoom is cheap on
+   * its own but not worth doing once per tick when only the *settled* zoom
+   * decides which resolution belongs on screen. Same reasoning as
+   * `resizeSettleTimer` above, just for a different burst source.
+   */
+  private levelOfDetailDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * The shared clearTimeout-then-setTimeout shape behind both timers above.
+   * Each call site still owns its own timer-id field (so `destroy()` below
+   * can clear either directly, same as before) and passes it in as
+   * `current`; this only does the "cancel whatever was pending, then
+   * (re)start the countdown" part once instead of twice.
+   */
+  private debounce(current: ReturnType<typeof setTimeout> | null, ms: number, fn: () => void) {
+    if (current != null) clearTimeout(current);
+    return setTimeout(fn, ms);
+  }
+
   constructor(container: HTMLElement, layers: ClientLayer[], events: ControllerEvents = {}) {
     this.layers = layers;
     this.events = events;
@@ -1159,6 +1263,14 @@ export class MapController {
       if (this.nearMeOrigin) this.updateNearMeMask();
     });
 
+    // A `levelOfDetail` layer's drawn resolution depends on which side of
+    // `fullDetailFromZoom` the map is currently on — `zoomend`, not `move` or
+    // `zoom`, because this only needs to run once the reader has actually
+    // settled somewhere, not on every intermediate frame of a pinch or a
+    // scroll-wheel zoom. See scheduleLevelOfDetailCheck's own comment for the
+    // debounce on top of that.
+    this.map.on('zoomend', () => this.scheduleLevelOfDetailCheck());
+
     // The single map-level mousemove/mouseout/click handlers for every
     // interactive layer — cursor shape, hover cards, ward hover-preview,
     // and click-to-select all derive from one `ownerAt` query each. See its
@@ -1169,11 +1281,10 @@ export class MapController {
     // so a burst of notifications during an animated collapse settles into
     // one resize instead of one per animation frame.
     const handleContainerResize = () => {
-      if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
-      this.resizeSettleTimer = setTimeout(() => {
+      this.resizeSettleTimer = this.debounce(this.resizeSettleTimer, 100, () => {
         this.resizeSettleTimer = null;
         this.resizeIfNeeded();
-      }, 100);
+      });
     };
     if (typeof ResizeObserver !== 'undefined') {
       const observer = new ResizeObserver(handleContainerResize);
@@ -2424,31 +2535,172 @@ export class MapController {
   }
 
   /**
-   * The single fetch-and-store path. Both entry points — ensureDataLoaded for
-   * a cross-layer lookup and loadLayer for drawing — go through here, so a
-   * layer is downloaded and parsed at most once no matter how many callers
-   * want it or how closely together they ask.
+   * The worker instance behind `fetchAndParse`, created on first use and kept
+   * for the rest of the page's life — see `dataWorker`'s own field comment
+   * for why one instance is enough. A worker `'error'` — the script failing
+   * to load, or a bug inside it throwing outside its own try/catch, neither
+   * of which carries the request id a normal failure reply would — fails
+   * *every* currently-pending request rather than trying to guess which one
+   * caused it, and drops the worker so the next call creates a fresh one
+   * instead of one already known to be broken.
    */
-  private fetchFeatures(layer: ClientLayer): Promise<LoadedFeature[]> {
-    const held = this.data.get(layer.id);
+  private ensureDataWorker(): Worker {
+    if (this.dataWorker) return this.dataWorker;
+    const worker = new Worker(new URL('./layerDataWorker.ts', import.meta.url), { type: 'module' });
+    worker.addEventListener('message', (event: MessageEvent<LayerDataResponse>) => {
+      const msg = event.data;
+      const pending = this.dataWorkerPending.get(msg.id);
+      if (!pending) return;
+      this.dataWorkerPending.delete(msg.id);
+      if (msg.ok) pending.resolve(msg.features as LoadedFeature[]);
+      else pending.reject(new Error(msg.error));
+    });
+    worker.addEventListener('error', (event: ErrorEvent) => {
+      const err = new Error(event.message || 'Layer data worker failed');
+      for (const pending of this.dataWorkerPending.values()) pending.reject(err);
+      this.dataWorkerPending.clear();
+      this.dataWorker = null;
+    });
+    this.dataWorker = worker;
+    return worker;
+  }
+
+  /**
+   * Fetch `url` and parse its JSON off the main thread, via `dataWorker`.
+   * The one place either `fetchFeatures` or `fetchSimplifiedFeatures` actually
+   * talks to the worker — both own their own caching and in-flight dedup
+   * around this, so this function itself is stateless beyond routing the
+   * reply back to whichever call asked for it (`dataWorkerPending`).
+   */
+  private fetchAndParse(url: string): Promise<LoadedFeature[]> {
+    return new Promise((resolve, reject) => {
+      const worker = this.ensureDataWorker();
+      const id = ++this.dataWorkerRequestId;
+      this.dataWorkerPending.set(id, { resolve, reject });
+      const request: LayerDataRequest = { id, url };
+      worker.postMessage(request);
+    });
+  }
+
+  /**
+   * The shared cache/in-flight-dedup dance behind both `fetchFeatures` and
+   * `fetchSimplifiedFeatures`: return an already-held result synchronously,
+   * join an already-running fetch for the same key, or start a fresh one and
+   * remember it in `inFlight` until it settles. `onFetched`, when given, runs
+   * once the fetch actually lands — it's how `fetchFeatures` builds `byId`
+   * alongside `data` without `fetchSimplifiedFeatures` (which has no use for
+   * that index — see that method's own comment) inheriting it too.
+   */
+  private memoizedFetch(
+    cache: Map<string, LoadedFeature[]>,
+    inFlight: Map<string, Promise<LoadedFeature[]>>,
+    key: string,
+    url: string,
+    onFetched?: (features: LoadedFeature[]) => void,
+  ): Promise<LoadedFeature[]> {
+    const held = cache.get(key);
     if (held) return Promise.resolve(held);
-    const pending = this.inFlight.get(layer.id);
+    const pending = inFlight.get(key);
     if (pending) return pending;
 
-    const load = (async () => {
-      const res = await fetch(layer.dataPath);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const collection = await res.json();
-      const features = (collection.features ?? []) as LoadedFeature[];
-      this.data.set(layer.id, features);
+    const load = this.fetchAndParse(url)
+      .then((features) => {
+        cache.set(key, features);
+        onFetched?.(features);
+        return features;
+      })
+      .finally(() => inFlight.delete(key));
+
+    inFlight.set(key, load);
+    return load;
+  }
+
+  /**
+   * The single fetch-and-store path for a layer's full-resolution records.
+   * Both entry points — ensureDataLoaded for a cross-layer lookup and
+   * loadLayer for drawing — go through here, so a layer is downloaded and
+   * parsed at most once no matter how many callers want it or how closely
+   * together they ask. The parse itself happens in `dataWorker` (see
+   * `fetchAndParse`), not on this thread — a plain `await res.json()` here
+   * used to block the whole page for the several seconds it took to parse
+   * `holc_appraisal_detail`'s 7.6 MB file.
+   */
+  private fetchFeatures(layer: ClientLayer): Promise<LoadedFeature[]> {
+    return this.memoizedFetch(this.data, this.inFlight, layer.id, layer.dataPath, (features) => {
       const ids = new Map<string, LoadedFeature>();
       for (const f of features) ids.set(f.properties.id, f);
       this.byId.set(layer.id, ids);
-      return features;
-    })().finally(() => this.inFlight.delete(layer.id));
+    });
+  }
 
-    this.inFlight.set(layer.id, load);
-    return load;
+  /**
+   * The same fetch-and-store path as `fetchFeatures`, for a `levelOfDetail`
+   * layer's coarser rendering geometry — see `simplifiedData`'s own field
+   * comment for why this is a second cache rather than a second key inside
+   * `data`. Resolves to `[]` for a layer that declares no `levelOfDetail`
+   * rather than throwing, since every call site already only reaches this
+   * because the layer has one. No `byId` index built here — `fetchFeatures`
+   * is the only caller anything ever resolves ids against; see
+   * `memoizedFetch`'s own `onFetched` for where that split happens.
+   */
+  private fetchSimplifiedFeatures(layer: ClientLayer): Promise<LoadedFeature[]> {
+    const lod = layer.levelOfDetail;
+    if (!lod) return Promise.resolve([]);
+    return this.memoizedFetch(this.simplifiedData, this.simplifiedInFlight, layer.id, lod.simplifiedDataPath);
+  }
+
+  /**
+   * `features` (always full-resolution — everything upstream of this reads
+   * `data`) as it should actually be drawn right now, for a layer that
+   * declares `levelOfDetail`. At or above `fullDetailFromZoom` this is a
+   * no-op. Below it, each feature's geometry is swapped for its simplified
+   * counterpart, matched by id — attributes, ids and everything else stay the
+   * full-resolution ones, since only the geometry differs between the two
+   * files (see holc-detail.mjs). If the simplified set hasn't been fetched
+   * yet this returns `features` untouched rather than blocking or dropping
+   * anything — a layer this fires for keeps drawing at full resolution for
+   * one extra moment rather than drawing nothing while the coarser file is
+   * still in flight.
+   */
+  private renderFeatures(layer: ClientLayer, features: LoadedFeature[]): LoadedFeature[] {
+    const lod = layer.levelOfDetail;
+    if (!lod || this.map.getZoom() >= lod.fullDetailFromZoom) return features;
+    const simplified = this.simplifiedData.get(layer.id);
+    if (!simplified) return features;
+    const byId = new Map(simplified.map((f) => [f.properties.id, f]));
+    return features.map((f) => {
+      const s = byId.get(f.properties.id);
+      return s ? { ...f, geometry: s.geometry } : f;
+    });
+  }
+
+  /** See `levelOfDetailDebounceTimer`'s own field comment for why this is debounced rather than run straight off `zoomend`. */
+  private scheduleLevelOfDetailCheck(): void {
+    this.levelOfDetailDebounceTimer = this.debounce(this.levelOfDetailDebounceTimer, 150, () => {
+      this.levelOfDetailDebounceTimer = null;
+      for (const layer of this.layers) {
+        if (layer.levelOfDetail && this.visible.has(layer.id)) void this.swapLevelOfDetail(layer);
+      }
+    });
+  }
+
+  /**
+   * Fetch whichever resolution the map's current zoom now calls for (a no-op
+   * once it's cached — both `fetchFeatures` and `fetchSimplifiedFeatures`
+   * hold their own results) and, if the layer's source is actually drawn,
+   * re-set its data to match. Safe to call whether or not the crossing
+   * changed anything: `renderFeatures` recomputes which resolution belongs on
+   * screen from the map's zoom directly rather than from which branch called
+   * it, so a redundant call just re-sends the same data.
+   */
+  private async swapLevelOfDetail(layer: ClientLayer): Promise<void> {
+    const lod = layer.levelOfDetail;
+    if (!lod) return;
+    if (this.map.getZoom() >= lod.fullDetailFromZoom) await this.fetchFeatures(layer);
+    else await this.fetchSimplifiedFeatures(layer);
+    const source = this.map.getSource(this.sourceId(layer.id)) as GeoJSONSource | undefined;
+    if (!source) return;
+    source.setData(this.flatten(this.renderFeatures(layer, this.filteredFeatures(layer.id))) as never);
   }
 
   /**
@@ -2558,9 +2810,30 @@ export class MapController {
     // no onLayerReady, and a checkbox that appeared to do nothing.
     if (this.data.has(layer.id) && this.map.getSource(this.sourceId(layer.id))) return Promise.resolve();
 
+    // Fired only on the path that actually starts fetching, never on the
+    // early return above — see onLoadStart's own comment in ControllerEvents.
+    this.events.onLoadStart?.(layer.id);
+
     const load = (async () => {
       try {
         const features = await this.fetchFeatures(layer);
+        // A `levelOfDetail` layer switched on at a zoom below its
+        // `fullDetailFromZoom` draws the coarser file from the start, not the
+        // full-resolution one for one frame before swapping down — so the
+        // simplified fetch has to land before addLayer, not after it. Its
+        // own try/catch, separate from this method's outer one: the
+        // simplified file is a rendering optimization, not the canonical
+        // data — `renderFeatures` already falls back to full resolution
+        // when `simplifiedData` has nothing for this layer, so a 404 or
+        // network blip on just that file shouldn't fail the whole layer
+        // load when the real data fetched fine.
+        if (layer.levelOfDetail && this.map.getZoom() < layer.levelOfDetail.fullDetailFromZoom) {
+          try {
+            await this.fetchSimplifiedFeatures(layer);
+          } catch {
+            // Fall through and draw at full resolution instead.
+          }
+        }
         await this.ready();
         // Glyphs before the layer that references them: MapLibre would warn and
         // draw nothing for an icon-image whose image is still decoding.
@@ -2610,7 +2883,12 @@ export class MapController {
     // order. Only polygonClick: 'highlight' layers read feature-state today,
     // but every source carries a unique id already, so setting this once
     // here costs nothing for the layers that don't.
-    this.map.addSource(src, { type: 'geojson', data: this.flatten(features), promoteId: 'id' });
+    // `renderFeatures` is a no-op for every layer but a `levelOfDetail` one
+    // below its `fullDetailFromZoom` — see its own comment. `features` itself
+    // (used below for the block-aggregate grid and the camera cones) stays
+    // full-resolution; only the primary source's drawn geometry is ever
+    // swapped.
+    this.map.addSource(src, { type: 'geojson', data: this.flatten(this.renderFeatures(layer, features)), promoteId: 'id' });
 
     if (layer.geometry === 'polygon') {
       const under = this.beneathDots();
@@ -3318,7 +3596,7 @@ export class MapController {
         if (hidden > 0) {
           const more = document.createElement('p');
           more.className = 'hover-card-more';
-          more.textContent = rel.moreLabel.replace('{n}', String(hidden));
+          more.textContent = fillTemplate(rel.moreLabel, { n: hidden });
           root.append(more);
         }
         const href = rel.linkKey
@@ -3458,14 +3736,20 @@ export class MapController {
   setLayerVisible(layer: ClientLayer, visible: boolean) {
     if (visible) {
       this.visible.add(layer.id);
-      void this.loadLayer(layer).then(() => {
+      const load = this.loadLayer(layer).then(() => {
         this.applyVisibility(layer);
         // The controls are on the page before the data is: a filter ticked
         // while this layer was still downloading (or still switched off) has
         // been waiting for this moment. The first paint already drew the
         // filtered subset; the zoom the tick promised happens now.
-        if ((this.filters.get(layer.id)?.size ?? 0) > 0) this.zoomAfterFilterChange(layer.id);
+        if ((this.filters.get(layer.id)?.size ?? 0) > 0) this.maybeZoomAfterFilterChange(layer.id);
       });
+      // See batchPendingLoads' own comment: an open batch has to wait for
+      // this before it can tell whether it owes one camera decision or
+      // none, since maybeZoomAfterFilterChange above only runs once `load`
+      // settles.
+      if (this.batchDepth > 0) this.batchPendingLoads.push(load);
+      else void load;
     } else {
       this.visible.delete(layer.id);
       // A selection outlives its own layer otherwise. The highlight is
@@ -3507,7 +3791,7 @@ export class MapController {
       this.map.setLayoutProperty(styleId, 'visibility', visibility);
     }
     this.repaintTintDependents(layer.id);
-    this.emitCounts();
+    this.maybeEmitCounts();
   }
 
   /**
@@ -3655,12 +3939,127 @@ export class MapController {
     return false;
   }
 
-  setFilter(layerId: string, key: string, values: Set<string>) {
+  /**
+   * How many nested `runBatched` calls are currently open. A bulk switch
+   * (category-level "on"/"off", or value-level "reset to default") calls
+   * `setLayerVisible`/`setFilter` once per layer or value inside
+   * `runBatched`, and each of those would otherwise fire its own camera
+   * round trip and `emitCounts` — N animations and N `fitBounds` calls for
+   * one bulk action. While `batchDepth > 0`, those two side effects are
+   * deferred instead of skipped: `batchDirty` remembers that something
+   * changed and `lastBatchLayerId` remembers which layer to frame, so
+   * `runBatched`'s own `finally` block can settle both exactly once when
+   * the outermost call returns.
+   */
+  private batchDepth = 0;
+  private batchDirty = false;
+  private lastBatchLayerId: string | null = null;
+  /**
+   * Layer-load promises kicked off by `setLayerVisible(layer, true)` while a
+   * batch is open. `maybeZoomAfterFilterChange`/`maybeEmitCounts` only run
+   * from inside that load's `.then()` — a microtask that resolves *after*
+   * `fn()` returns, by which point a naive `finally` block has already
+   * decremented `batchDepth` back to 0 and settled. Without waiting for
+   * these, a bulk switch turning on several not-yet-loaded, actively
+   * filtered layers fired one camera jump per layer as each load finished,
+   * instead of the single eased transition this method promises.
+   */
+  private batchPendingLoads: Promise<unknown>[] = [];
+
+  /**
+   * Run `fn`, deferring every `setLayerVisible`/`setFilter`/`clearFilters`
+   * camera move and count emission inside it — including ones that only
+   * resolve once a newly-visible layer finishes loading — to a single
+   * decision made once every load `fn` started has settled. Nestable — only
+   * the outermost call settles anything. Callers that need to announce the
+   * result (an aria-live region) should do so once, after this returns
+   * (or after awaiting it, if the announcement depends on the settled
+   * camera/count state), not inside `fn`.
+   */
+  async runBatched(fn: () => void): Promise<void> {
+    this.batchDepth++;
+    const startIdx = this.batchPendingLoads.length;
+    try {
+      fn();
+    } finally {
+      const pending = this.batchPendingLoads.splice(startIdx);
+      if (pending.length > 0) await Promise.allSettled(pending);
+      this.batchDepth--;
+      if (this.batchDepth === 0 && this.batchDirty) {
+        this.batchDirty = false;
+        const targetLayerId = this.lastBatchLayerId;
+        this.lastBatchLayerId = null;
+        this.emitCounts();
+        if (this.anyActiveFilters()) {
+          if (targetLayerId) this.zoomAfterFilterChange(targetLayerId);
+        } else if (this.preFilterCamera) {
+          this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
+          this.preFilterCamera = null;
+        }
+      }
+    }
+  }
+
+  /**
+   * The shared shape behind all three `maybe*` methods below: while a batch
+   * is open, mark it dirty and run only `onDefer` — some side effects (see
+   * `maybeZoomAfterFilterChange`) still have something to stash even on the
+   * deferred path, most don't. Outside a batch, `onDefer` never runs at all
+   * and the real work happens immediately via `onImmediate`.
+   */
+  private deferWhileBatching(onDefer: () => void, onImmediate: () => void) {
+    if (this.batchDepth > 0) {
+      this.batchDirty = true;
+      onDefer();
+      return;
+    }
+    onImmediate();
+  }
+
+  /** `emitCounts`, deferred to the end of the current batch if one is open. */
+  private maybeEmitCounts() {
+    this.deferWhileBatching(
+      () => {},
+      () => this.emitCounts(),
+    );
+  }
+
+  /** `zoomAfterFilterChange`, deferred to the end of the current batch if one is open. */
+  private maybeZoomAfterFilterChange(layerId: string) {
+    this.deferWhileBatching(
+      () => {
+        this.lastBatchLayerId = layerId;
+      },
+      () => this.zoomAfterFilterChange(layerId),
+    );
+  }
+
+  /** The "filtering is a round trip" camera restore, deferred to the end of a batch if one is open. */
+  private maybeRestorePreFilterCamera() {
+    this.deferWhileBatching(
+      () => {},
+      () => {
+        if (this.preFilterCamera) {
+          this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
+          this.preFilterCamera = null;
+        }
+      },
+    );
+  }
+
+  /**
+   * The shared body of `setFilter`/`setDateRangeFilter`: ensure this layer
+   * has a filter map, snapshot whether anything was active before, hand the
+   * map to `mutate` (the one thing the two callers actually differ on — a
+   * `Set` of ticked values for `setFilter`, a `DateRangeFilter` for
+   * `setDateRangeFilter`), then run the refresh and the same "filtering is a
+   * round trip" camera logic either way.
+   */
+  private applyFilterMutation(layerId: string, mutate: (state: FilterState) => void) {
     if (!this.filters.has(layerId)) this.filters.set(layerId, new Map());
     const state = this.filters.get(layerId)!;
     const activeBefore = this.anyActiveFilters();
-    if (values.size === 0) state.delete(key);
-    else state.set(key, values);
+    mutate(state);
     this.refresh(layerId);
     // Filtering is a round trip. The moment the first filter comes on, the
     // camera's position is saved and the view goes to the metro frame; every
@@ -3668,11 +4067,25 @@ export class MapController {
     // comes off, the reader is put back exactly where they were standing
     // before the trip began.
     if (this.anyActiveFilters()) {
-      this.zoomAfterFilterChange(layerId);
-    } else if (activeBefore && this.preFilterCamera) {
-      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
-      this.preFilterCamera = null;
+      this.maybeZoomAfterFilterChange(layerId);
+    } else if (activeBefore) {
+      this.maybeRestorePreFilterCamera();
     }
+  }
+
+  setFilter(layerId: string, key: string, values: Set<string>) {
+    this.applyFilterMutation(layerId, (state) => {
+      if (values.size === 0) state.delete(key);
+      else state.set(key, values);
+    });
+  }
+
+  /** Same round trip as `setFilter`, for a `dateRange`-kind filter. Empty bounds clear the filter. */
+  setDateRangeFilter(layerId: string, key: string, range: DateRangeFilter) {
+    this.applyFilterMutation(layerId, (state) => {
+      if (!range.from && !range.to) state.delete(key);
+      else state.set(key, { from: range.from, to: range.to });
+    });
   }
 
   /**
@@ -3703,18 +4116,9 @@ export class MapController {
     if (!this.visible.has(layerId)) return;
     const matches = this.filteredFeatures(layerId);
     if (!matches.length) return;
-    let minLng = Infinity;
-    let minLat = Infinity;
-    let maxLng = -Infinity;
-    let maxLat = -Infinity;
-    for (const f of matches) {
-      const [w, s, e, n] = bboxOf(f.geometry);
-      if (w < minLng) minLng = w;
-      if (s < minLat) minLat = s;
-      if (e > maxLng) maxLng = e;
-      if (n > maxLat) maxLat = n;
-    }
-    if (!Number.isFinite(minLng)) return;
+    const union = unionBbox(matches);
+    if (!union) return;
+    const [minLng, minLat, maxLng, maxLat] = union;
     // The default destination is the metro, not the matches' own bbox: both
     // downtowns and the suburban ring, framed the same way every time, so
     // successive filters compare against a steady ground. Only when nothing
@@ -3747,10 +4151,7 @@ export class MapController {
     for (const id of layerId ? [layerId] : this.data.keys()) this.refresh(id);
     // The same round trip as setFilter: clearing the last active filter puts
     // the reader back where they were before filtering moved them.
-    if (!this.anyActiveFilters() && this.preFilterCamera) {
-      this.easeToCamera(this.preFilterCamera, REDUCED_MOTION ? 0 : 600);
-      this.preFilterCamera = null;
-    }
+    if (!this.anyActiveFilters()) this.maybeRestorePreFilterCamera();
   }
 
   /** Features of a layer that pass its current filters. */
@@ -3759,9 +4160,14 @@ export class MapController {
     const state = this.filters.get(layerId);
     if (!state || state.size === 0) return all;
     return all.filter((f) =>
-      [...state.entries()].every(([key, values]) => {
+      [...state.entries()].every(([key, value]) => {
         const raw = (f.properties.attributes as Record<string, unknown>)[key];
-        return raw != null && values.has(String(raw));
+        if (raw == null) return false;
+        if (value instanceof Set) return value.has(String(raw));
+        const d = String(raw);
+        if (value.from && d < value.from) return false;
+        if (value.to && d > value.to) return false;
+        return true;
       }),
     );
   }
@@ -3771,7 +4177,10 @@ export class MapController {
     const layer = this.layers.find((l) => l.id === layerId);
     if (!source || !layer) return;
     const visible = this.filteredFeatures(layerId);
-    source.setData(this.flatten(visible));
+    // See addLayer's own comment on this same renderFeatures call — a filter
+    // change has to keep drawing whichever resolution the current zoom
+    // already put on screen, not silently jump back to full detail.
+    source.setData(this.flatten(this.renderFeatures(layer, visible)));
     // Cones live in a second source, so a filter that hides a camera has to
     // hide its cone too or the map keeps drawing coverage for a record the
     // filter has already excluded.
@@ -3782,7 +4191,7 @@ export class MapController {
     // no longer shows.
     const blocks = this.map.getSource(this.blockSourceId(layerId)) as GeoJSONSource | undefined;
     blocks?.setData(this.blockFeatures(layer, visible));
-    this.emitCounts();
+    this.maybeEmitCounts();
   }
 
   private emitCounts() {
@@ -5576,6 +5985,8 @@ export class MapController {
     this.hoverPopup?.remove();
     this.disposeContainerWatch?.();
     if (this.resizeSettleTimer != null) clearTimeout(this.resizeSettleTimer);
+    if (this.levelOfDetailDebounceTimer != null) clearTimeout(this.levelOfDetailDebounceTimer);
+    this.dataWorker?.terminate();
     // Not one of map.remove()'s own children (see ensureNearMeMaskEl's own
     // comment on why it's inserted directly rather than via addControl), so
     // it needs the same explicit teardown the controls below get.
