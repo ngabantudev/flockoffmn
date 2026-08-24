@@ -1180,6 +1180,25 @@
   cursor: pointer;
   transition: background-color 160ms ease;
 }
+/*
+ * The switch's own box (36×20px) is well under the 44px a thumb needs on a
+ * phone — this invisible `::before` pads the actual clickable area out to
+ * that size without changing how small the switch looks. Only on a coarse
+ * pointer: a device with a mouse or trackpad (`hover: hover` and `pointer:
+ * fine`) gets no expansion, since precise pointers don't need it and an
+ * oversized invisible hit zone risks stealing a click meant for something
+ * else next to it.
+ */
+.switch::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .switch::before {
+    inset: 0;
+  }
+}
 .switch[aria-checked='true'] {
   background: var(--color-switch-on);
 }

@@ -576,7 +576,16 @@ const strings = {
                   <ul class="divide-y divide-ink-800 border-t border-ink-800" data-layer-list={group.id}>
                     {group.layers.map((layer) => (
                         <li data-layer-row={layer.id} data-layer-name={layer.label.toLowerCase()}>
-                          <div class="flex min-h-11 items-start gap-2.5 px-2.5 py-2.5 hover:bg-ink-850">
+                          {/*
+                            A <label>, not a <div>: the checkbox itself is
+                            only ~16px, well under the 44px a thumb needs on a
+                            phone (§0.7 — old phones are the audience this
+                            builds for, not an edge case). Wrapping the whole
+                            row in the checkbox's own label makes the entire
+                            name/description area tappable, not just the box,
+                            without changing how small the box looks.
+                          */}
+                          <label class="flex min-h-11 cursor-pointer items-start gap-2.5 px-2.5 py-2.5 hover:bg-ink-850">
                             {/*
                               Layer-level control (level 2) is a checkbox, not
                               a switch — the switch language is reserved for
@@ -609,7 +618,7 @@ const strings = {
                                 <span>{layer.featureCount}</span>
                               </p>
                             </div>
-                          </div>
+                          </label>
 
                           {/*
                             "Cross-listed corner" static legend row (§4 of
