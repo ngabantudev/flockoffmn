@@ -47,7 +47,7 @@ export const LAYER_CATEGORIES: LayerCategory[] = [
   },
   {
     id: 'surveillance',
-    label: { en: 'Surveillance Apparatus', es: 'Vigilancia' },
+    label: { en: 'Surveillance', es: 'Vigilancia' },
     summary: {
       en: 'What is recording, and how far one ordinary journey is recorded for.',
       es: 'Qué está grabando y durante cuánto trayecto cotidiano se graba.',
