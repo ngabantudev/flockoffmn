@@ -462,25 +462,35 @@ const strings = {
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <span data-category-label class="shrink-0 text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
-                    {group.label}
-                  </span>
+
                   {/*
-                    "(n/m)" sits right next to the category name it counts,
-                    not off on the far edge of the row — a plain-language
-                    sentence for a screen reader instead, since a bare
-                    fraction in parentheses reads as noise without the word
-                    "shown". tabular-nums keeps the digits from reflowing the
-                    row as the count changes.
+                    `min-w-0 flex-1` on this group + `truncate` on the label
+                    is what actually pins the switch to a fixed right-hand
+                    column: without it, a long category name pushes the row
+                    wider instead of yielding, so the switch lands at a
+                    different offset (or off-screen) per category instead of
+                    lining up down the list.
                   */}
-                  <span
-                    class="font-mono text-[10px] whitespace-nowrap tabular-nums text-ink-400"
-                    aria-hidden="true"
-                  >
-                    (<span data-group-on={group.id}>0</span>/<span>{group.layers.length}</span>)
-                  </span>
-                  <span class="sr-only" data-group-sr={group.id}>
-                    {fillStatic(strings.categoryLayersShown, { n: 0, m: group.layers.length })}
+                  <span class="flex min-w-0 flex-1 items-center gap-2">
+                    <span data-category-label class="truncate text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
+                      {group.label}
+                    </span>
+                    {/*
+                      "(n/m)" sits right next to the category name it counts
+                      — a plain-language sentence for a screen reader
+                      instead, since a bare fraction in parentheses reads as
+                      noise without the word "shown". tabular-nums keeps the
+                      digits from reflowing the row as the count changes.
+                    */}
+                    <span
+                      class="shrink-0 font-mono text-[10px] whitespace-nowrap tabular-nums text-ink-400"
+                      aria-hidden="true"
+                    >
+                      (<span data-group-on={group.id}>0</span>/<span>{group.layers.length}</span>)
+                    </span>
+                    <span class="sr-only" data-group-sr={group.id}>
+                      {fillStatic(strings.categoryLayersShown, { n: 0, m: group.layers.length })}
+                    </span>
                   </span>
 
                   {/*
@@ -495,9 +505,12 @@ const strings = {
                     explains the click semantics that follow from that. The
                     click handler calls stopPropagation so activating the
                     switch doesn't also toggle the <details> open/closed —
-                    it's a descendant of <summary> now.
+                    it's a descendant of <summary> now. `shrink-0` (not
+                    ml-auto) is what holds this at the same fixed right-hand
+                    position across every category, since the label group
+                    above it now absorbs all the row's give.
                   */}
-                  <span class="ml-auto flex shrink-0 items-center gap-1.5">
+                  <span class="flex shrink-0 items-center gap-1.5">
                     <span class="text-[10px] text-ink-400" aria-hidden="true">
                       {strings.filterNone}
                     </span>
