@@ -462,35 +462,55 @@ const strings = {
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <span data-category-label class="min-w-0 text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
+                  <span data-category-label class="shrink-0 text-[11px] font-semibold tracking-wider text-ink-200 uppercase">
                     {group.label}
                   </span>
-                  <span class="ml-auto flex shrink-0 items-center gap-2">
-                    <span class="flex items-center gap-1" aria-hidden="true">
-                      {group.layers.map((layer) => (
-                        <span
-                          data-group-dot={layer.id}
-                          class="h-2 w-2 rounded-full opacity-25 transition-opacity"
-                          style={`background:var(--layer-color-${layer.id})`}
-                        />
-                      ))}
+                  {/*
+                    "(n/m)" sits right next to the category name it counts,
+                    not off on the far edge of the row — a plain-language
+                    sentence for a screen reader instead, since a bare
+                    fraction in parentheses reads as noise without the word
+                    "shown". tabular-nums keeps the digits from reflowing the
+                    row as the count changes.
+                  */}
+                  <span
+                    class="font-mono text-[10px] whitespace-nowrap tabular-nums text-ink-400"
+                    aria-hidden="true"
+                  >
+                    (<span data-group-on={group.id}>0</span>/<span>{group.layers.length}</span>)
+                  </span>
+                  <span class="sr-only" data-group-sr={group.id}>
+                    {fillStatic(strings.categoryLayersShown, { n: 0, m: group.layers.length })}
+                  </span>
+
+                  {/*
+                    Category-level bulk switch (level 1) — lives in the
+                    always-visible summary row now, not just the expanded
+                    body, so it's reachable without opening the category.
+                    Scoped to this one category's layers only. Never a
+                    control that turns on every layer in every category:
+                    each of these only ever touches `group.layers`. Mixed
+                    state (some on, some off) collapses to visually "off";
+                    the script's own comment on data-category-switch
+                    explains the click semantics that follow from that. The
+                    click handler calls stopPropagation so activating the
+                    switch doesn't also toggle the <details> open/closed —
+                    it's a descendant of <summary> now.
+                  */}
+                  <span class="ml-auto flex shrink-0 items-center gap-1.5">
+                    <span class="text-[10px] text-ink-400" aria-hidden="true">
+                      {strings.filterNone}
                     </span>
-                    {/*
-                      "(n/m)" visually — a plain-language sentence for a
-                      screen reader instead, since a bare fraction in
-                      parentheses reads as noise without the word "shown".
-                      tabular-nums keeps the digits from reflowing the row as
-                      the count changes; whitespace-nowrap/shrink-0 keep the
-                      parens from wrapping away from their numbers.
-                    */}
-                    <span
-                      class="font-mono text-[10px] whitespace-nowrap tabular-nums text-ink-400"
-                      aria-hidden="true"
-                    >
-                      (<span data-group-on={group.id}>0</span>/<span>{group.layers.length}</span>)
-                    </span>
-                    <span class="sr-only" data-group-sr={group.id}>
-                      {fillStatic(strings.categoryLayersShown, { n: 0, m: group.layers.length })}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked="false"
+                      aria-label={fillStatic(strings.filterCategoryToggleLabel, { category: group.label })}
+                      class="switch"
+                      data-category-switch={group.id}
+                    />
+                    <span class="text-[10px] text-ink-400" aria-hidden="true">
+                      {strings.filterAll}
                     </span>
                   </span>
                 </summary>
@@ -498,37 +518,6 @@ const strings = {
                 <div class="border-t border-ink-800">
                   <div class="p-2.5 pb-2">
                     <p class="mb-2 text-[11px] leading-snug text-ink-400">{group.summary}</p>
-
-                    {/*
-                      Category-level bulk switch (level 1) — scoped to this
-                      one category's layers only. Never a control that turns
-                      on every layer in every category: each of these only
-                      ever touches `group.layers`. Mixed state (some on, some
-                      off) collapses to visually "off"; the script's own
-                      comment on data-category-switch explains the click
-                      semantics that follow from that.
-                    */}
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <span class="text-[10px] font-semibold tracking-wide text-ink-400 uppercase">
-                        {t('layers')}
-                      </span>
-                      <span class="flex items-center gap-1.5">
-                        <span class="text-[10px] text-ink-400" aria-hidden="true">
-                          {strings.filterNone}
-                        </span>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked="false"
-                          aria-label={fillStatic(strings.filterCategoryToggleLabel, { category: group.label })}
-                          class="switch"
-                          data-category-switch={group.id}
-                        />
-                        <span class="text-[10px] text-ink-400" aria-hidden="true">
-                          {strings.filterAll}
-                        </span>
-                      </span>
-                    </div>
 
                     {/*
                       Search-within-layer-names (level 2) — same mechanism as
@@ -2351,10 +2340,6 @@ const strings = {
       if (onBadge) onBadge.textContent = String(onCount);
       const sr = group.querySelector('[data-group-sr]');
       if (sr) sr.textContent = fill(S.categoryLayersShown, { n: onCount, m: switches.length });
-      for (const sw of switches) {
-        const dot = group.querySelector(`[data-group-dot="${sw.dataset.layerSwitch}"]`);
-        dot?.classList.toggle('opacity-25', !isOn(sw));
-      }
       const bulk = group.querySelector<HTMLButtonElement>('[data-category-switch]');
       if (bulk) setOn(bulk, switches.length > 0 && onCount === switches.length);
     });
@@ -2391,7 +2376,11 @@ const strings = {
    * decision and one status announcement, not N.
    */
   document.querySelectorAll<HTMLButtonElement>('[data-category-switch]').forEach((bulk) => {
-    bulk.addEventListener('click', () => {
+    bulk.addEventListener('click', (event) => {
+      // The switch now lives inside <summary>; without this the click would
+      // also bubble into the browser's native summary-click handler and
+      // toggle the <details> open/closed on top of flipping the switch.
+      event.stopPropagation();
       const groupId = bulk.dataset.categorySwitch!;
       const group = document.querySelector<HTMLElement>(`[data-layer-group="${groupId}"]`);
       if (!group) return;
