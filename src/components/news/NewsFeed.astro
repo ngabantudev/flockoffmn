@@ -2,6 +2,7 @@
 import { Newspaper } from 'lucide-astro';
 import type { Locale } from '~/layers/types';
 import { loadNews, groupByMonth, screenedTotal, type NewsTopic } from '~/lib/news';
+import { buildCurve, monthLabel as formatMonthLabel, MONTH_LABEL_OPTS, ROW_DATE_OPTS } from '~/lib/newsFormat';
 import NewsItemRow from '~/components/news/NewsItemRow.astro';
 import { useTranslations, localePath } from '~/lib/i18n';
 
@@ -211,63 +212,31 @@ const showTopicGroup = rail || presentTopics.length > 1;
  * implying what the documents do not say. A month where this feed found nothing
  * is a real observation and belongs on the axis at zero.
  */
-function monthsBetween(firstKey: string, lastKey: string): string[] {
-  const [fy, fm] = firstKey.split('-').map(Number);
-  const [ly, lm] = lastKey.split('-').map(Number);
-  const keys: string[] = [];
-  for (let y = fy, m = fm; y < ly || (y === ly && m <= lm); ) {
-    keys.push(`${y}-${String(m).padStart(2, '0')}`);
-    if (m === 12) { y += 1; m = 1; } else m += 1;
-  }
-  return keys;
-}
-
-const counts = new Map(byMonth.map((group) => [group.key, group.items.length]));
-// byMonth is newest-first; a curve reads left to right.
-const oldestKey = byMonth[byMonth.length - 1]?.key;
-const newestKey = byMonth[0]?.key;
-const series =
-  oldestKey && newestKey
-    ? monthsBetween(oldestKey, newestKey).map((key) => ({ key, count: counts.get(key) ?? 0 }))
-    : [];
-const peak = Math.max(1, ...series.map((s) => s.count));
+// The stories-per-month curve — zero-filled series, bar geometry, year
+// ticks — is pure arithmetic shared with the client hydration script for the
+// rail, so it lives in ~/lib/newsFormat rather than here. See that module's
+// header for why it isn't in ~/lib/news alongside `groupByMonth`.
+const { series, sparkW: SPARK_W, sparkH: SPARK_H, barGap, barW, barHeight, yearMarks } =
+  buildCurve(byMonth);
 
 /*
- * A zero month draws nothing. The 0.5 floor exists so a one-story month stays
- * visible against a busy peak; applying it to zero would render "none" as "a
- * little", which is the misreading the zero-filling above is here to prevent.
- */
-const barHeight = (count: number) => (count === 0 ? 0 : Math.max(0.5, (count / peak) * SPARK_H));
-
-const SPARK_W = 100;
-const SPARK_H = 24;
-const barGap = 1;
-const barW = series.length > 0 ? Math.max(1, SPARK_W / series.length - barGap) : 0;
-
-const monthFormatter = new Intl.DateTimeFormat(locale, {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-/*
- * The row formatter, built once for the whole page.
+ * Formatters, built once for the whole page rather than once per row: NewsItemRow
+ * used to construct its own Intl.DateTimeFormat in frontmatter that runs per
+ * rendered row, and constructing-and-formatting measured ~125x the cost of
+ * formatting on a reused instance — a full archive build was paying for
+ * hundreds of constructions. The options they're built from (`MONTH_LABEL_OPTS`,
+ * `ROW_DATE_OPTS`) live in ~/lib/newsFormat so the client script's own
+ * formatters, built from the same options for the rail's rows, can't drift
+ * from these.
  *
- * NewsItemRow used to construct an Intl.DateTimeFormat in its own frontmatter,
- * which runs per rendered row. Measured: constructing and formatting is ~125x
- * the cost of formatting on a reused instance, so a full archive build was
- * paying for hundreds of constructions.
- *
- * There used to be a second, year-bearing formatter here, because the rail has
- * no month headings to carry the year and a row from a previous year has to say
- * so on the row itself. That variant now lives in the hydration block below,
- * having moved there with the rows it formats. Only the archive renders rows
- * here, and its month headings carry the year.
+ * There used to be a second, year-bearing row formatter here, because the
+ * rail has no month headings to carry the year and a row from a previous year
+ * has to say so on the row itself. That variant lives in the hydration block
+ * below, having moved there with the rows it formats — only the archive
+ * renders rows here, and its month headings carry the year.
  */
-const rowDate = new Intl.DateTimeFormat(locale, {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-});
+const monthFormatter = new Intl.DateTimeFormat(locale, MONTH_LABEL_OPTS);
+const rowDate = new Intl.DateTimeFormat(locale, ROW_DATE_OPTS);
 
 /** Row date label. The archive's month headings carry the year, so rows do not. */
 function dateLabel(published: string): string {
@@ -275,32 +244,8 @@ function dateLabel(published: string): string {
 }
 
 function monthLabel(key: string): string {
-  const [year, month] = key.split('-').map(Number);
-  return monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)));
+  return formatMonthLabel(monthFormatter, key);
 }
-
-/*
- * Year ticks for the curve's axis.
- *
- * The caption states the span, which tells a reader the curve covers two years
- * but not which bar is which — with two dozen evenly spaced bars and no axis,
- * "when did this start climbing" has no answer you can read off. A label at
- * each year boundary gives every bar a rough date at a glance.
- *
- * Positioned as a percentage rather than drawn in the SVG because that SVG is
- * `preserveAspectRatio="none"` — it stretches to whatever width it is given, so
- * any text inside it stretches with it. HTML underneath stays the size it says
- * it is. The maths lines up exactly: a bar starts at `i * (barW + barGap)` out
- * of SPARK_W, and `barW + barGap` is `SPARK_W / series.length`, so bar `i`
- * begins at `i / series.length` of the width either way you compute it.
- */
-const yearMarks = series
-  .map((point, index) => ({ index, year: point.key.slice(0, 4) }))
-  .filter((mark, i, all) => i === 0 || mark.year !== all[i - 1].year)
-  .map((mark) => ({
-    ...mark,
-    pct: (mark.index / series.length) * 100,
-  }));
 
 const sparkCaption =
   series.length > 1
@@ -714,6 +659,8 @@ const screened = archive ? screenedTotal(archive) : 0;
 </section>
 
 <script>
+  import { ROW_DATE_OPTS, ROW_DATE_WITH_YEAR_OPTS } from '~/lib/newsFormat';
+
   /*
    * Range and topic filtering, entirely in the document.
    *
@@ -741,6 +688,16 @@ const screened = archive ? screenedTotal(archive) : 0;
     btn.setAttribute('aria-pressed', String(on));
     btn.classList.add(...(on ? PILL_ON : PILL_OFF));
     btn.classList.remove(...(on ? PILL_OFF : PILL_ON));
+  }
+
+  /**
+   * A topic's label from the map the rail was handed, or the raw topic —
+   * the same degrade-to-raw-id rule the server's own `topicLabel` applies,
+   * restated once here instead of at each of the three places in this block
+   * that need it (a row's pill, and both sides of the chip sort).
+   */
+  function labelFor(labels: Record<string, string>, topic: string): string {
+    return labels[topic] ?? topic;
   }
 
   /* ---------------------------- Rail hydration ----------------------------
@@ -826,13 +783,8 @@ const screened = archive ? screenedTotal(archive) : 0;
      * on the row itself.
      */
     const fmt = {
-      bare: new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-      withYear: new Intl.DateTimeFormat(locale, {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        timeZone: 'UTC',
-      }),
+      bare: new Intl.DateTimeFormat(locale, ROW_DATE_OPTS),
+      withYear: new Intl.DateTimeFormat(locale, ROW_DATE_WITH_YEAR_OPTS),
     };
     const thisYear = new Date().getUTCFullYear();
 
@@ -851,7 +803,7 @@ const screened = archive ? screenedTotal(archive) : 0;
       link.href = story.url;
       link.textContent = story.title;
       row.querySelector('[data-news-source]')!.textContent = story.source;
-      row.querySelector('[data-news-topic-label]')!.textContent = labels[story.topic] ?? story.topic;
+      row.querySelector('[data-news-topic-label]')!.textContent = labelFor(labels, story.topic);
 
       const time = row.querySelector<HTMLTimeElement>('[data-news-date]')!;
       time.dateTime = story.published;
@@ -908,11 +860,11 @@ const screened = archive ? screenedTotal(archive) : 0;
         group.remove();
       } else {
         for (const topic of [...topicsSeen].sort((a, b) =>
-          (labels[a] ?? a).localeCompare(labels[b] ?? b),
+          labelFor(labels, a).localeCompare(labelFor(labels, b)),
         )) {
           const chip = model.cloneNode(true) as HTMLElement;
           chip.dataset.topic = topic;
-          chip.textContent = labels[topic] ?? topic;
+          chip.textContent = labelFor(labels, topic);
           group.append(chip);
         }
       }

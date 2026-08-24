@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { TOPIC_IDS as RUNTIME_TOPIC_IDS } from './newsFilter.mjs';
 
 /**
  * Build-time access to the news archive written by `scripts/ingest/mn/news.mjs`.
@@ -28,50 +29,84 @@ const NEWS_PATH = 'data/news.json';
 /**
  * The topics the UI can label, in the order newsFilter classifies them.
  *
- * Deliberately hand-written rather than derived from newsFilter's TOPIC_IDS.
- * Deriving it was tried and is worse than it looks: TOPIC_IDS comes from a
- * `.mjs` module — the ingest runs it under plain Node, so it cannot be
- * TypeScript and cannot say `as const` — which means it infers as `string[]`
- * and `(typeof TOPIC_IDS)[number]` collapses to `string`. That silently
- * widened this union until `Record<NewsTopic, string>` accepted anything,
- * removing the compile-time check on TOPIC_LABELS that already existed.
- * Verified by adding an unlabelled topic: `npm run check` stayed at 0 errors.
+ * The canonical list, and `NewsTopic` is derived from it (`as const` is legal
+ * here because this is TypeScript — `newsFilter.mjs` runs under plain Node for
+ * the ingest script and cannot say it). `newsFilter.mjs`'s own `TOPIC_IDS` is
+ * a second, runtime-only copy of the same list, built from `TOPIC_RULES`
+ * rather than hand-written — it has to exist there too, because the ingest
+ * script needs it and cannot import TypeScript. `assertTopicListsMatch` below
+ * is what keeps the two from drifting apart instead of a comment asking
+ * nicely: it throws, at build time, the moment they disagree.
  *
- * So the list is stated twice, and `assertKnownTopics` below is what keeps the
- * two honest, at build time, out loud.
+ * A topic still has to be added by hand in three places: here, `TOPIC_RULES`
+ * in newsFilter.mjs, and `newsTopic*` in src/i18n/{en,es}.ts (translation is
+ * irreducibly manual). Missing this file after adding one to `TOPIC_RULES`
+ * now fails the build immediately, with a message naming exactly what's
+ * missing — not a console.warn a maintainer can miss, and not a silent
+ * `Record<NewsTopic, string>` widened into accepting anything.
  */
-export type NewsTopic =
-  | 'alpr'
-  | 'surveillance'
-  | 'immigration-enforcement'
-  | 'detention'
-  | 'other';
-
-const KNOWN_TOPICS: readonly NewsTopic[] = [
+const KNOWN_TOPICS = [
   'alpr',
   'surveillance',
   'immigration-enforcement',
   'detention',
   'other',
-];
+] as const;
+
+export type NewsTopic = (typeof KNOWN_TOPICS)[number];
 
 /**
- * Warn at build time about a topic this UI cannot label.
+ * Throws when `newsFilter.mjs`'s runtime `TOPIC_IDS` and this file's
+ * `KNOWN_TOPICS` disagree — same members, doesn't need to be the same order.
  *
- * Warn, not throw. §0.8 assumes no maintainer: the news cron opens a PR on its
- * own, and a build that refuses a story carrying an unrecognised topic would
- * stop the site updating at all rather than render one chip in English. The
- * browser renderer degrades to the raw id, which is ugly and visible — which is
- * the point — while this line puts the same fact in the build log where the
- * person who added the topic will see it.
+ * Throws rather than warns, on purpose, unlike the per-item degrade below:
+ * this isn't "one story has an unrecognised topic", which is a real and
+ * survivable state on a fresh clone or an ingest that runs ahead of a UI
+ * deploy — it's "the two lists that are supposed to be the same list are not
+ * the same list", which is a bug in this codebase and should fail the build
+ * that introduced it, not degrade quietly in production.
+ */
+function assertTopicListsMatch(): void {
+  const known = new Set<string>(KNOWN_TOPICS);
+  const runtime = new Set<string>(RUNTIME_TOPIC_IDS);
+  const missing = [...runtime].filter((t) => !known.has(t));
+  const extra = [...known].filter((t) => !runtime.has(t));
+  if (missing.length === 0 && extra.length === 0) return;
+  throw new Error(
+    `[news] KNOWN_TOPICS in src/lib/news.ts and TOPIC_IDS in src/lib/newsFilter.mjs ` +
+      `disagree.` +
+      (missing.length ? ` In newsFilter.mjs but missing here: ${missing.join(', ')}.` : '') +
+      (extra.length ? ` Here but missing from newsFilter.mjs: ${extra.join(', ')}.` : '') +
+      ` Add the topic to KNOWN_TOPICS, TOPIC_LABELS in NewsFeed.astro, and ` +
+      `newsTopic* in src/i18n/{en,es}.ts.`,
+  );
+}
+assertTopicListsMatch();
+
+/**
+ * Warn at build time about an ingested story carrying a topic this UI cannot
+ * label.
+ *
+ * Warn, not throw, unlike `assertTopicListsMatch` above: this is a fact about
+ * one row in a JSON file, not about the codebase. §0.8 assumes no
+ * maintainer — the news cron opens a PR on its own, and a build that refuses
+ * a story over one unrecognised topic would stop the site updating at all
+ * rather than render one chip in English. The browser renderer degrades to
+ * the raw id, which is ugly and visible — which is the point — while this
+ * line puts the same fact in the build log.
+ *
+ * `assertTopicListsMatch` already guarantees `KNOWN_TOPICS` matches every
+ * topic `newsFilter.mjs` can currently produce, so reaching this warning
+ * means the archive on disk is stale relative to a UI that has moved
+ * forward, or was hand-edited — not that a topic was added and forgotten
+ * everywhere else.
  */
 function assertKnownTopics(topics: Iterable<string>): void {
   const unknown = [...new Set(topics)].filter((t) => !KNOWN_TOPICS.includes(t as NewsTopic));
   if (unknown.length === 0) return;
   console.warn(
-    `[news] ${unknown.length} topic(s) with no label or translation: ${unknown.join(', ')}. ` +
-      `Add them to NewsTopic and TOPIC_LABELS in src/lib/news.ts and NewsFeed.astro, ` +
-      `and to newsTopic* in src/i18n/{en,es}.ts. Rendering the raw id meanwhile.`,
+    `[news] ${unknown.length} topic(s) in public/data/news.json with no label: ` +
+      `${unknown.join(', ')}. Rendering the raw id meanwhile.`,
   );
 }
 
